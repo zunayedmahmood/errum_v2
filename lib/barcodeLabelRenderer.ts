@@ -210,9 +210,9 @@ export async function renderBarcodeLabelBase64(opts: {
   ctx.drawImage(bcCanvas, bcX, bcY, drawW, drawH);
 
   // Price
-  const priceText = `Price (VAT inc.): ৳${Number(opts.price || 0).toLocaleString("en-BD")}`;
+  const priceText = `BDT ৳${Number(opts.price || 0).toLocaleString("en-BD")}`;
   ctx.textBaseline = "bottom";
-  const priceFontSize = Math.round(hPx * 0.095);
+  const priceFontSize = Math.round(hPx * 0.1);
   // Use a mono-style numeric font stack for clearer digit differentiation (e.g., 6 vs 8)
   ctx.font = `800 ${priceFontSize}px "Consolas", "Lucida Console", "DejaVu Sans Mono", "Courier New", monospace`;
   const priceY = hPx - pad;

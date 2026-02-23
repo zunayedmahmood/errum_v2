@@ -262,7 +262,7 @@ async function renderLabelBase64(opts: {
   const maxBcW = Math.round((wPx - pad * 2) * 0.98);
   const maxBcH = Math.round(hPx * 0.56);
   const bcHeight = Math.round(hPx * 0.28);
-  const bcFontSize = Math.round(hPx * 0.062);
+  const bcFontSize = Math.round(hPx * 0.075);
 
   const renderBarcodeCanvas = (barWidth: number) => {
     const c = document.createElement("canvas");
@@ -301,11 +301,11 @@ async function renderLabelBase64(opts: {
   ctx.drawImage(bcCanvas, bcX, bcY, drawW, drawH);
 
   // Price
-  const priceText = `Price (VAT inc.): ৳${Number(opts.price || 0).toLocaleString("en-BD")}`;
+  const priceText = `BDT ৳${Number(opts.price || 0).toLocaleString("en-BD")}`;
   ctx.textBaseline = "bottom";
-  const priceFontSize = Math.round(hPx * 0.095);
+  const priceFontSize = Math.round(hPx * 0.1);
   // Use a mono-style numeric font stack for clearer digit differentiation (e.g., 6 vs 8)
-  ctx.font = `700 ${priceFontSize}px "Consolas", "Lucida Console", "DejaVu Sans Mono", "Courier New", monospace`;
+  ctx.font = `800 ${priceFontSize}px "Consolas", "Lucida Console", "DejaVu Sans Mono", "Courier New", monospace`;
   const priceY = hPx - pad;
   ctx.fillText(fitText(ctx, priceText, wPx - pad * 2), centerX, priceY);
 
