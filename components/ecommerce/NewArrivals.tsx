@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import { useCart } from '@/app/e-commerce/CartContext';
 import catalogService, { SimpleProduct } from '@/services/catalogService';
-import { buildCardProductsFromResponse, getCardNewestSortKey } from '@/lib/ecommerceCardUtils';
+import { buildCardProductsFromResponse } from '@/lib/ecommerceCardUtils';
 import PremiumProductCard from '@/components/ecommerce/ui/PremiumProductCard';
 import SectionHeader from '@/components/ecommerce/ui/SectionHeader';
 
@@ -13,6 +13,33 @@ interface NewArrivalsProps {
   categoryId?: number;
   limit?: number;
 }
+
+/* Parse a date string → ms timestamp, returns 0 if unparseable */
+const toMs = (v: unknown): number => {
+  if (!v) return 0;
+  const ms = Date.parse(String(v));
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+/**
+ * Get the CREATION timestamp for a card product.
+ * We deliberately ignore updated_at — an old product that was recently edited
+ * should NOT reappear as a "new arrival".
+ */
+const getCreatedMs = (product: SimpleProduct): number => {
+  // The card product itself (spread from main_variant) has created_at
+  const own = toMs((product as any)?.created_at);
+  if (own > 0) return own;
+
+  // Check variants as fallback
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  let best = 0;
+  for (const v of variants) {
+    const t = toMs((v as any)?.created_at);
+    if (t > best) best = t;
+  }
+  return best;
+};
 
 const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
   const router = useRouter();
@@ -31,7 +58,7 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
     try {
       const response = await catalogService.getProducts({
         page: 1,
-        per_page: Math.max(limit * 8, 60),
+        per_page: Math.max(limit * 8, 80),
         category_id: categoryId,
         sort_by: 'newest',
         sort: 'created_at',
@@ -41,10 +68,24 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
       });
 
       const rawCards = buildCardProductsFromResponse(response);
-      const sortedCards = [...rawCards]
-        .sort((a, b) => getCardNewestSortKey(b) - getCardNewestSortKey(a))
-        .slice(0, limit);
-      setProducts(sortedCards);
+
+      // Sort by created_at ONLY — not updated_at
+      const sorted = [...rawCards].sort((a, b) => getCreatedMs(b) - getCreatedMs(a));
+
+      // Keep only products created within the last 180 days.
+      // No fallback — if nothing qualifies, the section hides itself.
+      // This prevents old/test products from ever appearing as "new arrivals".
+      const CUTOFF_MS = 180 * 24 * 60 * 60 * 1000;
+      const cutoff    = Date.now() - CUTOFF_MS;
+
+      const recent = sorted.filter(p => {
+        const created = getCreatedMs(p);
+        // If we couldn't extract a created_at date, exclude (safer than showing stale items)
+        if (created === 0) return false;
+        return created >= cutoff;
+      });
+
+      setProducts(recent.slice(0, limit));
     } catch (error) {
       console.error('Error fetching new arrivals:', error);
       setProducts([]);
@@ -54,7 +95,7 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
   };
 
   const handleImageError = (productId: number) => {
-    setImageErrors((prev) => {
+    setImageErrors(prev => {
       if (prev.has(productId)) return prev;
       const next = new Set(prev);
       next.add(productId);
@@ -72,10 +113,8 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
       router.push(`/e-commerce/product/${product.id}`);
       return;
     }
-
     try {
       await addToCart(product.id, 1);
-      router.push('/e-commerce/checkout');
     } catch (error) {
       console.error('Error adding to cart:', error);
     }
@@ -106,6 +145,7 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
     );
   }
 
+  // Section hides if there are no genuinely new products
   if (products.length === 0) return null;
 
   return (
@@ -115,7 +155,7 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
           <SectionHeader
             eyebrow="Fresh drop"
             title="New Arrivals"
-            subtitle="Newest catalog items surfaced first"
+            subtitle="Latest additions to the catalogue"
             actionLabel="View all products"
             onAction={() => router.push('/e-commerce/products')}
           />

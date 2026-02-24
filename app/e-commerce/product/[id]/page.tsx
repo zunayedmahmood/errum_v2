@@ -1130,15 +1130,7 @@ export default function ProductDetailPage() {
                 </div>
               </div>
 
-              {/* Subtle trust strip */}
-              <div className="rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 text-xs text-neutral-600">
-                <div className="flex flex-wrap gap-x-6 gap-y-2">
-                  <span>Premium selection</span>
-                  <span>Authentic sourcing</span>
-                  <span>In-store support</span>
-                  <span>Secure checkout</span>
-                </div>
-              </div>
+
             </div>
           </div>
 

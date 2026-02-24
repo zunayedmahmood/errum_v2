@@ -1,188 +1,255 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search as SearchIcon, Loader2, AlertCircle } from 'lucide-react';
+import { Search as SearchIcon, X, Loader2, AlertCircle, Package } from 'lucide-react';
 
-import Navigation from '@/components/ecommerce/Navigation';
 import catalogService from '@/services/catalogService';
-import { adaptCatalogGroupedProducts, formatGroupedPrice, groupProductsByMother } from '@/lib/ecommerceProductGrouping';
+import { buildCardProductsFromResponse } from '@/lib/ecommerceCardUtils';
+import { getCardPriceText } from '@/lib/ecommerceCardUtils';
+import type { SimpleProduct } from '@/services/catalogService';
 
-type SearchProduct = {
-  id: number;
-  name: string;
-  sku: string;
-  selling_price: number;
-  images: { url: string; is_primary?: boolean }[];
-  in_stock?: boolean;
-  base_name?: string;
-  category?: { id: number; name: string } | string | null;
-};
+/* ─── helpers ─────────────────────────────────────────────────────────────── */
 
-export default function SearchClient({ initialQuery }: { initialQuery: string }) {
-  const router = useRouter();
+const getPrimaryImageUrl = (p: SimpleProduct) =>
+  (Array.isArray(p.images) && p.images[0]?.url) || '/placeholder-product.png';
 
-  const [query, setQuery] = useState(initialQuery || '');
-  const [submittedQuery, setSubmittedQuery] = useState(initialQuery || '');
-  const [products, setProducts] = useState<SearchProduct[]>([]);
-  const [apiGroupedProducts, setApiGroupedProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const getCategoryName = (p: SimpleProduct) =>
+  typeof p.category === 'object' && p.category ? p.category.name : typeof p.category === 'string' ? p.category : '';
 
-  const groupedProducts = useMemo(
-    () => (apiGroupedProducts.length > 0
-      ? adaptCatalogGroupedProducts(apiGroupedProducts as any)
-      : groupProductsByMother(products as any)),
-    [apiGroupedProducts, products]
-  );
+/* ─── component ───────────────────────────────────────────────────────────── */
 
+export default function SearchClient({ initialQuery = '' }: { initialQuery?: string }) {
+  const router   = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const [query,    setQuery]    = useState(initialQuery);
+  const [results,  setResults]  = useState<SimpleProduct[]>([]);
+  const [total,    setTotal]    = useState(0);
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+  const [searched, setSearched] = useState(false);
+
+  /* Run search whenever the URL query changes (including on mount if already has query) */
   useEffect(() => {
-    const q = (initialQuery || '').trim();
-    if (!q) return;
-
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await catalogService.searchProducts({ q, per_page: 60, page: 1 });
-        setApiGroupedProducts(data.grouped_products || []);
-        setProducts((data.products || []) as SearchProduct[]);
-      } catch (err: any) {
-        console.error('Search failed:', err);
-        setError('Failed to search products. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    })();
+    if (!initialQuery.trim()) {
+      // No query — show empty search UI, focus input
+      setResults([]);
+      setTotal(0);
+      setSearched(false);
+      setTimeout(() => inputRef.current?.focus(), 100);
+      return;
+    }
+    runSearch(initialQuery.trim());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuery]);
 
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    const q = query.trim();
-    if (!q) return;
-
-    router.replace(`/e-commerce/search?q=${encodeURIComponent(q)}`);
-    setSubmittedQuery(q);
-
+  const runSearch = async (q: string) => {
+    setLoading(true);
+    setError(null);
+    setSearched(false);
     try {
-      setLoading(true);
-      setError(null);
-      const data = await catalogService.searchProducts({ q, per_page: 60, page: 1 });
-      setApiGroupedProducts(data.grouped_products || []);
-      setProducts((data.products || []) as SearchProduct[]);
+      const response = await catalogService.searchProducts({ q, per_page: 48, page: 1 });
+      const cards    = buildCardProductsFromResponse(response);
+      setResults(cards);
+      setTotal(response.pagination?.total ?? cards.length);
     } catch (err: any) {
-      console.error('Search failed:', err);
-      setError('Failed to search products. Please try again.');
+      console.error('Search error:', err);
+      setError('Search failed. Please check your connection and try again.');
+      setResults([]);
+      setTotal(0);
     } finally {
       setLoading(false);
+      setSearched(true);
     }
   };
 
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    router.replace(`/e-commerce/search?q=${encodeURIComponent(q)}`);
+    runSearch(q);
+  };
+
+  const clearQuery = () => {
+    setQuery('');
+    setResults([]);
+    setTotal(0);
+    setSearched(false);
+    router.replace('/e-commerce/search');
+    inputRef.current?.focus();
+  };
+
+  /* ── render ── */
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation />
+    <div className="ec-root min-h-screen bg-[#f7f7f7]">
+      {/* ── Search bar hero ── */}
+      <div className="border-b border-neutral-200 bg-white">
+        <div className="ec-container py-8 sm:py-10">
+          <p className="ec-eyebrow mb-2">Catalogue</p>
+          <h1 className="ec-heading mb-5 text-2xl font-semibold text-neutral-900 sm:text-3xl">
+            Search Products
+          </h1>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Search</h1>
-          <p className="text-gray-600 mt-1">Find products quickly</p>
-        </div>
-
-        <form onSubmit={onSubmit} className="mb-8">
-          <div className="relative max-w-3xl">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search products..."
-              className="w-full rounded-xl border border-gray-300 bg-white py-3 pl-12 pr-28 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-50"
+          <form onSubmit={onSubmit} className="relative max-w-2xl">
+            <SearchIcon
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400"
+              size={18}
             />
-            <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search by name, SKU or category…"
+              autoComplete="off"
+              className="w-full rounded-xl border border-neutral-300 bg-white py-3 pl-11 pr-28 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-500 focus:ring-2 focus:ring-neutral-100 transition"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={clearQuery}
+                className="absolute right-[5.5rem] top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition"
+                aria-label="Clear"
+              >
+                <X size={16} />
+              </button>
+            )}
             <button
               type="submit"
-              className="absolute right-2 top-1/2 -translate-y-1/2 bg-neutral-900 hover:bg-neutral-800 text-white text-sm font-medium px-4 py-2 rounded-lg"
+              disabled={!query.trim() || loading}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Search
+              {loading ? <Loader2 size={16} className="animate-spin" /> : 'Search'}
             </button>
-          </div>
-        </form>
+          </form>
+        </div>
+      </div>
 
-        {submittedQuery && !loading && !error && (
-          <p className="text-sm text-gray-600 mb-4">
-            Results for <span className="font-medium text-gray-900">“{submittedQuery}”</span> — {groupedProducts.length}{' '}
-            grouped product{groupedProducts.length === 1 ? '' : 's'}
-          </p>
-        )}
+      {/* ── Results area ── */}
+      <div className="ec-container py-6 sm:py-8">
 
-        {error && (
-          <div className="mb-6 bg-rose-50 border border-rose-200 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="text-rose-600 flex-shrink-0 mt-0.5" size={20} />
-            <p className="text-neutral-900 text-sm">{error}</p>
+        {/* ── Loading ── */}
+        {loading && (
+          <div className="flex flex-col items-center justify-center py-24 text-neutral-500">
+            <Loader2 className="mb-3 h-10 w-10 animate-spin text-neutral-900" />
+            <p className="text-sm">Searching for "{initialQuery || query}"…</p>
           </div>
         )}
 
-        {loading ? (
-          <div className="text-center py-20">
-            <Loader2 className="animate-spin h-10 w-10 text-neutral-900 mx-auto mb-3" />
-            <p className="text-gray-600">Searching products...</p>
+        {/* ── Error ── */}
+        {!loading && error && (
+          <div className="mx-auto max-w-lg rounded-2xl border border-rose-200 bg-rose-50 p-5 flex items-start gap-3">
+            <AlertCircle className="mt-0.5 flex-shrink-0 text-rose-500" size={20} />
+            <div>
+              <p className="font-medium text-rose-800">Something went wrong</p>
+              <p className="mt-0.5 text-sm text-rose-700">{error}</p>
+            </div>
           </div>
-        ) : groupedProducts.length === 0 ? (
-          <div className="text-center py-20 text-gray-600">No products found.</div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {groupedProducts.map((group) => {
-              const mainVariant = group.variants[0];
-              if (!mainVariant) return null;
+        )}
 
-              const mainStock = Number(mainVariant.stock_quantity || 0);
-              const hasOtherStock = group.variants.slice(1).some((variant) => Number(variant.stock_quantity || 0) > 0);
-              const stockLabel = mainStock > 0 ? 'In Stock' : hasOtherStock ? 'Available in other variants' : 'Out of Stock';
-              const stockClass =
-                stockLabel === 'In Stock'
-                  ? 'bg-green-100 text-green-700'
-                  : stockLabel === 'Available in other variants'
-                  ? 'bg-amber-100 text-amber-700'
-                  : 'bg-rose-50 text-neutral-900';
+        {/* ── Empty state (no query yet) ── */}
+        {!loading && !error && !searched && !initialQuery && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-neutral-100">
+              <SearchIcon size={28} className="text-neutral-400" />
+            </div>
+            <p className="ec-heading text-lg font-medium text-neutral-600">Start typing to search</p>
+            <p className="mt-1 text-sm text-neutral-400">Search by product name, SKU or category</p>
+          </div>
+        )}
 
-              return (
-                <Link
-                  key={group.key}
-                  href={`/e-commerce/product/${mainVariant.id}`}
-                  className="bg-white rounded-xl border hover:border-rose-200 hover:shadow-sm transition overflow-hidden"
-                >
-                  <div className="aspect-square bg-gray-100 relative">
-                    {group.primaryImage ? (
+        {/* ── No results ── */}
+        {!loading && !error && searched && results.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-neutral-100">
+              <Package size={28} className="text-neutral-400" />
+            </div>
+            <p className="ec-heading text-lg font-medium text-neutral-700">No products found</p>
+            <p className="mt-1 text-sm text-neutral-500">
+              No results for <span className="font-medium">"{initialQuery || query}"</span>. Try a different keyword.
+            </p>
+          </div>
+        )}
+
+        {/* ── Results ── */}
+        {!loading && !error && results.length > 0 && (
+          <>
+            <p className="mb-5 text-sm text-neutral-500">
+              <span className="font-semibold text-neutral-900">{total.toLocaleString()}</span> result{total !== 1 ? 's' : ''} for{' '}
+              <span className="font-semibold text-neutral-900">"{initialQuery || query}"</span>
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+              {results.map(product => {
+                const imageUrl     = getPrimaryImageUrl(product);
+                const categoryName = getCategoryName(product);
+                const priceText    = getCardPriceText(product);
+                const inStock      = product.in_stock !== false;
+                const hasVariants  = product.has_variants;
+
+                return (
+                  <Link
+                    key={product.id}
+                    href={`/e-commerce/product/${product.id}`}
+                    className="group ec-card ec-card-hover overflow-hidden rounded-2xl"
+                  >
+                    {/* image */}
+                    <div className="relative aspect-[4/5] overflow-hidden bg-neutral-100">
                       <img
-                        src={group.primaryImage}
-                        alt={group.baseName}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.src = '/placeholder-product.png';
-                        }}
+                        src={imageUrl}
+                        alt={product.display_name || product.base_name || product.name}
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                        onError={e => { (e.currentTarget as HTMLImageElement).src = '/placeholder-product.png'; }}
                       />
-                    ) : (
-                      <div className="w-full h-full bg-gray-200" />
-                    )}
 
-                    {group.totalVariants > 1 && (
-                      <span className="absolute top-2 left-2 bg-purple-100 text-purple-700 text-xs font-medium px-2 py-1 rounded-full">
-                        +{group.totalVariants - 1} variants available
+                      {/* stock badge */}
+                      <span
+                        className={`absolute right-2 top-2 rounded-full border px-2 py-1 text-[10px] font-medium shadow-sm ${
+                          inStock
+                            ? 'border-green-200 bg-green-50/95 text-green-700'
+                            : 'border-neutral-200 bg-white/90 text-neutral-600'
+                        }`}
+                      >
+                        {inStock ? 'In Stock' : 'Out of Stock'}
                       </span>
-                    )}
 
-                    <span className={`absolute top-2 right-2 text-xs font-medium px-2 py-1 rounded-full ${stockClass}`}>
-                      {stockLabel}
-                    </span>
-                  </div>
-                  <div className="p-3">
-                    <div className="text-sm font-medium text-gray-900 line-clamp-2">{group.baseName}</div>
-                    <div className="mt-1 text-neutral-900 font-semibold">{formatGroupedPrice(group)}</div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+                      {/* variants badge */}
+                      {hasVariants && (
+                        <span className="absolute left-2 top-2 rounded-full border border-white/70 bg-white/90 px-2 py-1 text-[10px] font-medium text-neutral-800 shadow-sm backdrop-blur">
+                          {product.total_variants ?? ''}+ options
+                        </span>
+                      )}
+
+                      {/* hover CTA */}
+                      <div className="absolute inset-x-3 bottom-3 translate-y-2 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                        <div className="w-full rounded-xl border border-neutral-200 bg-white/95 px-3 py-2 text-center text-xs font-semibold text-neutral-900 shadow-sm backdrop-blur">
+                          {hasVariants ? 'Select options' : 'View product'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* info */}
+                    <div className="p-3 sm:p-4">
+                      {categoryName && (
+                        <p className="mb-1 line-clamp-1 text-[10px] font-medium uppercase tracking-[0.18em] text-neutral-400">
+                          {categoryName}
+                        </p>
+                      )}
+                      <h3 className="line-clamp-3 min-h-[3.75rem] text-sm font-semibold text-neutral-900 group-hover:text-neutral-700 transition-colors">
+                        {product.display_name || product.base_name || product.name}
+                      </h3>
+                      <p className="mt-2 text-base font-bold text-amber-600">{priceText}</p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </>
         )}
-      </div></div>
+
+      </div>
+    </div>
   );
 }
