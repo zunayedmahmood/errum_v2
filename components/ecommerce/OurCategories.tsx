@@ -67,14 +67,14 @@ const OurCategories: React.FC<OurCategoriesProps> = ({ categories: categoriesPro
         <div className="ec-container">
           <div className="ec-surface p-5 sm:p-7">
             <div className="mb-6 space-y-2">
-              <div className="h-2.5 w-28 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.08)' }}" />
-              <div className="h-9 w-52 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.08)' }}" />
+              <div className="h-2.5 w-28 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.08)' }} />
+              <div className="h-9 w-52 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.08)' }} />
             </div>
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
               {Array.from({ length: 10 }).map((_, i) => (
                 <div key={i} className="animate-pulse">
                   <div className="aspect-[3/4] rounded-2xl mb-2" style={{ background: 'rgba(255,255,255,0.05)' }} />
-                  <div className="h-3 rounded-full w-3/4 mx-auto" style={{ background: 'rgba(255,255,255,0.05)' }}" />
+                  <div className="h-3 rounded-full w-3/4 mx-auto" style={{ background: 'rgba(255,255,255,0.05)' }} />
                 </div>
               ))}
             </div>

@@ -244,8 +244,8 @@ const SubcategoryProductTabs: React.FC<{ tabsCount?: number; productsPerTab?: nu
         <div className="ec-container">
           <div className="ec-surface p-4 sm:p-6 lg:p-8">
             <div className="mb-6 space-y-2">
-              <div className="h-3 w-32 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.08)' }}" />
-              <div className="h-8 w-56 rounded-lg   animate-pulse" style={{ background: 'rgba(255,255,255,0.08)' }}" />
+              <div className="h-3 w-32 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.08)' }} />
+              <div className="h-8 w-56 rounded-lg   animate-pulse" style={{ background: 'rgba(255,255,255,0.08)' }} />
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 mb-5">
               {[1,2,3].map(i => <div key={i} className="aspect-[3/4] rounded-2xl animate-pulse" style={{ background: 'rgba(255,255,255,0.05)' }} />)}
