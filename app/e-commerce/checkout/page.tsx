@@ -457,6 +457,51 @@ export default function CheckoutPage() {
       // SSLCommerz style response
       const paymentUrl = resp?.data?.payment_url;
       if (paymentUrl) {
+        // Store a lightweight last-order preview (guest can't fetch /customer/orders)
+        try {
+          const orderNo = resp?.data?.order_number || resp?.data?.order?.order_number;
+          const txn = resp?.data?.transaction_id;
+          const amt = resp?.data?.total_amount ?? summary.total_amount;
+          if (orderNo) {
+            localStorage.setItem(
+              'ec_last_order',
+              JSON.stringify({
+                order_number: orderNo,
+                payment_method: 'sslcommerz',
+                total_amount: typeof amt === 'number' ? amt : Number(amt),
+                shipping_charge: shippingCharge,
+                discount: couponDiscount,
+                created_at: Date.now(),
+                customer: { phone: cleanPhone(formatBDPhone(guestPhone)), name: guestName || undefined, email: guestEmail || undefined },
+                items: selectedItems.map((it) => ({
+                  name: it.name,
+                  quantity: it.quantity,
+                  unit_price: Number(it.unit_price),
+                  total_price: Number(it.total_price),
+                  image_url: it.images?.find((i: any) => i?.is_primary)?.image_url || (it.images?.[0] as any)?.image_url || (it.images?.[0] as any)?.url || '/placeholder-product.png',
+                  sku: it.sku || '',
+                  variant_options: it.variant_options || undefined,
+                })),
+              })
+            );
+          }
+
+          // Also store intent so /payment/success can resolve order reference
+          if (orderNo && txn) {
+            localStorage.setItem(
+              'sslc_payment_intent',
+              JSON.stringify({
+                order_id: resp?.data?.order_id || resp?.data?.order?.order_id || resp?.data?.order?.id || 0,
+                order_number: orderNo,
+                transaction_id: txn,
+                amount: typeof amt === 'number' ? amt : Number(amt),
+                timestamp: Date.now(),
+              })
+            );
+          }
+        } catch {
+          // ignore localStorage errors
+        }
         window.location.href = paymentUrl;
         return;
       }
@@ -465,6 +510,33 @@ export default function CheckoutPage() {
       const orderNumber = resp?.data?.order?.order_number;
       if (!orderNumber) {
         throw new Error(resp?.message || 'Order created, but no order number returned');
+      }
+
+      // Store a lightweight last-order preview for the Thank You page
+      try {
+        localStorage.setItem(
+          'ec_last_order',
+          JSON.stringify({
+            order_number: orderNumber,
+            payment_method: guestPaymentMethod,
+            total_amount: summary.total_amount,
+            shipping_charge: shippingCharge,
+            discount: couponDiscount,
+            created_at: Date.now(),
+            customer: { phone: cleanPhone(formatBDPhone(guestPhone)), name: guestName || undefined, email: guestEmail || undefined },
+            items: selectedItems.map((it) => ({
+              name: it.name,
+              quantity: it.quantity,
+              unit_price: Number(it.unit_price),
+              total_price: Number(it.total_price),
+              image_url: it.images?.find((i: any) => i?.is_primary)?.image_url || (it.images?.[0] as any)?.image_url || (it.images?.[0] as any)?.url || '/placeholder-product.png',
+              sku: it.sku || '',
+              variant_options: it.variant_options || undefined,
+            })),
+          })
+        );
+      } catch {
+        // ignore
       }
 
       // Remove checked-out items from cart
@@ -479,7 +551,7 @@ export default function CheckoutPage() {
       localStorage.removeItem('checkout-selected-items');
 
       alert(`🎉 Order placed successfully!\n\nOrder Number: ${orderNumber}\nTotal: ৳${summary.total_amount.toFixed(2)}\n\nWe will contact you for confirmation.`);
-      router.push(`/e-commerce/order-confirmation/${orderNumber}`);
+      router.push(`/e-commerce/thank-you/${orderNumber}`);
     } catch (err: any) {
       console.error('❌ Guest checkout failed:', err);
       setError(err?.response?.data?.message || err?.message || 'Failed to place order. Please try again.');
@@ -547,14 +619,37 @@ export default function CheckoutPage() {
 
       console.log('✅ Order placed successfully:', result);
 
+      // Store last order preview (even for logged-in users, nicer UX)
+      try {
+        localStorage.setItem(
+          'ec_last_order',
+          JSON.stringify({
+            order_number: result.order.order_number,
+            payment_method: paymentMethod.code,
+            total_amount: typeof result.order.total_amount === 'number' ? result.order.total_amount : Number(result.order.total_amount),
+            created_at: Date.now(),
+            items: orderItems.map((it) => ({
+              name: it.product_name,
+              quantity: it.quantity,
+              unit_price: it.price,
+              total_price: it.total,
+              image_url: it.product_image || '/placeholder-product.png',
+              sku: it.sku || '',
+            })),
+          })
+        );
+      } catch {
+        // ignore
+      }
+
       // Clear checkout data
       localStorage.removeItem('checkout-selected-items');
 
       // ✅ Show success message
-      alert(`🎉 Order placed successfully!\n\nOrder Number: ${result.order.order_number}\nTotal: ৳${result.order.total_amount}\n\nYou will be redirected to your account.`);
+      alert(`🎉 Order placed successfully!\n\nOrder Number: ${result.order.order_number}\nTotal: ৳${result.order.total_amount}\n\nYou will be redirected to the confirmation page.`);
 
-      // ✅ Redirect to my-account page
-      router.push('/e-commerce/my-account');
+      // ✅ Redirect to a public Thank You page (no forced login)
+      router.push(`/e-commerce/thank-you/${result.order.order_number}`);
 
     } catch (error: any) {
       console.error('❌ Order placement failed:', error);

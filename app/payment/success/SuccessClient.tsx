@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Navigation from '@/components/ecommerce/Navigation';
-import checkoutService from '@/services/checkoutService';
 import sslcommerzService from '@/services/sslcommerzService';
 import { CheckCircle2, Loader2, AlertCircle, ShoppingBag } from 'lucide-react';
 
@@ -19,6 +18,11 @@ export default function PaymentSuccessPage() {
   const [amount, setAmount] = useState<number | null>(null);
 
   const intent = useMemo(() => sslcommerzService.getPaymentIntent(), []);
+
+  const isAuthed = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return !!localStorage.getItem('auth_token');
+  }, []);
 
   useEffect(() => {
     const fromIntent = intent?.order_number || null;
@@ -38,74 +42,22 @@ export default function PaymentSuccessPage() {
       return;
     }
 
-    let cancelled = false;
-    let attempts = 0;
-    const maxAttempts = 10;
-    const delayMs = 2000;
-
-    const poll = async () => {
-      attempts += 1;
-
-      try {
-        const order = await checkoutService.getOrderByNumber(resolved);
-        if (cancelled) return;
-
-        const ps = (order.payment_status || '').toLowerCase();
-        const paid = ps === 'paid' || ps === 'completed';
-        const failed = ps === 'failed' || ps === 'cancelled' || order.status === 'cancelled';
-
-        if (typeof order.total_amount === 'number') setAmount(order.total_amount);
-
-        if (paid) {
-          setState('success');
-          setMessage('Payment confirmed! Your order has been placed.');
-          sslcommerzService.clearPaymentIntent();
-          return;
-        }
-
-        if (failed) {
-          setState('failed');
-          setMessage(`Payment status: ${order.payment_status}. Please check your orders.`);
-          sslcommerzService.clearPaymentIntent();
-          return;
-        }
-
-        if (attempts < maxAttempts) {
-          setState('processing');
-          setMessage('Payment is being processed. Please wait...');
-          setTimeout(poll, delayMs);
-        } else {
-          setState('processing');
-          setMessage('Still processing. You can go to “My Account → Orders” and refresh later.');
-        }
-      } catch (e: any) {
-        if (cancelled) return;
-
-        if (attempts < maxAttempts) {
-          setState('processing');
-          setMessage('Verifying payment...');
-          setTimeout(poll, delayMs);
-        } else {
-          setState('failed');
-          setMessage(e?.message || 'Could not verify payment. Please check “My Account → Orders”.');
-          // keep intent for a bit? safe to clear because user is already here
-          sslcommerzService.clearPaymentIntent();
-        }
-      }
-    };
-
-    poll();
-    return () => {
-      cancelled = true;
-    };
-  }, [intent, searchParams]);
+    // IMPORTANT:
+    // We avoid calling protected /customer/orders/* here because guest users (or expired tokens)
+    // would be redirected to login by the global axios interceptor.
+    // Instead, we show a success message and send the user to a public Thank You page.
+    setState('success');
+    setMessage('Payment received! Your order is being confirmed.');
+    setAmount(intent?.amount ?? null);
+    setTimeout(() => router.replace(`/e-commerce/thank-you/${resolved}`), 900);
+  }, [intent, searchParams, router]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="ec-root ec-darkify min-h-screen">
       <Navigation />
 
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="ec-dark-card p-6">
           <div className="flex items-start gap-3">
             {state === 'success' ? (
               <CheckCircle2 className="text-green-600 mt-1" size={28} />
@@ -116,10 +68,10 @@ export default function PaymentSuccessPage() {
             )}
 
             <div className="flex-1">
-              <h1 className="text-xl font-bold text-gray-900">Payment Status</h1>
-              <p className="text-gray-600 mt-1">{message}</p>
+              <h1 className="text-xl font-bold text-neutral-900">Payment Status</h1>
+              <p className="text-neutral-600 mt-1">{message}</p>
 
-              <div className="mt-4 text-sm text-gray-700 space-y-1">
+              <div className="mt-4 text-sm text-neutral-700 space-y-1">
                 {orderNumber && (
                   <div>
                     <span className="font-medium">Order:</span> {orderNumber}
@@ -135,26 +87,37 @@ export default function PaymentSuccessPage() {
           </div>
 
           <div className="mt-6 flex flex-col sm:flex-row gap-3">
-            <button
-              type="button"
-              onClick={() => router.push('/e-commerce/my-account')}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-700 text-white hover:bg-red-800"
-            >
-              <ShoppingBag size={18} />
-              My Orders
-            </button>
+            {isAuthed ? (
+              <button
+                type="button"
+                onClick={() => router.push('/e-commerce/my-account')}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-700 text-white hover:bg-red-800"
+              >
+                <ShoppingBag size={18} />
+                My Orders
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => router.push('/e-commerce/thank-you/' + (orderNumber || ''))}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-700 text-white hover:bg-red-800"
+              >
+                <ShoppingBag size={18} />
+                View Confirmation
+              </button>
+            )}
 
             <button
               type="button"
-              onClick={() => router.push('/e-commerce/cart')}
-              className="px-4 py-2 rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
+              onClick={() => router.push('/e-commerce')}
+              className="px-4 py-2 rounded-lg border border-gray-300 text-neutral-800 hover:bg-gray-50"
             >
-              Back to Cart
+              Continue Shopping
             </button>
           </div>
 
-          <div className="mt-6 text-xs text-gray-500">
-            <p>Tip: IPN confirmation can take a few seconds to reflect here.</p>
+          <div className="mt-6 text-xs text-neutral-500">
+            <p>Tip: Gateway confirmation can take a few seconds. Keep your order number.</p>
           </div>
         </div>
       </div>
