@@ -101,9 +101,27 @@ const GRADIENTS = [
   'linear-gradient(160deg,#e8e4df 0%,#c8c2ba 40%,#a59e95 100%)',
 ];
 
-const SubcategoryProductTabs: React.FC<{ tabsCount?: number; productsPerTab?: number }> = ({
+interface SubcategoryProductTabsProps {
+  tabsCount?: number;
+  productsPerTab?: number;
+  /** Parent category matchers (slug or name). Example: ["sneakers"] */
+  parentQueries?: string[];
+  eyebrow?: string;
+  title?: string;
+  subtitle?: string;
+  /** If parent category isn't found, hide the whole section instead of falling back to random leaves. */
+  hideIfNotFound?: boolean;
+}
+
+
+const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
   tabsCount = 6,
   productsPerTab = 8,
+  parentQueries = ['sneakers', 'sneaker'],
+  eyebrow,
+  title,
+  subtitle,
+  hideIfNotFound = true,
 }) => {
   const router = useRouter();
   const { addToCart } = useCart();
@@ -115,15 +133,29 @@ const SubcategoryProductTabs: React.FC<{ tabsCount?: number; productsPerTab?: nu
   const [loadingCats, setLoadingCats] = useState(true);
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
   const [heroImgByCat, setHeroImgByCat] = useState<Record<number, string>>({});
+  const [parentLabel, setParentLabel] = useState<string>('');
+const findParentNode = (flat: CatalogCategory[], queries: string[]): CatalogCategory | null => {
+  const q = (queries || []).map(normalizeKey).filter(Boolean);
+  if (!q.length) return null;
 
-  const findSneakersNode = (flat: CatalogCategory[]): CatalogCategory | null => {
-    const exact = flat.find(c => normalizeKey(c?.slug) === 'sneakers' || normalizeKey(c?.name) === 'sneakers') || null;
+  // Exact match by slug or name
+  for (const needle of q) {
+    const exact =
+      flat.find(c => normalizeKey(c?.slug) === needle || normalizeKey(c?.name) === needle) || null;
     if (exact) return exact;
-    const singular = flat.find(c => normalizeKey(c?.slug) === 'sneaker' || normalizeKey(c?.name) === 'sneaker') || null;
-    if (singular) return singular;
-    // relaxed match (e.g. "Sneakers Collection")
-    return flat.find(c => normalizeKey(c?.slug).includes('sneaker') || normalizeKey(c?.name).includes('sneaker')) || null;
-  };
+  }
+
+  // Contains match (e.g. "Sneakers Collection", "Fashion Accessories")
+  for (const needle of q) {
+    const relaxed =
+      flat.find(
+        c => normalizeKey(c?.slug).includes(needle) || normalizeKey(c?.name).includes(needle)
+      ) || null;
+    if (relaxed) return relaxed;
+  }
+
+  return null;
+};
 
   const uniqById = (list: CatalogCategory[]): CatalogCategory[] => {
     const seen = new Set<number>();
@@ -145,31 +177,42 @@ const SubcategoryProductTabs: React.FC<{ tabsCount?: number; productsPerTab?: nu
         const tree = await catalogService.getCategories();
         const flat = flattenAll(tree);
 
-        /**
-         * Desired behavior (per request):
-         * - This section is "Shop by Subcategory"
-         * - Show ALL subcategories under "Sneakers"
-         * - Top 3 (by product_count) appear as image banner cards
-         * - The rest appear as pill/capsule tabs
-         */
-        const sneakers = findSneakersNode(flat);
-        let selected: CatalogCategory[] = [];
+        
+/**
+ * "Shop by Subcategory" section:
+ * - Find a parent category by slug/name (parentQueries)
+ * - Show ALL subcategories under that parent
+ * - Top 3 (by product_count) appear as image banner cards
+ * - The rest appear as pill/capsule tabs
+ */
+const parent = findParentNode(flat, parentQueries);
+if (alive) setParentLabel(parent?.name || '');
+let selected: CatalogCategory[] = [];
 
-        if (sneakers) {
-          if (sneakers.children?.length) {
-            const descendants = flattenAll(sneakers.children);
-            let leaves = descendants.filter(c => c.name && !c.children?.length);
-            if (!leaves.length) leaves = descendants.filter(c => c.name);
-            selected = uniqById(leaves);
-          } else {
-            selected = [sneakers];
-          }
+if (parent) {
+  if (parent.children?.length) {
+    const descendants = flattenAll(parent.children);
+    let leaves = descendants.filter(c => c.name && !c.children?.length);
+    if (!leaves.length) leaves = descendants.filter(c => c.name);
+    selected = uniqById(leaves);
+  } else {
+    selected = [parent];
+  }
 
-          selected.sort((a, b) => Number(b.product_count || 0) - Number(a.product_count || 0));
-        }
+  selected.sort((a, b) => Number(b.product_count || 0) - Number(a.product_count || 0));
+}
 
-        // Fallback: previous behavior if sneakers not found or empty
-        if (!selected.length) {
+if (!selected.length) {
+  if (hideIfNotFound) {
+    if (alive) {
+      setAllCats(flat);
+      setTabs([]);
+      setActiveId(null);
+      setLoadingCats(false);
+    }
+    return;
+  }
+          
           let leaves = flat.filter(c => c.name && !c.children?.length);
           leaves.sort((a, b) => Number(b.product_count || 0) - Number(a.product_count || 0));
           selected = leaves.slice(0, tabsCount);
@@ -348,6 +391,8 @@ const SubcategoryProductTabs: React.FC<{ tabsCount?: number; productsPerTab?: nu
 
   if (!tabs.length) return null;
 
+  if (!tabs.length) return null;
+
   /* ── main ── */
   return (
     <section className="ec-section">
@@ -357,11 +402,11 @@ const SubcategoryProductTabs: React.FC<{ tabsCount?: number; productsPerTab?: nu
           {/* Header */}
           <div className="px-4 pt-6 pb-5 sm:px-6 lg:px-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="ec-eyebrow">Collections</p>
+              <p className="ec-eyebrow">{eyebrow ?? (parentLabel || 'Collections')}</p>
               <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 'clamp(22px,4vw,36px)', fontWeight: 500, color: 'white', letterSpacing: '-0.01em' }}>
-                Shop by Subcategory
+                {title ?? 'Shop by Subcategory'}
               </h2>
-              <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Select a collection to explore the latest styles</p>
+              <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>{subtitle ?? (parentLabel ? `Select a ${parentLabel} collection to explore the latest styles` : 'Select a collection to explore the latest styles')}</p>
             </div>
             {activeTab?.category && (
               <button

@@ -17,7 +17,28 @@ export default function HomePage() {
         <OurCategories />
         <FeaturedProducts />
         <NewArrivals />
-        <SubcategoryProductTabs />
+
+        {/* Shop by Subcategory sections (stacked) */}
+        <SubcategoryProductTabs
+          parentQueries={['sneakers', 'sneaker']}
+          eyebrow="Sneakers"
+          subtitle="Explore sneaker collections—highs, lows, and everything in between."
+        />
+        <SubcategoryProductTabs
+          parentQueries={['clothing', 'apparel']}
+          eyebrow="Clothing"
+          subtitle="Browse tees, hoodies, jackets and more."
+        />
+        <SubcategoryProductTabs
+          parentQueries={['backpack', 'backpacks', 'bagpack', 'bagpacks']}
+          eyebrow="Backpacks"
+          subtitle="From daily carry to travel-ready packs."
+        />
+        <SubcategoryProductTabs
+          parentQueries={['fashion accessories', 'fashion accessory', 'fashion-accessories']}
+          eyebrow="Fashion Accessories"
+          subtitle="Caps, socks, belts, and the finishing touches."
+        />
       </div>
     </div>
   );
