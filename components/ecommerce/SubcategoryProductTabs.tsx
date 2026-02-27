@@ -507,41 +507,44 @@ if (!selected.length) {
 
             {/* Extra tabs beyond first 3 as slim pill buttons */}
             {tabs.length > 3 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {pillTabs.map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setActiveId(cat.id)}
-                    className='px-4 py-1.5 text-xs rounded-full transition-all' style={{ border: `1px solid ${cat.id === activeId ? 'var(--gold)' : 'rgba(255,255,255,0.15)'}`, background: cat.id === activeId ? 'rgba(176,124,58,0.15)' : 'rgba(255,255,255,0.04)', color: cat.id === activeId ? 'var(--gold-light)' : 'rgba(255,255,255,0.5)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em', fontSize: '11px' }}
-                  >
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-              {canLoadMore && (
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowAllTabs(v => !v)}
-                    className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition"
-                    style={{
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      background: 'rgba(255,255,255,0.03)',
-                      color: 'rgba(255,255,255,0.7)',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--gold)';
-                      e.currentTarget.style.color = 'var(--gold-light)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
-                      e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
-                    }}
-                  >
-                    {showAllTabs ? 'Show less' : `Load more (${tabs.length - MAX_VISIBLE_TABS} more)`}
-                  </button>
+              <>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {pillTabs.map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setActiveId(cat.id)}
+                      className='px-4 py-1.5 text-xs rounded-full transition-all' style={{ border: `1px solid ${cat.id === activeId ? 'var(--gold)' : 'rgba(255,255,255,0.15)'}`, background: cat.id === activeId ? 'rgba(176,124,58,0.15)' : 'rgba(255,255,255,0.04)', color: cat.id === activeId ? 'var(--gold-light)' : 'rgba(255,255,255,0.5)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em', fontSize: '11px' }}
+                    >
+                      {cat.name}
+                    </button>
+                  ))}
                 </div>
-              )}
+
+                {canLoadMore && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowAllTabs(v => !v)}
+                      className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition"
+                      style={{
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        background: 'rgba(255,255,255,0.03)',
+                        color: 'rgba(255,255,255,0.7)',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--gold)';
+                        e.currentTarget.style.color = 'var(--gold-light)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                        e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
+                      }}
+                    >
+                      {showAllTabs ? 'Show less' : `Load more (${tabs.length - MAX_VISIBLE_TABS} more)`}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
