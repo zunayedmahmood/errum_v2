@@ -26,24 +26,24 @@ export default function Toast({ message, type = 'success', duration = 3000, onCl
     warning: <AlertCircle className="w-5 h-5 text-yellow-500" />,
   };
 
-  const bgColors = {
-    success: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
-    error: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800',
-    info: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
-    warning: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800',
+  const borderColors = {
+    success: 'border-green-500/40',
+    error: 'border-red-500/40',
+    info: 'border-blue-500/40',
+    warning: 'border-yellow-500/40',
   };
 
   return (
-    <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg border ${bgColors[type]} shadow-lg animate-slide-in max-w-md`}>
+    <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border bg-[#121212]/95 backdrop-blur ${borderColors[type]} shadow-[0_12px_40px_rgba(0,0,0,0.45)] animate-slide-in max-w-md`}>
       {icons[type]}
-      <p className="text-sm font-medium text-gray-900 dark:text-white flex-1">
+      <p className="text-sm font-medium text-white/90 flex-1">
         {message}
       </p>
       <button
         onClick={onClose}
-        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+        className="p-1 hover:bg-white/10 rounded transition-colors"
       >
-        <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+        <X className="w-4 h-4 text-white/60" />
       </button>
       <style jsx>{`
         @keyframes slide-in {

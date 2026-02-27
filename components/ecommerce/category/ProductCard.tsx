@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Heart, Eye, ShoppingCart } from "lucide-react";
 import { useCart } from "@/app/e-commerce/CartContext";
+import { fireToast } from "@/lib/globalToast";
 
 interface ProductCardProps {
   product: any;
@@ -35,13 +36,14 @@ export default function ProductCard({ product, onCartOpen }: ProductCardProps) {
       }
 
       await addToCart(variantId, 1);
+      fireToast(`Added to cart: ${product?.baseName || product?.name || 'Item'}`, 'success');
       setIsAdding(false);
       onCartOpen?.();
     } catch (err: any) {
       console.error('Add to cart failed:', err);
       setIsAdding(false);
-      alert(err?.message || 'Failed to add to cart');
-    }
+      fireToast(err?.message || 'Failed to add to cart', 'error');
+      }
   };
 
   const priceText = (() => {

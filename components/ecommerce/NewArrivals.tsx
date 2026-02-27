@@ -8,6 +8,7 @@ import catalogService, { SimpleProduct } from '@/services/catalogService';
 import { buildCardProductsFromResponse } from '@/lib/ecommerceCardUtils';
 import PremiumProductCard from '@/components/ecommerce/ui/PremiumProductCard';
 import SectionHeader from '@/components/ecommerce/ui/SectionHeader';
+import { fireToast } from '@/lib/globalToast';
 
 interface NewArrivalsProps {
   categoryId?: number;
@@ -115,8 +116,10 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
     }
     try {
       await addToCart(product.id, 1);
-    } catch (error) {
+    
+      fireToast(`Added to cart: ${product?.name || 'Item'}`, 'success');} catch (error: any) {
       console.error('Error adding to cart:', error);
+      fireToast(error?.message || 'Failed to add to cart', 'error');
     }
   };
 

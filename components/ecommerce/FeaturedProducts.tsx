@@ -9,6 +9,7 @@ import { getCardNewestSortKey } from '@/lib/ecommerceCardUtils';
 import { getBaseProductName } from '@/lib/productNameUtils';
 import PremiumProductCard from '@/components/ecommerce/ui/PremiumProductCard';
 import SectionHeader from '@/components/ecommerce/ui/SectionHeader';
+import { fireToast } from '@/lib/globalToast';
 
 interface FeaturedProductsProps {
   categoryId?: number;
@@ -107,9 +108,11 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({ categoryId, limit =
     }
     try {
       await addToCart(product.id, 1);
+      fireToast(`Added to cart: ${product?.name || 'Item'}`, 'success');
       router.push('/e-commerce/checkout');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding to cart:', error);
+      fireToast(error?.message || 'Failed to add to cart', 'error');
     }
   };
 

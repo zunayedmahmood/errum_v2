@@ -56,6 +56,12 @@ function saveGuestCart(cart: GuestCartStorage) {
   window.dispatchEvent(new Event('cart-updated'));
 }
 
+function emitCartUpdated() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event('cart-updated'));
+}
+
+
 function normalizeCartProduct(product: any): CartProduct {
   const rawImages =
     (Array.isArray(product?.images) && product.images) ||
@@ -390,6 +396,7 @@ class CartService {
         throw new Error(response.data.message || 'Failed to add to cart');
       }
       
+      emitCartUpdated();
       return response.data.data;
     } catch (error: any) {
       console.error('❌ Add to cart error:', error);
@@ -492,6 +499,7 @@ class CartService {
         throw new Error(response.data.message || 'Failed to update cart');
       }
       
+      emitCartUpdated();
       return response.data.data;
     } catch (error: any) {
       console.error('❌ Update cart error:', error);
@@ -539,6 +547,7 @@ class CartService {
       if (!response.data.success) {
         throw new Error(response.data.message || 'Failed to remove from cart');
       }
+    emitCartUpdated();
     } catch (error: any) {
       console.error('❌ Remove from cart error:', error);
       console.error('Error details:', error.response?.data);
@@ -567,6 +576,7 @@ class CartService {
       if (!response.data.success) {
         throw new Error(response.data.message || 'Failed to clear cart');
       }
+    emitCartUpdated();
     } catch (error: any) {
       console.error('Clear cart error:', error);
       

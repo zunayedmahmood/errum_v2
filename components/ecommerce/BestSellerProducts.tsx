@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/app/e-commerce/CartContext';
 import CartSidebar from './cart/CartSidebar';
 import { wishlistUtils } from '@/lib/wishlistUtils';
+import { fireToast } from '@/lib/globalToast';
 
 interface Product {
   id: string | number;
@@ -180,13 +181,14 @@ export default function BestSellerProducts() {
       }
 
       await addToCart(variantId, 1);
+      fireToast(`Added to cart: ${product?.name || 'Item'}`, 'success');
       setAddingProductId(null);
       setIsCartOpen(true);
     } catch (err: any) {
       console.error('Add to cart failed:', err);
       setAddingProductId(null);
-      alert(err?.message || 'Failed to add to cart');
-    }
+      fireToast(err?.message || 'Failed to add to cart', 'error');
+      }
   };
 
   const handleCloseCart = () => {

@@ -7,6 +7,7 @@ import catalogService, { CatalogCategory, SimpleProduct } from '@/services/catal
 import { buildCardProductsFromResponse } from '@/lib/ecommerceCardUtils';
 import PremiumProductCard from '@/components/ecommerce/ui/PremiumProductCard';
 import { useCart } from '@/app/e-commerce/CartContext';
+import { fireToast } from '@/lib/globalToast';
 
 /* ─── helpers ────────────────────────────────────────────────────────────── */
 
@@ -318,7 +319,12 @@ const SubcategoryProductTabs: React.FC<{ tabsCount?: number; productsPerTab?: nu
   const onAddToCart    = async (p: SimpleProduct, e: React.MouseEvent) => {
     e.stopPropagation();
     if (p.has_variants) { router.push(`/e-commerce/product/${p.id}`); return; }
-    try { await addToCart(p.id, 1); } catch {}
+    try {
+      await addToCart(p.id, 1);
+      fireToast(`Added to cart: ${p?.name || 'Item'}`, 'success');
+    } catch (error: any) {
+      fireToast(error?.message || 'Failed to add to cart', 'error');
+    }
   };
 
   /* ── skeleton ── */
