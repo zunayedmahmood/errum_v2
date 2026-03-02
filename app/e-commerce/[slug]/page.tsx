@@ -526,7 +526,7 @@ export default function CategoryPage() {
 
           <div className="flex flex-col lg:flex-row gap-8">
             {/* Desktop sidebar */}
-            <aside className="hidden lg:block w-64 flex-shrink-0">
+            <aside className="hidden xl:block w-64 flex-shrink-0">
               <CategorySidebar
                 categories={categories}
                 activeCategory={categorySlug}
@@ -540,7 +540,7 @@ export default function CategoryPage() {
 
             <main className="flex-1">
               {/* Mobile: Filters button (drawer) */}
-              <div className="lg:hidden flex items-center justify-between gap-3 mb-4">
+              <div className="xl:hidden flex items-center justify-between gap-3 mb-4">
                 <button
                   type="button"
                   onClick={() => setIsFiltersOpen(true)}
@@ -707,15 +707,14 @@ export default function CategoryPage() {
 
       {/* Mobile filter drawer */}
       {isFiltersOpen && (
-        <div className="fixed inset-0 z-[70] lg:hidden">
+        <div className="fixed inset-0 z-[70] xl:hidden">
           <button
             type="button"
             aria-label="Close filters"
             onClick={() => setIsFiltersOpen(false)}
             className="absolute inset-0 bg-black/60"
           />
-          {/* Drawer panel (solid dark bg to match ec-root pages) */}
-          <div className="absolute right-0 top-0 h-full w-[86%] max-w-sm border-l border-white/10 p-5 overflow-y-auto bg-[#0b1220]">
+          <div className="absolute right-0 top-0 h-full w-[86%] max-w-sm ec-dark-card border-l border-white/10 p-5 overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="text-white font-semibold">Filters</div>
               <button
