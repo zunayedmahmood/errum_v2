@@ -84,18 +84,19 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
 
   /* ── render ── */
   return (
-    <div className="ec-root min-h-screen bg-[#f7f7f7]">
+    // Search should inherit the e-commerce dark theme (layout already sets dark background).
+    <div className="ec-root min-h-screen">
       {/* ── Search bar hero ── */}
-      <div className="border-b border-neutral-200 bg-white">
+      <div className="border-b border-white/10 bg-white/5 backdrop-blur-sm">
         <div className="ec-container py-8 sm:py-10">
           <p className="ec-eyebrow mb-2">Catalogue</p>
-          <h1 className="ec-heading mb-5 text-2xl font-semibold text-neutral-900 sm:text-3xl">
+          <h1 className="ec-heading mb-5 text-2xl font-semibold text-white sm:text-3xl">
             Search Products
           </h1>
 
           <form onSubmit={onSubmit} className="relative max-w-2xl">
             <SearchIcon
-              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400"
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/50"
               size={18}
             />
             <input
@@ -104,13 +105,13 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
               onChange={e => setQuery(e.target.value)}
               placeholder="Search by name, SKU or category…"
               autoComplete="off"
-              className="w-full rounded-xl border border-neutral-300 bg-white py-3 pl-11 pr-28 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-500 focus:ring-2 focus:ring-neutral-100 transition"
+              className="w-full rounded-xl border border-white/15 bg-black/30 py-3 pl-11 pr-28 text-sm text-white outline-none placeholder:text-white/45 focus:border-white/25 focus:ring-2 focus:ring-white/10 transition"
             />
             {query && (
               <button
                 type="button"
                 onClick={clearQuery}
-                className="absolute right-[5.5rem] top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition"
+                className="absolute right-[5.5rem] top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition"
                 aria-label="Clear"
               >
                 <X size={16} />
@@ -119,7 +120,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
             <button
               type="submit"
               disabled={!query.trim() || loading}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-white/90 px-4 py-2 text-sm font-medium text-black transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : 'Search'}
             </button>
@@ -132,19 +133,19 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
 
         {/* ── Loading ── */}
         {loading && (
-          <div className="flex flex-col items-center justify-center py-24 text-neutral-500">
-            <Loader2 className="mb-3 h-10 w-10 animate-spin text-neutral-900" />
+          <div className="flex flex-col items-center justify-center py-24 text-white/70">
+            <Loader2 className="mb-3 h-10 w-10 animate-spin text-white" />
             <p className="text-sm">Searching for "{initialQuery || query}"…</p>
           </div>
         )}
 
         {/* ── Error ── */}
         {!loading && error && (
-          <div className="mx-auto max-w-lg rounded-2xl border border-rose-200 bg-rose-50 p-5 flex items-start gap-3">
-            <AlertCircle className="mt-0.5 flex-shrink-0 text-rose-500" size={20} />
+          <div className="mx-auto max-w-lg rounded-2xl border border-rose-300/30 bg-rose-500/10 p-5 flex items-start gap-3">
+            <AlertCircle className="mt-0.5 flex-shrink-0 text-rose-300" size={20} />
             <div>
-              <p className="font-medium text-rose-800">Something went wrong</p>
-              <p className="mt-0.5 text-sm text-rose-700">{error}</p>
+              <p className="font-medium text-rose-200">Something went wrong</p>
+              <p className="mt-0.5 text-sm text-rose-200/80">{error}</p>
             </div>
           </div>
         )}
@@ -152,22 +153,22 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
         {/* ── Empty state (no query yet) ── */}
         {!loading && !error && !searched && !initialQuery && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-neutral-100">
-              <SearchIcon size={28} className="text-neutral-400" />
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
+              <SearchIcon size={28} className="text-white/50" />
             </div>
-            <p className="ec-heading text-lg font-medium text-neutral-600">Start typing to search</p>
-            <p className="mt-1 text-sm text-neutral-400">Search by product name, SKU or category</p>
+            <p className="ec-heading text-lg font-medium text-white/80">Start typing to search</p>
+            <p className="mt-1 text-sm text-white/50">Search by product name, SKU or category</p>
           </div>
         )}
 
         {/* ── No results ── */}
         {!loading && !error && searched && results.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-neutral-100">
-              <Package size={28} className="text-neutral-400" />
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
+              <Package size={28} className="text-white/50" />
             </div>
-            <p className="ec-heading text-lg font-medium text-neutral-700">No products found</p>
-            <p className="mt-1 text-sm text-neutral-500">
+            <p className="ec-heading text-lg font-medium text-white/80">No products found</p>
+            <p className="mt-1 text-sm text-white/55">
               No results for <span className="font-medium">"{initialQuery || query}"</span>. Try a different keyword.
             </p>
           </div>
@@ -176,9 +177,9 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
         {/* ── Results ── */}
         {!loading && !error && results.length > 0 && (
           <>
-            {/* <p className="mb-5 text-sm text-neutral-500">
-              <span className="font-semibold text-neutral-900">{total.toLocaleString()}</span> result{total !== 1 ? 's' : ''} for{' '}
-              <span className="font-semibold text-neutral-900">"{initialQuery || query}"</span>
+            {/* <p className="mb-5 text-sm text-white/55">
+              <span className="font-semibold text-white">{total.toLocaleString()}</span> result{total !== 1 ? 's' : ''} for{' '}
+              <span className="font-semibold text-white">"{initialQuery || query}"</span>
             </p> */}
 
             <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
