@@ -241,7 +241,7 @@ const goToPage = useCallback(
     if (parts.length >= 3) {
       const size = parts[parts.length - 1];
       const color = parts[parts.length - 2];
-      const base = parts.slice(0, parts.length - 2).join(' - ').trim();
+      const base = parts.slice(0, parts.length - 2).join('-').trim();
       return { base, color, size };
     }
 
