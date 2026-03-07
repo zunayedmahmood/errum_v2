@@ -153,7 +153,7 @@ function normalizeLabelName(text: string) {
 
   // Normalize separators so wrap logic can break naturally on spaces
   // Example: "Mueed-ta-40" -> "Mueed - ta - 40"
-  return clean.replace(/\s*[-–—]\s*/g, " - ");
+  return clean.replace(/\s*[-–—]\s*/g, "-");
 }
 
 async function renderLabelBase64(opts: { code: string; productName: string; price: number; dpi?: number }) {
