@@ -856,6 +856,16 @@ export default function AddEditProductPage({
         setToast({ message: 'Please add at least one variation attribute (color or size).', type: 'error' });
         return false;
       }
+
+      // When there are multiple variation cards, color is mandatory on each so
+      // every variant gets a unique, identifiable name.
+      if (variations.length > 1) {
+        const missingColor = variations.some(v => !Boolean(String(v.color || '').trim()));
+        if (missingColor) {
+          setToast({ message: 'Color name is required for each variation when adding more than one variation.', type: 'error' });
+          return false;
+        }
+      }
     }
 
     return true;
@@ -2055,6 +2065,7 @@ export default function AddEditProductPage({
                             key={variation.id}
                             variation={variation}
                             index={varIdx}
+                            colorRequired={variations.length > 1}
                             onUpdate={(color) => updateVariationColor(variation.id, color)}
                             onRemove={() => removeVariation(variation.id)}
                             onImageUpload={(e) => handleVariationImageChange(variation.id, e)}

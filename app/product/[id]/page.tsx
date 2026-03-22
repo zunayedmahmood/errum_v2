@@ -111,17 +111,44 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
     return `${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '')}/storage/${imagePath}`;
   };
 
-  // Prefer backend-provided merged gallery (SKU-core fallback)
-  const images = (product as any)?.display_images || product?.images || [];
-  const activeImages = images.filter((img: any) => img.is_active !== false);
-  const displayImagesRaw = activeImages.length > 0 ? activeImages : images;
-  const displayImages = displayImagesRaw.length > 0 ? displayImagesRaw : [{
+  // ─── Image display ───────────────────────────────────────────────────────────
+  // Backend's ProductController::show() populates `display_images` via
+  // ProductImageFallback::mergedActiveImages().  That method now:
+  //   • Returns only the variant's own images when it has them.
+  //   • Falls back to the base-product images when the variant has none.
+  //   • Trusts is_primary / sort_order verbatim from the DB.
+  //   • Marks the first image as primary only when NO image has is_primary=true.
+  //
+  // We prefer display_images; fall back to product.images (already ordered
+  // by the backend: is_primary DESC → sort_order → id).
+
+  const rawDisplayImages: any[] =
+    (product as any)?.display_images?.length > 0
+      ? (product as any).display_images
+      : (product?.images || [])
+          .filter((img: any) => img.is_active !== false)
+          .sort((a: any, b: any) => {
+            if (a.is_primary && !b.is_primary) return -1;
+            if (!a.is_primary && b.is_primary) return 1;
+            return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+          });
+
+  // Normalise URL field: display_images uses image_path; raw images also use
+  // image_path. The getImageUrl helper below handles path → full URL.
+  const normalizeImage = (img: any) => ({
+    ...img,
+    image_path:
+      img.image_path ||
+      (img.url ? img.url.replace(/^\/storage\//, '') : ''),
+  });
+
+  const displayImages = (rawDisplayImages.length > 0 ? rawDisplayImages : [{
     id: 0,
     image_path: '',
     is_primary: true,
     is_active: true,
     sort_order: 0,
-  } as any];
+  } as any]).map(normalizeImage);
   const selectedImage = displayImages[selectedImageIndex] || displayImages[0];
 
   const nextImage = () => {
@@ -238,7 +265,7 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                         e.currentTarget.src = ERROR_IMG_SRC;
                       }}
                     />
-                    
+
                     {/* Image Navigation */}
                     {displayImages.length > 1 && (
                       <>
@@ -254,14 +281,14 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                         >
                           <ChevronRight className="w-5 h-5 text-gray-900 dark:text-white" />
                         </button>
-                        
+
                         {/* Image Counter */}
                         <div className="absolute bottom-4 right-4 bg-black/70 text-white px-3 py-1 rounded-full text-sm font-medium">
                           {selectedImageIndex + 1} / {displayImages.length}
                         </div>
                       </>
                     )}
-                    
+
                     {/* Primary Badge */}
                     {selectedImage?.is_primary && (
                       <div className="absolute top-4 left-4 bg-yellow-400 text-yellow-900 px-3 py-1 rounded-lg text-xs font-bold shadow-lg">
@@ -278,11 +305,10 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
                       <button
                         key={img.id}
                         onClick={() => setSelectedImageIndex(index)}
-                        className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                          index === selectedImageIndex
+                        className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${index === selectedImageIndex
                             ? 'border-gray-900 dark:border-white ring-2 ring-gray-900 dark:ring-white'
                             : 'border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500'
-                        }`}
+                          }`}
                       >
                         <img
                           src={getImageUrl(img.image_path)}

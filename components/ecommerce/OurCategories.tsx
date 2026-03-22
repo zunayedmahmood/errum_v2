@@ -108,7 +108,7 @@ const OurCategories: React.FC<OurCategoriesProps> = ({ categories: categoriesPro
             onAction={() => router.push('/e-commerce/categories')}
           />
 
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+          <div className="grid grid-cols-2 min-[420px]:grid-cols-3 sm:grid-cols-5 gap-3">
             {display.map((cat, i) => {
               const imgSrc = toAbsoluteAssetUrl(cat.image || cat.image_url || '');
               const [from, to] = PALETTE[i % PALETTE.length];

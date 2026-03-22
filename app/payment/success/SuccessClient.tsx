@@ -49,7 +49,7 @@ export default function PaymentSuccessPage() {
     setState('success');
     setMessage('Payment received! Your order is being confirmed.');
     setAmount(intent?.amount ?? null);
-    setTimeout(() => router.replace(`/e-commerce/thank-you/${resolved}`), 900);
+    setTimeout(() => router.replace(`/e-commerce/order-confirmation/${resolved}`), 900);
   }, [intent, searchParams, router]);
 
   return (
@@ -99,7 +99,7 @@ export default function PaymentSuccessPage() {
             ) : (
               <button
                 type="button"
-                onClick={() => router.push('/e-commerce/thank-you/' + (orderNumber || ''))}
+                onClick={() => router.push('/e-commerce/order-confirmation/' + (orderNumber || ''))}
                 className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-700 text-white hover:bg-red-800"
               >
                 <ShoppingBag size={18} />

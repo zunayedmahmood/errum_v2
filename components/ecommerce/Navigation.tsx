@@ -8,22 +8,31 @@ import { useCustomerAuth } from '@/contexts/CustomerAuthContext';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
 import cartService from '@/services/cartService';
 
+const slugify = (value: string) =>
+  value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+
 const catSlug = (c: { name: string; slug?: string }) =>
-  c.slug || c.name.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
+  slugify(c.name);
 
 const Navbar = () => {
-  const router   = useRouter();
+  const router = useRouter();
   const pathname = usePathname();
   const { customer, isAuthenticated, logout } = useCustomerAuth();
 
-  const [categories,       setCategories]       = useState<CatalogCategory[]>([]);
-  const [cartCount,        setCartCount]        = useState(0);
-  const [mobileOpen,       setMobileOpen]       = useState(false);
-  const [showUser,         setShowUser]         = useState(false);
-  const [showCats,         setShowCats]         = useState(false);
-  const [mobileActiveCat,  setMobileActiveCat]  = useState<number | null>(null);
-  const [expandedCats,     setExpandedCats]     = useState<Set<number>>(new Set());
-  const [scrolled,         setScrolled]         = useState(false);
+  const [categories, setCategories] = useState<CatalogCategory[]>([]);
+  const [cartCount, setCartCount] = useState(0);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [showUser, setShowUser] = useState(false);
+  const [showCats, setShowCats] = useState(false);
+  const [mobileActiveCat, setMobileActiveCat] = useState<number | null>(null);
+  const [expandedCats, setExpandedCats] = useState<Set<number>>(new Set());
+  const [scrolled, setScrolled] = useState(false);
 
   const userRef = useRef<HTMLDivElement>(null);
   const catsRef = useRef<HTMLDivElement>(null);
@@ -37,7 +46,7 @@ const Navbar = () => {
 
   /* Categories */
   useEffect(() => {
-    catalogService.getCategories().then(setCategories).catch(() => {});
+    catalogService.getCategories().then(setCategories).catch(() => { });
   }, []);
 
   /* Cart */
@@ -72,11 +81,24 @@ const Navbar = () => {
   }, []);
 
   /* Close mobile on route change */
-  useEffect(() => { setMobileOpen(false); setShowCats(false); setShowUser(false); }, [pathname]);
+  useEffect(() => {
+    setMobileOpen(false);
+    setIsClosing(false);
+    setShowCats(false);
+    setShowUser(false);
+  }, [pathname]);
+
+  const closeMobileMenu = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setMobileOpen(false);
+      setIsClosing(false);
+    }, 450);
+  };
 
   const handleLogout = async () => {
     setShowUser(false);
-    try { await logout(); router.push('/e-commerce'); } catch {}
+    try { await logout(); router.push('/e-commerce'); } catch { }
   };
 
   const isActive = (href: string) => pathname === href;
@@ -91,7 +113,7 @@ const Navbar = () => {
       {/* ── Main navbar ─────────────────────────────────────────────── */}
       <nav
         className={`ec-nav sticky top-0 z-50 transition-shadow duration-300 ${scrolled ? 'shadow-[0_4px_24px_rgba(0,0,0,0.35)]' : ''}`}
-       
+
       >
         <div className="ec-container">
           <div className="flex h-16 items-center justify-between gap-6 sm:h-[68px]">
@@ -165,7 +187,7 @@ const Navbar = () => {
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                           >
                             <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-[var(--gold)] border border-white/10"
-                                 style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                              style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                               {cat.name.charAt(0)}
                             </div>
                             <div className="min-w-0">
@@ -209,7 +231,7 @@ const Navbar = () => {
                 )}
               </div>
 
-              <Link href="/e-commerce/about"   className={`ec-nav-link ${isActive('/e-commerce/about')   ? 'ec-nav-link-active' : ''}`}>About</Link>
+              <Link href="/e-commerce/about" className={`ec-nav-link ${isActive('/e-commerce/about') ? 'ec-nav-link-active' : ''}`}>About</Link>
               <Link href="/e-commerce/contact" className={`ec-nav-link ${isActive('/e-commerce/contact') ? 'ec-nav-link-active' : ''}`}>Contact</Link>
             </div>
 
@@ -243,9 +265,9 @@ const Navbar = () => {
                         <p className="text-[11px] text-white/40 mt-0.5 truncate">{customer?.email}</p>
                       </div>
                       {[
-                        { href: '/e-commerce/my-account', icon: User,    label: 'My Account' },
-                        { href: '/e-commerce/orders',     icon: Package, label: 'My Orders' },
-                        { href: '/e-commerce/wishlist',   icon: Heart,   label: 'Wishlist' },
+                        { href: '/e-commerce/my-account', icon: User, label: 'My Account' },
+                        { href: '/e-commerce/orders', icon: Package, label: 'My Orders' },
+                        { href: '/e-commerce/wishlist', icon: Heart, label: 'Wishlist' },
                       ].map(({ href, icon: Icon, label }) => (
                         <Link key={href} href={href} onClick={() => setShowUser(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-[13px] text-white/70 hover:text-white hover:bg-white/6 transition-all"
@@ -291,7 +313,7 @@ const Navbar = () => {
 
               {/* Mobile menu button */}
               <button
-                onClick={() => setMobileOpen(v => !v)}
+                onClick={() => (mobileOpen ? closeMobileMenu() : setMobileOpen(true))}
                 className="lg:hidden flex h-9 w-9 items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-all ml-1"
                 aria-label="Menu"
               >
@@ -301,106 +323,155 @@ const Navbar = () => {
           </div>
         </div>
 
-        {/* ── Mobile menu ── */}
+        {/* ── Mobile menu Drawer ── */}
         {mobileOpen && (
-          <div className="lg:hidden border-t border-white/10 bg-[#111111]">
-            <div className="ec-container py-4 space-y-1 max-h-[80vh] overflow-y-auto">
+          <>
+            {/* Backdrop */}
+            <div
+              className={`lg:hidden fixed inset-0 z-[100] bg-black/60 backdrop-blur-md ${isClosing ? 'ec-anim-backdrop-out' : 'ec-anim-backdrop'}`}
+              onClick={closeMobileMenu}
+            />
 
-              {/* Auth block */}
-              {isAuthenticated ? (
-                <div className="mb-4 pb-4 border-b border-white/10">
-                  <div className="flex items-center gap-3 mb-3 px-3">
-                    <div className="h-9 w-9 rounded-full bg-white/10 flex items-center justify-center">
-                      <User className="h-4 w-4 text-white/60" />
-                    </div>
-                    <div>
-                      <p className="text-[13px] font-semibold text-white">{customer?.name}</p>
-                      <p className="text-[11px] text-white/40">{customer?.email}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    {[
-                      { href: '/e-commerce/my-account', label: 'Account' },
-                      { href: '/e-commerce/orders',     label: 'Orders' },
-                      { href: '/e-commerce/wishlist',   label: 'Wishlist' },
-                    ].map(({ href, label }) => (
-                      <Link key={href} href={href}
-                        className="flex-1 rounded-xl bg-white/8 py-2 text-center text-[12px] font-medium text-white/70 hover:text-white transition-colors"
-                        style={{ background: 'rgba(255,255,255,0.06)' }}
-                      >
-                        {label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <Link href="/e-commerce/login"
-                  className="flex items-center gap-3 rounded-xl px-3 py-3 text-white/70 hover:text-white transition-colors mb-2"
+            {/* Side Drawer */}
+            <div className={`lg:hidden fixed top-0 right-0 bottom-0 z-[101] w-[85%] max-w-[400px] bg-[#0d0d0d] shadow-[-20px_0_80px_rgba(0,0,0,0.8)] flex flex-col ${isClosing ? 'ec-anim-slide-out-right' : 'ec-anim-slide-in-right'}`}>
+              {/* Drawer Header */}
+              <div className="flex h-16 items-center justify-between px-6 border-b border-white/5">
+                <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '20px', fontWeight: 600, letterSpacing: '0.05em', color: 'white' }}>
+                  MENU
+                </span>
+                <button
+                  onClick={closeMobileMenu}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-white/50 hover:text-white bg-white/5 transition-all"
                 >
-                  <User className="h-4 w-4" />
-                  <span className="text-[13px] font-medium">Login / Register</span>
-                </Link>
-              )}
-
-              {/* Nav links */}
-              {[
-                { href: '/e-commerce',         label: 'Home' },
-                { href: '/e-commerce/about',   label: 'About' },
-                { href: '/e-commerce/contact', label: 'Contact' },
-              ].map(({ href, label }) => (
-                <Link key={href} href={href}
-                  className="flex items-center rounded-xl px-3 py-3 text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/6 transition-all"
-                  style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '')}
-                >
-                  {label}
-                </Link>
-              ))}
-
-              {/* Mobile categories */}
-              <div className="border-t border-white/10 pt-3 mt-1">
-                <p className="px-3 pb-2" style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', letterSpacing: '0.18em', color: 'rgba(255,255,255,0.3)' }}>
-                  CATEGORIES
-                </p>
-                {categories.map(cat => (
-                  <div key={cat.id}>
-                    <div className="flex items-center">
-                      <Link href={`/e-commerce/${encodeURIComponent(catSlug(cat))}`}
-                        className="flex-1 rounded-xl px-3 py-2.5 text-[13px] text-white/70 hover:text-white transition-colors"
-                      >
-                        {cat.name}
-                      </Link>
-                      {cat.children && cat.children.length > 0 && (
-                        <button
-                          onClick={() => setMobileActiveCat(mobileActiveCat === cat.id ? null : cat.id)}
-                          className="px-3 py-2.5 text-white/40"
-                        >
-                          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${mobileActiveCat === cat.id ? 'rotate-180' : ''}`} />
-                        </button>
-                      )}
-                    </div>
-                    {mobileActiveCat === cat.id && cat.children?.map(child => (
-                      <Link key={child.id} href={`/e-commerce/${encodeURIComponent(catSlug(child))}`}
-                        className="block pl-8 pr-3 py-2 text-[12px] text-white/45 hover:text-white/80 transition-colors"
-                      >
-                        {child.name}
-                      </Link>
-                    ))}
-                  </div>
-                ))}
+                  <X className="h-5 w-5" />
+                </button>
               </div>
 
-              {isAuthenticated && (
-                <button onClick={() => { setMobileOpen(false); handleLogout(); }}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-[13px] text-white/40 hover:text-white/70 transition-colors mt-2 border-t border-white/10 pt-4"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Sign out
-                </button>
-              )}
+              {/* Drawer Body */}
+              <div className="flex-1 overflow-y-auto ec-scrollbar px-6 py-8 space-y-8">
+
+                {/* Auth section */}
+                <div className="ec-anim-fade-up ec-delay-1">
+                  {isAuthenticated ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-4">
+                        <div className="h-12 w-12 rounded-full bg-[var(--gold)]/10 flex items-center justify-center border border-[var(--gold)]/20">
+                          <User className="h-5 w-5 text-[var(--gold)]" />
+                        </div>
+                        <div>
+                          <p className="text-[14px] font-semibold text-white">{customer?.name}</p>
+                          <p className="text-[11px] text-white/30">{customer?.email}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { href: '/e-commerce/my-account', label: 'Profile' },
+                          { href: '/e-commerce/orders', label: 'Orders' },
+                          { href: '/e-commerce/wishlist', label: 'Saved' },
+                        ].map(({ href, label }) => (
+                          <Link key={href} href={href}
+                            className="rounded-xl bg-white/5 py-3 text-center text-[11px] font-medium text-white/60 hover:text-white hover:bg-white/10 transition-all border border-white/5"
+                          >
+                            {label}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <Link href="/e-commerce/login"
+                      className="group flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 p-4 transition-all hover:bg-white/10"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-white/5 flex items-center justify-center">
+                          <User className="h-4 w-4 text-white/50" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-white">Login / Register</p>
+                          <p className="text-[11px] text-white/30">Track your orders & save favorites</p>
+                        </div>
+                      </div>
+                      <ChevronDown className="-rotate-90 h-4 w-4 text-white/20 group-hover:text-white transition-colors" />
+                    </Link>
+                  )}
+                </div>
+
+                {/* Primary Nav */}
+                <div className="space-y-2 ec-anim-fade-up ec-delay-2">
+                  <p className="text-[10px] font-bold tracking-[0.2em] text-white/20 uppercase mb-4" style={{ fontFamily: "'DM Mono', monospace" }}>Navigation</p>
+                  {[
+                    { href: '/e-commerce', label: 'Home' },
+                    { href: '/e-commerce/products', label: 'Shop All' },
+                    { href: '/e-commerce/about', label: 'Our Story' },
+                    { href: '/e-commerce/contact', label: 'Get in Touch' },
+                  ].map(({ href, label }) => (
+                    <Link key={href} href={href}
+                      className="flex items-center justify-between py-3 text-[18px] font-medium text-white/70 hover:text-white transition-all border-b border-white/5"
+                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                    >
+                      {label}
+                      <ChevronDown className="-rotate-90 h-3.5 w-3.5 opacity-20" />
+                    </Link>
+                  ))}
+                </div>
+
+                {/* Categories */}
+                <div className="space-y-4 ec-anim-fade-up ec-delay-3">
+                  <p className="text-[10px] font-bold tracking-[0.2em] text-white/20 uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Collections</p>
+                  <div className="grid grid-cols-1 gap-1">
+                    {categories.slice(0, 8).map(cat => (
+                      <div key={cat.id} className="space-y-1">
+                        <div className="flex items-center">
+                          <Link href={`/e-commerce/${encodeURIComponent(catSlug(cat))}`}
+                            className="flex-1 py-1.5 text-[15px] text-white/60 hover:text-white transition-colors"
+                          >
+                            {cat.name}
+                          </Link>
+                          {cat.children && cat.children.length > 0 && (
+                            <button
+                              onClick={() => setMobileActiveCat(mobileActiveCat === cat.id ? null : cat.id)}
+                              className="p-2 text-white/20 hover:text-white transition-colors"
+                            >
+                              <ChevronDown className={`h-4 w-4 transition-transform ${mobileActiveCat === cat.id ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
+                        </div>
+                        {mobileActiveCat === cat.id && (
+                          <div className="pl-4 border-l border-white/10 space-y-1 mb-2">
+                            {cat.children?.map(child => (
+                              <Link key={child.id} href={`/e-commerce/${encodeURIComponent(catSlug(child))}`}
+                                className="block py-1.5 text-[13px] text-white/35 hover:text-[var(--gold-light)] transition-colors"
+                              >
+                                {child.name}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <Link href="/e-commerce/categories" className="inline-block mt-2 text-[12px] text-[var(--gold)] font-medium hover:underline">
+                      View all collections →
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Footer block */}
+                <div className="pt-8 mt-4 border-t border-white/5 ec-anim-fade-up ec-delay-4">
+                  {isAuthenticated ? (
+                    <button onClick={() => { closeMobileMenu(); handleLogout(); }}
+                      className="flex w-full items-center gap-3 py-3 text-[14px] text-white/40 hover:text-rose-400 transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Sign out of account
+                    </button>
+                  ) : (
+                    <p className="text-[11px] text-white/20 text-center italic">
+                      Step into the world of ERRUM
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+          </>
         )}
       </nav>
     </>

@@ -1,0 +1,123 @@
+Update the e-commerce/[slug] page.tsx . 
+
+What I want you to do is:
+->go through that page and all the relevant components, services the pages calls and uses.
+->go through the backend codes which are used.
+
+These are the changes I want:
+->use premiumProductCard for displaying the products
+currently all products (in stock and out of stock) are being sent backend
+->change that so that, only in stock products are sent back. then, in frontend, remove the Availability selection from the sidebar.
+->make a detailed md file titled "Category Feed Page Changes" It should discuss and explain in detail how the current e-commerce/[slug] page fucntions, examples and edge cases.
+->within the changed codes, always add comments to help understand the functions and changes.
+
+Do NOT change any additional UI or logic. ONLY change the code that is strictly necessary.
+Whenever you are copying features and there's texts, DO NOT put in your own words. instead use the original texts.
+
+
+Completely rewrite the e-commerce/search page.tsx and search-client.tsx .
+What I want you to do is:
+->go through that page and all the relevant components, services the pages calls and uses.
+->go through the backend codes which are used.
+
+These are the changes I want:
+->use premiumProductCard for displaying the products
+->If the page currently has no pagination, add a 15 product (SKU group) per page pagination.
+->Add a price range sidebar and a filter dropdown with (newest, price low to high and high to low)
+->in the searchBar, it should fire every time a character changes (with 500 ms debounce).
+
+->make a detailed md file titled "Search Feed Page Changes" It should discuss and explain in detail how the new e-commerce/search page fucntions, examples and edge cases.
+
+Make the UI and logic consistent with the e-commerce/[slug] page.tsx  and e-commerce/products page.tsx .
+DO NOT change any UI in e-commerce/[slug] page.tsx  and e-commerce/products page.tsx. IN backend, change only the code that is strictly necessary.
+
+update e-commerce/search page.tsx and search-client.tsx and their components for the following:
+->the Category dropdown for subcategories should be scrollable.
+Do NOT change any additional UI or logic. ONLY change the stricly necessary code.
+
+
+see errors.txt to understand the issues.
+
+update the e-commerce/product e-commerce/[slug] pages accordingly to solve the issue.
+
+What else i want you to do:
+->currently, the EcommerceCatalogController.php currently paginates first, then applies all params
+->Update the method so that it applies filters first, then paginate.
+
+make a detailed md file titled "Slug SQL fix and price issue fixes" It should discuss and explain in detail how the new pages and controller fucntions, examples and edge cases.
+
+
+
+Go through errors.txt and see the errors.
+
+
+see getProduct method in EcommerceCatalogController controller in errum_be.
+currently it has a variable relatedProducts. This provides the data for related products in e-commerce/product/[id] page.tsx
+
+
+
+Go through all the migrations, models and controllers in errum_be that are related to product, product_batches, product_variants, inventory and store and understand their functionalities properly.
+What i want you to find out, there should be mention of a physical store/branch where products are stored (not warehouse but the shoe shop branches).
+The inventories/product_batches for a product (product not sku, meaning name-color-size-36, instead of name) also have the information for which store has how many pieces of that product variant.
+
+What i want:
+->make a new method in EcommerceCatalogController named getBranchStockForProduct
+->it should query/map how many count of a particular product (a variant, not a sku) is present in each stores. 
+->for each store, it will return the id, name (if present) and the inventory count for that product id.
+->add the route to the api.php and make that route public.
+
+The change in frontend:
+->When the e-commerce/product/[id]/page.tsx is called, it should call this as well.
+->it will show a beautiful, stylish, modern table consistent with the theme of the website below the "categories-availability" card and above the "free deliveries" "Easy return" cards.
+->If, a branch doesn't have that product, it should not be on the table, basically, an intelligent table.
+->check the services, lib files to know where to add the api calls.
+
+Make sure there's no code integrity issues and do not change any additional UI or logic issues.
+make a detailed md file titled "added Branch inventory to e-commerce/product/id page." It should discuss and explain in detail how the new pages and controller fucntions, examples and edge cases.
+
+
+
+see app/inventory/outlet-stock page.tsx. Check which routes in the backend it's calling to fetch outlet-stock information.
+go to errum_be and read all those controllers, their models and all the migration files related to them.
+
+then remove getBranchStockForProduct method EcommerceCatalogController.
+update e-commerce/product/[id] page.tsx to stop using getBranchStockForProduct and instead get outlet_stock information from the same api_roots as outlet-stock page.tsx
+if those routes were previously protected, make them public in both frontend and backend.
+these routes are used by other pages as well, so make sure that making them public doesn't cause issues, like not knowing user through authentication.
+
+try to make as minimal change as possible and make the UI, logic consistent with the rest of the site.
+DO NOT change any other code. ONLY change the stricly necessary code.
+
+see all controller, models and migrations for product product_variants, product_field, categories
+
+
+go through all the files in e-commerce folder and all the components they use.
+understand the UI theme and design preferences.
+
+Then edit the mobile viewport support for all those pages.
+
+What I want you to do for additional mobile viewports:
+->Make the pages look properly structured and proportioned
+->Make the pop-up modal and slide in modals animation smoother
+->add a coherent seamless flow for the mobile viewport. 
+->Make it look very polished
+
+What i do not want you to do:
+->DO NOT change or remove any logic or any additional UI currrently in use
+->ONLY change or update ui for mobile viewport.
+->You don't have to Update any code outside of styling in the pages and their components.
+
+make a detailed md file titled "mobile viewport polishing for e-commerce pages" It should discuss and explain in detail how the new pages behave, examples and edge cases.
+
+There may be some partially done works from previous prompts. edit from whatever condition you find.
+
+Check product/list page and ProductListClient .
+
+What i want you to fix:
+->currently when we open a product(or edit, basically in case of any redirecting) the current page is not displayed. Like, if we open a product from page 4 and return, the pagination shows page 5, the url shows page 5, but the products there are all from page 1 (always page 1) (this is issue persistent even when the page is refreshed).
+Check the code and fix it so that, when we return, the page is displaying the products of that page.
+
+DO NOT change anything else, any other UI or logic.
+have proper comments on all the lines you change.
+
+Make and save an md file titled, product list page update and fixes.md .

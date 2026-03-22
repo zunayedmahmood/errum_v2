@@ -29,6 +29,8 @@ const PUBLIC_ROUTES = [
   '/guest-checkout',
   '/guest-orders/by-phone',
   '/payment-method',
+  // Public order tracking and details
+  '/customer/orders/',
 ];
 
 // Helper function to check if route is public

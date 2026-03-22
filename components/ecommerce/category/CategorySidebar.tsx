@@ -19,6 +19,7 @@ interface CategorySidebarProps {
   onPriceRangeChange: (range: string) => void;
   selectedStock: string;
   onStockChange: (stock: string) => void;
+  useIdForRouting?: boolean;
 }
 
 const slugify = (value: string) =>
@@ -37,6 +38,7 @@ export default function CategorySidebar({
   onPriceRangeChange,
   selectedStock,
   onStockChange,
+  useIdForRouting = false,
 }: CategorySidebarProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
 
@@ -52,11 +54,17 @@ export default function CategorySidebar({
 
   const isActive = (category: Category) => {
     const normalizedActive = decodeURIComponent(activeCategory || '').toLowerCase();
+
+    // Check ID match
+    if (normalizedActive === String(category.id)) return true;
+
+    // Legacy/Slug match
     const slug = (category.slug || slugify(category.name)).toLowerCase();
     return normalizedActive === slug || normalizedActive === category.name.toLowerCase();
   };
 
-  const categoryRouteValue = (category: Category) => category.slug || slugify(category.name);
+  const categoryRouteValue = (category: Category) => 
+    useIdForRouting ? String(category.id) : slugify(category.name);
 
   const renderCategory = (category: Category, level = 0) => {
     const hasChildren = category.children && category.children.length > 0;
@@ -65,11 +73,10 @@ export default function CategorySidebar({
     return (
       <div key={category.id} className="mb-1">
         <div
-          className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
-            isActive(category)
+          className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${isActive(category)
               ? 'bg-[rgba(212,169,106,0.16)] text-white font-medium border border-[rgba(212,169,106,0.25)]'
               : 'hover:bg-white/5 text-white/70'
-          }`}
+            }`}
           style={{ paddingLeft: `${8 + level * 16}px` }}
         >
           <span
@@ -77,9 +84,6 @@ export default function CategorySidebar({
             className="flex-1"
           >
             {category.name}
-            {!hasChildren && category.product_count !== undefined && (
-              <span className="text-sm text-white/40 ml-1">({category.product_count})</span>
-            )}
           </span>
           {hasChildren && (
             <button
@@ -91,7 +95,7 @@ export default function CategorySidebar({
           )}
         </div>
         {hasChildren && isExpanded && (
-          <div className="mt-1">
+          <div className="mt-1 max-h-[400px] overflow-y-auto ec-scrollbar pr-1">
             {category.children!.map(child => renderCategory(child, level + 1))}
           </div>
         )}
@@ -103,13 +107,12 @@ export default function CategorySidebar({
     <div className="space-y-6">
       <div className="ec-dark-card p-4">
         <h3 className="font-semibold text-white mb-4">Categories</h3>
-        <div className="space-y-1">
+        <div className="space-y-1 max-h-[400px] overflow-y-auto pr-1 ec-scrollbar">
           <div
-            className={`p-2 rounded cursor-pointer transition-colors ${
-              activeCategory === 'all'
+            className={`p-2 rounded cursor-pointer transition-colors ${activeCategory === 'all'
                 ? 'bg-[rgba(212,169,106,0.16)] text-white font-medium border border-[rgba(212,169,106,0.25)]'
                 : 'hover:bg-white/5 text-white/70'
-            }`}
+              }`}
             onClick={() => onCategoryChange('all')}
           >
             All Categories
@@ -144,28 +147,6 @@ export default function CategorySidebar({
         </div>
       </div>
 
-      <div className="ec-dark-card p-4">
-        <h3 className="font-semibold text-white mb-4">Availability</h3>
-        <div className="space-y-2">
-          {[
-            { value: 'all', label: 'All Products' },
-            { value: 'in_stock', label: 'In Stock' },
-            { value: 'out_of_stock', label: 'Out of Stock' },
-          ].map((stock) => (
-            <label key={stock.value} className="flex items-center cursor-pointer">
-              <input
-                type="radio"
-                name="stock"
-                value={stock.value}
-                checked={selectedStock === stock.value}
-                onChange={(e) => onStockChange(e.target.value)}
-                className="mr-2 accent-[var(--gold)] focus:ring-neutral-200"
-              />
-              <span className="text-sm text-white/70">{stock.label}</span>
-            </label>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

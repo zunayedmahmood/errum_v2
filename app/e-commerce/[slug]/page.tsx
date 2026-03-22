@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import Navigation from '@/components/ecommerce/Navigation';
 import CartSidebar from '@/components/ecommerce/cart/CartSidebar';
 import CategorySidebar from '@/components/ecommerce/category/CategorySidebar';
@@ -13,13 +12,13 @@ import catalogService, {
   SimpleProduct,
   GetProductsParams,
 } from '@/services/catalogService';
-import { getCardPriceText, getCardStockLabel } from '@/lib/ecommerceCardUtils';
+import PremiumProductCard from '@/components/ecommerce/ui/PremiumProductCard';
 import { groupProductsByMother } from '@/lib/ecommerceProductGrouping';
+import { X } from 'lucide-react';
 
-interface CategoryPageParams {
-  slug: string;
-}
-
+/**
+ * Normalizes keys for comparison (slugs, names, etc.)
+ */
 const normalizeKey = (value: string) =>
   decodeURIComponent(value || '')
     .toLowerCase()
@@ -27,6 +26,9 @@ const normalizeKey = (value: string) =>
     .replace(/[-_]+/g, ' ')
     .replace(/\s+/g, ' ');
 
+/**
+ * Flattens nested category tree into a flat list
+ */
 const flattenCategories = (cats: CatalogCategory[]): CatalogCategory[] => {
   const result: CatalogCategory[] = [];
 
@@ -43,7 +45,9 @@ const flattenCategories = (cats: CatalogCategory[]): CatalogCategory[] => {
   return result;
 };
 
-
+/**
+ * Gets all descendant category nodes including the root
+ */
 const getDescendantCategoryNodes = (category: CatalogCategory | null | undefined): CatalogCategory[] => {
   if (!category) return [];
   const nodes: CatalogCategory[] = [];
@@ -55,6 +59,9 @@ const getDescendantCategoryNodes = (category: CatalogCategory | null | undefined
   return nodes;
 };
 
+/**
+ * Builds a set of allowed category IDs and normalized keys for a given category
+ */
 const buildAllowedCategoryKeys = (category: CatalogCategory | null, slugFallback: string) => {
   const ids = new Set<number>();
   const keys = new Set<string>();
@@ -78,6 +85,9 @@ const buildAllowedCategoryKeys = (category: CatalogCategory | null, slugFallback
   return { ids, keys };
 };
 
+/**
+ * Verifies if a product belongs to the allowed categories
+ */
 const productMatchesAllowedCategory = (
   product: Product | SimpleProduct,
   allowed: { ids: Set<number>; keys: Set<string> }
@@ -102,24 +112,19 @@ const productMatchesAllowedCategory = (
 
 const UI_CARDS_PER_PAGE = 20;
 const MAX_API_PAGES = 50;
-// Backend now supports category_slug filtering on /api/catalog/products.
-// Keep a moderate page size for fast first paint, and "fill" by requesting
-// additional pages only when grouping reduces visible cards.
 const API_PER_PAGE = 60;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
+/**
+ * Fetches products from the service without noisy error logging
+ */
 const getProductsSilent = (params: GetProductsParams) =>
   catalogService.getProducts({ ...(params as any), _suppressErrorLog: true } as GetProductsParams);
 
-const getPageSizeFromResponse = (response: Awaited<ReturnType<typeof catalogService.getProducts>> | null | undefined) => {
-  const p = Number(response?.pagination?.per_page || 0);
-  if (Number.isFinite(p) && p > 0) return p;
-  const len = Array.isArray(response?.products) ? response!.products.length : 0;
-  return Math.max(1, len || 20);
-};
-
-
+/**
+ * Groups flat products into representative mother products for display
+ */
 const buildCardProductsFromFlatCatalog = (rawProducts: (Product | SimpleProduct)[]): SimpleProduct[] => {
   const grouped = groupProductsByMother(rawProducts as any[], {
     useCategoryInKey: true,
@@ -140,17 +145,17 @@ const buildCardProductsFromFlatCatalog = (rawProducts: (Product | SimpleProduct)
 
     const all = Array.from(uniqueVariants.values());
 
-    // Propagate images: find whichever variant has images and copy to all others
+    // Propagate images across variants
     const fallbackImages =
       all.find((v) => (v as any).images?.some((img: any) => img?.is_primary))?.images ||
       all.find((v) => Array.isArray((v as any).images) && (v as any).images.length > 0)?.images ||
       [];
     const allWithImages = fallbackImages.length
       ? all.map((v) =>
-          Array.isArray((v as any).images) && (v as any).images.length > 0
-            ? v
-            : { ...(v as any), images: fallbackImages }
-        )
+        Array.isArray((v as any).images) && (v as any).images.length > 0
+          ? v
+          : { ...(v as any), images: fallbackImages }
+      )
       : all;
 
     const representative =
@@ -193,11 +198,14 @@ const buildCardProductsFromFlatCatalog = (rawProducts: (Product | SimpleProduct)
   });
 };
 
+/**
+ * Category feed page component
+ */
 export default function CategoryPage() {
-  const params = useParams() as CategoryPageParams;
+  const params = useParams() as any;
   const router = useRouter();
   const { addToCart } = useCart();
-  
+
   const categorySlug = params.slug || '';
 
   const [products, setProducts] = useState<(Product | SimpleProduct)[]>([]);
@@ -208,17 +216,15 @@ export default function CategoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [partialLoadWarning, setPartialLoadWarning] = useState<string | null>(null);
 
-  // Always sort newest first on category pages, but don't expose a sort UI.
   const selectedSort: GetProductsParams['sort_by'] = 'newest';
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [isClosingFilters, setIsClosingFilters] = useState(false);
 
   const [selectedPriceRange, setSelectedPriceRange] = useState<string>('all');
-  const [selectedStock, setSelectedStock] = useState<string>('all');
-
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
 
   type CacheEntry = {
@@ -238,6 +244,9 @@ export default function CategoryPage() {
   const normalizedSlug = useMemo(() => normalizeKey(categorySlug), [categorySlug]);
   const flatCategories = useMemo(() => flattenCategories(categories), [categories]);
 
+  /**
+   * Identifies the current active category from the flat list
+   */
   const activeCategory = useMemo(() => {
     return (
       flatCategories.find((cat) => {
@@ -248,6 +257,9 @@ export default function CategoryPage() {
     );
   }, [flatCategories, normalizedSlug]);
 
+  /**
+   * Fetches the category tree for the sidebar
+   */
   const fetchCategories = async () => {
     try {
       setCategoriesLoading(true);
@@ -262,21 +274,15 @@ export default function CategoryPage() {
     }
   };
 
-
+  /**
+   * Builds the API parameters for the catalog request
+   */
   const buildAttemptParams = (): Record<string, any> => {
     const baseParams: GetProductsParams & Record<string, any> = {
       page: 1,
       per_page: API_PER_PAGE,
+      sort_by: selectedSort,
     };
-
-    // Only send sort_by when user explicitly selects it.
-    baseParams.sort_by = selectedSort;
-
-    if (selectedStock === 'in_stock') {
-      baseParams.in_stock = true;
-    } else if (selectedStock === 'out_of_stock') {
-      baseParams.in_stock = false;
-    }
 
     if (selectedPriceRange !== 'all') {
       const [min, max] = selectedPriceRange.split('-').map(Number);
@@ -284,9 +290,6 @@ export default function CategoryPage() {
       if (!Number.isNaN(max)) baseParams.max_price = max;
     }
 
-    // Prefer backend-side filtering so pagination happens *within the category*.
-    // This avoids the "empty page" issue when the first N global products don't
-    // include the desired category.
     if (activeCategory?.id || activeCategory?.slug) {
       return {
         ...baseParams,
@@ -303,6 +306,9 @@ export default function CategoryPage() {
     return { ...baseParams };
   };
 
+  /**
+   * Generates a unique key for caching product results
+   */
   const getCacheKey = () => {
     const slugKey = normalizeKey(categorySlug || '');
     return [
@@ -311,10 +317,12 @@ export default function CategoryPage() {
       String(activeCategory?.id || ''),
       selectedSort,
       selectedPriceRange,
-      selectedStock,
     ].join('::');
   };
 
+  /**
+   * Ensures enough cards are loaded/grouped to fill the requested UI page
+   */
   const ensureCardsForUiPage = async (entry: CacheEntry, uiPage: number) => {
     const targetCards = uiPage * UI_CARDS_PER_PAGE;
     const allowedCategory = buildAllowedCategoryKeys(activeCategory || null, categorySlug);
@@ -327,8 +335,6 @@ export default function CategoryPage() {
       let added = 0;
       for (const rawItem of items) {
         if (!rawItem) continue;
-        // If backend is filtering by category already, avoid extra client filtering.
-        // Keep the fallback filter for older deployments.
         if (!serverSideCategoryFiltered) {
           if (!productMatchesAllowedCategory(rawItem, allowedCategory)) continue;
         }
@@ -376,13 +382,15 @@ export default function CategoryPage() {
     }
   };
 
+  /**
+   * Main function to fetch products for the display
+   */
   const fetchProducts = async (uiPage = 1) => {
     if (categoriesLoading) return;
 
     setLoading(true);
     setPartialLoadWarning(null);
     try {
-      const decodedSlugName = decodeURIComponent(categorySlug || '').replace(/-/g, ' ').trim();
       const key = getCacheKey();
       let entry = cacheRef.current[key];
       if (!entry) {
@@ -431,12 +439,10 @@ export default function CategoryPage() {
   useEffect(() => {
     setCurrentPage(1);
     setImageErrors(new Set());
-
-    // Clear cache when category/filters change.
     cacheRef.current = {};
     fetchProducts(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategory?.id, categoriesLoading, selectedPriceRange, selectedStock]);
+  }, [activeCategory?.id, categoriesLoading, selectedPriceRange]);
 
   const handleImageError = (productId: number) => {
     setImageErrors((prev) => {
@@ -447,9 +453,13 @@ export default function CategoryPage() {
     });
   };
 
-  const handleAddToCart = async (product: Product | SimpleProduct) => {
+  /**
+   * Handles adding a product to the cart
+   */
+  const handleAddToCart = async (product: SimpleProduct, e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
-      if ((product as any).has_variants) {
+      if (product.has_variants) {
         router.push(`/e-commerce/product/${product.id}`);
         return;
       }
@@ -459,11 +469,17 @@ export default function CategoryPage() {
       console.error('Error adding to cart:', err);
     }
   };
-  
-  const handleProductClick = (productId: number | string) => {
-    router.push(`/e-commerce/product/${productId}`);
+
+  /**
+   * Navigates to the product detail page
+   */
+  const handleProductClick = (product: SimpleProduct) => {
+    router.push(`/e-commerce/product/${product.id}`);
   };
 
+  /**
+   * Handles category selection change
+   */
   const handleCategoryChange = (categoryNameOrSlug: string) => {
     if (categoryNameOrSlug === 'all') {
       router.push('/e-commerce/products');
@@ -472,6 +488,17 @@ export default function CategoryPage() {
     router.push(`/e-commerce/${encodeURIComponent(categoryNameOrSlug)}`);
   };
 
+  const closeFilters = () => {
+    setIsClosingFilters(true);
+    setTimeout(() => {
+      setIsFiltersOpen(false);
+      setIsClosingFilters(false);
+    }, 450);
+  };
+
+  /**
+   * Handles pagination page change
+   */
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
       fetchProducts(newPage);
@@ -483,12 +510,6 @@ export default function CategoryPage() {
     return (
       <>
         <Navigation />
-        {/*
-          Category pages still use a few legacy light-tailwind utility classes
-          (bg-white, text-gray-900, etc.) inside the filter/sidebar.
-          Wrap with ec-darkify so those utilities render correctly on the
-          site-wide dark background.
-        */}
         <div className="ec-root ec-darkify min-h-screen">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="animate-pulse">
@@ -497,20 +518,14 @@ export default function CategoryPage() {
                 <div className="w-64 h-96 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.08)' }}></div>
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {[...Array(6)].map((_, i) => (
-                    <div key={i} className="ec-dark-card">
-                      <div className="h-64 bg-gray-200 rounded-t-lg"></div>
-                      <div className="p-4 space-y-2">
-                        <div className="h-4 bg-gray-200 rounded"></div>
-                        <div className="h-4 bg-gray-200 rounded w-2/3"></div>
-                        <div className="h-6 bg-gray-200 rounded w-1/2"></div>
-                      </div>
-                    </div>
+                    <div key={i} className="ec-card aspect-[3/4] rounded-2xl animate-pulse bg-white/5" />
                   ))}
                 </div>
               </div>
             </div>
           </div>
-        </div></>
+        </div>
+      </>
     );
   }
 
@@ -521,8 +536,8 @@ export default function CategoryPage() {
       <div className="ec-root ec-darkify min-h-screen">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">{activeCategoryName || 'Products'}</h1>
-            <p className="text-gray-600">
+            <h1 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: "'Jost', sans-serif" }}>{activeCategory?.name || 'Products'}</h1>
+            <p className="text-white/40 font-medium tracking-wide ec-eyebrow uppercase text-xs">
               {totalResults} {totalResults === 1 ? 'product' : 'products'} found
             </p>
           </div>
@@ -536,13 +551,13 @@ export default function CategoryPage() {
                 onCategoryChange={handleCategoryChange}
                 selectedPriceRange={selectedPriceRange}
                 onPriceRangeChange={setSelectedPriceRange}
-                selectedStock={selectedStock}
-                onStockChange={setSelectedStock}
+                selectedStock="all"
+                onStockChange={() => { }}
               />
             </aside>
 
             <main className="flex-1">
-              {/* Mobile: Filters button (drawer) */}
+              {/* Mobile: Filters button */}
               <div className="xl:hidden flex items-center justify-between gap-3 mb-4">
                 <button
                   type="button"
@@ -552,127 +567,75 @@ export default function CategoryPage() {
                   Filters
                 </button>
               </div>
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="text-sm text-gray-600">Showing {products.length} of {totalResults} products</div>
-              </div>
 
               {partialLoadWarning && !error && (
-                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <div className="mb-4 rounded-lg border border-amber-200/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
                   {partialLoadWarning}
                 </div>
               )}
 
               {error ? (
-                <div className="text-center py-12">
-                  <p className="text-rose-600 mb-4">{error}</p>
+                <div className="text-center py-20">
+                  <p className="text-rose-400 mb-6">{error}</p>
                   <button
                     onClick={() => fetchProducts(currentPage)}
-                    className="px-6 py-2 bg-neutral-900 text-white rounded-lg hover:bg-neutral-800"
+                    className="px-8 py-3 bg-[var(--gold)] text-white rounded-xl hover:bg-[#9a6b2e]"
                   >
                     Try Again
                   </button>
                 </div>
               ) : products.length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-gray-500 text-lg">No products found in this category</p>
-                  <p className="text-gray-400 mt-2">Try adjusting your filters or browse other categories</p>
+                <div className="text-center py-20 ec-surface bg-white/2">
+                  <p className="text-white/60 text-lg">No products found in this category</p>
+                  <p className="text-white/30 mt-2 text-sm">Try adjusting your filters or browse other collections</p>
                 </div>
               ) : (
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {products.map((product) => {
-                      const primaryImage = product.images?.[0]?.url || '';
-                      const shouldUseFallback = imageErrors.has(product.id) || !primaryImage;
-                      const imageUrl = shouldUseFallback
-                        ? '/images/placeholder-product.jpg'
-                        : primaryImage;
-
-                      const stockLabel = getCardStockLabel(product);
-                      const hasStock = stockLabel !== 'Out of Stock';
-
-                      return (
-                        <div
-                          key={product.id}
-                          className="ec-dark-card ec-dark-card-hover overflow-hidden group"
-                        >
-                          <div
-                            className="relative h-64 bg-gray-100 cursor-pointer"
-                            onClick={() => handleProductClick(product.id)}
-                          >
-                            <Image
-                              src={imageUrl}
-                              alt={(product as any).display_name || (product as any).base_name || product.name}
-                              fill
-                              className="object-cover group-hover:scale-105 transition-transform duration-300"
-                              onError={shouldUseFallback ? undefined : () => handleImageError(product.id)}
-                            />
-
-                            <span
-                              className={`absolute top-2 right-2 text-xs px-2 py-1 rounded-full ${
-                                stockLabel === 'In Stock'
-                                  ? 'bg-green-100 text-green-700'
-                                  : hasStock
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-rose-50 text-neutral-900'
-                              }`}
-                            >
-                              {stockLabel}
-                            </span>
-                          </div>
-
-                          <div className="p-4">
-                            <h3
-                              className="font-semibold text-gray-900 mb-2 line-clamp-2 cursor-pointer hover:text-neutral-900"
-                              onClick={() => handleProductClick(product.id)}
-                            >
-                              {(product as any).display_name || (product as any).base_name || product.name}
-                            </h3>
-
-                            <div className="mb-3">
-                              <span className="text-lg font-bold text-neutral-900">{getCardPriceText(product)}</span>
-                            </div>
-
-                            <button
-                              onClick={() => handleProductClick(product.id)}
-                              className="w-full bg-neutral-900 text-white py-2 px-4 rounded-lg hover:bg-neutral-800 transition-colors"
-                            >
-                              View Product
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {products.map((product) => (
+                      <PremiumProductCard
+                        key={product.id}
+                        product={product as SimpleProduct}
+                        imageErrored={imageErrors.has(product.id)}
+                        onImageError={handleImageError}
+                        onOpen={handleProductClick}
+                        onAddToCart={handleAddToCart}
+                      />
+                    ))}
                   </div>
 
                   {totalPages > 1 && (
-                    <div className="flex justify-center items-center mt-8 gap-2">
+                    <div className="flex justify-center items-center mt-12 gap-3">
                       <button
                         onClick={() => handlePageChange(currentPage - 1)}
                         disabled={currentPage === 1}
-                        className="px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors" style={{ border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.7)' }}
+                        className="px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 disabled:opacity-20 transition-all text-sm"
                       >
                         Previous
                       </button>
 
-                      {[...Array(Math.min(totalPages, 5))].map((_, i) => {
-                        const pageNum = i + 1;
-                        return (
-                          <button
-                            key={pageNum}
-                            onClick={() => handlePageChange(pageNum)}
-                            className={`px-4 py-2 rounded-lg ${
-                              currentPage === pageNum ? 'bg-neutral-900 text-white' : 'border border-gray-300 hover:bg-gray-50'
-                            }`}
-                          >
-                            {pageNum}
-                          </button>
-                        );
-                      })}
+                      <div className="flex items-center gap-1.5 mx-2">
+                        {[...Array(Math.min(totalPages, 5))].map((_, i) => {
+                          const pageNum = i + 1;
+                          return (
+                            <button
+                              key={pageNum}
+                              onClick={() => handlePageChange(pageNum)}
+                              className={`h-10 w-10 rounded-xl text-sm font-medium transition-all ${currentPage === pageNum
+                                  ? 'bg-[var(--gold)] text-white shadow-lg shadow-gold/20'
+                                  : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                                }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        })}
+                      </div>
 
                       <button
                         onClick={() => handlePageChange(currentPage + 1)}
                         disabled={currentPage === totalPages}
-                        className="px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors" style={{ border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.7)' }}
+                        className="px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 disabled:opacity-20 transition-all text-sm"
                       >
                         Next
                       </button>
@@ -689,45 +652,45 @@ export default function CategoryPage() {
 
       {/* Mobile filter drawer */}
       {isFiltersOpen && (
-        <div className="fixed inset-0 z-[70] xl:hidden">
-          <button
-            type="button"
-            aria-label="Close filters"
-            onClick={() => setIsFiltersOpen(false)}
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        <div className="fixed inset-0 z-[100] xl:hidden">
+          <div 
+            className={`fixed inset-0 bg-black/60 backdrop-blur-md ${isClosingFilters ? 'ec-anim-backdrop-out' : 'ec-anim-backdrop'}`}
+            onClick={closeFilters}
           />
-          <div className="absolute right-0 top-0 h-full w-[86%] max-w-sm ec-dark-card border-l border-white/10 p-5 overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <div className="text-white font-semibold">Filters</div>
-              <button
-                type="button"
-                onClick={() => setIsFiltersOpen(false)}
-                className="px-3 py-2 rounded-lg border border-white/10 bg-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.10)] text-white"
+          <div className={`fixed top-0 right-0 bottom-0 z-[101] w-[85%] max-w-sm bg-[#0d0d0d] shadow-[-20px_0_80px_rgba(0,0,0,0.8)] flex flex-col ${isClosingFilters ? 'ec-anim-slide-out-right' : 'ec-anim-slide-in-right'}`}>
+            <div className="flex items-center justify-between p-6 border-b border-white/5">
+              <h2 className="text-xl font-bold text-white uppercase tracking-tight" style={{ fontFamily: "'Jost', sans-serif" }}>Filters</h2>
+              <button 
+                onClick={closeFilters} 
+                className="flex h-9 w-9 items-center justify-center rounded-full text-white/50 hover:text-white bg-white/5 transition-all"
               >
-                Close
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <CategorySidebar
-              categories={categories}
-              activeCategory={categorySlug}
-              onCategoryChange={(v) => {
-                setIsFiltersOpen(false);
-                handleCategoryChange(v);
-              }}
-              selectedPriceRange={selectedPriceRange}
-              onPriceRangeChange={setSelectedPriceRange}
-              selectedStock={selectedStock}
-              onStockChange={setSelectedStock}
-            />
+            <div className="flex-1 overflow-y-auto ec-scrollbar p-6 space-y-10 pb-32">
+              <CategorySidebar
+                categories={categories}
+                activeCategory={categorySlug}
+                onCategoryChange={(v) => {
+                  closeFilters();
+                  handleCategoryChange(v);
+                }}
+                selectedPriceRange={selectedPriceRange}
+                onPriceRangeChange={setSelectedPriceRange}
+                selectedStock="all"
+                onStockChange={() => { }}
+              />
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setIsFiltersOpen(false)}
-              className="mt-5 w-full px-4 py-3 rounded-xl border border-white/10 bg-[rgba(255,255,255,0.08)] hover:bg-[rgba(255,255,255,0.12)] text-white font-semibold"
-            >
-              Show Products
-            </button>
+            <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d] to-transparent pt-10">
+              <button 
+                onClick={closeFilters}
+                className="w-full py-4 rounded-xl bg-[var(--gold)] text-white font-bold shadow-[0_10px_30px_rgba(176,124,58,0.3)]"
+              >
+                Show Results
+              </button>
+            </div>
           </div>
         </div>
       )}

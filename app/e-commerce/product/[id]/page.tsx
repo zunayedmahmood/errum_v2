@@ -9,8 +9,12 @@ import {
   Minus,
   Plus,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ArrowRight,
+  MapPin
 } from 'lucide-react';
+
+import PremiumProductCard from '@/components/ecommerce/ui/PremiumProductCard';
 
 import { useCart } from '@/app/e-commerce/CartContext';
 import Navigation from '@/components/ecommerce/Navigation';
@@ -19,9 +23,11 @@ import { adaptCatalogGroupedProducts, groupProductsByMother } from '@/lib/ecomme
 import CartSidebar from '@/components/ecommerce/cart/CartSidebar';
 import catalogService, {
   Product,
+  ProductCategory,
   ProductDetailResponse,
   SimpleProduct,
-  ProductImage
+  ProductImage,
+  BranchStock
 } from '@/services/catalogService';
 import cartService from '@/services/cartService';
 import { wishlistUtils } from '@/lib/wishlistUtils';
@@ -317,11 +323,10 @@ export default function ProductDetailPage() {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [productVariants, setProductVariants] = useState<ProductVariant[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
-  const [relatedProducts, setRelatedProducts] = useState<SimpleProduct[]>([]);
-
-  // Suggested Products State
-  const [suggestedProducts, setSuggestedProducts] = useState<SimpleProduct[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [relatedProducts, setRelatedProducts] = useState<SimpleProduct[]>([]);
+  const [branchStocks, setBranchStocks] = useState<BranchStock[]>([]);
+  const [loadingBranchStock, setLoadingBranchStock] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -346,31 +351,7 @@ export default function ProductDetailPage() {
       localStorage.getItem('token');
     return !!token;
   };
-  // Helper functions
-  // Fetch suggested products
-  useEffect(() => {
-    if (!productId) return;
 
-    const fetchSuggestedProducts = async () => {
-      try {
-        setLoadingSuggestions(true);
-        const response = await catalogService.getSuggestedProducts(4);
-
-        if (response.suggested_products && response.suggested_products.length > 0) {
-          setSuggestedProducts([...response.suggested_products].sort((a, b) => getNewestKey(b) - getNewestKey(a)));
-        } else {
-          setSuggestedProducts([]);
-        }
-      } catch (err: any) {
-        console.error('❌ Error fetching suggested products:', err);
-        setSuggestedProducts([]);
-      } finally {
-        setLoadingSuggestions(false);
-      }
-    };
-
-    fetchSuggestedProducts();
-  }, [productId]);
 
   // Fetch product data and variations
   useEffect(() => {
@@ -390,6 +371,15 @@ export default function ProductDetailPage() {
 
         setProduct(mainProduct);
         setRelatedProducts([...(response.related_products || [])].sort((a, b) => getNewestKey(b) - getNewestKey(a)));
+
+        // Fetch branch stock for the current product
+        setLoadingBranchStock(true);
+        catalogService.getBranchStock(productId).then(stocks => {
+          setBranchStocks(stocks);
+          setLoadingBranchStock(false);
+        }).catch(() => {
+          setLoadingBranchStock(false);
+        });
 
         const directVariantsRaw = Array.isArray((mainProduct as any).variants)
           ? (mainProduct as any).variants
@@ -470,11 +460,11 @@ export default function ProductDetailPage() {
         const grouped = groupedFromApi.length > 0
           ? groupedFromApi
           : groupProductsByMother(allProductsResponse.products, {
-              // Home sections group by mother name irrespective of category payload shape.
-              // Use same behavior on details page so "X options" always matches.
-              useCategoryInKey: false,
-              preferSkuGrouping: false,
-            });
+            // Home sections group by mother name irrespective of category payload shape.
+            // Use same behavior on details page so "X options" always matches.
+            useCategoryInKey: false,
+            preferSkuGrouping: false,
+          });
 
         const selectedGroupById = grouped.find((g) =>
           g.variants.some((v) => Number(v.id) === Number(mainProduct.id))
@@ -661,7 +651,7 @@ export default function ProductDetailPage() {
     }
   };
 
-  const handleAddSuggestedToCart = async (item: SimpleProduct, e: React.MouseEvent) => {
+  const handleQuickAddToCart = async (item: SimpleProduct, e: React.MouseEvent) => {
     e.stopPropagation();
 
     if (!item.in_stock) return;
@@ -691,23 +681,7 @@ export default function ProductDetailPage() {
     }
   };
 
-  const handleToggleSuggestedWishlist = (item: SimpleProduct, e: React.MouseEvent) => {
-    e.stopPropagation();
 
-    const isItemInWishlist = wishlistUtils.isInWishlist(item.id);
-
-    if (isItemInWishlist) {
-      wishlistUtils.remove(item.id);
-    } else {
-      wishlistUtils.add({
-        id: item.id,
-        name: item.name,
-        image: item.images?.[0]?.url || '/placeholder-product.png',
-        price: Number((item as any).selling_price ?? 0),
-        sku: item.sku,
-      });
-    }
-  };
 
   const handleQuantityChange = (delta: number) => {
     if (!selectedVariant) return;
@@ -827,7 +801,7 @@ export default function ProductDetailPage() {
 
       {/* Breadcrumb */}
       <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.02)' }}>
-        <div className="ec-container py-3">
+        <div className="ec-container py-3 hidden sm:block">
           <div className="flex items-center gap-2 text-[11px]" style={{ fontFamily: "'DM Mono', monospace", color: 'rgba(255,255,255,0.3)', letterSpacing: '0.06em' }}>
             <button onClick={() => router.push('/e-commerce')} className="transition-colors hover:text-white">HOME</button>
             <span style={{ color: 'rgba(255,255,255,0.15)' }}>/</span>
@@ -874,19 +848,28 @@ export default function ProductDetailPage() {
                 </div>
               )}
 
-              {/* Nav arrows */}
+              {/* Nav arrows (Always visible dots on mobile, arrows on hover desktop) */}
               {safeImages.length > 1 && (
                 <>
-                  <button onClick={handlePrevImage}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-all"
-                    style={{ background: 'rgba(13,13,13,0.7)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
-                    <ChevronLeft size={18} className="text-white" />
-                  </button>
-                  <button onClick={handleNextImage}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-all"
-                    style={{ background: 'rgba(13,13,13,0.7)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
-                    <ChevronRight size={18} className="text-white" />
-                  </button>
+                  <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-4 pointer-events-none">
+                    <button onClick={handlePrevImage}
+                      className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full opacity-0 sm:group-hover:opacity-100 transition-all shadow-lg"
+                      style={{ background: 'rgba(13,13,13,0.7)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
+                      <ChevronLeft size={20} className="text-white" />
+                    </button>
+                    <button onClick={handleNextImage}
+                      className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full opacity-0 sm:group-hover:opacity-100 transition-all shadow-lg"
+                      style={{ background: 'rgba(13,13,13,0.7)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
+                      <ChevronRight size={20} className="text-white" />
+                    </button>
+                  </div>
+                  
+                  {/* Dots for mobile */}
+                  <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 sm:hidden">
+                    {safeImages.map((_, i) => (
+                      <div key={i} className={`h-1.5 rounded-full transition-all ${i === selectedImageIndex ? 'w-4 bg-[var(--gold)]' : 'w-1.5 bg-white/20'}`} />
+                    ))}
+                  </div>
                 </>
               )}
             </div>
@@ -1001,12 +984,12 @@ export default function ProductDetailPage() {
                           disabled={!isAvailable}
                           className="px-3.5 py-2 rounded-xl text-[12px] font-medium transition-all"
                           style={{
-                            border:      isSelected ? '1px solid var(--gold)' : isAvailable ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.06)',
-                            background:  isSelected ? 'rgba(176,124,58,0.15)' : 'rgba(255,255,255,0.04)',
-                            color:       isSelected ? 'var(--gold-light)' : isAvailable ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.2)',
+                            border: isSelected ? '1px solid var(--gold)' : isAvailable ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.06)',
+                            background: isSelected ? 'rgba(176,124,58,0.15)' : 'rgba(255,255,255,0.04)',
+                            color: isSelected ? 'var(--gold-light)' : isAvailable ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.2)',
                             textDecoration: isAvailable ? 'none' : 'line-through',
-                            cursor:      isAvailable ? 'pointer' : 'not-allowed',
-                            fontFamily:  "'Jost', sans-serif",
+                            cursor: isAvailable ? 'pointer' : 'not-allowed',
+                            fontFamily: "'Jost', sans-serif",
                           }}
                         >
                           {label}
@@ -1047,10 +1030,10 @@ export default function ProductDetailPage() {
                     className="flex-1 ec-btn justify-center"
                     style={{
                       background: isAdding ? 'rgba(34,197,94,0.85)' : 'var(--gold)',
-                      color:      'white',
-                      boxShadow:  isAdding ? 'none' : '0 4px 16px rgba(176,124,58,0.3)',
-                      opacity:    (!selectedVariant.in_stock || stockQty <= 0) ? 0.4 : 1,
-                      cursor:     (!selectedVariant.in_stock || stockQty <= 0) ? 'not-allowed' : 'pointer',
+                      color: 'white',
+                      boxShadow: isAdding ? 'none' : '0 4px 16px rgba(176,124,58,0.3)',
+                      opacity: (!selectedVariant.in_stock || stockQty <= 0) ? 0.4 : 1,
+                      cursor: (!selectedVariant.in_stock || stockQty <= 0) ? 'not-allowed' : 'pointer',
                     }}
                   >
                     <ShoppingCart size={16} />
@@ -1059,9 +1042,9 @@ export default function ProductDetailPage() {
                   <button onClick={handleToggleWishlist}
                     className="flex h-[46px] w-[46px] items-center justify-center rounded-xl transition-all"
                     style={{
-                      border:     `1px solid ${isInWishlist ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.12)'}`,
-                      background:  isInWishlist ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.04)',
-                      color:       isInWishlist ? '#f87171' : 'rgba(255,255,255,0.5)',
+                      border: `1px solid ${isInWishlist ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.12)'}`,
+                      background: isInWishlist ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.04)',
+                      color: isInWishlist ? '#f87171' : 'rgba(255,255,255,0.5)',
                     }}>
                     <Heart size={16} className={isInWishlist ? 'fill-current' : ''} />
                   </button>
@@ -1091,85 +1074,97 @@ export default function ProductDetailPage() {
                 </span>
               </div>
             </div>
+            {/* Branch Inventory Table */}
+            {!loadingBranchStock && branchStocks.length > 0 && (
+              <div className="ec-dark-card overflow-hidden">
+                <div className="px-5 py-3 border-b border-white/5 bg-white/[0.02] flex items-center gap-2">
+                  <MapPin size={14} className="text-[var(--gold)]" />
+                  <span className="text-[11px] font-semibold tracking-wider text-white/90 uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>
+                    Branch Availability
+                  </span>
+                </div>
+                <div className="overflow-x-auto ec-scrollbar">
+                  <table className="w-full text-left min-w-[300px]">
+                    <thead>
+                      <tr className="border-b border-white/5 text-[10px] uppercase tracking-widest text-white/30" style={{ fontFamily: "'DM Mono', monospace" }}>
+                        <th className="px-5 py-3 font-medium">Branch Location</th>
+                        <th className="px-5 py-3 font-medium text-right">Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {branchStocks.map((stock) => (
+                        <tr key={stock.store_id} className="group hover:bg-white/[0.01] transition-colors">
+                          <td className="px-5 py-3">
+                            <p className="text-[12px] font-medium text-white/80 group-hover:text-white transition-colors">
+                              {stock.store_name}
+                            </p>
+                            {stock.store_address && (
+                              <p className="text-[10px] text-white/20 line-clamp-1">{stock.store_address}</p>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <span className="text-[12px] font-semibold text-[var(--gold)]">
+                              {stock.total_quantity}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Trust strip */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {[
                 { icon: '🚚', label: 'Free Delivery', sub: 'On ৳1,000+' },
-                { icon: '↩',  label: 'Easy Returns',  sub: '7-day policy' },
-                { icon: '✓',  label: 'Authentic',      sub: '100% genuine' },
+                { icon: '↩', label: 'Easy Returns', sub: '7-day policy' },
+                { icon: '✓', label: 'Authentic', sub: '100% genuine' },
               ].map(({ icon, label, sub }) => (
-                <div key={label} className="ec-dark-card p-3 text-center">
-                  <div className="text-lg mb-1">{icon}</div>
-                  <p className="text-[11px] font-semibold text-white">{label}</p>
-                  <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{sub}</p>
+                <div key={label} className="ec-dark-card p-3 flex sm:flex-col items-center sm:text-center gap-3 sm:gap-1">
+                  <div className="text-xl sm:text-lg">{icon}</div>
+                  <div>
+                    <p className="text-[11px] font-semibold text-white">{label}</p>
+                    <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{sub}</p>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        {/* You may also like */}
-        {suggestedProducts.length > 0 && (
+        {/* Related Products */}
+        {relatedProducts.length > 0 && (
           <div className="mt-16" style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '3rem' }}>
-            <p className="ec-eyebrow mb-3">Curated for You</p>
-            <h2 className="mb-8 text-white" style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 'clamp(24px, 3.5vw, 36px)', fontWeight: 500, letterSpacing: '-0.01em' }}>
-              You May Also Like
-            </h2>
+            <p className="ec-eyebrow mb-3">Pairs Well With</p>
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-white" style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 'clamp(24px, 3.5vw, 36px)', fontWeight: 500, letterSpacing: '-0.01em' }}>
+                Related Essentials
+              </h2>
+              <button
+                onClick={() => router.push('/e-commerce/search?category=' + getCategoryId(product.category))}
+                className="flex items-center gap-2 text-[11px] font-semibold transition-colors hover:text-[var(--gold)]"
+                style={{ fontFamily: "'DM Mono', monospace", color: 'rgba(255,255,255,0.4)', letterSpacing: '0.08em' }}
+              >
+                VIEW ALL <ArrowRight size={12} />
+              </button>
+            </div>
 
-            {loadingSuggestions ? (
-              <div className="flex justify-center py-12">
-                <div className="h-8 w-8 rounded-full border-b-2 animate-spin" style={{ borderColor: 'var(--gold)' }} />
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                {suggestedProducts.map(item => {
-                  const itemImage = item.images?.[0]?.url || '/placeholder-product.png';
-                  const isItemInWishlist = wishlistUtils.isInWishlist(item.id);
-                  const sp = Number((item as any).selling_price ?? 0);
-                  return (
-                    <div
-                      key={item.id}
-                      className="ec-dark-card ec-dark-card-hover group cursor-pointer overflow-hidden"
-                      style={{ borderRadius: '16px' }}
-                      onClick={() => router.push(`/e-commerce/product/${item.id}`)}
-                    >
-                      <div className="relative overflow-hidden" style={{ aspectRatio: '3/4', background: 'rgba(255,255,255,0.03)' }}>
-                        <img src={itemImage} alt={item.name}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.05]" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        {!item.in_stock && (
-                          <div className="absolute top-2.5 left-2.5 rounded-full px-2 py-1 text-[9px] font-bold" style={{ background: 'rgba(239,68,68,0.85)', color: 'white', fontFamily: "'DM Mono', monospace" }}>OUT OF STOCK</div>
-                        )}
-                        <button
-                          onClick={e => handleToggleSuggestedWishlist(item, e)}
-                          className="absolute top-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-all"
-                          style={{ background: isItemInWishlist ? 'rgba(239,68,68,0.8)' : 'rgba(13,13,13,0.6)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)' }}>
-                          <Heart className={`h-3.5 w-3.5 text-white ${isItemInWishlist ? 'fill-current' : ''}`} />
-                        </button>
-                      </div>
-                      <div className="p-3.5">
-                        <h3 className="text-[13px] font-medium text-white line-clamp-2 min-h-[2.5rem]" style={{ fontFamily: "'Jost', sans-serif" }}>{item.name}</h3>
-                        <div className="mt-2.5 flex items-center justify-between">
-                          <span className="text-[14px] font-bold" style={{ color: 'var(--gold)', fontFamily: "'Jost', sans-serif" }}>{formatBDT(sp)}</span>
-                          <button
-                            onClick={e => handleAddSuggestedToCart(item, e)}
-                            disabled={!item.in_stock}
-                            className="flex h-7 w-7 items-center justify-center rounded-full transition-all disabled:opacity-30"
-                            style={{ background: 'var(--gold)', color: 'white' }}
-                            onMouseEnter={e => !item.in_stock || ((e.currentTarget as HTMLButtonElement).style.background = '#9a6b2e')}
-                            onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = 'var(--gold)')}>
-                            <ShoppingCart className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {relatedProducts.slice(0, 4).map(item => (
+                <PremiumProductCard
+                  key={item.id}
+                  product={item}
+                  onOpen={(p) => router.push(`/e-commerce/product/${p.id}`)}
+                  onAddToCart={(p, e) => handleQuickAddToCart(p, e)}
+                />
+              ))}
+            </div>
           </div>
         )}
+
+
       </div>
     </div>
   );

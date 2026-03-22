@@ -1,6 +1,7 @@
 import api from '@/lib/axios';
 import axios from 'axios';
 import { getBaseProductName, getColorLabel, getSizeLabel } from '@/lib/productNameUtils';
+import inventoryService from './inventoryService';
 
 /**
  * -----------------------------
@@ -115,6 +116,18 @@ export interface CatalogProductsResponse {
 export interface ProductDetailResponse {
   product: Product;
   related_products: SimpleProduct[];
+}
+
+export interface BranchStock {
+  store_id: number;
+  store_name: string;
+  store_address: string;
+  total_quantity: number;
+}
+
+export interface BranchStockResponse {
+  success: boolean;
+  data: BranchStock[];
 }
 
 export interface CategoriesResponse {
@@ -661,7 +674,7 @@ const normalizeGroupedProduct = (rawGroup: any): CatalogGroupedProduct => {
   );
   const description = normalizeString(rawGroup?.description || '');
 
-  const rawMain = rawGroup?.main_variant || rawGroup?.mainVariant || rawGroup?.main || rawGroup?.product || {};
+  const rawMain = rawGroup?.main_variant || rawGroup?.mainVariant || rawGroup?.main || rawGroup?.product || rawGroup;
 
   const mainVariant = normalizeProduct(rawMain, {
     base_name: baseName,
@@ -981,7 +994,7 @@ const catalogService = {
 
         const related = Array.isArray(payload.related_products)
           ? payload.related_products.map((p: any) =>
-              normalizeProduct(p, { base_name: baseName, description, category }) as SimpleProduct
+              normalizeProduct(p) as SimpleProduct
             )
           : [];
 
@@ -1190,6 +1203,28 @@ const catalogService = {
     } catch (error) {
       console.error('Error adding to wishlist:', error);
       throw new Error('Failed to add product to wishlist');
+    }
+  },
+
+  async getBranchStock(productId: number): Promise<BranchStock[]> {
+    try {
+      const response = await inventoryService.getGlobalInventory({ product_id: productId });
+      if (response.success && response.data.length > 0) {
+        // Take the first product match (since we filtered by product_id)
+        const productInventory = response.data[0];
+        
+        // Map to BranchStock[] format
+        return productInventory.stores.map(s => ({
+          store_id: s.store_id,
+          store_name: s.store_name,
+          store_address: s.store_address || '',
+          total_quantity: s.quantity
+        }));
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching branch stock:', error);
+      return [];
     }
   },
 };

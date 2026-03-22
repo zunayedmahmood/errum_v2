@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Package, MapPin, CreditCard, ShoppingBag, AlertCircle, Loader2, ChevronRight, Plus, Edit2, Trash2 } from 'lucide-react';
+import { Package, MapPin, CreditCard, ShoppingBag, AlertCircle, Loader2, ChevronRight, Plus, Edit2, Trash2, CheckCircle } from 'lucide-react';
 import Navigation from '@/components/ecommerce/Navigation';
 import SSLCommerzPayment from '@/components/ecommerce/SSLCommerzPayment';
 import checkoutService, { Address, OrderItem, PaymentMethod } from '@/services/checkoutService';
@@ -525,11 +525,11 @@ export default function CheckoutPage() {
             created_at: Date.now(),
             customer: { phone: cleanPhone(formatBDPhone(guestPhone)), name: guestName || undefined, email: guestEmail || undefined },
             items: selectedItems.map((it) => ({
-              name: it.name,
+              product_name: it.name,
               quantity: it.quantity,
-              unit_price: Number(it.unit_price),
-              total_price: Number(it.total_price),
-              image_url: it.images?.find((i: any) => i?.is_primary)?.image_url || (it.images?.[0] as any)?.image_url || (it.images?.[0] as any)?.url || '/placeholder-product.png',
+              price: Number(it.unit_price),
+              total: Number(it.total_price),
+              product_image: it.images?.find((i: any) => i?.is_primary)?.image_url || (it.images?.[0] as any)?.image_url || (it.images?.[0] as any)?.url || '/placeholder-product.png',
               sku: it.sku || '',
               variant_options: it.variant_options || undefined,
             })),
@@ -550,8 +550,7 @@ export default function CheckoutPage() {
 
       localStorage.removeItem('checkout-selected-items');
 
-      alert(`🎉 Order placed successfully!\n\nOrder Number: ${orderNumber}\nTotal: ৳${summary.total_amount.toFixed(2)}\n\nWe will contact you for confirmation.`);
-      router.push(`/e-commerce/thank-you/${orderNumber}`);
+      router.push(`/e-commerce/order-confirmation/${orderNumber}`);
     } catch (err: any) {
       console.error('❌ Guest checkout failed:', err);
       setError(err?.response?.data?.message || err?.message || 'Failed to place order. Please try again.');
@@ -629,11 +628,11 @@ export default function CheckoutPage() {
             total_amount: typeof result.order.total_amount === 'number' ? result.order.total_amount : Number(result.order.total_amount),
             created_at: Date.now(),
             items: orderItems.map((it) => ({
-              name: it.product_name,
+              product_name: it.product_name,
               quantity: it.quantity,
-              unit_price: it.price,
-              total_price: it.total,
-              image_url: it.product_image || '/placeholder-product.png',
+              price: it.price,
+              total: it.total,
+              product_image: it.product_image || '/placeholder-product.png',
               sku: it.sku || '',
             })),
           })
@@ -646,10 +645,9 @@ export default function CheckoutPage() {
       localStorage.removeItem('checkout-selected-items');
 
       // ✅ Show success message
-      alert(`🎉 Order placed successfully!\n\nOrder Number: ${result.order.order_number}\nTotal: ৳${result.order.total_amount}\n\nYou will be redirected to the confirmation page.`);
 
       // ✅ Redirect to a public Thank You page (no forced login)
-      router.push(`/e-commerce/thank-you/${result.order.order_number}`);
+      router.push(`/e-commerce/order-confirmation/${result.order.order_number}`);
 
     } catch (error: any) {
       console.error('❌ Order placement failed:', error);
@@ -666,8 +664,8 @@ export default function CheckoutPage() {
         <Navigation />
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="text-center">
-            <Loader2 className="animate-spin h-12 w-12 text-neutral-900 mx-auto mb-4" />
-            <p className="text-neutral-600">Loading checkout...</p>
+            <Loader2 className="animate-spin h-12 w-12 text-[var(--gold)] mx-auto mb-4" />
+            <p className="text-white/60">Loading checkout...</p>
           </div>
         </div>
       </div>
@@ -689,10 +687,13 @@ export default function CheckoutPage() {
           
           <SSLCommerzPayment
             shippingAddressId={selectedShippingAddressId!}
-            billingAddressId={sameAsShipping ? selectedShippingAddressId! : selectedBillingAddressId}
+            billingAddressId={sameAsShipping ? selectedShippingAddressId! : (selectedBillingAddressId ?? undefined)}
             orderNotes={orderNotes}
             couponCode={appliedCoupon ? couponCode : undefined}
             totalAmount={summary.total_amount}
+            items={selectedItems}
+            shippingCharge={shippingCharge}
+            discount={couponDiscount}
             onError={(error) => {
               console.error('❌ Payment error:', error);
               setError(error);
@@ -728,9 +729,9 @@ export default function CheckoutPage() {
           </div>
 
           {error && (
-            <div className="mb-6 bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start">
-              <AlertCircle className="text-rose-600 mr-3 mt-0.5" size={20} />
-              <div className="text-neutral-900">{error}</div>
+            <div className="mb-6 bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start ec-anim-fade-up">
+              <AlertCircle className="text-red-400 mr-3 mt-0.5 flex-shrink-0" size={20} />
+              <div className="text-white/90 font-medium">{error}</div>
             </div>
           )}
 
@@ -952,82 +953,63 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="ec-root ec-darkify min-h-screen">
+    <div className="ec-root ec-darkify min-h-screen pb-20">
       <Navigation />
       
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Progress Steps */}
-        <div className="mb-8">
-          <div className="flex items-center justify-center space-x-4">
-            <div className={`flex items-center ${currentStep === 'shipping' ? 'text-neutral-900' : 'text-neutral-400'}`}>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                currentStep === 'shipping' ? 'bg-neutral-900 text-white shadow-sm' : 'bg-white border border-neutral-200'
-              }`}>
-                <MapPin size={20} />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16">
+        {/* Step Progress Indicator - Polished for Mobile */}
+        <div className="flex items-center justify-between mb-10 overflow-x-auto pb-4 scrollbar-hide sm:justify-start sm:gap-12">
+          {[
+            { id: 'shipping', label: 'Shipping', icon: MapPin },
+            { id: 'payment', label: 'Payment', icon: CreditCard },
+            { id: 'review', label: 'Review', icon: Package }
+          ].map((step, idx) => {
+            const isActive = currentStep === step.id;
+            const isCompleted = ['shipping', 'payment', 'review'].indexOf(currentStep) > idx;
+            const Icon = step.icon;
+            
+            return (
+              <div key={step.id} className="flex items-center gap-3 flex-shrink-0">
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-500 ${
+                  isActive ? 'bg-neutral-900 text-white shadow-lg shadow-neutral-200 scale-110' : 
+                  isCompleted ? 'bg-green-500 text-white' : 'bg-neutral-100 text-neutral-400'
+                }`}>
+                  {isCompleted ? <CheckCircle size={18} /> : <Icon size={18} />}
+                </div>
+                <div className="flex flex-col">
+                  <span className={`text-[10px] font-bold uppercase tracking-[0.15em] ${isActive ? 'text-neutral-900' : 'text-neutral-400'}`} style={{ fontFamily: "'DM Mono', monospace" }}>
+                    Step {idx + 1}
+                  </span>
+                  <span className={`text-sm font-bold ${isActive ? 'text-neutral-900' : 'text-neutral-400'}`} style={{ fontFamily: "'Jost', sans-serif" }}>
+                    {step.label}
+                  </span>
+                </div>
+                {idx < 2 && <ChevronRight className="hidden sm:block text-neutral-200 ml-4" size={16} />}
               </div>
-              <span className="ml-2 font-medium hidden sm:inline">Shipping</span>
-            </div>
-            
-            <ChevronRight className="text-neutral-400" />
-            
-            <div className={`flex items-center ${currentStep === 'payment' ? 'text-neutral-900' : 'text-neutral-400'}`}>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                currentStep === 'payment' ? 'bg-neutral-900 text-white shadow-sm' : 'bg-white border border-neutral-200'
-              }`}>
-                <CreditCard size={20} />
-              </div>
-              <span className="ml-2 font-medium hidden sm:inline">Payment</span>
-            </div>
-            
-            <ChevronRight className="text-neutral-400" />
-            
-            <div className={`flex items-center ${currentStep === 'review' ? 'text-neutral-900' : 'text-neutral-400'}`}>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                currentStep === 'review' ? 'bg-neutral-900 text-white shadow-sm' : 'bg-white border border-neutral-200'
-              }`}>
-                <Package size={20} />
-              </div>
-              <span className="ml-2 font-medium hidden sm:inline">Review</span>
-            </div>
-          </div>
+            );
+          })}
         </div>
 
         {/* Error Display */}
         {error && (
-          <div className="mb-6 bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3">
-            <AlertCircle className="text-rose-600 flex-shrink-0 mt-0.5" size={20} />
+          <div className="mb-6 bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3 ec-anim-fade-up">
+            <AlertCircle className="text-red-400 flex-shrink-0 mt-0.5" size={20} />
             <div className="flex-1">
-              <h3 className="font-semibold text-rose-900">Error</h3>
-              <p className="text-neutral-900 text-sm">{error}</p>
+              <h3 className="font-bold text-red-500">Notice</h3>
+              <p className="text-white/80 text-sm font-medium">{error}</p>
             </div>
-            <button
-              onClick={() => setError(null)}
-              className="text-rose-600 hover:text-neutral-900"
-            >
-              ✕
-            </button>
+            <button onClick={() => setError(null)} className="text-white/30 hover:text-white transition-colors">✕</button>
           </div>
         )}
 
-        {appliedCoupon && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
-            <Package className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
-            <div>
-              <h3 className="font-semibold text-green-900">Coupon Applied!</h3>
-              <p className="text-green-700 text-sm">{appliedCoupon.message}</p>
-            </div>
-          </div>
-        )}
-
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* 🔒 ORIGINAL SHIPPING ADDRESS CODE - UNCHANGED */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
+          <div className="lg:col-span-2 space-y-8">
+            {/* Shipping Info */}
             {currentStep === 'shipping' && (
-              <div className="bg-white rounded-xl shadow-md p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-neutral-900 flex items-center gap-2">
-                    <MapPin className="text-neutral-900" />
+              <div className="ec-anim-fade-up">
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-3xl font-bold text-neutral-900 flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                    <MapPin className="text-neutral-900" size={28} />
                     Shipping Address
                   </h2>
                   <button
@@ -1066,7 +1048,7 @@ export default function CheckoutPage() {
                 ) : (
                   <>
                     {showAddressForm && (
-                      <div className="mb-6 p-4 border-2 border-rose-200 rounded-xl space-y-4 bg-rose-50">
+                      <div className="mb-8 p-6 border border-white/10 rounded-2xl space-y-6 ec-dark-card shadow-2xl">
                         <div className="flex items-center justify-between">
                           <h3 className="font-bold text-neutral-900">
                             {editingAddressId ? 'Edit Address' : 'New Address'}
@@ -1318,29 +1300,27 @@ export default function CheckoutPage() {
                               <div className="flex-1">
                                 <div className="flex items-start justify-between">
                                   <div>
-                                    <p className="font-semibold text-neutral-900">{address.name}</p>
-                                    <p className="text-sm text-neutral-600">{address.phone}</p>
-                                    <p className="text-sm text-neutral-700 mt-1">
-                                      {address.address_line_1}
-                                      {address.address_line_2 && `, ${address.address_line_2}`}
-                                    </p>
-                                    <p className="text-sm text-neutral-700">
-                                      {address.city}, {address.state} {address.postal_code}
-                                    </p>
+                                    <p className="font-bold text-neutral-900 text-lg leading-tight mb-1" style={{ fontFamily: "'Jost', sans-serif" }}>{address.name}</p>
+                                    <p className="text-sm font-medium text-neutral-500 mb-3">{address.phone}</p>
+                                    <div className="space-y-0.5 text-[13px] text-neutral-600 leading-relaxed">
+                                      <p>{address.address_line_1}</p>
+                                      {address.address_line_2 && <p>{address.address_line_2}</p>}
+                                      <p>{address.city}, {address.state} {address.postal_code}</p>
+                                    </div>
                                     {address.is_default_shipping && (
-                                      <span className="inline-block mt-2 px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">
+                                      <span className="inline-block mt-4 px-3 py-1 bg-green-50 text-green-600 text-[10px] font-bold uppercase tracking-wider rounded-lg border border-green-100" style={{ fontFamily: "'DM Mono', monospace" }}>
                                         Default Shipping
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-col gap-2">
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.preventDefault();
                                         handleEditAddress(address);
                                       }}
-                                      className="p-1 text-neutral-700 hover:bg-neutral-50 rounded"
+                                      className="p-1 text-white/50 hover:bg-white/5 rounded transition-colors"
                                     >
                                       <Edit2 size={16} />
                                     </button>
@@ -1350,7 +1330,7 @@ export default function CheckoutPage() {
                                         e.preventDefault();
                                         handleDeleteAddress(address.id!);
                                       }}
-                                      className="p-1 text-rose-600 hover:bg-rose-50 rounded"
+                                      className="p-1 text-rose-500 hover:bg-rose-500/10 rounded transition-colors"
                                     >
                                       <Trash2 size={16} />
                                     </button>

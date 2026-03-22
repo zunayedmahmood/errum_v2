@@ -16,7 +16,10 @@ body {
 }
 
 @media print {
-  body { -webkit-print-color-adjust: exact; }
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
   .no-print { display: none !important; }
   .print-only { display: block !important; }
   .page-break-avoid { page-break-inside: avoid; }
@@ -26,6 +29,11 @@ body {
 ::-webkit-scrollbar-track { background: #111; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
+
+.ec-scrollbar::-webkit-scrollbar { width: 3px; }
+.ec-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.ec-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+.ec-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
 /* ─── Design tokens ─────────────────────────────────────── */
 @layer base {
@@ -261,7 +269,7 @@ body {
   .ec-nav-link-active::after { width: 100%; }
 }
 
-/* ─── Hero animations ───────────────────────────────────── */
+/* ─── Hero & Modal animations ────────────────────────────── */
 @keyframes ec-fade-up {
   from { opacity: 0; transform: translateY(24px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -278,11 +286,36 @@ body {
   from { opacity: 0; transform: translateX(-20px); }
   to   { opacity: 1; transform: translateX(0); }
 }
+@keyframes ec-slide-in-right {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes ec-slide-in-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes ec-backdrop-fade {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(8px); }
+}
+@keyframes ec-backdrop-fade-out {
+  from { opacity: 1; backdrop-filter: blur(8px); }
+  to { opacity: 0; backdrop-filter: blur(0px); }
+}
+@keyframes ec-slide-out-right {
+  from { transform: translateX(0); }
+  to   { transform: translateX(100%); }
+}
 
 .ec-anim-fade-up  { animation: ec-fade-up  0.7s cubic-bezier(0.22,1,0.36,1) both; }
 .ec-anim-fade-in  { animation: ec-fade-in  0.6s ease both; }
 .ec-anim-scale-in { animation: ec-scale-in 0.7s cubic-bezier(0.22,1,0.36,1) both; }
 .ec-anim-slide-right { animation: ec-slide-right 0.6s cubic-bezier(0.22,1,0.36,1) both; }
+.ec-anim-slide-in-right { animation: ec-slide-in-right 0.5s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.ec-anim-slide-in-up { animation: ec-slide-in-up 0.5s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.ec-anim-slide-out-right { animation: ec-slide-out-right 0.4s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.ec-anim-backdrop { animation: ec-backdrop-fade 0.4s ease both; }
+.ec-anim-backdrop-out { animation: ec-backdrop-fade-out 0.4s ease both; }
 
 .ec-delay-1 { animation-delay: 0.1s; }
 .ec-delay-2 { animation-delay: 0.2s; }
@@ -290,6 +323,40 @@ body {
 .ec-delay-4 { animation-delay: 0.5s; }
 .ec-delay-5 { animation-delay: 0.65s; }
 .ec-delay-6 { animation-delay: 0.8s; }
+
+/* ─── Modal/Drawer Components ────────────────────────────── */
+.ec-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+}
+
+.ec-drawer-right {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: 400px;
+  background: #0d0d0d;
+  z-index: 101;
+  box-shadow: -10px 0 50px rgba(0,0,0,0.5);
+}
+
+.ec-modal-bottom {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #0d0d0d;
+  z-index: 101;
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
 
 /* ─── Dark page theme (applied to all ec-root pages) ───── */
 @layer components {

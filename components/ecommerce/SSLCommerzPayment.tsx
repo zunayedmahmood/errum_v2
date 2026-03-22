@@ -10,6 +10,9 @@ interface SSLCommerzPaymentProps {
   orderNotes?: string;
   couponCode?: string;
   totalAmount: number;
+  items?: any[];
+  shippingCharge?: number;
+  discount?: number;
   onError?: (error: string) => void;
   onCancel?: () => void;
 }
@@ -20,6 +23,9 @@ export default function SSLCommerzPayment({
   orderNotes,
   couponCode,
   totalAmount,
+  items,
+  shippingCharge,
+  discount,
   onError,
   onCancel,
 }: SSLCommerzPaymentProps) {
@@ -65,6 +71,31 @@ export default function SSLCommerzPayment({
       });
 
       console.log('💾 Payment intent stored');
+
+      // Step 2.1: Store order preview for new pages
+      try {
+        localStorage.setItem(
+          'ec_last_order',
+          JSON.stringify({
+            order_number: response.data.order.order_number,
+            payment_method: 'sslcommerz',
+            total_amount: response.data.order.total_amount,
+            shipping_charge: shippingCharge || 0,
+            discount: discount || 0,
+            created_at: Date.now(),
+            items: items?.map((it) => ({
+              product_name: it.product_name || it.name,
+              quantity: it.quantity,
+              price: it.price || it.unit_price,
+              total: it.total || it.total_price,
+              product_image: it.product_image || (it.images?.[0] as any)?.image_url || '/placeholder-product.png',
+              sku: it.sku || '',
+            })),
+          })
+        );
+      } catch (e) {
+        console.warn('Failed to store order preview', e);
+      }
 
       // Step 3: Clear checkout data before redirect
       localStorage.removeItem('checkout-selected-items');

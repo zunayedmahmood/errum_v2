@@ -170,15 +170,16 @@ export default function HeroSection() {
 
       {/* Content */}
       <div className="ec-container relative z-10 flex flex-col justify-center" style={{ minHeight: 'inherit', paddingTop: '5.5rem', paddingBottom: '5rem' }}>
-        <div className="mx-auto w-full max-w-3xl text-center">
+        <div className="mx-auto w-full max-w-3xl text-center ec-anim-fade-up">
           <p className="ec-eyebrow justify-center">Search the catalogue</p>
 
           <h1
             className="mt-4 text-white"
             style={{
-              fontSize: 'clamp(40px, 6vw, 72px)',
+              fontSize: 'clamp(36px, 8vw, 72px)',
               lineHeight: 1.02,
               letterSpacing: '-0.02em',
+              fontFamily: "'Cormorant Garamond', serif"
             }}
           >
             Find your next <span style={{ color: 'var(--gold-light)' }}>favorite</span>
@@ -204,8 +205,8 @@ export default function HeroSection() {
                 ref={inputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search products… (e.g., sneaker, panjabi, perfume, SKU)"
-                className="w-full bg-transparent py-4 pl-12 pr-32 text-[14px] text-white outline-none placeholder:text-white/40"
+                placeholder="Search products, SKUs..."
+                className="w-full bg-transparent py-4 pl-12 pr-28 text-[14px] text-white outline-none placeholder:text-white/40"
                 autoComplete="off"
               />
 

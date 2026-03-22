@@ -257,11 +257,13 @@ export default function ImageGalleryManager({
 
     const updatedImages = images.filter((_, i) => i !== index);
     
-    // Reorder and ensure at least one primary
+    // Reorder sort_order for remaining images.
+    // Only promote the first image to primary if NO other image already holds that flag.
+    const remainingHasPrimary = updatedImages.some(img => img.is_primary);
     const reorderedImages = updatedImages.map((img, idx) => ({
       ...img,
       sort_order: idx,
-      is_primary: idx === 0 ? true : img.is_primary,
+      is_primary: remainingHasPrimary ? img.is_primary : idx === 0,
     }));
 
     notifyChange(reorderedImages);

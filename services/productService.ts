@@ -166,6 +166,11 @@ export const productService = {
     vendor_id?: number;
     search?: string;
     is_archived?: boolean;
+    /** Proposal 1: return SKU-grouped response instead of flat variant rows */
+    group_by_sku?: boolean;
+    /** Proposal 2: server-side price filter (BDT) */
+    min_price?: number;
+    max_price?: number;
   }): Promise<{ data: Product[]; total: number; current_page: number; last_page: number }> {
     try {
       // Prefer employee-scoped endpoints when available; fallback keeps backward compatibility.
@@ -201,14 +206,15 @@ export const productService = {
 
       const products = rawList.map(transformProduct);
 
-      // Pagination (new shape)
+      // Pagination (new shape — used by Proposal 1 grouped endpoint)
       const pagination = dataRoot.pagination;
       if (pagination) {
         return {
           data: products,
           total: pagination.total ?? products.length,
           current_page: pagination.current_page ?? 1,
-          last_page: pagination.total_pages ?? 1,
+          // Some backends use `last_page`, others use `total_pages` — support both
+          last_page: pagination.last_page ?? pagination.total_pages ?? 1,
         };
       }
 
@@ -222,6 +228,48 @@ export const productService = {
     } catch (error: any) {
       console.error('Get products error:', error);
       return { data: [], total: 0, current_page: 1, last_page: 1 };
+    }
+  },
+
+  /**
+   * Proposal 5 — Wire the advanced search controller.
+   * Uses ProductSearchController (fuzzy, Bangla, phonetic) when a query is present.
+   * Falls back gracefully: if the endpoint is unavailable, the caller should use getAll().
+   */
+  async advancedSearch(params: {
+    query: string;
+    category_id?: number;
+    vendor_id?: number;
+    per_page?: number;
+    page?: number;
+    enable_fuzzy?: boolean;
+  }): Promise<{ data: Product[]; total: number; current_page: number; last_page: number }> {
+    try {
+      const response = await axiosInstance.post('/products/advanced-search', params);
+      const result = response.data;
+      if (!result?.success) return { data: [], total: 0, current_page: 1, last_page: 1 };
+
+      const dataRoot = result.data ?? {};
+      const rawList: any[] = Array.isArray(dataRoot.items)
+        ? dataRoot.items
+        : Array.isArray(dataRoot.products)
+          ? dataRoot.products
+          : Array.isArray(dataRoot.data)
+            ? dataRoot.data
+            : [];
+
+      const products = rawList.map(transformProduct);
+      const pagination = dataRoot.pagination ?? dataRoot;
+      return {
+        data: products,
+        total: pagination.total ?? products.length,
+        current_page: pagination.current_page ?? 1,
+        last_page: pagination.last_page ?? pagination.total_pages ?? 1,
+      };
+    } catch (error: any) {
+      console.error('Advanced search error:', error);
+      // Surface as a typed error so caller can fall back to getAll
+      throw error;
     }
   },
 

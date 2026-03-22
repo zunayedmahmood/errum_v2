@@ -124,7 +124,7 @@ export default function CategoriesPage() {
               {categories.map((cat, ci) => {
                 const [from, to] = PALETTE[ci % PALETTE.length];
                 const imgSrc = cat.image_url || cat.image || '';
-                const href = `/e-commerce/${encodeURIComponent(cat.slug || slugify(cat.name))}`;
+                const href = `/e-commerce/${encodeURIComponent(slugify(cat.name))}`;
                 const children = cat.children || [];
 
                 return (
@@ -163,7 +163,7 @@ export default function CategoriesPage() {
                           return (
                             <Link
                               key={child.id}
-                              href={`/e-commerce/${encodeURIComponent(child.slug || slugify(child.name))}`}
+                              href={`/e-commerce/${encodeURIComponent(slugify(child.name))}`}
                               className="group block"
                             >
                               <div className="relative overflow-hidden rounded-xl transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg" style={{ aspectRatio: '3/4' }}>

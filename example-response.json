@@ -1,0 +1,135 @@
+{
+    "success": true,
+    "data": {
+        "product": {
+            "id": 4701,
+            "name": "Jordan - Cap-na",
+            "base_name": "Jordan - Cap",
+            "variation_suffix": "-na",
+            "brand": null,
+            "sku": "967142305",
+            "description": "Jordan brand caps are premium, stylish, and highly versatile, featuring the iconic Jumpman logo and primarily designed for athletic or casual street style. Common types include snapbacks, truckers, and unstructured, with materials ranging from breathable, lightweight nylon to cotton, and often incorporating Dri-FIT technology for moisture management.",
+            "selling_price": "600.00",
+            "cost_price": "600.00",
+            "stock_quantity": 20,
+            "in_stock": true,
+            "has_variants": false,
+            "variants_count": 0,
+            "variants": [],
+            "images": [
+                {
+                    "id": 11144,
+                    "url": "\/storage\/products\/4701\/1772718778_b5XZWg4h7Q.jpeg",
+                    "alt_text": "Jordan - Cap-na",
+                    "is_primary": true,
+                    "sort_order": 0
+                },
+                {
+                    "id": 11160,
+                    "url": "\/storage\/products\/4701\/1772776668_wpkovme3KB.jpeg",
+                    "alt_text": "Jordan - Cap-na",
+                    "is_primary": false,
+                    "sort_order": 1
+                },
+                {
+                    "id": 11161,
+                    "url": "\/storage\/products\/4701\/1772776670_2T1yhxSfrt.jpeg",
+                    "alt_text": "Jordan - Cap-na",
+                    "is_primary": false,
+                    "sort_order": 2
+                }
+            ],
+            "category": {
+                "id": 116,
+                "name": "Brand Cap"
+            },
+            "vendor": {
+                "id": 1,
+                "name": null
+            },
+            "batches": [
+                {
+                    "id": 4531,
+                    "sell_price": "600.00",
+                    "quantity": 20,
+                    "store_id": "1"
+                }
+            ],
+            "created_at": "2026-03-05T08:20:05.000000Z",
+            "updated_at": "2026-03-05T08:20:05.000000Z"
+        },
+        "related_products": [
+            {
+                "id": 4704,
+                "name": "LA - Cap-na",
+                "brand": null,
+                "sku": "736413249",
+                "selling_price": "600.00",
+                "images": [],
+                "in_stock": true
+            },
+            {
+                "id": 4706,
+                "name": "LV - Cap-na",
+                "brand": null,
+                "sku": "270883151",
+                "selling_price": "600.00",
+                "images": [],
+                "in_stock": true
+            },
+            {
+                "id": 4708,
+                "name": "Gucci - Cap-na",
+                "brand": null,
+                "sku": "195383898",
+                "selling_price": "800.00",
+                "images": [],
+                "in_stock": true
+            },
+            {
+                "id": 4720,
+                "name": "Adidas-trefoil-white",
+                "brand": null,
+                "sku": "574160590",
+                "selling_price": "600.00",
+                "images": [
+                    {
+                        "id": 11075,
+                        "product_id": "4720",
+                        "image_path": "products\/4720\/1772703199_v1ozNENa0S.jpeg",
+                        "alt_text": "Adidas-trefoil-white",
+                        "is_primary": true,
+                        "sort_order": 0,
+                        "is_active": true,
+                        "created_at": "2026-03-05T09:33:19.000000Z",
+                        "updated_at": "2026-03-05T09:33:19.000000Z",
+                        "image_url": "\/storage\/products\/4720\/1772703199_v1ozNENa0S.jpeg"
+                    }
+                ],
+                "in_stock": true
+            },
+            {
+                "id": 4736,
+                "name": "Polo-dark-green",
+                "brand": null,
+                "sku": "213969207",
+                "selling_price": "600.00",
+                "images": [
+                    {
+                        "id": 11133,
+                        "product_id": "4736",
+                        "image_path": "products\/4736\/1772718257_EMCSBGKgbA.jpeg",
+                        "alt_text": "Polo-dark-green",
+                        "is_primary": true,
+                        "sort_order": 0,
+                        "is_active": true,
+                        "created_at": "2026-03-05T13:44:17.000000Z",
+                        "updated_at": "2026-03-05T13:44:17.000000Z",
+                        "image_url": "\/storage\/products\/4736\/1772718257_EMCSBGKgbA.jpeg"
+                    }
+                ],
+                "in_stock": true
+            }
+        ]
+    }
+}
