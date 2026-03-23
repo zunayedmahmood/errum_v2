@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import Link from 'next/link';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
@@ -37,7 +38,7 @@ interface ProductWithInventory {
 }
 
 export default function GalleryPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [products, setProducts] = useState<ProductWithInventory[]>([]);
   const [loading, setLoading] = useState(true);

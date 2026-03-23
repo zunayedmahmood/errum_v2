@@ -453,6 +453,17 @@ class ProductSearchController extends Controller
             $phoneticVariations = $this->generatePhoneticVariations($query);
             $terms = array_merge($terms, $phoneticVariations);
         }
+
+        // Seamless Improvement: Split query by spaces and add individual words (min 3 chars)
+        $words = explode(' ', $lowercaseQuery);
+        if (count($words) > 1) {
+            foreach ($words as $word) {
+                $word = trim($word);
+                if (mb_strlen($word, 'UTF-8') >= 3) {
+                    $terms[] = $word;
+                }
+            }
+        }
         
         // Remove duplicates and empty strings
         $terms = array_unique(array_filter($terms));
@@ -516,7 +527,9 @@ class ProductSearchController extends Controller
             $query->where('vendor_id', $filters['vendor_id']);
         }
         
-        $allProducts = $query->get();
+        // Performance: Limit the number of products we run fuzzy matching on
+        // If there are thousands of products, this is too slow.
+        $allProducts = $query->limit(1000)->get();
         $fuzzyMatches = collect();
         
         foreach ($allProducts as $product) {
@@ -726,39 +739,42 @@ class ProductSearchController extends Controller
             $score = $product->base_score ?? 0;
             
             // Boost score based on match location
-            foreach ($searchTerms as $term) {
+            foreach ($searchTerms as $index => $term) {
                 $termLower = mb_strtolower($term, 'UTF-8');
                 $nameLower = mb_strtolower($product->name, 'UTF-8');
                 $skuLower = mb_strtolower($product->sku, 'UTF-8');
                 
+                // Weight: The first term (full query) gets much higher weight
+                $weight = ($index === 0) ? 2.0 : 1.0;
+
                 // Exact name match gets highest boost
                 if ($nameLower === $termLower) {
-                    $score += 50;
+                    $score += (50 * $weight);
                 }
                 
                 // Exact SKU match
                 if ($skuLower === $termLower) {
-                    $score += 40;
+                    $score += (40 * $weight);
                 }
                 
                 // Name starts with term
                 if (strpos($nameLower, $termLower) === 0) {
-                    $score += 30;
+                    $score += (30 * $weight);
                 }
                 
                 // SKU starts with term
                 if (strpos($skuLower, $termLower) === 0) {
-                    $score += 25;
+                    $score += (25 * $weight);
                 }
                 
                 // Name contains term
                 if (strpos($nameLower, $termLower) !== false) {
-                    $score += 15;
+                    $score += (15 * $weight);
                 }
-                
+
                 // Category match
                 if ($product->category && strpos(mb_strtolower($product->category->title, 'UTF-8'), $termLower) !== false) {
-                    $score += 10;
+                    $score += (10 * $weight);
                 }
             }
             

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -36,7 +37,7 @@ export default function EmployeeDetailPage() {
 
   // Layout states
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
 
   useEffect(() => {
     if (employeeId) {

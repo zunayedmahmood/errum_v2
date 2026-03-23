@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { Search, Loader2, Save, CheckCircle2, AlertCircle, Pencil, X, Check } from 'lucide-react';
 
 import Header from '@/components/Header';
@@ -25,7 +26,7 @@ type UpdateRow = {
 
 export default function BatchPriceUpdatePage() {
   // Layout states (required by your Header/Sidebar)
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Product search/select

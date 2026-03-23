@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { Search, Trash2, X, Layers, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
@@ -29,7 +30,7 @@ interface QueuedBatch {
 export default function BatchPage() {
   const router = useRouter();
 
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const [stores, setStores] = useState<Store[]>([]);

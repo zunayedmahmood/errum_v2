@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import CustomerTagManager from '@/components/customers/CustomerTagManager';
@@ -360,7 +361,7 @@ type PrinterBatch = {
 
 export default function LookupPage() {
   // Layout
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Tabs

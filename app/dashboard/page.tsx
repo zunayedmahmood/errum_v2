@@ -19,6 +19,7 @@ import {
 import axios from "axios";
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
+import { useTheme } from "@/contexts/ThemeContext";
 
 // ✅ Axios instance (same as you had, but safer extract below)
 const axiosInstance = axios.create({
@@ -68,7 +69,7 @@ interface DashboardData {
 }
 
 export default function FounderDashboard() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,15 +90,6 @@ export default function FounderDashboard() {
   const [timeFilter, setTimeFilter] = useState<"today" | "week" | "month">("today");
   const [branchFilter, setBranchFilter] = useState("all"); // reserved for store_id filter later
 
-  // Dark mode persistence
-  useEffect(() => {
-    const savedDarkMode = localStorage.getItem("darkMode") === "true";
-    setDarkMode(savedDarkMode);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("darkMode", darkMode.toString());
-  }, [darkMode]);
 
   // ✅ Normalizer: supports both shapes
   // A) { success:true, data:{...} }

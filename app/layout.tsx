@@ -5,6 +5,7 @@ import ReceiptPreviewModalHost from "@/components/ReceiptPreviewModalHost";
 import GlobalToastHost from "@/components/GlobalToastHost";
 import { CartProvider } from "./e-commerce/CartContext";
 import { AuthProvider } from '@/contexts/AuthContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,12 +32,14 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <AuthProvider>
-          <CartProvider>
-            <QZTrayLoader />
-            <ReceiptPreviewModalHost />
-            <GlobalToastHost />
-            {children}
-          </CartProvider>
+          <ThemeProvider>
+            <CartProvider>
+              <QZTrayLoader />
+              <ReceiptPreviewModalHost />
+              <GlobalToastHost />
+              {children}
+            </CartProvider>
+          </ThemeProvider>
         </AuthProvider>
       </body>
     </html>

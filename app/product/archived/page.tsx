@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 
@@ -18,7 +19,7 @@ const ERROR_IMG_SRC =
 export default function ArchivedProductsPage() {
   const router = useRouter();
 
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const [loading, setLoading] = useState(true);

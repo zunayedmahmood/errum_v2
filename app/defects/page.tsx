@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { Search, Barcode, User, Package, Trash2, ShoppingCart, AlertCircle, StoreIcon, ChevronDown, ChevronUp, Calendar, MapPin, Image as ImageIcon, Truck } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -40,7 +41,7 @@ const formatPrice = (price: number | undefined | null): string => {
 };
 
 export default function DefectsPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [defects, setDefects] = useState<DefectItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);

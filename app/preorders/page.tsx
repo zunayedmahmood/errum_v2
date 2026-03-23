@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import Link from 'next/link';
 import { AlertCircle, Eye, Loader2, RefreshCw, Search, Plus, X } from 'lucide-react';
 import Header from '@/components/Header';
@@ -100,7 +101,7 @@ const isPreorder = (o: BackendOrder): boolean => {
 };
 
 export default function PreordersPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const [loading, setLoading] = useState(false);

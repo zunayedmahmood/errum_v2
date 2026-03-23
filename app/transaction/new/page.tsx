@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, DragEvent, ChangeEvent } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Upload, X } from 'lucide-react';
 import Header from '@/components/Header';
@@ -9,7 +10,7 @@ import Link from 'next/link';
 import transactionService, { Category } from '@/services/transactionService';
 
 export default function NewTransactionPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const router = useRouter();
   

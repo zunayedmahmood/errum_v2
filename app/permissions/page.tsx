@@ -5,6 +5,7 @@ import { Plus, Search, RefreshCcw, X, Save, Trash2 } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from "@/contexts/ThemeContext";
 import permissionService, { Permission, CreatePermissionData, UpdatePermissionData } from '@/services/permissionService';
 
 type PermFormState = {
@@ -29,7 +30,7 @@ export default function PermissionsPage() {
 
   // Layout
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
 
   // Data
   const [perms, setPerms] = useState<Permission[]>([]);

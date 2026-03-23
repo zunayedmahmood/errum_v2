@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import serviceOrdersService, { ServiceOrderStatus, ServiceOrderPaymentStatus } from '@/services/serviceOrdersService';
@@ -17,7 +18,7 @@ const fmtMoney = (n: any) => {
 };
 
 export default function ServiceOrdersPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
 

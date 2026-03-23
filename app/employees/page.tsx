@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from 'next/navigation';
 import { 
   Users, 
@@ -38,7 +39,7 @@ export default function EmployeeManagement() {
   
   // Layout states
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   
   // Filters
   const [filters, setFilters] = useState<EmployeeFilters>({

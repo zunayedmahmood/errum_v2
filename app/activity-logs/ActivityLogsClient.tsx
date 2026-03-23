@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { useSearchParams } from 'next/navigation';
 import { Filter, RefreshCw, Search } from 'lucide-react';
 
@@ -38,7 +39,7 @@ function toYmd(d: Date) {
 export default function ActivityLogsClient() {
   const searchParams = useSearchParams();
 
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Filters

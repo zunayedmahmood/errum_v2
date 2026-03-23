@@ -16,6 +16,7 @@ import {
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from "@/contexts/ThemeContext";
 
 // Services
 import orderService from '@/services/orderService';
@@ -81,7 +82,7 @@ export interface ExtendedCartItem extends CartItem {
 export default function POSPage() {
   const { user, scopedStoreId, canSelectStore } = useAuth();
   // UI State
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);

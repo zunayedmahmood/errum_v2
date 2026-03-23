@@ -8,13 +8,14 @@ import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from "@/contexts/ThemeContext";
 import productService, { Product, ForceDeleteResponse, ForceDeleteSummary } from '@/services/productService';
 
 export default function ForceDeleteProductPage() {
   const router = useRouter();
   const { isLoading: authLoading, hasPermission } = useAuth();
 
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const [productIdInput, setProductIdInput] = useState('');

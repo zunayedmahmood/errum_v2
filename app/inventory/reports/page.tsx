@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   BarChart3,
   RefreshCw,
@@ -145,7 +146,7 @@ function parseCsvText(text: string, maxRows = 60): string[][] {
 }
 
 export default function InventoryReportsPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Filters
@@ -327,7 +328,9 @@ export default function InventoryReportsPage() {
 
   const getAuthHeader = () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') || '' : '';
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    const headers: HeadersInit = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
   };
 
   const downloadCsv = async (endpoint: string, query: URLSearchParams) => {
@@ -597,6 +600,8 @@ export default function InventoryReportsPage() {
         sku: p.sku,
         category: categoryName(p.category_id || 0),
         stock: stockByProductId.get(p.id) || 0,
+        units: 0,
+        net: 0,
       }))
       .slice(0, 200);
 
@@ -609,6 +614,7 @@ export default function InventoryReportsPage() {
         ...p,
         stock: stockByProductId.get(p.product_id) || 0,
         category: categoryName(p.category_id || 0),
+        net: p.net, // ensure net is explicitly included for type safety
       }));
 
     const zeroSellingCategories = categoriesList
@@ -674,8 +680,8 @@ export default function InventoryReportsPage() {
         discountedPct,
         fullPct,
       },
-      topProducts,
-      topCategories,
+      topProducts: topProducts as ProductAgg[],
+      topCategories: topCategories as CategoryAgg[],
       zeroSellingProducts,
       lowSellingProducts,
       zeroSellingCategories,
@@ -894,33 +900,123 @@ export default function InventoryReportsPage() {
             </div>
 
             {/* Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Orders (in range)</p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{report.totals.orders}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Orders (in range)</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-3xl font-bold text-gray-900 dark:text-white">{report.totals.orders}</p>
+                  <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                    <BarChart3 className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  </div>
+                </div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Units sold</p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{report.totals.units}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Units sold</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-3xl font-bold text-gray-900 dark:text-white">{report.totals.units}</p>
+                  <div className="p-2 bg-purple-50 dark:bg-purple-900/30 rounded-lg">
+                    <Package className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                  </div>
+                </div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Net sales</p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatMoney(report.totals.netSales)}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Net sales</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">৳ {formatMoney(report.totals.netSales)}</p>
+                  <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg">
+                    <Tag className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                </div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Discounted vs Full</p>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Sales Distribution</p>
                 <div className="mt-2">
-                  <div className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-200">
-                    <span className="inline-flex items-center gap-1"><Tag className="w-4 h-4" /> Discounted</span>
-                    <span className="font-semibold">{report.totals.discountedPct.toFixed(1)}%</span>
+                  <div className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-200 mb-1">
+                    <span className="inline-flex items-center gap-1 font-medium">Full Value</span>
+                    <span className="font-bold">{report.totals.fullPct.toFixed(1)}%</span>
                   </div>
-                  <div className="w-full h-2 rounded bg-gray-200 dark:bg-gray-700 mt-2 overflow-hidden">
-                    <div className="h-full bg-blue-600" style={{ width: `${Math.min(100, Math.max(0, report.totals.discountedPct))}%` }} />
+                  <div className="w-full h-3 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden flex shadow-inner">
+                    <div 
+                      className="h-full bg-emerald-500 transition-all duration-1000" 
+                      style={{ width: `${Math.min(100, Math.max(0, report.totals.fullPct))}%` }} 
+                    />
+                    <div 
+                      className="h-full bg-blue-500 transition-all duration-1000" 
+                      style={{ width: `${Math.min(100, Math.max(0, report.totals.discountedPct))}%` }} 
+                    />
                   </div>
-                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 mt-2">
-                    <span>Disc: {formatMoney(report.totals.discountedSales)}</span>
-                    <span>Full: {formatMoney(report.totals.fullPriceSales)}</span>
+                  <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400 mt-2 font-medium">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span> 
+                      ৳ {formatMoney(report.totals.fullPriceSales)}
+                    </span>
+                    <span className="flex items-center gap-1 text-right">
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span> 
+                      ৳ {formatMoney(report.totals.discountedSales)}
+                    </span>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Visual Insights Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm h-fit">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-blue-500" />
+                    Top Category Performance
+                  </h3>
+                  <span className="text-xs text-gray-500 font-medium bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">By {metric === 'units' ? 'Units' : 'Sales'}</span>
+                </div>
+                <div className="space-y-4">
+                  {report.topCategories.slice(0, 7).map((c, i) => {
+                    const maxVal = Math.max(...report.topCategories.map(cat => metric === 'units' ? cat.units : cat.net), 1);
+                    return (
+                        <ProgressBarChart 
+                          key={c.category_id}
+                          label={c.category_name}
+                          value={metric === 'units' ? c.units : `৳ ${formatMoney(c.net)}`}
+                          percentage={( (metric === 'units' ? c.units : c.net) / maxVal ) * 100}
+                          colorClass={
+                            i === 0 ? "bg-gradient-to-r from-blue-600 to-indigo-600" :
+                            i === 1 ? "bg-gradient-to-r from-purple-600 to-pink-600" :
+                            "bg-gradient-to-r from-blue-400 to-blue-600"
+                          }
+                        />
+                    );
+                  })}
+                  {report.topCategories.length === 0 && <p className="text-center text-sm py-10 opacity-50">No data to display</p>}
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm h-fit">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-purple-500" />
+                    Top Product Performance
+                  </h3>
+                  <span className="text-xs text-gray-500 font-medium bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">By {metric === 'units' ? 'Units' : 'Sales'}</span>
+                </div>
+                <div className="space-y-4">
+                  {report.topProducts.slice(0, 7).map((p, i) => {
+                    const maxVal = Math.max(...report.topProducts.map(prod => metric === 'units' ? prod.units : prod.net), 1);
+                    return (
+                        <ProgressBarChart 
+                          key={p.product_id}
+                          label={p.name}
+                          subLabel={p.sku}
+                          value={metric === 'units' ? p.units : `৳ ${formatMoney(p.net)}`}
+                          percentage={( (metric === 'units' ? p.units : p.net) / maxVal ) * 100}
+                          colorClass={
+                            i === 0 ? "bg-gradient-to-r from-emerald-600 to-teal-600" :
+                            i === 1 ? "bg-gradient-to-r from-orange-600 to-amber-600" :
+                            "bg-gradient-to-r from-purple-400 to-purple-600"
+                          }
+                        />
+                    );
+                  })}
+                  {report.topProducts.length === 0 && <p className="text-center text-sm py-10 opacity-50">No data to display</p>}
                 </div>
               </div>
             </div>
@@ -1173,13 +1269,33 @@ export default function InventoryReportsPage() {
                   </thead>
                   <tbody>
                     {report.categorySellThrough.slice(0, 50).map((c) => (
-                      <tr key={c.category_id} className="border-t border-gray-100 dark:border-gray-700">
-                        <td className="py-2 px-3 text-sm text-gray-900 dark:text-white font-medium">{c.category_name}</td>
-                        <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-white">{c.units}</td>
-                        <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-white">{c.stock_units}</td>
-                        <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-white">{c.sellThrough.toFixed(1)}%</td>
-                        <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-white">{c.soldVsStock.toFixed(1)}%</td>
-                      </tr>
+                        <tr key={c.category_id} className="border-t border-gray-100 dark:border-gray-700">
+                          <td className="py-2 px-3 text-sm text-gray-900 dark:text-white font-medium">{c.category_name}</td>
+                          <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-white">{c.units}</td>
+                          <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-white">{c.stock_units}</td>
+                          <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-white">
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="font-semibold">{c.sellThrough.toFixed(1)}%</span>
+                              <div className="w-16 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden flex shadow-inner">
+                                <div 
+                                  className={`h-full rounded-full ${c.sellThrough > 50 ? 'bg-emerald-500' : c.sellThrough > 20 ? 'bg-blue-500' : 'bg-gray-400'} transition-all duration-1000`} 
+                                  style={{ width: `${Math.min(100, Math.max(0, c.sellThrough))}%` }} 
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-white">
+                            <div className="flex items-center justify-end gap-2">
+                              <span>{c.soldVsStock.toFixed(1)}%</span>
+                              <div className="w-16 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden flex shadow-inner">
+                                <div 
+                                  className={`h-full rounded-full ${c.soldVsStock > 50 ? 'bg-purple-500' : 'bg-sky-500'} transition-all`} 
+                                  style={{ width: `${Math.min(100, Math.max(0, c.soldVsStock))}%` }} 
+                                />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
                     ))}
                     {report.categorySellThrough.length === 0 && (
                       <tr>
@@ -1505,6 +1621,30 @@ export default function InventoryReportsPage() {
             )}
           </main>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* Subcomponents for visualization */
+
+function ProgressBarChart({ label, subLabel, value, percentage, colorClass }: { label: string, subLabel?: string, value: string | number, percentage: number, colorClass: string }) {
+  return (
+    <div className="space-y-1.5 grayscale-[0.2] hover:grayscale-0 transition-all group">
+      <div className="flex items-center justify-between text-xs gap-3">
+        <div className="flex-1 truncate">
+          <span className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">{label}</span>
+          {subLabel && <span className="ml-2 text-gray-400 dark:text-gray-500 font-mono text-[10px]">{subLabel}</span>}
+        </div>
+        <span className="font-black text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-900/50 px-1.5 py-0.5 rounded border border-gray-100 dark:border-gray-800 shadow-sm">{value}</span>
+      </div>
+      <div className="relative w-full h-3 bg-gray-100 dark:bg-gray-700/50 rounded-full overflow-hidden shadow-inner group-hover:h-4 transition-all duration-300">
+        <div 
+          className={`absolute left-0 top-0 h-full rounded-full ${colorClass} transition-all duration-1000 ease-[cubic-bezier(0.34,1.56,0.64,1)] shadow-sm`}
+          style={{ width: `${Math.min(100, Math.max(3, percentage))}%` }}
+        />
+        {/* Shimmer effect for premium feel */}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full animate-[shimmer_3s_infinite]" />
       </div>
     </div>
   );

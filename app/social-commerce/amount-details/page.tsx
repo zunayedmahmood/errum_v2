@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { Globe, DollarSign, CreditCard, Wallet, XCircle } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -43,7 +44,7 @@ interface OrderData {
 }
 
 export default function AmountDetailsPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [orderData, setOrderData] = useState<OrderData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);

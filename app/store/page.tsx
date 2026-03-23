@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { Plus, Search } from 'lucide-react';
 import StoreCard from '@/components/StoreCard';
 import Link from 'next/link';
@@ -9,7 +10,7 @@ import Header from '@/components/Header';
 import storeService, { Store } from '@/services/storeService';
 
 export default function StoresPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

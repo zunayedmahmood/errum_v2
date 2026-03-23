@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { Plus, Calendar, Tag, TrendingDown, TrendingUp, Receipt, Search, ShoppingBag, Store, Package, RefreshCw, ArrowUpDown, Image as ImageIcon } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -8,7 +9,7 @@ import Link from 'next/link';
 import transactionService, { Transaction } from '@/services/transactionService';
 
 export default function TransactionsPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);

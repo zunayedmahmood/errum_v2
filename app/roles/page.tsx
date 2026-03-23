@@ -5,6 +5,7 @@ import { Plus, Search, RefreshCcw, X, Save, Trash2 } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from "@/contexts/ThemeContext";
 import roleService, { Role, CreateRoleData, UpdateRoleData } from '@/services/roleService';
 import permissionService, { Permission } from '@/services/permissionService';
 
@@ -33,7 +34,7 @@ export default function RolesPage() {
 
   // Layout
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
 
   // Data
   const [roles, setRoles] = useState<Role[]>([]);

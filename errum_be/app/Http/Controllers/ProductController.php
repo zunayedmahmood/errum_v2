@@ -43,7 +43,33 @@ class ProductController extends Controller
 
         if ($request->has('search')) {
             $search = $request->search;
-            $this->whereAnyLike($query, ['name', 'sku', 'description'], $search);
+            $terms = explode(' ', $search);
+            
+            $query->where(function ($q) use ($terms) {
+                foreach ($terms as $term) {
+                    $term = trim($term);
+                    if (empty($term)) continue;
+                    
+                    $q->where(function ($subQ) use ($term) {
+                        $this->whereAnyLike($subQ, ['name', 'sku', 'description'], $term);
+                    });
+                }
+            });
+        }
+
+        // Price range filter
+        if ($request->has('min_price') || $request->has('max_price')) {
+            $query->whereHas('batches', function($q) use ($request) {
+                $q->where('is_active', true)
+                  ->where('availability', true);
+                
+                if ($request->has('min_price')) {
+                    $q->where('sell_price', '>=', (float) $request->min_price);
+                }
+                if ($request->has('max_price')) {
+                    $q->where('sell_price', '<=', (float) $request->max_price);
+                }
+            });
         }
 
         // Search by custom field value

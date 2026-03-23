@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
@@ -17,7 +18,7 @@ type AddStorePageProps = {
 
 export default function AddStorePage({ searchParams }: AddStorePageProps) {
   const editId = searchParams?.id ? String(searchParams.id) : null;
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [isTypeOpen, setIsTypeOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

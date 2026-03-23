@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   Tag, Plus, Search, Edit2, Trash2, ToggleLeft, ToggleRight,
   Percent, DollarSign, Calendar, Package, FolderTree, CheckCircle,
@@ -95,7 +96,7 @@ const EMPTY_FORM: CampaignFormData = {
 ───────────────────────────────────────────────────────── */
 export default function CampaignsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

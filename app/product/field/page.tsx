@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import { Plus } from 'lucide-react';
@@ -11,7 +12,7 @@ import AddItemModal from '@/components/AddItemModal';
 import { fieldService, Field } from '@/services/fieldService';
 
 export default function FieldPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [fields, setFields] = useState<Field[]>([]);
   const [showForm, setShowForm] = useState(false);

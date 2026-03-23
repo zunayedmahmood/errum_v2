@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Edit, Trash2, Archive, Package, Tag, Calendar, User, ChevronLeft, ChevronRight } from 'lucide-react';
 import Header from '@/components/Header';
@@ -35,7 +36,7 @@ function ProductDetailPageContent({ params }: ProductDetailPageProps) {
   const searchParams = useSearchParams();
   const productId = parseInt(params.id);
 
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);

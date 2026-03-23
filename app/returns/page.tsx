@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import productReturnService, {
@@ -606,7 +607,7 @@ function DetailModal({ ret, onClose, onAction }: DetailModalProps) {
 
 // ─── Main page ────────────────────────────────────────────────
 export default function ReturnsPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [returns, setReturns] = useState<ProductReturn[]>([]);

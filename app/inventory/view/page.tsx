@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { AlertCircle, ChevronDown, ChevronUp, Package, Search } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
@@ -50,7 +51,7 @@ function ViewInventoryPageContent() {
   const pathname = usePathname();
   const isUpdatingUrlRef = useRef(false);
 
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);

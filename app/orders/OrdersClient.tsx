@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -299,7 +300,7 @@ type PathaoZone = { zone_id: number; zone_name: string };
 type PathaoArea = { area_id: number; area_name: string };
 
 export default function OrdersDashboard() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [orders, setOrders] = useState<Order[]>([]);

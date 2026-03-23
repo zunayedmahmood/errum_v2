@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { FileText, BookOpen, TrendingUp, Download, Search, RefreshCw } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -14,7 +15,7 @@ import accountingService, {
 } from '@/services/accountingService';
 
 export default function AccountingSystem() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('journal');
   const [dateRange, setDateRange] = useState({ 

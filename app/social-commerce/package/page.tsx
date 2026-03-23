@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   Package,
   Scan,
@@ -68,7 +69,7 @@ const formatBDT = (value: any, decimals: 0 | 2 = 0) => {
 };
 
 export default function WarehouseFulfillmentPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [pendingOrders, setPendingOrders] = useState<any[]>([]);

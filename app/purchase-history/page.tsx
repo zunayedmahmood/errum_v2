@@ -13,6 +13,7 @@ import ExchangeProductModal from '@/components/sales/ExchangeProductModal';
 import axiosInstance from '@/lib/axios';
 import { checkQZStatus, printReceipt } from '@/lib/qz-tray';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from "@/contexts/ThemeContext";
 import storeService from '@/services/storeService';
 
 interface OrderItem {
@@ -86,7 +87,7 @@ interface Store {
 
 export default function PurchaseHistoryPage() {
   const { user, scopedStoreId, canSelectStore } = useAuth();
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [stores, setStores] = useState<Store[]>([]);

@@ -111,13 +111,13 @@ make a detailed md file titled "mobile viewport polishing for e-commerce pages" 
 
 There may be some partially done works from previous prompts. edit from whatever condition you find.
 
-Check product/list page and ProductListClient .
+Check the product/list page.
+It has a search bar, filter and min-max input fields. I want you to check and do following changes:
 
-What i want you to fix:
-->currently when we open a product(or edit, basically in case of any redirecting) the current page is not displayed. Like, if we open a product from page 4 and return, the pagination shows page 5, the url shows page 5, but the products there are all from page 1 (always page 1) (this is issue persistent even when the page is refreshed).
-Check the code and fix it so that, when we return, the page is displaying the products of that page.
+->currently, the searchBar is having issues finding the product when we input the full name. 
+->The filters and min-max input fields are all working fine. Make a small edit in frontend that, if min can not be larger than max and max can not be smaller than min (if inputed, change to equal) (but, only one can also be sent).
 
-DO NOT change anything else, any other UI or logic.
-have proper comments on all the lines you change.
+check the backend controllers and models that are called by these frontend code. make sure that the entire data fetching and request sending is seamless and smooth.
+The page is currently working absolutely fine with proper logic. so ONLY edit if stricly necessary. DO NOT change anything unnecessarily. 
 
-Make and save an md file titled, product list page update and fixes.md .
+

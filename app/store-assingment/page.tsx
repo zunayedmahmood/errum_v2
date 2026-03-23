@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   Package,
   Store as StoreIcon,
@@ -27,7 +28,7 @@ import storeService from '@/services/storeService';
 import inventoryService from '@/services/inventoryService';
 
 export default function StoreAssignmentPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Orders list state

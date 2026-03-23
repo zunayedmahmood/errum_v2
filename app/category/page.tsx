@@ -11,6 +11,7 @@ import Toast from "@/components/Toast";
 import AccessDenied from "@/components/AccessDenied";
 import categoryService, { Category } from "@/services/categoryService";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export default function CategoryPageWrapper() {
   const { hasAnyPermission, hasPermission, permissionsResolved } = useAuth();
@@ -18,7 +19,7 @@ export default function CategoryPageWrapper() {
   const canCreate = hasPermission('categories.create');
   const canEdit = hasPermission('categories.edit');
   const canDelete = hasPermission('categories.delete');
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [searchQuery, setSearchQuery] = useState("");

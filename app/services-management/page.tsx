@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   Plus,
   Edit2,
@@ -21,7 +22,7 @@ interface Toast {
 }
 
 export default function ServiceManagementPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);

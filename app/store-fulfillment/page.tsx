@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { 
   Package, 
   Scan, 
@@ -31,7 +32,7 @@ interface ScanHistoryEntry {
 }
 
 export default function StoreFulfillmentPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Store info

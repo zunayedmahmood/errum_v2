@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { Search, X, Globe, AlertCircle, Package } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -53,7 +54,7 @@ interface ProductBatchInfo {
 }
 
 export default function SocialCommercePage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [allBatches, setAllBatches] = useState<any[]>([]); // All batches from all stores

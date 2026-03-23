@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { RefreshCw, Calendar, BarChart3, Store, TrendingUp, Package, AlertTriangle } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
@@ -21,7 +22,7 @@ function formatBDT(value: number) {
 }
 
 export default function StoresSummaryPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [period, setPeriod] = useState<StoresSummaryPeriod>('today');

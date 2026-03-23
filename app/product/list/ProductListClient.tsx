@@ -13,6 +13,7 @@ import catalogService from '@/services/catalogService';
 import Toast from '@/components/Toast';
 import AccessDenied from '@/components/AccessDenied';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 
 import {
   ProductVariant,
@@ -37,7 +38,8 @@ export default function ProductPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [redirectPath, setRedirectPath] = useState('');
 
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
+  const [isMounted, setIsMounted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -55,6 +57,8 @@ export default function ProductPage() {
   const [selectedVendor, setSelectedVendor] = useState<string>('');
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
+  const [debouncedMinPrice, setDebouncedMinPrice] = useState<string>('');
+  const [debouncedMaxPrice, setDebouncedMaxPrice] = useState<string>('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const SERVER_PAGE_SIZE = 60;
@@ -97,6 +101,11 @@ export default function ProductPage() {
     [updateQueryParams]
   );
 
+  // Hydration fix
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Keep state in sync with URL params (supports refresh + back/forward)
   useEffect(() => {
     // If we just updated the URL ourselves, don't overwrite state.
@@ -131,6 +140,34 @@ export default function ProductPage() {
 
     return () => window.clearTimeout(timer);
   }, [searchQuery]);
+
+  // Price validation and query update delay (1000ms)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      let finalMin = minPrice;
+      let finalMax = maxPrice;
+
+      if (minPrice && maxPrice) {
+        const minVal = parseFloat(minPrice);
+        const maxVal = parseFloat(maxPrice);
+        if (!isNaN(minVal) && !isNaN(maxVal) && minVal > maxVal) {
+          // Equalize as requested: if min > max, change to equal (using max as master for current typing)
+          finalMin = maxPrice;
+          setMinPrice(maxPrice);
+        }
+      }
+
+      setDebouncedMinPrice(finalMin);
+      setDebouncedMaxPrice(finalMax);
+      updateQueryParams({
+        minPrice: finalMin || null,
+        maxPrice: finalMax || null,
+        page: '1'
+      });
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [minPrice, maxPrice, updateQueryParams]);
 
   const fetchFilterData = useCallback(async () => {
     try {
@@ -239,7 +276,7 @@ export default function ProductPage() {
         setIsLoading(false);
       }
     }
-  }, [currentPage, debouncedSearchQuery, selectedCategory, selectedVendor, minPrice, maxPrice, updateQueryParams]);
+  }, [currentPage, debouncedSearchQuery, selectedCategory, selectedVendor, debouncedMinPrice, debouncedMaxPrice, updateQueryParams]);
 
   useEffect(() => {
     fetchFilterData();
@@ -761,7 +798,7 @@ export default function ProductPage() {
                     )}
 
                     {/* Add Product Button */}
-                    {!selectMode && canCreateProducts && (
+                    {isMounted && !selectMode && canCreateProducts && (
                       <button
                         onClick={handleAdd}
                         className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors font-medium shadow-sm"
@@ -910,7 +947,6 @@ export default function ProductPage() {
                               const val = e.target.value;
                               setMinPrice(val);
                               setCurrentPage(1);
-                              updateQueryParams({ minPrice: val || null, page: '1' });
                             }}
                             className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
                           />
@@ -923,7 +959,6 @@ export default function ProductPage() {
                               const val = e.target.value;
                               setMaxPrice(val);
                               setCurrentPage(1);
-                              updateQueryParams({ maxPrice: val || null, page: '1' });
                             }}
                             className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
                           />

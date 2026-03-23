@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { Search, Package, CheckCircle, AlertCircle } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import StoreCard from '@/components/StoreCard';
@@ -42,7 +43,7 @@ function ManageStockPageContent() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const isUpdatingUrlRef = useRef(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [stores, setStores] = useState<StoreCardData[]>([]);

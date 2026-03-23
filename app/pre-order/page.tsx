@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import Link from 'next/link';
 import { Search, X, Globe, Package, AlertCircle, CheckCircle, Eye } from 'lucide-react';
 import Header from '@/components/Header';
@@ -18,7 +19,7 @@ interface CartProduct {
 }
 
 export default function PreOrderPage() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [stores, setStores] = useState<any[]>([]);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -26,7 +27,7 @@ export default function SellDefectPage() {
   const [initialSellType, setInitialSellType] = useState('pos');
   const [initialPrice, setInitialPrice] = useState('');
   
-  const [darkMode, setDarkMode] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [defect, setDefect] = useState<DefectItem | null>(null);
   const [sellingPrice, setSellingPrice] = useState('');

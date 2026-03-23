@@ -108,27 +108,35 @@ class EcommerceCatalogController extends Controller
         }
 
         if ($search) {
-            $like = '%' . addslashes($search) . '%';
-            $q->where(function ($sq) use ($like) {
-                $sq->where('products.name',              'like', $like)
-                   ->orWhere('products.base_name',       'like', $like)
-                   ->orWhere('products.sku',             'like', $like)
-                   ->orWhere('products.variation_suffix','like', $like)
-                   ->orWhere('products.description',     'like', $like)
-                   ->orWhereExists(function ($sub) use ($like) {
-                       $sub->select(DB::raw(1))
-                           ->from('categories')
-                           ->whereColumn('categories.id', 'products.category_id')
-                           ->where('categories.title', 'like', $like);
-                   })
-                   ->orWhereExists(function ($sub) use ($like) {
-                       $sub->select(DB::raw(1))
-                           ->from('product_fields')
-                           ->join('fields', 'fields.id', '=', 'product_fields.field_id')
-                           ->whereColumn('product_fields.product_id', 'products.id')
-                           ->where('product_fields.value', 'like', $like)
-                           ->whereIn('fields.title', ['Color', 'Size', 'Colour']);
-                   });
+            $terms = explode(' ', $search);
+            $q->where(function ($sq) use ($terms) {
+                foreach ($terms as $term) {
+                    $term = trim($term);
+                    if (empty($term)) continue;
+                    $like = '%' . addslashes($term) . '%';
+                    
+                    $sq->where(function ($wordQ) use ($like) {
+                        $wordQ->where('products.name',              'like', $like)
+                           ->orWhere('products.base_name',       'like', $like)
+                           ->orWhere('products.sku',             'like', $like)
+                           ->orWhere('products.variation_suffix','like', $like)
+                           ->orWhere('products.description',     'like', $like)
+                           ->orWhereExists(function ($sub) use ($like) {
+                               $sub->select(DB::raw(1))
+                                   ->from('categories')
+                                   ->whereColumn('categories.id', 'products.category_id')
+                                   ->where('categories.title', 'like', $like);
+                           })
+                           ->orWhereExists(function ($sub) use ($like) {
+                               $sub->select(DB::raw(1))
+                                   ->from('product_fields')
+                                   ->join('fields', 'fields.id', '=', 'product_fields.field_id')
+                                   ->whereColumn('product_fields.product_id', 'products.id')
+                                   ->where('product_fields.value', 'like', $like)
+                                   ->whereIn('fields.title', ['Color', 'Size', 'Colour']);
+                           });
+                    });
+                }
             });
         }
 
