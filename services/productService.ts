@@ -174,6 +174,7 @@ export const productService = {
     max_price?: number;
     /** NEW: stock status filter */
     stock_status?: 'all' | 'in_stock' | 'not_in_stock';
+    in_stock?: string;
   }): Promise<{ data: Product[]; total: number; current_page: number; last_page: number }> {
     try {
       // Prefer employee-scoped endpoints when available; fallback keeps backward compatibility.
@@ -247,6 +248,7 @@ export const productService = {
     page?: number;
     enable_fuzzy?: boolean;
     stock_status?: 'all' | 'in_stock' | 'not_in_stock';
+    in_stock?: string;
   }): Promise<{ data: Product[]; total: number; current_page: number; last_page: number }> {
     try {
       const response = await axiosInstance.post('/products/advanced-search', params);

@@ -55,6 +55,7 @@ export interface Product {
     average: number;
     count: number;
   };
+  batches?: any[];
   created_at: string;
   updated_at: string;
 }
@@ -576,6 +577,7 @@ const normalizeProduct = (
         count: toNumber(raw.ratings.count, 0),
       }
       : undefined,
+    batches: Array.isArray(raw?.batches) ? raw.batches : undefined,
     created_at: normalizeString(raw?.created_at || ''),
     updated_at: normalizeString(raw?.updated_at || raw?.created_at || ''),
   };

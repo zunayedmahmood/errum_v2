@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from "@/contexts/ThemeContext";
-import { Search, X, Globe, AlertCircle, Package } from 'lucide-react';
+import { Search, X, Globe, AlertCircle } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import CustomerTagManager from '@/components/customers/CustomerTagManager';
@@ -10,6 +10,9 @@ import axios from '@/lib/axios';
 import storeService from '@/services/storeService';
 import productImageService from '@/services/productImageService';
 import batchService from '@/services/batchService';
+import catalogService from '@/services/catalogService';
+import inventoryService from '@/services/inventoryService';
+import { fireToast } from '@/lib/globalToast';
 
 interface DefectItem {
   id: string;
@@ -24,7 +27,7 @@ interface DefectItem {
 interface CartProduct {
   id: number | string;
   product_id: number;
-  batch_id: number;
+  batch_id: number | null;
   productName: string;
   quantity: number;
   unit_price: number;
@@ -32,32 +35,34 @@ interface CartProduct {
   amount: number;
   isDefective?: boolean;
   defectId?: string;
-  store_id: number;
-  store_name: string;
+  store_id?: number | null;
+  store_name?: string | null;
 }
 
-interface ProductBatchInfo {
+interface ProductSearchResult {
   id: number;
   name: string;
   sku: string;
-  batches: Array<{
-    batchId: number;
-    batchNumber: string;
-    store_id: number;
-    store_name: string;
-    available: number;
-    price: number;
-    expiryDate?: string;
-    daysUntilExpiry?: number;
-  }>;
   mainImage: string;
+  available: number;
+  minPrice: number;
+  maxPrice: number;
+  batchesCount: number;
+  expiryDate?: string | null;
+  daysUntilExpiry?: number | null;
+  attributes: {
+    Price: number;
+    mainImage: string;
+  };
+  branchStocks?: { store_name: string; quantity: number }[];
 }
 
 export default function SocialCommercePage() {
   const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [allProducts, setAllProducts] = useState<any[]>([]);
-  const [allBatches, setAllBatches] = useState<any[]>([]); // All batches from all stores
+  const [allProducts, setAllProducts] = useState<any[]>([]); // Kept for backward compatibility if needed
+  const [allBatches, setAllBatches] = useState<any[]>([]); // Kept for backward compatibility if needed
+  const [inventoryStats, setInventoryStats] = useState<{ total_stock: number; active_batches: number } | null>(null);
   const [stores, setStores] = useState<any[]>([]);
 
   const [date, setDate] = useState(getTodayDate());
@@ -81,7 +86,7 @@ export default function SocialCommercePage() {
   const [deliveryAddress, setDeliveryAddress] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<ProductBatchInfo[]>([]);
+  const [searchResults, setSearchResults] = useState<ProductSearchResult[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [cart, setCart] = useState<CartProduct[]>([]);
 
@@ -165,8 +170,8 @@ export default function SocialCommercePage() {
         storesData = Array.isArray(response.data)
           ? response.data
           : Array.isArray(response.data.data)
-          ? response.data.data
-          : [];
+            ? response.data.data
+            : [];
       } else if (Array.isArray((response as any)?.data)) {
         storesData = (response as any).data;
       }
@@ -187,8 +192,8 @@ export default function SocialCommercePage() {
         productsData = Array.isArray(response.data.data)
           ? response.data.data
           : Array.isArray(response.data.data.data)
-          ? response.data.data.data
-          : [];
+            ? response.data.data.data
+            : [];
       } else if (Array.isArray(response.data)) {
         productsData = response.data;
       }
@@ -226,7 +231,7 @@ export default function SocialCommercePage() {
 
       const batchArrays = await Promise.all(allBatchesPromises);
       const flattenedBatches = batchArrays.flat();
-      
+
       setAllBatches(flattenedBatches);
       console.log('✅ Total batches loaded:', flattenedBatches.length);
     } catch (error: any) {
@@ -237,61 +242,128 @@ export default function SocialCommercePage() {
     }
   };
 
-  // ✅ New search function - returns products grouped with all their batch locations
-  const performMultiStoreSearch = async (query: string): Promise<ProductBatchInfo[]> => {
+  // ✅ Build aggregated product cards from all matching batches.
+  // This mirrors Deshio Social Commerce behavior:
+  // - one product card per product
+  // - available = total stock across all branches / batches
+  // - batch_id is NOT selected here; it will be assigned during packing/scanning
+  const buildAggregatedProductResults = (products: any[], batches: any[]): ProductSearchResult[] => {
+    const productMap = new Map<number, ProductSearchResult>();
+
+    for (const prod of products || []) {
+      const pid = Number(prod?.id || 0);
+      if (!pid) continue;
+
+      const productBatches = (batches || []).filter((batch: any) => {
+        const batchProductId = Number(batch?.product?.id || batch?.product_id || 0);
+        return batchProductId === pid && Number(batch?.quantity || 0) > 0;
+      });
+
+      if (productBatches.length === 0) continue;
+
+      const prices = productBatches
+        .map((batch: any) => Number(String(batch?.sell_price ?? '0').replace(/[^0-9.-]/g, '')))
+        .filter((price: number) => Number.isFinite(price));
+
+      const totalAvailable = productBatches.reduce(
+        (sum: number, batch: any) => sum + Math.max(0, Number(batch?.quantity || 0)),
+        0
+      );
+
+      const imageUrl = getImageUrl(
+        prod?.primary_image_url ||
+        prod?.main_image ||
+        prod?.image_url ||
+        prod?.image_path ||
+        prod?.thumbnail ||
+        null
+      );
+
+      const earliestExpiryBatch = productBatches.reduce((best: any, current: any) => {
+        const bestDays = Number(best?.days_until_expiry);
+        const currentDays = Number(current?.days_until_expiry);
+
+        if (!Number.isFinite(currentDays)) return best;
+        if (!best || !Number.isFinite(bestDays) || currentDays < bestDays) return current;
+        return best;
+      }, null);
+
+      productMap.set(pid, {
+        id: pid,
+        name: String(prod?.name || 'Unknown product'),
+        sku: String(prod?.sku || ''),
+        mainImage: imageUrl,
+        available: totalAvailable,
+        minPrice: prices.length ? Math.min(...prices) : 0,
+        maxPrice: prices.length ? Math.max(...prices) : 0,
+        batchesCount: productBatches.length,
+        expiryDate: earliestExpiryBatch?.expiry_date ?? null,
+        daysUntilExpiry: Number.isFinite(Number(earliestExpiryBatch?.days_until_expiry))
+          ? Number(earliestExpiryBatch?.days_until_expiry)
+          : null,
+        attributes: {
+          Price: prices.length ? Math.min(...prices) : 0,
+          mainImage: imageUrl,
+        },
+      });
+    }
+
+    return Array.from(productMap.values()).sort((a, b) => {
+      const aStock = Number(a.available || 0);
+      const bStock = Number(b.available || 0);
+      if (bStock !== aStock) return bStock - aStock;
+      return a.name.localeCompare(b.name);
+    });
+  };
+
+  const formatPriceRangeLabel = (product: ProductSearchResult | any) => {
+    const minP = Number(product?.minPrice ?? product?.attributes?.Price ?? 0);
+    const maxP = Number(product?.maxPrice ?? product?.attributes?.Price ?? minP);
+
+    if (Number.isFinite(minP) && Number.isFinite(maxP) && minP > 0 && maxP > 0 && minP !== maxP) {
+      return `${minP} - ${maxP} Tk`;
+    }
+
+    const v = Number(product?.attributes?.Price ?? minP ?? 0);
+    return `${Number.isFinite(v) ? v : 0} Tk`;
+  };
+
+  const performMultiStoreSearch = async (query: string): Promise<ProductSearchResult[]> => {
     const queryLower = query.toLowerCase().trim();
     console.log('🔍 Multi-store search for:', queryLower);
 
-    const productBatchMap = new Map<number, ProductBatchInfo>();
+    const matchedProducts = allProducts.filter((prod: any) => {
+      const productName = String(prod?.name || '').toLowerCase();
+      const productSku = String(prod?.sku || '').toLowerCase();
 
-    for (const prod of allProducts) {
-      const productName = (prod.name || '').toLowerCase();
-      const productSku = (prod.sku || '').toLowerCase();
-
-      let matches = false;
-      if (
+      return (
         productName === queryLower ||
         productSku === queryLower ||
         productName.startsWith(queryLower) ||
         productSku.startsWith(queryLower) ||
         productName.includes(queryLower) ||
         productSku.includes(queryLower)
-      ) {
-        matches = true;
-      }
+      );
+    });
 
-      if (matches) {
-        const productBatches = allBatches.filter((batch: any) => {
-          const batchProductId = batch.product?.id || batch.product_id;
-          return batchProductId === prod.id && batch.quantity > 0;
-        });
+    const results = buildAggregatedProductResults(matchedProducts, allBatches);
 
-        if (productBatches.length > 0) {
-          const imageUrl = await fetchPrimaryImage(prod.id);
+    // Backfill images only when needed
+    const enrichedResults = await Promise.all(
+      results.map(async (product) => {
+        if (product.mainImage && product.mainImage !== '/placeholder-image.jpg') return product;
+        return {
+          ...product,
+          mainImage: await fetchPrimaryImage(product.id),
+          attributes: {
+            ...product.attributes,
+            mainImage: await fetchPrimaryImage(product.id),
+          },
+        };
+      })
+    );
 
-          const batchInfo: ProductBatchInfo = {
-            id: prod.id,
-            name: prod.name,
-            sku: prod.sku,
-            mainImage: imageUrl,
-            batches: productBatches.map((batch: any) => ({
-              batchId: batch.id,
-              batchNumber: batch.batch_number,
-              store_id: batch.store_id,
-              store_name: batch.store_name,
-              available: batch.quantity,
-              price: Number(String(batch.sell_price ?? '0').replace(/[^0-9.-]/g, '')),
-              expiryDate: batch.expiry_date,
-              daysUntilExpiry: batch.days_until_expiry,
-            })),
-          };
-
-          productBatchMap.set(prod.id, batchInfo);
-        }
-      }
-    }
-
-    return Array.from(productBatchMap.values());
+    return enrichedResults;
   };
 
   const calculateAmount = (basePrice: number, qty: number, discPer: number, discTk: number) => {
@@ -441,105 +513,108 @@ export default function SocialCommercePage() {
     setSalesBy(userName);
 
     const loadInitialData = async () => {
-      await Promise.all([fetchProducts(), fetchStores()]);
+      try {
+        setIsLoadingData(true);
+        const [storesData, stats] = await Promise.all([
+          fetchStores(),
+          inventoryService.getStatistics().catch(() => null)
+        ]);
+        
+        if (stats?.success) {
+          setInventoryStats({
+            total_stock: stats.data.overview.total_inventory_units,
+            active_batches: stats.data.overview.active_batches
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load initial data', err);
+      } finally {
+        setIsLoadingData(false);
+      }
     };
     loadInitialData();
   }, []);
 
-  // ✅ Fetch all batches when stores are loaded
+  // ✅ Search effect using e-commerce catalog search
   useEffect(() => {
-    if (stores.length > 0) {
-      fetchAllBatches();
-    }
-  }, [stores]);
-
-  // ✅ Updated search effect - searches across all stores
-  useEffect(() => {
-    if (!searchQuery.trim() || !Array.isArray(allBatches)) {
+    if (!searchQuery.trim()) {
       setSearchResults([]);
-      return;
-    }
-
-    if (allBatches.length === 0) {
-      console.log('⚠️ No batches available to search');
       return;
     }
 
     const delayDebounce = setTimeout(async () => {
       try {
-        // First try API search
-        const response = await axios.post('/products/advanced-search', {
-          query: searchQuery,
-          is_archived: false,
-          enable_fuzzy: true,
-          fuzzy_threshold: 60,
-          search_fields: ['name', 'sku', 'description', 'category'],
+        setIsLoadingData(true);
+        console.log('🔍 Executing catalog search for:', searchQuery);
+        
+        // Use the same search method as e-commerce (SKU grouped)
+        const response = await catalogService.searchProducts({
+          q: searchQuery,
           per_page: 50,
         });
 
-        if (response.data?.success) {
-          const products =
-            response.data.data?.items ||
-            response.data.data?.data?.items ||
-            response.data.data ||
-            [];
-
-          const productBatchMap = new Map<number, ProductBatchInfo>();
-
-          for (const prod of products) {
-            const productBatches = allBatches.filter((batch: any) => {
-              const batchProductId = batch.product?.id || batch.product_id;
-              return batchProductId === prod.id && batch.quantity > 0;
-            });
-
-            if (productBatches.length > 0) {
-              const imageUrl = await fetchPrimaryImage(prod.id);
-
-              productBatchMap.set(prod.id, {
-                id: prod.id,
-                name: prod.name,
-                sku: prod.sku,
-                mainImage: imageUrl,
-                batches: productBatches.map((batch: any) => ({
-                  batchId: batch.id,
-                  batchNumber: batch.batch_number,
-                  store_id: batch.store_id,
-                  store_name: batch.store_name,
-                  available: batch.quantity,
-                  price: Number(String(batch.sell_price ?? '0').replace(/[^0-9.-]/g, '')),
-                  expiryDate: batch.expiry_date,
-                  daysUntilExpiry: batch.days_until_expiry,
-                })),
-              });
+        if (response && response.grouped_products) {
+          const results: ProductSearchResult[] = response.grouped_products.map(group => {
+            const main = group.main_variant;
+            const allVariants = [main, ...(group.variants || [])];
+            
+            const branchMap = new Map<number, { store_name: string, quantity: number }>();
+            
+            for (const v of allVariants) {
+              if (Array.isArray(v.batches)) {
+                for (const b of v.batches) {
+                  const storeId = b.store_id;
+                  const storeInfo = stores.find(s => s.id === storeId);
+                  const storeName = storeInfo?.name || b.store?.name || `Store #${storeId}`;
+                  
+                  const current = branchMap.get(storeId) || { store_name: storeName, quantity: 0 };
+                  branchMap.set(storeId, {
+                    store_name: current.store_name,
+                    quantity: current.quantity + (b.quantity || 0)
+                  });
+                }
+              }
             }
-          }
+            
+            const branchStocks = Array.from(branchMap.values()).filter(b => b.quantity > 0);
+            
+            return {
+              id: main.id,
+              name: group.base_name,
+              sku: main.sku,
+              mainImage: main.images?.[0]?.url || '/placeholder-image.jpg',
+              available: group.total_stock,
+              minPrice: group.min_price,
+              maxPrice: group.max_price,
+              batchesCount: branchStocks.length,
+              attributes: {
+                Price: group.min_price,
+                mainImage: main.images?.[0]?.url || '/placeholder-image.jpg',
+              },
+              branchStocks
+            };
+          });
 
-          const results = Array.from(productBatchMap.values());
           setSearchResults(results);
-
-          if (results.length === 0 && products.length > 0) {
-            showToast('Products found but not available in any store', 'error');
+          
+          if (results.length === 0) {
+            fireToast('No available products found', 'error');
           }
-        } else {
-          throw new Error('API search unsuccessful');
         }
       } catch (error: any) {
-        console.warn('❌ API search failed, using local search');
-        const localResults = await performMultiStoreSearch(searchQuery);
-        setSearchResults(localResults);
-
-        if (localResults.length === 0) {
-          showToast('No products found', 'error');
-        }
+        console.error('❌ Search failed:', error);
+        fireToast('Search failed. Please try again.', 'error');
+      } finally {
+        setIsLoadingData(false);
       }
-    }, 300);
+    }, 500);
 
     return () => clearTimeout(delayDebounce);
-  }, [searchQuery, allBatches, allProducts]);
+  }, [searchQuery, stores]);
 
   useEffect(() => {
     if (selectedProduct && quantity) {
-      const price = parseFloat(String(selectedProduct.price || 0));
+      const price = parseFloat(String(selectedProduct.attributes?.Price ?? selectedProduct.price ?? 0));
       const qty = parseFloat(quantity) || 0;
       const discPer = parseFloat(discountPercent) || 0;
       const discTk = parseFloat(discountTk) || 0;
@@ -551,20 +626,14 @@ export default function SocialCommercePage() {
     }
   }, [selectedProduct, quantity, discountPercent, discountTk]);
 
-  const handleBatchSelect = (productInfo: ProductBatchInfo, batch: any) => {
+  const handleProductSelect = (product: ProductSearchResult | any) => {
     setSelectedProduct({
-      id: productInfo.id,
-      name: productInfo.name,
-      sku: productInfo.sku,
-      batchId: batch.batchId,
-      batchNumber: batch.batchNumber,
-      price: batch.price,
-      available: batch.available,
-      store_id: batch.store_id,
-      store_name: batch.store_name,
-      mainImage: productInfo.mainImage,
-      expiryDate: batch.expiryDate,
-      daysUntilExpiry: batch.daysUntilExpiry,
+      ...product,
+      batch_id: null,
+      attributes: {
+        Price: Number(product?.attributes?.Price ?? product?.minPrice ?? 0),
+        mainImage: product?.mainImage || product?.attributes?.mainImage || '/placeholder-image.jpg',
+      },
     });
     setSearchQuery('');
     setSearchResults([]);
@@ -579,13 +648,13 @@ export default function SocialCommercePage() {
       return;
     }
 
-    const price = Number(String(selectedProduct.price ?? '0').replace(/[^0-9.-]/g, ''));
+    const price = Number(String(selectedProduct.attributes?.Price ?? selectedProduct.price ?? '0').replace(/[^0-9.-]/g, ''));
     const qty = parseInt(quantity);
     const discPer = parseFloat(discountPercent) || 0;
     const discTk = parseFloat(discountTk) || 0;
 
     if (qty > selectedProduct.available && !selectedProduct.isDefective) {
-      alert(`Only ${selectedProduct.available} units available for this batch`);
+      alert(`Only ${selectedProduct.available} units available across all branches`);
       return;
     }
 
@@ -596,23 +665,22 @@ export default function SocialCommercePage() {
     const newItem: CartProduct = {
       id: Date.now(),
       product_id: selectedProduct.id,
-      batch_id: selectedProduct.batchId,
-      productName: `${selectedProduct.name} (${selectedProduct.store_name})${selectedProduct.batchNumber ? ` - Batch: ${selectedProduct.batchNumber}` : ''}`,
+      batch_id: selectedProduct.isDefective ? selectedProduct.batchId : null,
+      productName: `${selectedProduct.name}${selectedProduct.isDefective ? ' [DEFECTIVE]' : ''}`,
       quantity: qty,
       unit_price: price,
       discount_amount: discountValue,
       amount: finalAmount,
       isDefective: selectedProduct.isDefective,
       defectId: selectedProduct.defectId,
-      store_id: selectedProduct.store_id,
-      store_name: selectedProduct.store_name,
+      store_id: selectedProduct.isDefective ? selectedProduct.store_id : null,
+      store_name: selectedProduct.isDefective ? selectedProduct.store_name : null,
     };
 
     console.log('✅ Adding to cart:', {
       product_id: newItem.product_id,
       batch_id: newItem.batch_id,
       store_id: newItem.store_id,
-      store_name: newItem.store_name,
       isDefective: newItem.isDefective,
     });
 
@@ -661,9 +729,8 @@ export default function SocialCommercePage() {
 
       if (sameDay) {
         const summaryText = lastOrderInfo.summary_text || '';
-        const confirmMsg = `This customer already has an order today.\n\nLast order: ${lastDate.toLocaleString()}\n${
-          summaryText ? `Items: ${summaryText}\n` : ''
-        }\nDo you still want to place another order?`;
+        const confirmMsg = `This customer already has an order today.\n\nLast order: ${lastDate.toLocaleString()}\n${summaryText ? `Items: ${summaryText}\n` : ''
+          }\nDo you still want to place another order?`;
 
         const proceed = window.confirm(confirmMsg);
         if (!proceed) return;
@@ -671,10 +738,10 @@ export default function SocialCommercePage() {
     }
 
     try {
-    console.log('📦 CREATING SOCIAL COMMERCE ORDER');
+      console.log('📦 CREATING SOCIAL COMMERCE ORDER');
 
-    const shipping_address = isInternational
-      ? {
+      const shipping_address = isInternational
+        ? {
           name: userName,
           phone: userPhone,
           street: deliveryAddress,
@@ -683,58 +750,57 @@ export default function SocialCommercePage() {
           country,
           postal_code: internationalPostalCode || undefined,
         }
-      : {
+        : {
           name: userName,
           phone: userPhone,
           street: streetAddress,
           postal_code: postalCode || undefined,
         };
 
-    // ✅ Flatten items - each item already has store_id
-    const orderData = {
-      order_type: 'social_commerce',
-      customer: {
-        name: userName,
-        email: userEmail || undefined,
-        phone: userPhone,
-      },
-      shipping_address,
-      items: cart.map(item => ({
-        product_id: item.product_id,
-        batch_id: item.batch_id,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        discount_amount: item.discount_amount,
-        store_id: item.store_id, // ✅ Each item has its store_id
-      })),
-      shipping_amount: 0,
-      notes: `Social Commerce. ${socialId ? `ID: ${socialId}. ` : ''}${isInternational ? 'International' : 'Domestic'} delivery.`,
-    };
+      // ✅ Flatten items - each item already has store_id
+      const orderData = {
+        order_type: 'social_commerce',
+        customer: {
+          name: userName,
+          email: userEmail || undefined,
+          phone: userPhone,
+        },
+        shipping_address,
+        items: cart.map(item => ({
+          product_id: item.product_id,
+          batch_id: item.isDefective ? item.batch_id : null,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          discount_amount: item.discount_amount,
+        })),
+        shipping_amount: 0,
+        notes: `Social Commerce. ${socialId ? `ID: ${socialId}. ` : ''}${isInternational ? 'International' : 'Domestic'} delivery.`,
+      };
 
-    sessionStorage.setItem(
-      'pendingOrder',
-      JSON.stringify({
-        ...orderData,
-        salesBy,
-        date,
-        isInternational,
-        subtotal,
-        defectiveItems: cart
-          .filter((item) => item.isDefective)
-          .map((item) => ({
-            defectId: item.defectId,
-            price: item.unit_price,
-            productName: item.productName,
-          })),
-      })
-    );
+      sessionStorage.setItem(
+        'pendingOrder',
+        JSON.stringify({
+          ...orderData,
+          salesBy,
+          date,
+          isInternational,
+          subtotal,
+          defectiveItems: cart
+            .filter((item) => item.isDefective)
+            .map((item) => ({
+              defectId: item.defectId,
+              price: item.unit_price,
+              productName: item.productName,
+            })),
+        })
+      );
 
-    console.log('✅ Order data prepared, redirecting...');
-    window.location.href = '/social-commerce/amount-details';
-  } catch (error) {
-    console.error('❌ Error:', error);
-    alert('Failed to process order');
-  }
+      console.log('✅ Order data prepared, redirecting...');
+      window.location.href = '/social-commerce/amount-details';
+    } catch (error) {
+      console.error('❌ Error:', error);
+      alert('Failed to process order');
+    }
   };
 
   return (
@@ -785,9 +851,11 @@ export default function SocialCommercePage() {
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Inventory Status</label>
                   <div className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white">
                     {isLoadingData ? (
-                      <span className="text-blue-600">Loading...</span>
+                      <span className="text-blue-600">Loading statistics...</span>
                     ) : (
-                      <span className="text-green-600">{allBatches.length} batches across {stores.length} stores</span>
+                      <span className="text-green-600">
+                        {inventoryStats ? `${inventoryStats.total_stock} items` : 'Connected'} across {stores.length} branches
+                      </span>
                     )}
                   </div>
                 </div>
@@ -916,11 +984,10 @@ export default function SocialCommercePage() {
                           setInternationalPostalCode('');
                           setDeliveryAddress('');
                         }}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                          isInternational
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isInternational
                             ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700'
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
-                        }`}
+                          }`}
                       >
                         <Globe className="w-4 h-4" />
                         {isInternational ? 'International' : 'Domestic'}
@@ -1012,11 +1079,10 @@ export default function SocialCommercePage() {
                 <div className="space-y-4 md:space-y-6">
                   {/* Product Search */}
                   <div
-                    className={`bg-white dark:bg-gray-800 rounded-lg border p-4 md:p-5 ${
-                      selectedProduct?.isDefective
+                    className={`bg-white dark:bg-gray-800 rounded-lg border p-4 md:p-5 ${selectedProduct?.isDefective
                         ? 'border-orange-300 dark:border-orange-700'
                         : 'border-gray-200 dark:border-gray-700'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-sm font-medium text-gray-900 dark:text-white">Search Product (All Stores)</h3>
@@ -1057,64 +1123,46 @@ export default function SocialCommercePage() {
                     )}
 
                     {searchResults.length > 0 && (
-                      <div className="space-y-4 max-h-96 overflow-y-auto mb-4 p-1">
-                        {searchResults.map((productInfo) => (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-60 md:max-h-80 overflow-y-auto mb-4 p-1">
+                        {searchResults.map((product) => (
                           <div
-                            key={productInfo.id}
-                            className="border border-gray-200 dark:border-gray-600 rounded p-3"
+                            key={product.id}
+                            onClick={() => handleProductSelect(product)}
+                            className="relative border border-gray-200 dark:border-gray-600 rounded p-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                           >
-                            <div className="flex gap-3 mb-3">
-                              <img
-                                src={productInfo.mainImage}
-                                alt={productInfo.name}
-                                className="w-20 h-20 object-cover rounded"
-                              />
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-gray-900 dark:text-white">{productInfo.name}</p>
-                                <p className="text-xs text-gray-600 dark:text-gray-400">SKU: {productInfo.sku}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                  Available in {productInfo.batches.length} location(s)
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
-                                <Package size={12} />
-                                Select Store & Batch:
+                            <img
+                              src={product.mainImage}
+                              alt={product.name}
+                              className="w-full h-24 sm:h-32 object-cover rounded mb-2"
+                            />
+                            <p className="text-xs text-gray-900 dark:text-white font-medium truncate">
+                              {product.name}
+                            </p>
+                            {Number(product.batchesCount ?? 0) > 1 && (
+                              <p className="text-xs text-blue-600 dark:text-blue-400 truncate">
+                                Branch/Batches: {product.batchesCount}
                               </p>
-                              {productInfo.batches.map((batch) => (
-                                <button
-                                  key={`${batch.batchId}-${batch.store_id}`}
-                                  onClick={() => handleBatchSelect(productInfo, batch)}
-                                  className="w-full p-2 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
-                                >
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                                         {batch.store_name}
-                                      </p>
-                                      <p className="text-xs text-gray-600 dark:text-gray-400">
-                                        Batch: {batch.batchNumber}
-                                      </p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-xs font-medium text-gray-900 dark:text-white">
-                                        {batch.price} Tk
-                                      </p>
-                                      <p className="text-xs text-green-600 dark:text-green-400">
-                                        Stock: {batch.available}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  {batch.daysUntilExpiry != null && batch.daysUntilExpiry < 30 && (
-                                    <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                                      ⚠️ Expires in {batch.daysUntilExpiry} days
-                                    </p>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
+                            )}
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              {formatPriceRangeLabel(product)}
+                            </p>
+                            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                              Available: {product.available}
+                            </p>
+                            {product.branchStocks && product.branchStocks.length > 0 && (
+                              <div className="mt-1 space-y-0.5">
+                                {product.branchStocks.map((bs, idx) => (
+                                  <p key={idx} className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">
+                                    {bs.store_name}: <span className="font-semibold text-gray-700 dark:text-gray-200">{bs.quantity}</span>
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                            {product.daysUntilExpiry != null && product.daysUntilExpiry < 30 && (
+                              <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                Expires in {product.daysUntilExpiry} days
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1122,11 +1170,10 @@ export default function SocialCommercePage() {
 
                     {selectedProduct && (
                       <div
-                        className={`mt-4 p-3 border rounded mb-4 ${
-                          selectedProduct.isDefective
+                        className={`mt-4 p-3 border rounded mb-4 ${selectedProduct.isDefective
                             ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
                             : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm font-medium text-gray-900 dark:text-white">Selected Product</span>
@@ -1144,14 +1191,21 @@ export default function SocialCommercePage() {
                           </button>
                         </div>
                         <p className="text-sm font-medium text-gray-900 dark:text-white">{selectedProduct.name}</p>
-                        <p className="text-sm text-blue-600 dark:text-blue-400">🏪 {selectedProduct.store_name}</p>
-                        {selectedProduct.batchNumber && (
+                        {Number(selectedProduct?.batchesCount ?? 0) > 1 && (
+                          <p className="text-sm text-blue-600 dark:text-blue-400">
+                            Across {selectedProduct.batchesCount} branch/batch location(s)
+                          </p>
+                        )}
+                        {selectedProduct.isDefective && selectedProduct.store_name && (
+                          <p className="text-sm text-blue-600 dark:text-blue-400">🏪 {selectedProduct.store_name}</p>
+                        )}
+                        {selectedProduct.isDefective && selectedProduct.batchNumber && (
                           <p className="text-sm text-gray-600 dark:text-gray-400">
                             Batch: {selectedProduct.batchNumber}
                           </p>
                         )}
                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Price: {selectedProduct.price} Tk
+                          Price: {selectedProduct.isDefective ? `${selectedProduct.price} Tk` : formatPriceRangeLabel(selectedProduct)}
                         </p>
                         <p className="text-sm text-green-600 dark:text-green-400">
                           Available: {selectedProduct.available}
@@ -1261,9 +1315,8 @@ export default function SocialCommercePage() {
                             cart.map((item) => (
                               <tr
                                 key={item.id}
-                                className={`border-b border-gray-200 dark:border-gray-700 ${
-                                  item.isDefective ? 'bg-orange-50 dark:bg-orange-900/10' : ''
-                                }`}
+                                className={`border-b border-gray-200 dark:border-gray-700 ${item.isDefective ? 'bg-orange-50 dark:bg-orange-900/10' : ''
+                                  }`}
                               >
                                 <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">
                                   {item.productName}

@@ -1,27 +1,3 @@
-Go through errors.txt and see the errors.
-
-
-see getProduct method in EcommerceCatalogController controller in errum_be.
-currently it has a variable relatedProducts. This provides the data for related products in e-commerce/product/[id] page.tsx
-
-
-
-Go through all the migrations, models and controllers in errum_be that are related to product, product_batches, product_variants, inventory and store and understand their functionalities properly.
-What i want you to find out, there should be mention of a physical store/branch where products are stored (not warehouse but the shoe shop branches).
-The inventories/product_batches for a product (product not sku, meaning name-color-size-36, instead of name) also have the information for which store has how many pieces of that product variant.
-
-What i want:
-->make a new method in EcommerceCatalogController named getBranchStockForProduct
-->it should query/map how many count of a particular product (a variant, not a sku) is present in each stores. 
-->for each store, it will return the id, name (if present) and the inventory count for that product id.
-->add the route to the api.php and make that route public.
-
-The change in frontend:
-->When the e-commerce/product/[id]/page.tsx is called, it should call this as well.
-->it will show a beautiful, stylish, modern table consistent with the theme of the website below the "categories-availability" card and above the "free deliveries" "Easy return" cards.
-->If, a branch doesn't have that product, it should not be on the table, basically, an intelligent table.
-->check the services, lib files to know where to add the api calls.
-
 Make sure there's no code integrity issues and do not change any additional UI or logic issues.
 make a detailed md file titled "added Branch inventory to e-commerce/product/id page." It should discuss and explain in detail how the new pages and controller fucntions, examples and edge cases.
 
@@ -76,40 +52,34 @@ check the pages in @app/ that are relevant to product, product_batches, product_
 Also view all the code in components, services and lib folders to understand anything relevant.
 /compress
 
-### retur-refund:
-Analyze the @errum_be/app/Http/Controllers, @errum_be/app/Models, @errum_be/app/Traits/ProductImageFallback.php
-and the migrations in @errum_be/database/migrations.
 
-understand the product and order return, refund, exchange logic.
+Check social-commerce page. currently, when we search a product the following thing happens:
+->the page most likely uses a very old backend code for search that takes a very long time to respond
+->or it uses a new version, but not properly calls it.
+->Shows all the batches in different branches.
 
-Check the code for integrity issues, potential bugs, risks and edge cases along with partial payment additional, parital payment refund etc cases.
+What i want you to do:
+->Check the e-commerce/search page and e-commerce/product/[id] page and see which backend code they call and how they're called
+->then check their entire backend codes (all controllers and models)
 
-generate a detailed md file titled "25_Mar_26 product return, refund, exchange integrity check.md" with discussion and explanation in detail how the code behaves, examples and edge cases and mention the files in context.
+Then update the social-commerce page for the following:
+->The product search feature should use the same search method used by those pages.
+->The results should also show within the product list the count of each product batch in the branch. We'll show an aggregate, for example, if there's two batches (qty 9, 10) in a branch, we'll show qty 19.
 
-### images:
-Analyze the @errum_be/app/Http/Controllers, @errum_be/app/Models, @errum_be/app/Traits/ProductImageFallback.php
-and the migrations in @errum_be/database/migrations.
+If the output of the confirm order was adding batch id to it, change it and instead send batch_id as null.
 
-understand the logic behind image store, show, get, update, delete etc...
-currently, we have this issue:
-some of the product images are available in the backend storage with symlink. we can see some images like this from frontend. But,
-other images are not shown. inspecting the Networks tab shows those image requests returned a 404 not found.
-(see GEMINI.md to get the backend API and test a few calls yourself. You would have to call the product to get it's images to actually call the image)
-Here are some image urls that work (test them to see if you understand something):
-Working:
-https://backend2.errumbd.com/storage/products/4441/1772440412_OYlGLPqMUS.jpeg
-https://backend2.errumbd.com/storage/products/4453/1772441132_XxQa5cJRyo.jpeg
+Make an absolutely detailed, very descriptive, lengthy md file titled "25_Mar_26 social commerce page Updates.md". It should discuss and explain in detail how the new page behave, examples and edge cases.
+DO NOT change anything else. DO not make any chnages to backend. DO NOT change any code unless strictly necessary.
 
-Not Working:
-https://backend2.errumbd.com/storage/products/5075/1773420180_G3RBY2VtuK.jpeg
-https://backend2.errumbd.com/storage/products/5013/1773394108_0MFhrmFoCb.jpeg
+I ran a full analysis of the relevant codebase with Gemini CLI. This was the response:
 
-we've manually checked to confirm these files exists under this exact name in those places.
+### in stock filter for product list:
+check product/list page and all the backend code it calls and uses. see example-response.json
 
-Something you need to know:
-->errum_be is only the code for the backend for the sake of prompting. so you won't find the symlink or the images there.
+currently, when we select stock_status, it sends a query like this: https://errum-v2.vercel.app/product/list?page=1&sortBy=newest&stockStatus=in_stock
+but, product has no stock_status. rather an in_stock = true/false.
 
-try and test different products to get product_images url and test if you want.
-understand the issue and problem and propose a fix for it.
+change the frontend to send proper query in the stock_status dropdown filter and check if backend receives and can process that information perfectly.
 
-Write the proposal in a detailed md file titled: "25_Mar_26 404 image issue identification and solve proposal.md" and save it as an md file in @Documentation/
+generate detailed md file titled "25_Mar_26 product list page stock_status filter fix.md" It should discuss and explain in detail how the new page behave, examples and edge cases.
+

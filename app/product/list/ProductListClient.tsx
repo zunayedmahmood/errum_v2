@@ -124,21 +124,29 @@ export default function ProductPage() {
     const pageRaw = Number(searchParams.get('page') ?? '1');
 
     const sort = searchParams.get('sortBy') ?? 'newest';
-    const stock = (searchParams.get('stockStatus') as 'all' | 'in_stock' | 'not_in_stock') ?? 'all';
+    const inStockParam = searchParams.get('in_stock');
+    const stock = inStockParam === 'true' ? 'in_stock' : inStockParam === 'false' ? 'not_in_stock' : 'all';
 
-    setSearchQuery(q);
-    setDebouncedSearchQuery(q);
-    setSelectedCategory(category);
-    setSelectedVendor(vendor);
-    setMinPrice(minP);
-    setMaxPrice(maxP);
-    setSortBy(sort);
-    setStockStatus(stock);
-    setCurrentPage(Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1);
+    if (q !== searchQuery) {
+      setSearchQuery(q);
+      setDebouncedSearchQuery(q);
+    }
+    if (category !== selectedCategory) setSelectedCategory(category);
+    if (vendor !== selectedVendor) setSelectedVendor(vendor);
+    if (minP !== minPrice) setMinPrice(minP);
+    if (maxP !== maxPrice) setMaxPrice(maxP);
+    if (sort !== sortBy) setSortBy(sort);
+    if (stock !== stockStatus) setStockStatus(stock);
+    
+    const nextP = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    if (nextP !== currentPage) setCurrentPage(nextP);
 
-    setSelectMode(searchParams.get('selectMode') === 'true');
-    setRedirectPath(searchParams.get('redirect') || '');
-  }, [searchParams]);
+    const sm = searchParams.get('selectMode') === 'true';
+    if (sm !== selectMode) setSelectMode(sm);
+    
+    const rp = searchParams.get('redirect') || '';
+    if (rp !== redirectPath) setRedirectPath(rp);
+  }, [searchParams, searchQuery, selectedCategory, selectedVendor, minPrice, maxPrice, sortBy, stockStatus, currentPage, selectMode, redirectPath]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -150,6 +158,18 @@ export default function ProductPage() {
 
   // Price validation and query update delay (1000ms)
   useEffect(() => {
+    // Determine current values in URL to avoid resetting page=1 on initial load or sync
+    const urlMin = searchParams.get('minPrice') || '';
+    const urlMax = searchParams.get('maxPrice') || '';
+
+    // If those values are exactly what's currently in the URL, we skip the immediate 
+    // refresh logic. This prevents the "reset to page 1" bug on first load.
+    if (minPrice === urlMin && maxPrice === urlMax) {
+      setDebouncedMinPrice(minPrice);
+      setDebouncedMaxPrice(maxPrice);
+      return;
+    }
+
     const timer = window.setTimeout(() => {
       let finalMin = minPrice;
       let finalMax = maxPrice;
@@ -174,7 +194,7 @@ export default function ProductPage() {
     }, 1000);
 
     return () => window.clearTimeout(timer);
-  }, [minPrice, maxPrice, updateQueryParams]);
+  }, [minPrice, maxPrice, updateQueryParams, searchParams]);
 
   const fetchFilterData = useCallback(async () => {
     try {
@@ -236,7 +256,7 @@ export default function ProductPage() {
             per_page: SERVER_PAGE_SIZE,
             page: pageToLoad,
             enable_fuzzy: true,
-            stock_status: stockStatus !== 'all' ? stockStatus : undefined,
+            in_stock: stockStatus === 'in_stock' ? 'true' : stockStatus === 'not_in_stock' ? 'false' : undefined,
           });
         } catch {
           // Advanced search unavailable — fall back to standard endpoint
@@ -249,7 +269,7 @@ export default function ProductPage() {
             group_by_sku: true,
             min_price: minPrice ? Number(minPrice) : undefined,
             max_price: maxPrice ? Number(maxPrice) : undefined,
-            stock_status: stockStatus !== 'all' ? stockStatus : undefined,
+            in_stock: stockStatus === 'in_stock' ? 'true' : stockStatus === 'not_in_stock' ? 'false' : undefined,
             sort_by: apiSortBy,
             sort_direction: apiSortDir,
           });
@@ -265,7 +285,7 @@ export default function ProductPage() {
           group_by_sku: true,
           min_price: minPrice ? Number(minPrice) : undefined,
           max_price: maxPrice ? Number(maxPrice) : undefined,
-          stock_status: stockStatus !== 'all' ? stockStatus : undefined,
+          in_stock: stockStatus === 'in_stock' ? 'true' : stockStatus === 'not_in_stock' ? 'false' : undefined,
           sort_by: apiSortBy,
           sort_direction: apiSortDir,
         });
@@ -999,7 +1019,10 @@ export default function ProductPage() {
                             const val = e.target.value as 'all' | 'in_stock' | 'not_in_stock';
                             setStockStatus(val);
                             setCurrentPage(1);
-                            updateQueryParams({ stockStatus: val === 'all' ? null : val, page: '1' });
+                            updateQueryParams({ 
+                              in_stock: val === 'in_stock' ? 'true' : val === 'not_in_stock' ? 'false' : null, 
+                              page: '1' 
+                            });
                           }}
                           className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors cursor-pointer"
                         >

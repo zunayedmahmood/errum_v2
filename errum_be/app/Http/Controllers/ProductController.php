@@ -72,15 +72,16 @@ class ProductController extends Controller
             });
         }
 
-        // Stock status filter
-        if ($request->has('stock_status') && $request->stock_status !== 'all') {
-            if ($request->stock_status === 'in_stock') {
+        // Stock status filter (supports both stock_status and in_stock)
+        $stockStatus = $request->get('stock_status', $request->get('in_stock'));
+        if ($stockStatus && $stockStatus !== 'all') {
+            if ($stockStatus === 'in_stock' || $stockStatus === 'true' || $stockStatus === true) {
                 $query->whereHas('batches', function($q) {
                     $q->where('is_active', true)
                       ->where('availability', true)
                       ->where('stock_qty', '>', 0);
                 });
-            } elseif ($request->stock_status === 'not_in_stock') {
+            } elseif ($stockStatus === 'not_in_stock' || $stockStatus === 'false' || $stockStatus === false) {
                 $query->whereDoesntHave('batches', function($q) {
                     $q->where('is_active', true)
                       ->where('availability', true)

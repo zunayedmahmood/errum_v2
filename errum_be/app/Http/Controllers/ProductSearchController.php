@@ -261,8 +261,12 @@ class ProductSearchController extends Controller
             'search_fields' => 'nullable|array',
             'search_fields.*' => 'in:name,sku,description,category,custom_fields',
             'per_page' => 'nullable|integer|min:1|max:100',
-            'stock_status' => 'nullable|string|in:all,in_stock,not_in_stock',
+            'stock_status' => 'nullable|string',
+            'in_stock' => 'nullable|string',
         ]);
+
+        // Normalize stock status from both possible parameters
+        $validated['stock_status'] = $validated['stock_status'] ?? $request->input('in_stock') ?? 'all';
 
         $query = $validated['query'];
         $enableFuzzy = $validated['enable_fuzzy'] ?? true;
@@ -528,15 +532,15 @@ class ProductSearchController extends Controller
             $query->where('vendor_id', $filters['vendor_id']);
         }
 
-        // Stock status filter
+        // Stock status filter (supports in_stock/not_in_stock and true/false)
         if (isset($filters['stock_status']) && $filters['stock_status'] !== 'all') {
-            if ($filters['stock_status'] === 'in_stock') {
+            if ($filters['stock_status'] === 'in_stock' || $filters['stock_status'] === 'true' || $filters['stock_status'] === true) {
                 $query->whereHas('batches', function($q) {
                     $q->where('is_active', true)
                       ->where('availability', true)
                       ->where('stock_qty', '>', 0);
                 });
-            } elseif ($filters['stock_status'] === 'not_in_stock') {
+            } elseif ($filters['stock_status'] === 'not_in_stock' || $filters['stock_status'] === 'false' || $filters['stock_status'] === false) {
                 $query->whereDoesntHave('batches', function($q) {
                     $q->where('is_active', true)
                       ->where('availability', true)
