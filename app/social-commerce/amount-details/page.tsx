@@ -74,6 +74,27 @@ export default function AmountDetailsPage() {
 
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' as 'success' | 'error' });
 
+  const formatShippingAddressText = (shipping: any): string => {
+    if (!shipping) return '';
+    if (typeof shipping === 'string') return shipping;
+
+    const line1 = shipping.address_line1 || shipping.address_line_1 || shipping.street || shipping.address || '';
+    const line2 = shipping.address_line2 || shipping.address_line_2 || '';
+    const parts = [
+      line1,
+      line2,
+      shipping.area,
+      shipping.zone,
+      shipping.city,
+      shipping.state,
+      shipping.country,
+    ].filter(Boolean);
+
+    const postalCode = shipping.postal_code || shipping.postalCode || '';
+    const text = parts.join(', ');
+    return postalCode ? `${text}${text ? ' - ' : ''}${postalCode}` : text;
+  };
+
   const calculateItemAmount = (item: any): number => {
     if (item.amount !== undefined && item.amount !== null) {
       return parseFloat(item.amount);
@@ -202,26 +223,7 @@ export default function AmountDetailsPage() {
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
   };
 
-  const formatShippingAddressText = (shipping: any): string => {
-    if (!shipping) return '';
-    if (typeof shipping === 'string') return shipping;
 
-    const line1 = shipping.address_line1 || shipping.address_line_1 || shipping.street || shipping.address || '';
-    const line2 = shipping.address_line2 || shipping.address_line_2 || '';
-    const parts = [
-      line1,
-      line2,
-      shipping.area,
-      shipping.zone,
-      shipping.city,
-      shipping.state,
-      shipping.country,
-    ].filter(Boolean);
-
-    const postalCode = shipping.postal_code || shipping.postalCode || '';
-    const text = parts.join(', ');
-    return postalCode ? `${text}${text ? ' - ' : ''}${postalCode}` : text;
-  };
 
   const handlePlaceOrder = async () => {
     // Validation for store assignment

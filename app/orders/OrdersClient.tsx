@@ -806,8 +806,8 @@ export default function OrdersDashboard() {
     const cls =
       s === 'delivered' || s === 'completed'
         ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-        : s === 'shipped'
-          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+          : s === 'shipped' || s === 'pending_assignment'
+            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
           : s === 'processing' || s === 'confirmed' || s === 'ready_for_pickup'
             ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
             : s === 'cancelled'
@@ -1213,6 +1213,7 @@ export default function OrdersDashboard() {
   const quickStatusTabs = useMemo(
     () => [
       { label: 'Pending', value: 'pending' },
+      { label: 'Pending Assignment', value: 'pending_assignment' },
       { label: 'Confirmed', value: 'confirmed' },
       { label: 'Cancelled', value: 'cancelled' },
       { label: 'Returned', value: 'returned' },
@@ -2540,7 +2541,9 @@ export default function OrdersDashboard() {
   };
 
   const fetchProductResults = async (query: string) => {
-    if (!pickerStoreId) return;
+    // Online orders might not have a storeId yet
+    const isOnlineOrder = ['ecommerce', 'social_commerce'].includes(editableOrder?.orderType || '');
+    if (!pickerStoreId && !isOnlineOrder) return;
     if (!query.trim()) {
       setProductResults([]);
       return;
@@ -2591,6 +2594,20 @@ export default function OrdersDashboard() {
               search_stage: (prod as any).search_stage || 'api',
             });
           }
+        } else if (isOnlineOrder) {
+          // If no local batch but it's an online order, still allow picking
+          results.push({
+            id: prod.id,
+            name: prod.name,
+            sku: prod.sku,
+            imageUrl,
+            batchId: null,
+            batchNumber: 'N/A (Warehouse/To Assign)',
+            price: parseMoney(prod.base_price || 0),
+            available: (prod as any).global_available || 0,
+            relevance_score: (prod as any).relevance_score || 0,
+            search_stage: (prod as any).search_stage || 'api',
+          });
         }
       }
 
@@ -2664,14 +2681,16 @@ export default function OrdersDashboard() {
   };
 
   const openProductPicker = () => {
-    if (!editableOrder?.storeId && !pickerStoreId) {
+    const isOnlineOrder = ['ecommerce', 'social_commerce'].includes(editableOrder?.orderType || '');
+    if (!editableOrder?.storeId && !pickerStoreId && !isOnlineOrder) {
       alert('Store information is missing for this order.');
       return;
     }
     const storeId = editableOrder?.storeId || pickerStoreId;
-    if (!storeId) return;
-    setPickerStoreId(storeId);
-    fetchBatchesForStore(storeId);
+    if (storeId) {
+      setPickerStoreId(storeId);
+      fetchBatchesForStore(storeId);
+    }
     setShowProductPicker(true);
     setProductSearch('');
     setProductResults([]);

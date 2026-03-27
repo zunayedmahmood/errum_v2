@@ -131,47 +131,13 @@ I'll use this md file to tell Gemini in antigravity.
 
 
 ### searchBar fixes:
-currently these 4 endpoints in backend are used by different parts of frontend:
-  │ EcommerceCatalogController@getProducts        │ /catalog/products         │ E-commerce        │ Supports search      │
-  │                                               │                           │ Listing           │ param (multi-word),  │
-  │                                               │                           │                   │ group_by_sku.        │
-  │ EcommerceCatalogController@searchProducts     │ /catalog/search           │ E-commerce/Social │ Relevance-based      │
-  │                                               │                           │ Search            │ search with          │
-  │                                               │                           │                   │ phonetic/fuzzy       │
-  │                                               │                           │                   │ support.             │
-  │ ProductSearchController@advancedSearch        │ /products/advanced-search │ Admin Product     │ High-performance     │
-  │                                               │                           │ List              │ "smart" search       │
-  │                                               │                           │                   │ (Bangla, phonetic,   │
-  │                                               │                           │                   │ fuzzy).              │
-  │ ProductController@index                       │ /products                 │ POS / Admin       │ Simple LIKE %query%  │
-  │                                               │                           │ Fallback          │ search on name/sku.  │
-  │ InventoryController@searchProductAcrossStores │ /catalog/inventory/search │ Inventory         │ Availability-focused │
-  │                                               │                           │ Overview          │ search across all    │
-  │                                               │                           │                   │ branches.      
 
-  I want you to read all of them to understand how they function.
+the last edits had some problems. Do these changes:
+->currently, if the update exceeds global availability, but the update is permitted to allow administrative flexibility. change it and make it strictly blocked. 
+->"addItem" has a "global stock" sanity check using ReservedProduct to log availability for audit purposes. ensure that, it blocks any addItem for products that have no availabile stock (in ReservedProduct table)
 
-  Then do the following changes:
-  ->remove description from the places we search. We are no longer going to look for match in product description.
-  ->the getProducts should now use Relevance bases search with phonetic/fuzzy support along with pre-existing logic (must be backwards compatible)
-  ->the advancedSearch should now use multi word, group_by_sku as well (if not arlready) along with pre-existing logic (must be backwards compatible)
-  ->edit the "smart", Bangla, phonetic and fuzzy support by replacing the irrelevant "Dal-Bhat check". This is the backend for a shop that sells:
-  Sneakers, Shoes, Slides, Panjabi, Thobes, Sunglasses, and a few other stuff. Primarily Sneakers. So, the mapping should be against keywords for that.
+Then make this change:
+->Whenever order is edited, it's status should be reset to pending_assignment
+->Make necessary changes to backend and frontend.
 
-  We do not want any backwards compatibilty issues in getProducts and searchProducts. So, all the changes should be backwards compatible.
-
-  The search when looking for Relevance score should check like this:
-  ->full name/sku match (cass insensitive for name)
-  (if name is not confidently matched)
-  ->categories name (case insensitive)
-  ->color (case insensitive)
-  ->size (case insensitive) 
-  And any other logic you think is necessary. Our aim: When we search with a proper name, it and it's most closest products should rank first
-
-  Make a detailed and extremely well structured md file titled "27_Mar_26 search logic refine.md" that details all the changes.
-
-  Also make these changes:
-  ->searchClient should use advancedSearch instead of advancedSearchAll.
-  ->the product list page (admin side) search bar fires for every change or almost every other ms. instead add a 1000 ms debounce after typing is finished.
-
-  Make another md file "27_Mar_26 searchClient:advancedSearch and debounce to product list.md".
+Make sure all the chnages are compatible and do strict integrity checks.

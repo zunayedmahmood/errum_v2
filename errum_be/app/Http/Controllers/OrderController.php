@@ -749,7 +749,7 @@ class OrderController extends Controller
             if ($request->has('notes')) {
                 $order->notes = $request->notes;
             }
-
+            
             $order->save();
 
             DB::commit();
@@ -960,34 +960,50 @@ class OrderController extends Controller
                         ->where('store_id', $order->store_id)
                         ->where('quantity', '>=', $quantity)
                         ->where('expiry_date', '>', now())  // Not expired
-                        ->orderBy('expiry_date', 'asc')  // FIFO
                         ->first();
-                    
-                    if (!$batch) {
-                        throw new \Exception("No batch available with sufficient stock ({$quantity} units) at this store");
-                    }
                 }
                 
-                // Use provided price or batch price
-                $unitPrice = $request->unit_price ?? $batch->sell_price;
+                if (!$batch && $order->store_id) {
+                    throw new \Exception("No batch available with sufficient stock ({$quantity} units) at this store");
+                }
+
+                // If we still don't have a batch (e.g. pending assignment), allow adding via product_id ONLY
+                // This is specifically for online orders that haven't been assigned to a store yet.
+                if (!$batch) {
+                    // Check global stock availability strictly
+                    $reserved = \App\Models\ReservedProduct::where('product_id', $product->id)->first();
+                    $available = $reserved ? $reserved->available_inventory : 0;
+                    
+                    if ($available < $quantity) {
+                        throw new \Exception("Insufficient global stock for product '{$product->name}'. Available: {$available}, requested: {$quantity}");
+                    }
+
+                    Log::info("Adding unassigned item to order {$order->id}", [
+                        'product_id' => $product->id,
+                        'available_global' => $available
+                    ]);
+                }
+                
+                // Use provided price or batch price or product base price
+                $unitPrice = $request->unit_price ?? ($batch ? $batch->sell_price : $product->base_price ?? 0);
                 $discount = $request->discount_amount ?? 0;
                 
                 // Calculate tax using the helper method (respects TAX_MODE)
-                $taxPercentage = $batch->tax_percentage ?? 0;
+                $taxPercentage = $batch ? ($batch->tax_percentage ?? 0) : 0;
                 $taxCalculation = $this->calculateTax($unitPrice, $quantity, $taxPercentage);
                 
                 // Check if this product already exists in the order
                 $existingItem = OrderItem::where('order_id', $order->id)
                     ->where('product_id', $product->id)
-                    ->where('product_batch_id', $batch->id)
+                    ->where('product_batch_id', $batch ? $batch->id : null)
                     ->first();
                 
                 if ($existingItem) {
                     // Update existing item quantity
                     $existingItem->quantity += $quantity;
                     $existingItem->tax_amount = $this->calculateTax($existingItem->unit_price, $existingItem->quantity, $taxPercentage)['total_tax'];
-                    $existingItem->total_amount = ($existingItem->unit_price * $existingItem->quantity) - $existingItem->discount_amount;
-                    $existingItem->cogs = round(($batch->cost_price ?? 0) * $existingItem->quantity, 2);
+                    $existingItem->total_amount = ($existingItem->unit_price * $existingItem->quantity) - $existingItem->discount_amount + $existingItem->tax_amount;
+                    $existingItem->cogs = $batch ? round(($batch->cost_price ?? 0) * $existingItem->quantity, 2) : 0;
                     $existingItem->save();
                     
                     $orderItem = $existingItem;
@@ -996,7 +1012,7 @@ class OrderController extends Controller
                     $orderItem = OrderItem::create([
                         'order_id' => $order->id,
                         'product_id' => $product->id,
-                        'product_batch_id' => $batch->id,
+                        'product_batch_id' => $batch ? $batch->id : null,
                         'product_barcode_id' => null,  // No barcode yet - assigned during fulfillment
                         'product_name' => $product->name,
                         'product_sku' => $product->sku,
@@ -1004,13 +1020,16 @@ class OrderController extends Controller
                         'unit_price' => $unitPrice,
                         'discount_amount' => $discount,
                         'tax_amount' => $taxCalculation['total_tax'],
-                        'cogs' => round(($batch->cost_price ?? 0) * $quantity, 2),
-                        'total_amount' => ($unitPrice * $quantity) - $discount,
+                        'cogs' => $batch ? round(($batch->cost_price ?? 0) * $quantity, 2) : 0,
+                        'total_amount' => ($unitPrice * $quantity) - $discount + $taxCalculation['total_tax'],
                     ]);
                 }
                 
                 $addedItems[] = $orderItem;
             }
+
+            // Reset status to pending_assignment on edit
+            $order->status = 'pending_assignment';
 
             // Recalculate order totals
             $order->calculateTotals();
@@ -1095,8 +1114,18 @@ class OrderController extends Controller
         try {
             if ($request->filled('quantity')) {
                 // Validate stock
-                if ($item->batch->quantity < $request->quantity) {
-                    throw new \Exception("Insufficient stock. Available: {$item->batch->quantity}");
+                if ($item->batch) {
+                    if ($item->batch->quantity < $request->quantity) {
+                        throw new \Exception("Insufficient stock in assigned batch. Available: {$item->batch->quantity}");
+                    }
+                } else {
+                    // Fallback for unassigned items: Check global availability
+                    $reserved = \App\Models\ReservedProduct::where('product_id', $item->product_id)->first();
+                    $available = $reserved ? $reserved->available_inventory : 0;
+                    
+                    if ($available < $request->quantity) {
+                        throw new \Exception("Requested quantity exceeds global available inventory. Available: {$available}");
+                    }
                 }
                 $item->updateQuantity($request->quantity);
             }
@@ -1110,6 +1139,10 @@ class OrderController extends Controller
             }
 
             $item->save();
+
+            // Reset status to pending_assignment on edit
+            $order->status = 'pending_assignment';
+
             $order->calculateTotals();
 
             DB::commit();
@@ -1174,6 +1207,10 @@ class OrderController extends Controller
         DB::beginTransaction();
         try {
             $item->delete();
+            
+            // Reset status to pending_assignment on edit
+            $order->status = 'pending_assignment';
+            
             $order->calculateTotals();
 
             DB::commit();
