@@ -323,19 +323,6 @@ class EcommerceOrderController extends Controller
                         'total_amount' => $itemTotal,
                         'notes' => $cartItem->notes,
                     ]);
-
-                    // Increment reserved_inventory instead of deducting stock
-                    if ($reservedRecord = ReservedProduct::where('product_id', $cartItem->product_id)->first()) {
-                        $reservedRecord->increment('reserved_inventory', $cartItem->quantity);
-                        $reservedRecord->decrement('available_inventory', $cartItem->quantity);
-                    } else {
-                        ReservedProduct::create([
-                            'product_id' => $cartItem->product_id,
-                            'total_inventory' => 0,
-                            'reserved_inventory' => $cartItem->quantity,
-                            'available_inventory' => -$cartItem->quantity,
-                        ]);
-                    }
                 }
 
                 // Clear cart
@@ -465,10 +452,7 @@ class EcommerceOrderController extends Controller
                     'cancellation_reason' => 'Customer cancellation',
                 ]);
 
-                // Restore product stock
-                foreach ($order->items as $item) {
-                    $item->product->increment('stock_quantity', $item->quantity);
-                }
+                // OrderObserver handles reservation release on cancellation
 
                 DB::commit();
 

@@ -24,6 +24,9 @@ export interface Product {
     id: number;
     name: string;
   };
+  selling_price?: number;
+  base_price?: number; // alias for selling_price
+  global_available?: number; // total available from reserved_products
   created_at: string;
   updated_at: string;
 }
@@ -127,6 +130,9 @@ function transformProduct(product: any): Product {
     variants: product.variants,
     category: product.category,
     vendor: product.vendor,
+    selling_price: product.selling_price || product.base_price,
+    base_price: product.base_price || product.selling_price,
+    global_available: product.global_available,
     created_at: product.created_at,
     updated_at: product.updated_at,
   };

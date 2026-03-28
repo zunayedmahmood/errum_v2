@@ -511,7 +511,10 @@ class ProductSearchController extends Controller
      */
     private function executeFuzzySearch($searchTerms, $searchFields, $filters, $threshold)
     {
-        $query = Product::with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
+        $query = Product::select('products.*', 'reserved_products.available_inventory as global_available')
+            ->selectRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) as selling_price')
+            ->leftJoin('reserved_products', 'products.id', '=', 'reserved_products.product_id')
+            ->with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
             $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
         }])
             ->where('is_archived', $filters['is_archived'] ?? false);
@@ -594,11 +597,11 @@ class ProductSearchController extends Controller
         }
 
         if (isset($filters['min_price'])) {
-            $query->where('selling_price', '>=', $filters['min_price']);
+            $query->whereRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) >= ?', [(float) $filters['min_price']]);
         }
 
         if (isset($filters['max_price'])) {
-            $query->where('selling_price', '<=', $filters['max_price']);
+            $query->whereRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) <= ?', [(float) $filters['max_price']]);
         }
 
         // Stock status filter
@@ -664,7 +667,10 @@ class ProductSearchController extends Controller
      */
     private function searchExact($searchTerms, $searchFields, $filters)
     {
-        $query = Product::with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
+        $query = Product::select('products.*', 'reserved_products.available_inventory as global_available')
+            ->selectRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) as selling_price')
+            ->leftJoin('reserved_products', 'products.id', '=', 'reserved_products.product_id')
+            ->with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
             $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
         }]);
 
@@ -691,7 +697,10 @@ class ProductSearchController extends Controller
      */
     private function searchStartsWith($searchTerms, $searchFields, $filters)
     {
-        $query = Product::with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
+        $query = Product::select('products.*', 'reserved_products.available_inventory as global_available')
+            ->selectRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) as selling_price')
+            ->leftJoin('reserved_products', 'products.id', '=', 'reserved_products.product_id')
+            ->with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
             $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
         }]);
 
@@ -718,7 +727,10 @@ class ProductSearchController extends Controller
      */
     private function searchContains($searchTerms, $searchFields, $filters)
     {
-        $query = Product::with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
+        $query = Product::select('products.*', 'reserved_products.available_inventory as global_available')
+            ->selectRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) as selling_price')
+            ->leftJoin('reserved_products', 'products.id', '=', 'reserved_products.product_id')
+            ->with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
             $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
         }]);
 

@@ -250,11 +250,10 @@ class OrderManagementController extends Controller
             DB::beginTransaction();
 
             try {
-                // Deduct stock FIFO, update order_items, and decrement reserved_inventory
+                // Assign store and intended batch to items without deducting stock
                 foreach ($order->items as $orderItem) {
-                    $remainingQty = $orderItem->quantity;
-                    
-                    $batches = ProductBatch::where('product_id', $orderItem->product_id)
+                    // Find the best batch (FIFO) to recommend/assign as intended
+                    $bestBatch = ProductBatch::where('product_id', $orderItem->product_id)
                         ->where('store_id', $storeId)
                         ->where('availability', true)
                         ->where('quantity', '>', 0)
@@ -264,41 +263,21 @@ class OrderManagementController extends Controller
                         })
                         ->orderBy('expiry_date', 'asc') // FIFO
                         ->orderBy('created_at', 'asc')
-                        ->get();
-                        
-                    // Keep track of the first batch used to update order_item
-                    $firstBatchId = null;
+                        ->first();
 
-                    foreach ($batches as $batch) {
-                        if ($remainingQty <= 0) break;
-                        
-                        $deductQty = min($batch->quantity, $remainingQty);
-                        $batch->quantity -= $deductQty;
-                        $batch->save(); // ProductBatchObserver updates total_inventory automatically
-                        
-                        if (!$firstBatchId) {
-                            $firstBatchId = $batch->id;
-                        }
-                        
-                        $remainingQty -= $deductQty;
-                    }
-
-                    // Update order item with the primary batch used
+                    // Update order item with the intended batch
                     $orderItem->update([
-                        'product_batch_id' => $firstBatchId,
+                        'product_batch_id' => $bestBatch ? $bestBatch->id : $orderItem->product_batch_id,
                     ]);
-
-                    // Decrement reserved_inventory (since physical stock is now deducted)
-                    if ($reservedRecord = ReservedProduct::where('product_id', $orderItem->product_id)->first()) {
-                        $reservedRecord->decrement('reserved_inventory', $orderItem->quantity);
-                        $reservedRecord->increment('available_inventory', $orderItem->quantity); // total_inventory will drop simultaneously, so available effectively stays same
-                    }
+                    
+                    // Note: reserved_inventory remains untouched. 
+                    // It will be released during barcode scanning in StoreFulfillmentController.
                 }
 
-                // Update order
+                // Update order status to assigned_to_store
                 $order->update([
                     'store_id' => $storeId,
-                    'status' => 'pending',
+                    'status' => 'assigned_to_store',
                     'processed_by' => auth('api')->id(),
                     'metadata' => array_merge($order->metadata ?? [], [
                         'assigned_at' => now()->toISOString(),

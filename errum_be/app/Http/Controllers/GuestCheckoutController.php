@@ -226,19 +226,8 @@ class GuestCheckoutController extends Controller
                         'total_amount' => $itemData['total_amount'],
                     ]);
 
-                    // Increment reserved_inventory instead of deducting stock
-                    if ($reservedRecord = ReservedProduct::where('product_id', $itemData['product_id'])->first()) {
-                        $reservedRecord->increment('reserved_inventory', $itemData['quantity']);
-                        $reservedRecord->decrement('available_inventory', $itemData['quantity']);
-                    } else {
-                        // Fallback but should not happen since validation requires stock
-                        ReservedProduct::create([
-                            'product_id' => $itemData['product_id'],
-                            'total_inventory' => 0,
-                            'reserved_inventory' => $itemData['quantity'],
-                            'available_inventory' => -$itemData['quantity'],
-                        ]);
-                    }
+                    // Note: Reservation is automatically handled by OrderItemObserver 
+                    // since the order starts with 'pending_assignment' status.
                 }
 
                 // Step 7: Handle payment method

@@ -7,9 +7,11 @@ use App\Models\OrderItem;
 use App\Models\ProductBarcode;
 use App\Models\ProductBatch;
 use App\Models\Employee;
+use App\Models\ReservedProduct;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class StoreFulfillmentController extends Controller
@@ -243,24 +245,33 @@ class StoreFulfillmentController extends Controller
             DB::beginTransaction();
 
             try {
-                // Update order item with scanned barcode
+                // PHYSICAL STOCK DEDUCTION (NOW PERFORMED AT SCANNING PHASE)
+                if ($batch = $barcode->batch) {
+                    $batch->quantity -= 1; // Barcodes are individual units
+                    $batch->save();
+                    
+                    Log::info('Stock deducted at barcode scanning', [
+                        'order_id' => $order->id,
+                        'product_id' => $barcode->product_id,
+                        'batch_id' => $batch->id,
+                        'barcode' => $barcode->barcode,
+                    ]);
+                }
+
+                // RELEASE RESERVATION
+                if ($reservedRecord = ReservedProduct::where('product_id', $orderItem->product_id)->first()) {
+                    $reservedRecord->decrement('reserved_inventory', 1);
+                    // Re-sync available_inventory
+                    $reservedRecord->refresh();
+                    $reservedRecord->available_inventory = max(0, $reservedRecord->total_inventory - $reservedRecord->reserved_inventory);
+                    $reservedRecord->save();
+                }
+
+                // Update order item with scanned barcode and its batch
                 $orderItem->update([
                     'product_barcode_id' => $barcode->id,
-                    // Note: We no longer update product_batch_id here because it was set during assignOrderToStore
+                    'product_batch_id' => $barcode->batch_id, // Ensure it matches the scanned barcode
                 ]);
-
-                // Update barcode status
-                $barcode->update([
-                    'current_status' => 'in_shipment',
-                    'location_metadata' => array_merge($barcode->location_metadata ?? [], [
-                        'order_id' => $order->id,
-                        'order_number' => $order->order_number,
-                        'scanned_at' => now()->toISOString(),
-                        'scanned_by' => $employeeId,
-                    ]),
-                ]);
-
-                // Note: Stock deduction is no longer performed here. It is handled in OrderManagementController::assignOrderToStore
 
                 // Update order status to picking if this is first scan
                 if ($order->status === 'assigned_to_store') {
@@ -331,21 +342,58 @@ class StoreFulfillmentController extends Controller
                 ->with('items')
                 ->firstOrFail();
 
-            // Verify all items are scanned
-            $unscannedItems = $order->items()->whereNull('product_barcode_id')->count();
-            
-            if ($unscannedItems > 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Cannot mark as ready for shipment. {$unscannedItems} items are not yet scanned.",
-                ], 400);
-            }
+            DB::beginTransaction();
+            try {
+                $unscannedItems = $order->items()->whereNull('product_barcode_id')->get();
 
-            $order->update([
-                'status' => 'ready_for_shipment',
-                'fulfilled_at' => now(),
-                'fulfilled_by' => $employeeId,
-            ]);
+                foreach ($unscannedItems as $item) {
+                    $remainingToDeduct = $item->quantity;
+                    
+                    // Find available batches in this store (FIFO)
+                    $batches = ProductBatch::where('product_id', $item->product_id)
+                        ->where('store_id', $employee->store_id)
+                        ->where('availability', true)
+                        ->where('quantity', '>', 0)
+                        ->where(function($query) {
+                            $query->whereNull('expiry_date')
+                                ->orWhere('expiry_date', '>', now());
+                        })
+                        ->orderBy('expiry_date', 'asc')
+                        ->orderBy('created_at', 'asc')
+                        ->get();
+
+                    foreach ($batches as $batch) {
+                        if ($remainingToDeduct <= 0) break;
+                        
+                        $deductQty = min($batch->quantity, $remainingToDeduct);
+                        $batch->decrement('quantity', $deductQty);
+                        
+                        $remainingToDeduct -= $deductQty;
+                        
+                        Log::info("Automatic fail-safe stock deduction for unscanned item: Order {$order->order_number}, Product {$item->product_id}, Batch {$batch->id}, Qty {$deductQty}");
+                    }
+
+                    // Release remaining reservation for this item
+                    if ($reservedRecord = ReservedProduct::where('product_id', $item->product_id)->first()) {
+                        $reservedRecord->decrement('reserved_inventory', $item->quantity);
+                        $reservedRecord->refresh();
+                        $reservedRecord->available_inventory = max(0, $reservedRecord->total_inventory - $reservedRecord->reserved_inventory);
+                        $reservedRecord->save();
+                    }
+                }
+
+                $order->update([
+                    'status' => 'ready_for_shipment',
+                    'fulfillment_status' => 'fulfilled',
+                    'fulfilled_at' => now(),
+                    'fulfilled_by' => $employeeId,
+                ]);
+
+                DB::commit();
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
 
             return response()->json([
                 'success' => true,

@@ -535,9 +535,7 @@ class OrderController extends Controller
                 // Social commerce/Ecommerce: Deduct at barcode scanning (when physical item is picked)
                 // Only deduct if batch exists (not for pre-orders)
                 $shouldDeductNow = $batch && (
-                    $request->order_type === 'counter' ||  // Counter: immediate deduction
-                    ($request->order_type === 'social_commerce' && $request->store_id) ||  // Social with store: immediate
-                    ($request->order_type === 'ecommerce' && $request->store_id)  // Ecommerce with store: immediate
+                    $request->order_type === 'counter' // Counter: immediate deduction (POS)
                 );
                 
                 if ($shouldDeductNow) {
@@ -550,19 +548,7 @@ class OrderController extends Controller
                         'batch_id' => $batch->id,
                         'quantity' => $quantity,
                     ]);
-                } else if ($batch) {
-                    // NEW: Reserve stock for online orders that are pending assignment
-                    if ($reservedRecord = \App\Models\ReservedProduct::where('product_id', $product->id)->first()) {
-                        $reservedRecord->increment('reserved_inventory', $quantity);
-                        $reservedRecord->decrement('available_inventory', $quantity);
-                    } else {
-                        \App\Models\ReservedProduct::create([
-                            'product_id' => $product->id,
-                            'total_inventory' => 0,
-                            'reserved_inventory' => $quantity,
-                            'available_inventory' => -$quantity,
-                        ]);
-                    }
+
                 }
             }
 

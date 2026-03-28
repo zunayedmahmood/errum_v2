@@ -28,20 +28,24 @@ class OrderObserver
             // Define reversal statuses
             $reversalStatuses = ['cancelled', 'refunded'];
             
-            // Handle inventory reservation release for unassigned orders
-            if ($oldStatus === 'pending_assignment' && in_array($newStatus, $reversalStatuses)) {
-                foreach ($order->items as $item) {
-                    if ($reservedRecord = ReservedProduct::where('product_id', $item->product_id)->first()) {
-                        $reservedRecord->decrement('reserved_inventory', $item->quantity);
-                        $reservedRecord->increment('available_inventory', $item->quantity);
+            // Handle inventory reservation release for online orders (ecommerce/social_commerce)
+            // if order is cancelled or refunded while items are still reserved (not yet scanned/fulfilled)
+            if (in_array($newStatus, $reversalStatuses) && !in_array($oldStatus, $reversalStatuses)) {
+                if (in_array($order->order_type, ['ecommerce', 'social_commerce'])) {
+                    foreach ($order->items as $item) {
+                        // Only release if not already physically deducted (barcode not scanned)
+                        if ($item->product_barcode_id === null && $item->scan_status !== 'scanned') {
+                            if ($reservedRecord = ReservedProduct::where('product_id', $item->product_id)->first()) {
+                                $reservedRecord->decrement('reserved_inventory', $item->quantity);
+                                $reservedRecord->increment('available_inventory', $item->quantity);
+                                Log::info("Released reservation for unscanned item in cancelled order {$order->order_number}: Product {$item->product_id}");
+                            }
+                        }
                     }
                 }
-                
-                Log::info("Released reserved inventory for cancelled order {$order->order_number}");
             }
             
-            // Define reversal statuses
-            $reversalStatuses = ['cancelled', 'refunded'];
+
             
             // Compute credits if entering countable status for first time
             if (in_array($newStatus, $countableStatuses) && !in_array($oldStatus, $countableStatuses)) {
@@ -78,6 +82,25 @@ class OrderObserver
                 $attributionService = app(AdAttributionService::class);
                 $attributionService->unreverseCreditsForOrder($order);
             }
+        }
+    }
+
+    /**
+     * Handle the Order "deleted" event.
+     */
+    public function deleted(Order $order): void
+    {
+        // If an order is deleted (e.g., hard deleted), release any trapped reservations
+        if (in_array($order->order_type, ['ecommerce', 'social_commerce'])) {
+            foreach ($order->items as $item) {
+                if ($item->product_barcode_id === null) {
+                    if ($reservedRecord = ReservedProduct::where('product_id', $item->product_id)->first()) {
+                        $reservedRecord->decrement('reserved_inventory', $item->quantity);
+                        $reservedRecord->increment('available_inventory', $item->quantity);
+                    }
+                }
+            }
+            Log::info("Released reservations for deleted order {$order->order_number}");
         }
     }
 }

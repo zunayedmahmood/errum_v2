@@ -431,8 +431,6 @@ export default function OrdersDashboard() {
   const [showExchangeModal, setShowExchangeModal] = useState(false);
 
   // 🧃 Product picker (for Edit Order)
-  const [showProductPicker, setShowProductPicker] = useState(false);
-  const [productSearch, setProductSearch] = useState('');
   const [productResults, setProductResults] = useState<any[]>([]);
   const [isProductLoading, setIsProductLoading] = useState(false);
   const [pickerBatches, setPickerBatches] = useState<any[]>([]);
@@ -2562,7 +2560,6 @@ export default function OrdersDashboard() {
 
       for (const prod of products) {
         const imgPath =
-          prod?.images?.[0]?.image_url ||
           prod?.images?.[0]?.image_path ||
           (prod as any)?.image_url ||
           (prod as any)?.image_path ||
@@ -2645,7 +2642,7 @@ export default function OrdersDashboard() {
         batch_id: product.batchId,
 
         quantity: 1,
-        unit_price: product.price,
+        unit_price: product.price || 0,
         discount_amount: 0,
       };
 
@@ -5198,11 +5195,10 @@ export default function OrdersDashboard() {
                             <p className="text-xs font-medium text-black dark:text-white truncate">{product.name}</p>
                             {product.batchNumber && (
                               <p className="text-[11px] text-blue-600 dark:text-blue-400 truncate">
-                                Batch: {product.batchNumber}
+                                Batch: {product.batchNumber} ({product.available} left)
                               </p>
                             )}
-                            <p className="text-[11px] text-gray-600 dark:text-gray-400">Price: {product.price} Tk</p>
-                            <p className="text-[11px] text-green-600 dark:text-green-400">Available: {product.available}</p>
+                            <p className="text-xs font-bold text-black dark:text-white">৳{product.price}</p>
                           </div>
                         </div>
                       </button>

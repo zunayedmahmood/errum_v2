@@ -839,9 +839,14 @@ export default function StoreAssignmentPage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Left Column - Available Stores */}
                 <div>
-                  <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
-                    Available Stores & Warehouses
-                  </h2>
+                  <div className="mb-4">
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      Available Stores & Warehouses
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Assignment creates an inventory reservation. Physical stock is deducted only during scanning/fulfillment.
+                    </p>
+                  </div>
 
                   {isLoadingStores ? (
                     <div className="text-center py-12">
@@ -903,7 +908,7 @@ export default function StoreAssignmentPage() {
 
                             <div className="mb-3">
                               <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
-                                <span>Fulfillment Capacity</span>
+                                <span>Reservation Capacity</span>
                                 <span className="font-semibold">{store.fulfillment_percentage}%</span>
                               </div>
                               <div className="w-full h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">

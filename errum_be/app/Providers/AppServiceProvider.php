@@ -21,6 +21,8 @@ use App\Observers\ExpensePaymentObserver;
 use App\Observers\VendorPaymentObserver;
 use App\Models\ProductBatch;
 use App\Observers\ProductBatchObserver;
+use App\Models\OrderItem;
+use App\Observers\OrderItemObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -47,5 +49,6 @@ class AppServiceProvider extends ServiceProvider
         ExpensePayment::observe(ExpensePaymentObserver::class);
         VendorPayment::observe(VendorPaymentObserver::class);
         ProductBatch::observe(ProductBatchObserver::class);
+        OrderItem::observe(OrderItemObserver::class);
     }
 }

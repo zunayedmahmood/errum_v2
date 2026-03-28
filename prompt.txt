@@ -105,3 +105,14 @@ What i want you to change:
 
 check for any edge case.
 make a detailed md file titled "28_Mar_26 social-commerce page prevent reserved selling.md"
+
+
+
+### reserved_products integrity update:
+
+These are the updates that i do not want from the files:
+->D.Stuck Reservations on Direct Order Completion ignore fixing this.
+->F. Inconsistent API "In Stock" Logic this performance was intended. But, you can try to make the UX smoother.
+->Ignore this edge case: 1.Pre-Orders 
+
+Besides these, fix all the issues you find in this file: 

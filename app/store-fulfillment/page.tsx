@@ -301,14 +301,25 @@ export default function StoreFulfillmentPage() {
     }
   };
 
-  const handleMarkReadyForShipment = async () => {
+  const handleMarkReadyForShipment = async (force: boolean = false) => {
     if (!orderDetails) return;
 
-    const canShip = orderDetails.fulfillment_status.can_ship;
+    const fulfilledCount = orderDetails.fulfillment_status.fulfilled_items;
+    const totalCount = orderDetails.fulfillment_status.total_items;
+    const isPartial = fulfilledCount < totalCount;
     
-    if (!canShip) {
-      displayToast('Please scan all items before marking as ready for shipment', 'warning');
-      return;
+    // If partial scan, require explicit confirmation
+    if (isPartial && !force) {
+      if (typeof window !== 'undefined') {
+        const pendingCount = totalCount - fulfilledCount;
+        const confirmed = window.confirm(
+          `⚠️ Partial Fulfillment Warning\n\n` +
+          `${pendingCount} item(s) have not been scanned.\n\n` +
+          `Marking as 'Ready for Shipment' will automatically deduct these items from their assigned batches to maintain stock integrity.\n\n` +
+          `Do you want to proceed?`
+        );
+        if (!confirmed) return;
+      }
     }
 
     setIsProcessing(true);
@@ -316,7 +327,12 @@ export default function StoreFulfillmentPage() {
     try {
       await storeFulfillmentService.markReadyForShipment(orderDetails.order.id);
       
-      displayToast('✅ Order marked as ready for shipment!', 'success');
+      displayToast(
+        isPartial 
+          ? '✅ Order marked as ready for shipment (Fail-safe deduction applied)' 
+          : '✅ Order marked as ready for shipment!', 
+        'success'
+      );
       
       // Go back to order list after 2 seconds
       setTimeout(() => {
@@ -754,11 +770,13 @@ export default function StoreFulfillmentPage() {
                   </div>
 
                   <button
-                    onClick={handleMarkReadyForShipment}
-                    disabled={isProcessing || !progress?.can_ship}
+                    onClick={() => handleMarkReadyForShipment(false)}
+                    disabled={isProcessing || !order?.items?.length}
                     className={`w-full mt-6 px-6 py-4 rounded-lg font-semibold text-white transition-all flex items-center justify-center gap-2 ${
-                      progress?.can_ship && !isProcessing
-                        ? 'bg-green-600 hover:bg-green-700 shadow-lg'
+                      order?.items?.length && !isProcessing
+                        ? progress?.can_ship
+                          ? 'bg-green-600 hover:bg-green-700 shadow-lg'
+                          : 'bg-orange-500 hover:bg-orange-600 shadow-md'
                         : 'bg-gray-400 cursor-not-allowed'
                     }`}
                   >
@@ -775,7 +793,7 @@ export default function StoreFulfillmentPage() {
                     ) : (
                       <>
                         <AlertTriangle className="h-5 w-5" />
-                        Scan All Items First ({progress?.fulfilled_items}/{progress?.total_items})
+                        Mark Ready (Auto-Deduct {progress?.pending_items} pending)
                       </>
                     )}
                   </button>

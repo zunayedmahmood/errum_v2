@@ -319,12 +319,18 @@ export default function CheckoutPage() {
       setIsProcessing(true);
 
       if (editingAddressId) {
-        const result = await checkoutService.updateAddress(editingAddressId, addressForm);
+        const result = await checkoutService.updateAddress(editingAddressId, {
+          ...addressForm,
+          postal_code: addressForm.postal_code || ''
+        });
         setAddresses(prev => prev.map(addr => 
           addr.id === editingAddressId ? result.address : addr
         ));
       } else {
-        const result = await checkoutService.createAddress(addressForm);
+        const result = await checkoutService.createAddress({
+          ...addressForm,
+          postal_code: addressForm.postal_code || ''
+        });
         setAddresses(prev => [...prev, result.address]);
         
         if (addresses.length === 0 || addressForm.is_default_shipping) {
@@ -438,7 +444,7 @@ export default function CheckoutPage() {
           ...(guestAddress.address_line_2?.trim() ? { address_line_2: guestAddress.address_line_2 } : {}),
           city: guestAddress.city,
           ...(guestAddress.state?.trim() ? { state: guestAddress.state } : {}),
-          postal_code: guestAddress.postal_code,
+          postal_code: guestAddress.postal_code || '',
           country: guestAddress.country || 'Bangladesh',
         },
         ...(guestName.trim() ? { customer_name: guestName.trim() } : {}),
@@ -1183,7 +1189,7 @@ export default function CheckoutPage() {
                             </label>
                             <input
                               type="text"
-                              value={addressForm.postal_code}
+                              value={addressForm.postal_code || ''}
                               onChange={(e) => {
                                 const value = e.target.value.replace(/\D/g, '');
                                 setAddressForm({ ...addressForm, postal_code: value });
