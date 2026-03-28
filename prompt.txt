@@ -108,11 +108,29 @@ make a detailed md file titled "28_Mar_26 social-commerce page prevent reserved 
 
 
 
-### reserved_products integrity update:
+### reserved_products integrity issues:
 
-These are the updates that i do not want from the files:
-->D.Stuck Reservations on Direct Order Completion ignore fixing this.
-->F. Inconsistent API "In Stock" Logic this performance was intended. But, you can try to make the UX smoother.
-->Ignore this edge case: 1.Pre-Orders 
-
-Besides these, fix all the issues you find in this file: 
+problems found so far:
+placing order from e-commerce side is reducing available_inventory twice, like for 2 items order, available_inventory reduces by 4.
+for some reason, checkout page is still showing validation error for postal code. maybe the '' string is not being passed or some other frontend code is throwing the error.
+store assignment page is throwing this error when trying to assign a store:
+{
+    "success": false,
+    "message": "Failed to assign order to store",
+    "error": "SQLSTATE[01000]: Warning: 1265 Data truncated for column 'status' at row 1 (Connection: mysql, SQL: update `orders` set `store_id` = 1, `status` = assigned_to_store, `processed_by` = 1, `metadata` = {\"checkout_type\":\"guest\",\"customer_phone\":\"01678260051\",\"customer_provided_name\":null,\"assigned_at\":\"2026-03-28T12:25:43.197415Z\",\"assigned_by\":1,\"assignment_notes\":null}, `orders`.`updated_at` = 2026-03-28 12:25:43 where `id` = 111)"
+}
+in social-commerce page, when a product has been selected for the grid, the Available count uses stock count instead of available_inventory. and the quantity input field should not take more than the available_inventory for the selected product (read the whole page and it's components for better understanding)
+Got this error in orders page:
+Uncaught ReferenceError: productSearch is not defined
+    at $ (page-c05c1131c56658a0.js:1:54645)
+    at l9 (4bd1b696-100b9d70ed4e49c1.js:1:51130)
+    at o_ (4bd1b696-100b9d70ed4e49c1.js:1:70990)
+    at oq (4bd1b696-100b9d70ed4e49c1.js:1:81091)
+    at ik (4bd1b696-100b9d70ed4e49c1.js:1:114682)
+    at 4bd1b696-100b9d70ed4e49c1.js:1:114527
+    at ib (4bd1b696-100b9d70ed4e49c1.js:1:114535)
+    at iu (4bd1b696-100b9d70ed4e49c1.js:1:111618)
+    at iX (4bd1b696-100b9d70ed4e49c1.js:1:132934)
+    at MessagePort.w (1255-642c76f13c20a3ec.js:1:64169)
+product search is most likely a newly implemented method in backend that is not connected to frontend.
+this error in social-commerce page: GET https://backend2.errumbd.com/api/catalog/inventory/statistics 500 (Internal Server Error)

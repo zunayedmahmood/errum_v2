@@ -1,0 +1,46 @@
+# --- Dependencies & Package Managers ---
+# We keep composer.json/package.json, but ignore the massive folders.
+node_modules/
+vendor/
+
+# --- Build Outputs & Assets ---
+# These are generated files; the AI doesn't need to "read" them to help with logic.
+.next/
+out/
+public/build/
+public/storage/
+mix-manifest.json
+package-lock.json
+composer.lock
+
+# --- Laravel Specifics ---
+storage/framework/
+storage/logs/
+bootstrap/cache/
+*.pyc
+.phpunit.result.cache
+
+# --- Next.js / Frontend Specifics ---
+.expo/
+dist/
+.cache/
+*.log
+
+# --- Media & Binaries ---
+# Prevents the AI from trying to "read" images/videos as text.
+public/assets/images/
+public/assets/videos/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.svg
+*.ico
+*.pdf
+
+# --- Version Control & System ---
+.git/
+.svn/
+.hg/
+.DS_Store
+Thumbs.db

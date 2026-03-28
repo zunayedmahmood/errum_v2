@@ -521,7 +521,7 @@ export default function SocialCommercePage() {
           fetchStores(),
           inventoryService.getStatistics().catch(() => null)
         ]);
-        
+
         if (stats?.success) {
           setInventoryStats({
             total_stock: stats.data.overview.total_inventory_units,
@@ -548,7 +548,7 @@ export default function SocialCommercePage() {
       try {
         setIsLoadingData(true);
         console.log('🔍 Executing catalog search for:', searchQuery);
-        
+
         // Use the same search method as e-commerce but requesting individual variants (not grouped)
         const response = await catalogService.searchProducts({
           q: searchQuery,
@@ -559,7 +559,7 @@ export default function SocialCommercePage() {
         if (response && response.products) {
           const results: ProductSearchResult[] = response.products.map(product => {
             const branchMap = new Map<number, { store_name: string, quantity: number }>();
-            
+
             if (Array.isArray(product.batches)) {
               for (const b of product.batches) {
                 const storeId = b.store_id;
@@ -569,7 +569,7 @@ export default function SocialCommercePage() {
                 // 3. Fallback to Store ID
                 const storeInfo = stores.find(s => s.id === storeId);
                 const storeName = b.store?.name || storeInfo?.name || `Store #${storeId}`;
-                
+
                 const current = branchMap.get(storeId) || { store_name: storeName, quantity: 0 };
                 branchMap.set(storeId, {
                   store_name: current.store_name,
@@ -577,9 +577,9 @@ export default function SocialCommercePage() {
                 });
               }
             }
-            
+
             const branchStocks = Array.from(branchMap.values()).filter(b => b.quantity > 0);
-            
+
             const rawAvailableInventory = (product as any).available_inventory;
             const availableInventory = rawAvailableInventory != null
               ? Number(rawAvailableInventory)
@@ -604,7 +604,7 @@ export default function SocialCommercePage() {
           });
 
           setSearchResults(results);
-          
+
           if (results.length === 0) {
             fireToast('No available products found', 'error');
           }
@@ -665,8 +665,8 @@ export default function SocialCommercePage() {
     const discPer = parseFloat(discountPercent) || 0;
     const discTk = parseFloat(discountTk) || 0;
 
-    if (qty > selectedProduct.available && !selectedProduct.isDefective) {
-      alert(`Only ${selectedProduct.available} units available across all branches`);
+    if (qty > selectedProduct.availableInventory && !selectedProduct.isDefective) {
+      alert(`Only ${selectedProduct.availableInventory} units available after reservations`);
       return;
     }
 
@@ -997,8 +997,8 @@ export default function SocialCommercePage() {
                           setDeliveryAddress('');
                         }}
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isInternational
-                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600'
                           }`}
                       >
                         <Globe className="w-4 h-4" />
@@ -1092,8 +1092,8 @@ export default function SocialCommercePage() {
                   {/* Product Search */}
                   <div
                     className={`bg-white dark:bg-gray-800 rounded-lg border p-4 md:p-5 ${selectedProduct?.isDefective
-                        ? 'border-orange-300 dark:border-orange-700'
-                        : 'border-gray-200 dark:border-gray-700'
+                      ? 'border-orange-300 dark:border-orange-700'
+                      : 'border-gray-200 dark:border-gray-700'
                       }`}
                   >
                     <div className="flex items-center justify-between mb-4">
@@ -1139,56 +1139,55 @@ export default function SocialCommercePage() {
                         {searchResults.map((product) => {
                           const isReserved = product.availableInventory <= 0;
                           return (
-                          <div
-                            key={product.id}
-                            onClick={() => handleProductSelect(product)}
-                            className={`relative border rounded p-2 transition-colors ${
-                              isReserved
-                                ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/10 cursor-not-allowed opacity-60'
-                                : 'border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700'
-                            }`}
-                            title={isReserved ? 'All stock is reserved — cannot select' : undefined}
-                          >
-                            <img
-                              src={product.mainImage}
-                              alt={product.name}
-                              className="w-full h-24 sm:h-32 object-cover rounded mb-2"
-                            />
-                            <p className="text-xs text-gray-900 dark:text-white font-medium break-words whitespace-normal">
-                              {product.name}
-                            </p>
-                            {Number(product.batchesCount ?? 0) > 1 && (
-                              <p className="text-xs text-blue-600 dark:text-blue-400 truncate">
-                                Branch/Batches: {product.batchesCount}
+                            <div
+                              key={product.id}
+                              onClick={() => handleProductSelect(product)}
+                              className={`relative border rounded p-2 transition-colors ${isReserved
+                                  ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/10 cursor-not-allowed opacity-60'
+                                  : 'border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700'
+                                }`}
+                              title={isReserved ? 'All stock is reserved — cannot select' : undefined}
+                            >
+                              <img
+                                src={product.mainImage}
+                                alt={product.name}
+                                className="w-full h-24 sm:h-32 object-cover rounded mb-2"
+                              />
+                              <p className="text-xs text-gray-900 dark:text-white font-medium break-words whitespace-normal">
+                                {product.name}
                               </p>
-                            )}
-                            <p className="text-xs text-gray-600 dark:text-gray-400">
-                              {formatPriceRangeLabel(product)}
-                            </p>
-                            {isReserved ? (
-                              <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">
-                                All stock reserved
+                              {Number(product.batchesCount ?? 0) > 1 && (
+                                <p className="text-xs text-blue-600 dark:text-blue-400 truncate">
+                                  Branch/Batches: {product.batchesCount}
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-600 dark:text-gray-400">
+                                {formatPriceRangeLabel(product)}
                               </p>
-                            ) : (
-                              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                                Available: {product.availableInventory}
-                              </p>
-                            )}
-                            {product.branchStocks && product.branchStocks.length > 0 && (
-                              <div className="mt-1 space-y-0.5">
-                                {product.branchStocks.map((bs, idx) => (
-                                  <p key={idx} className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">
-                                    {bs.store_name}: <span className="font-semibold text-gray-700 dark:text-gray-200">{bs.quantity}</span>
-                                  </p>
-                                ))}
-                              </div>
-                            )}
-                            {product.daysUntilExpiry != null && product.daysUntilExpiry < 30 && (
-                              <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                                Expires in {product.daysUntilExpiry} days
-                              </p>
-                            )}
-                          </div>
+                              {isReserved ? (
+                                <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">
+                                  All stock reserved
+                                </p>
+                              ) : (
+                                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                                  Available: {product.availableInventory}
+                                </p>
+                              )}
+                              {product.branchStocks && product.branchStocks.length > 0 && (
+                                <div className="mt-1 space-y-0.5">
+                                  {product.branchStocks.map((bs, idx) => (
+                                    <p key={idx} className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">
+                                      {bs.store_name}: <span className="font-semibold text-gray-700 dark:text-gray-200">{bs.quantity}</span>
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                              {product.daysUntilExpiry != null && product.daysUntilExpiry < 30 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                  Expires in {product.daysUntilExpiry} days
+                                </p>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -1197,8 +1196,8 @@ export default function SocialCommercePage() {
                     {selectedProduct && (
                       <div
                         className={`mt-4 p-3 border rounded mb-4 ${selectedProduct.isDefective
-                            ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
-                            : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
+                          : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
                           }`}
                       >
                         <div className="flex items-center justify-between mb-2">
@@ -1234,7 +1233,7 @@ export default function SocialCommercePage() {
                           Price: {selectedProduct.isDefective ? `${selectedProduct.price} Tk` : formatPriceRangeLabel(selectedProduct)}
                         </p>
                         <p className="text-sm text-green-600 dark:text-green-400">
-                          Available: {selectedProduct.available}
+                          Available: {selectedProduct.availableInventory}
                         </p>
                       </div>
                     )}
@@ -1249,7 +1248,7 @@ export default function SocialCommercePage() {
                           onChange={(e) => setQuantity(e.target.value)}
                           disabled={!selectedProduct || selectedProduct?.isDefective}
                           min="1"
-                          max={selectedProduct?.available || 1}
+                          max={selectedProduct?.availableInventory || 1}
                           className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
                         />
                       </div>

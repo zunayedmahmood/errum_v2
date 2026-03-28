@@ -321,7 +321,7 @@ export default function CheckoutPage() {
       if (editingAddressId) {
         const result = await checkoutService.updateAddress(editingAddressId, {
           ...addressForm,
-          postal_code: addressForm.postal_code || ''
+          postal_code: addressForm.postal_code || undefined
         });
         setAddresses(prev => prev.map(addr => 
           addr.id === editingAddressId ? result.address : addr
@@ -329,7 +329,7 @@ export default function CheckoutPage() {
       } else {
         const result = await checkoutService.createAddress({
           ...addressForm,
-          postal_code: addressForm.postal_code || ''
+          postal_code: addressForm.postal_code || undefined
         });
         setAddresses(prev => [...prev, result.address]);
         
@@ -444,7 +444,7 @@ export default function CheckoutPage() {
           ...(guestAddress.address_line_2?.trim() ? { address_line_2: guestAddress.address_line_2 } : {}),
           city: guestAddress.city,
           ...(guestAddress.state?.trim() ? { state: guestAddress.state } : {}),
-          postal_code: guestAddress.postal_code || '',
+          postal_code: guestAddress.postal_code || undefined,
           country: guestAddress.country || 'Bangladesh',
         },
         ...(guestName.trim() ? { customer_name: guestName.trim() } : {}),

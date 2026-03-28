@@ -10,7 +10,7 @@ export interface Address {
   address_line_2?: string;
   city: string;
   state: string;
-  postal_code: string;
+  postal_code?: string;
   country: string;
   landmark?: string;
   delivery_instructions?: string;

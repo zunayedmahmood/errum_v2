@@ -212,14 +212,14 @@ class InventoryController extends Controller
                 ->get();
 
             $totalValue = $batches->sum(function ($batch) {
-                return $batch->quantity * $batch->unit_cost;
+                return $batch->quantity * $batch->cost_price;
             });
 
             // Group by store
             $storeValues = $batches->groupBy('store_id')->map(function ($storeBatches) {
                 $store = $storeBatches->first()->store;
                 $storeValue = $storeBatches->sum(function ($batch) {
-                    return $batch->quantity * $batch->unit_cost;
+                    return $batch->quantity * $batch->cost_price;
                 });
 
                 return [
@@ -237,7 +237,7 @@ class InventoryController extends Controller
                 $product = $productBatches->first()->product;
                 $totalQuantity = $productBatches->sum('quantity');
                 $totalValue = $productBatches->sum(function ($batch) {
-                    return $batch->quantity * $batch->unit_cost;
+                    return $batch->quantity * $batch->cost_price;
                 });
 
                 return [
@@ -283,7 +283,7 @@ class InventoryController extends Controller
             $totalInventoryValue = ProductBatch::where('quantity', '>', 0)
                 ->get()
                 ->sum(function ($batch) {
-                    return $batch->quantity * $batch->unit_cost;
+                    return $batch->quantity * $batch->cost_price;
                 });
 
             $lowStockCount = ProductBatch::whereColumn('quantity', '<=', 'reorder_level')
@@ -302,7 +302,7 @@ class InventoryController extends Controller
             $storesSummary = Store::active()->get()->map(function ($store) {
                 $batches = $store->productBatches()->where('quantity', '>', 0)->get();
                 $value = $batches->sum(function ($batch) {
-                    return $batch->quantity * $batch->unit_cost;
+                    return $batch->quantity * $batch->cost_price;
                 });
 
                 return [
@@ -368,7 +368,7 @@ class InventoryController extends Controller
                     'quantity' => $batch->quantity,
                     'days_in_stock' => $daysInStock,
                     'age_category' => $ageCategory,
-                    'value' => $batch->quantity * $batch->unit_cost,
+                    'value' => $batch->quantity * $batch->cost_price,
                 ];
             });
 

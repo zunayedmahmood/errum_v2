@@ -42,7 +42,7 @@ class OrderItem extends Model
     protected static function boot()
     {
         parent::boot();
-        self::observe(\App\Observers\OrderItemObserver::class);
+        // self::observe(\App\Observers\OrderItemObserver::class); // Removed duplicate - already in AppServiceProvider
 
         static::creating(function ($item) {
             if (empty($item->total_amount)) {
