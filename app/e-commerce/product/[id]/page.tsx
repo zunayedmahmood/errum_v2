@@ -1100,8 +1100,10 @@ export default function ProductDetailPage() {
               )}
               <div className="flex items-center justify-between">
                 <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.3)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.1em' }}>AVAILABILITY</span>
-                <span className="text-[12px] font-medium" style={{ color: selectedVariant.in_stock && stockQty > 0 ? '#4ade80' : '#f87171' }}>
-                  {selectedVariant.in_stock && stockQty > 0 ? `In Stock (${stockQty})` : 'Out of Stock'}
+                <span className="text-[12px] font-medium" style={{ color: selectedVariant.in_stock && availableInventory > 0 ? '#4ade80' : '#f87171' }}>
+                  {selectedVariant.in_stock && availableInventory > 0 
+                    ? `available for order: in stock(${availableInventory})` 
+                    : (stockQty > 0 ? 'all stock reserved' : 'Out of Stock')}
                 </span>
               </div>
             </div>

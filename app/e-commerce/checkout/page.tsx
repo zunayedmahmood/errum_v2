@@ -313,10 +313,7 @@ export default function CheckoutPage() {
       return;
     }
     
-    if (!addressForm.postal_code.trim() || addressForm.postal_code.length !== 4) {
-      setError('Valid 4-digit postal code is required');
-      return;
-    }
+    // Postal code is optional
     
     try {
       setIsProcessing(true);
@@ -420,10 +417,7 @@ export default function CheckoutPage() {
       return;
     }
 
-    if (!guestAddress.postal_code.trim()) {
-      setError('Postal code is required');
-      return;
-    }
+    // Postal code is optional
 
     setIsProcessing(true);
     try {
@@ -829,7 +823,7 @@ export default function CheckoutPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 mb-1">Postal Code *</label>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Postal Code (optional)</label>
                     <input
                       type="text"
                       placeholder="1207"
@@ -1185,7 +1179,7 @@ export default function CheckoutPage() {
 
                           <div>
                             <label className="block text-sm font-medium text-neutral-700 mb-1">
-                              Postal Code <span className="text-rose-600">*</span>
+                              Postal Code (Optional)
                             </label>
                             <input
                               type="text"

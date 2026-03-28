@@ -210,7 +210,7 @@ export default function OrderTrackingPage() {
             
             {/* Timeline Steps */}
             <div className="space-y-8">
-              {tracking.steps.map((step, index) => (
+              {(tracking.steps || []).map((step, index) => (
                 <div key={index} className="relative flex gap-6">
                   {/* Icon */}
                   <div className={`relative z-10 flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
@@ -238,7 +238,7 @@ export default function OrderTrackingPage() {
                         })}
                       </p>
                     )}
-                    {!step.completed && index === tracking.steps.findIndex(s => !s.completed) && (
+                    {!step.completed && index === (tracking.steps || []).findIndex(s => !s.completed) && (
                       <p className="text-sm text-gray-500 mt-1">In progress...</p>
                     )}
                   </div>
@@ -290,13 +290,13 @@ export default function OrderTrackingPage() {
             </h3>
             <div className="space-y-3">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Items ({order.items.length})</span>
+                <span className="text-gray-600">Items ({(order.items || []).length})</span>
                 <span className="font-medium">৳{order.subtotal.toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
               </div>
               
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Shipping</span>
-                <span className="font-medium">৳{order.shipping_charge.toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
+                <span className="font-medium">৳{(order.shipping_amount || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
               </div>
               
               {order.discount_amount > 0 && (
@@ -335,7 +335,7 @@ export default function OrderTrackingPage() {
         <div className="bg-white rounded-lg shadow-md p-6 mt-8">
           <h3 className="font-bold text-gray-900 mb-4">Items in This Order</h3>
           <div className="space-y-4">
-            {order.items.map((item, index) => (
+            {(order.items || []).map((item, index) => (
               <div key={index} className="flex gap-4 pb-4 border-b last:border-b-0">
                 {item.product_image && (
                   <img
@@ -363,7 +363,7 @@ export default function OrderTrackingPage() {
                 </div>
                 <div className="text-right">
                   <p className="font-semibold text-gray-900">
-                    ৳{item.total.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                    ৳{(item.total || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>

@@ -47,6 +47,7 @@ export interface Product {
   dimensions?: string;
   in_stock: boolean;
   stock_quantity: number;
+  available_inventory?: number | null;
   category: ProductCategory | string;
   images: ProductImage[];
   tags?: string[];
@@ -517,6 +518,7 @@ const normalizeProduct = (
   const sellingPrice = toNumber(raw?.selling_price ?? raw?.price ?? raw?.sale_price, 0);
   const costPrice = toNumber(raw?.cost_price ?? raw?.regular_price ?? sellingPrice, sellingPrice);
   const stockQty = toNumber(raw?.stock_quantity ?? raw?.quantity ?? raw?.available_quantity, 0);
+  const availableInventory = raw?.available_inventory != null ? toNumber(raw.available_inventory, 0) : stockQty;
 
   const explicitInStock = raw?.in_stock;
   const inStock = typeof explicitInStock === 'boolean' ? explicitInStock : stockQty > 0;
@@ -568,6 +570,7 @@ const normalizeProduct = (
     dimensions: raw?.dimensions || undefined,
     in_stock: inStock,
     stock_quantity: stockQty,
+    available_inventory: availableInventory,
     category: category || '',
     images,
     tags: Array.isArray(raw?.tags) ? raw.tags : undefined,
