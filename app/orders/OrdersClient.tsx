@@ -436,6 +436,7 @@ export default function OrdersDashboard() {
   const [pickerBatches, setPickerBatches] = useState<any[]>([]);
   const [pickerStoreId, setPickerStoreId] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState('');
+  const [showProductPicker, setShowProductPicker] = useState(false);
 
   // 🛠️ Service picker (for Edit Order)
   const [showServicePicker, setShowServicePicker] = useState(false);
