@@ -253,8 +253,7 @@ class StoreFulfillmentController extends Controller
             try {
                 // 3. PHYSICAL STOCK DEDUCTION (NOW PERFORMED AT SCANNING PHASE)
                 if ($batch = $barcode->batch) {
-                    $batch->quantity -= 1; // Barcodes are individual units
-                    $batch->save();
+                    $batch->decrement('quantity', 1); // Triggers ProductBatchObserver to sync total_inventory
                     
                     Log::info('Stock deducted at barcode scanning', [
                         'order_id' => $order->id,
@@ -265,12 +264,15 @@ class StoreFulfillmentController extends Controller
                 }
 
                 // 4. RELEASE RESERVATION
-                // This releases the global reservation made when the order was placed/assigned
-                if ($reservedRecord = ReservedProduct::where('product_id', $orderItem->product_id)->first()) {
+                // Use lockForUpdate to prevent race conditions during calculation
+                if ($reservedRecord = ReservedProduct::where('product_id', $orderItem->product_id)->lockForUpdate()->first()) {
+                    // Sequence: release reservation -> recalculate available
                     $reservedRecord->decrement('reserved_inventory', 1);
-                    // Re-sync available_inventory
-                    $reservedRecord->refresh();
-                    // Allow negative availability (remove max(0, ...))
+                    
+                    // Re-sync available_inventory using the standard formula
+                    // availability = (total - reserved)
+                    // Note: total_inventory is updated via ProductBatchObserver triggered by $batch->decrement() above
+                    $reservedRecord->refresh(); 
                     $reservedRecord->available_inventory = $reservedRecord->total_inventory - $reservedRecord->reserved_inventory;
                     $reservedRecord->save();
                 }

@@ -564,7 +564,8 @@ class OrderController extends Controller
                 // Social commerce/Ecommerce: Deduct at barcode scanning (when physical item is picked)
                 // Only deduct if batch exists (not for pre-orders)
                 $shouldDeductNow = $batch && (
-                    $request->order_type === 'counter' // Counter: immediate deduction (POS)
+                    $request->order_type === 'counter' || // Counter: immediate deduction (POS)
+                    ($request->order_type === 'social_commerce' && $request->filled('store_id')) // Social Commerce: deduct if store assigned at creation
                 );
                 
                 if ($shouldDeductNow) {
@@ -1360,8 +1361,14 @@ class OrderController extends Controller
                 
                 $item->update(['cogs' => round($calculatedCogs, 2)]);
 
-                // Reduce batch quantity
-                $batch->removeStock($item->quantity);
+                // Reduce batch quantity 
+                // Skip if stock was already deducted during creation (Counter or assigned Social Commerce)
+                $alreadyDeducted = ($order->order_type === 'counter') || 
+                                  ($order->order_type === 'social_commerce' && $order->store_id !== null);
+                
+                if (!$alreadyDeducted) {
+                    $batch->removeStock($item->quantity);
+                }
                 
                 $batch->update([
                     'notes' => ($batch->notes ? $batch->notes . "\n" : '') . $note

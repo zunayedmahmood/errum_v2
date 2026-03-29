@@ -15,6 +15,12 @@ class OrderItemObserver
     {
         $order = $orderItem->order;
         if ($order && in_array($order->status, ['pending_assignment', 'pending'])) {
+            // SKIP reservation for:
+            // 1. Counter/POS orders (stock already deducted)
+            // 2. Social Commerce orders with store_id (stock already deducted)
+            if ($order->order_type === 'counter' || ($order->order_type === 'social_commerce' && $order->store_id !== null)) {
+                return;
+            }
             $this->incrementReservation($orderItem->product_id, $orderItem->quantity);
         }
     }
@@ -26,6 +32,13 @@ class OrderItemObserver
     {
         $order = $orderItem->order;
         if ($order && in_array($order->status, ['pending_assignment', 'pending'])) {
+            // SKIP reservation for:
+            // 1. Counter/POS orders
+            // 2. Social Commerce orders with store_id
+            if ($order->order_type === 'counter' || ($order->order_type === 'social_commerce' && $order->store_id !== null)) {
+                return;
+            }
+
             if ($orderItem->isDirty('quantity')) {
                 $oldQty = $orderItem->getOriginal('quantity');
                 $newQty = $orderItem->quantity;
@@ -48,6 +61,12 @@ class OrderItemObserver
         $order = $orderItem->order;
         // Check if the order still exists (it might have been deleted too)
         if ($order && in_array($order->status, ['pending_assignment', 'pending'])) {
+            // SKIP reservation for:
+            // 1. Counter/POS orders
+            // 2. Social Commerce orders with store_id
+            if ($order->order_type === 'counter' || ($order->order_type === 'social_commerce' && $order->store_id !== null)) {
+                return;
+            }
             $this->decrementReservation($orderItem->product_id, $orderItem->quantity);
         }
     }

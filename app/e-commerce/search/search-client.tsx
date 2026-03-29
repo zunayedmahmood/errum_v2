@@ -19,6 +19,7 @@ import catalogService, {
 import PremiumProductCard from '@/components/ecommerce/ui/PremiumProductCard';
 import PriceRangeSelector from '@/components/ecommerce/products/PriceRangeSelector';
 import { fireToast } from '@/lib/globalToast';
+import { buildCardProductsFromResponse } from '@/lib/ecommerceCardUtils';
 
 const PRODUCTS_PER_PAGE = 15;
 
@@ -165,12 +166,19 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
 
       // Use the public getProducts endpoint which doesn't require authentication
       // and supports search, category, and price filtering.
-      const response = await catalogService.getProducts(params as any);
+      const qParams = params as any;
+      const queryParams = {
+        ...qParams,
+        search: qParams.q || qParams.search,
+      };
+      const response = await catalogService.getProducts(queryParams as any);
 
       // Check if this is still the most recent request
       if (currentFetchId !== fetchIdRef.current) return;
 
-      setProducts(response.products as unknown as SimpleProduct[]);
+      // Use buildCardProductsFromResponse to ensure grouping, de-duplication, and image propagation
+      const buildResults = buildCardProductsFromResponse(response as any);
+      setProducts(buildResults);
       setPagination(response.pagination);
     } catch (error) {
       if (currentFetchId === fetchIdRef.current) {

@@ -807,7 +807,10 @@ const parseProductsPayload = (payload: any): CatalogProductsResponse => {
         products,
         grouped_products: groupedProducts,
         pagination: normalizePagination(paginator, groupedProducts.length),
-        meta: payload?.meta,
+        meta: payload?.meta || { 
+          query: payload?.query, 
+          total_results: payload?.total_results ?? payload?.total 
+        },
       };
     }
 
@@ -815,11 +818,14 @@ const parseProductsPayload = (payload: any): CatalogProductsResponse => {
     const products = (Array.isArray(paginator.items) ? paginator.items : (Array.isArray(paginator.data) ? paginator.data : []))
       .map((row: any) => normalizeProduct(row));
 
-    return {
+      return {
       products,
       grouped_products: buildGroupedProductsFromFlat(products),
       pagination: normalizePagination(paginator, products.length),
-      meta: payload?.meta,
+      meta: payload?.meta || { 
+        query: payload?.query, 
+        total_results: payload?.total_results ?? payload?.total 
+      },
     };
   }
 
@@ -920,6 +926,11 @@ const catalogService = {
     try {
       const requestParams: Record<string, any> = { ...(params || {}) };
       delete requestParams._suppressErrorLog;
+
+      // Backend specifically expects 'search' for keyword filtering in /catalog/products
+      if (requestParams.q && !requestParams.search) {
+        requestParams.search = requestParams.q;
+      }
 
       // Backwards/forwards compatible category filters:
       // Some backends expect `category` (slug/name) while others use `category_id`.

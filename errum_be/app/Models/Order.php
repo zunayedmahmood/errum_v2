@@ -698,6 +698,7 @@ class Order extends Model
         }
 
         $this->save();
+        $this->updatePaymentStatus();
 
         return $this;
     }
