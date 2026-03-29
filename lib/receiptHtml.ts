@@ -25,7 +25,7 @@ function compactAddress(lines?: string[]) {
 }
 
 function receiptBody(r: ReceiptOrder) {
-  const brand = (r.storeName || 'ERRUM').toUpperCase();
+  const brand = "ERRUMBD";
   const orderNo = r.orderNo || String(r.id || '—');
   const createdAt = r.dateTime || new Date().toLocaleString();
   const codAmount = Math.max(0, Number(r.totals?.due ?? r.totals?.total ?? 0));
@@ -33,15 +33,7 @@ function receiptBody(r: ReceiptOrder) {
   const address = compactAddress(r.customerAddressLines) || 'Address not provided';
   const itemCount = (r.items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0);
 
-  const itemsHtml = (r.items || [])
-    .map((it) => {
-      const name = it.variant ? `${it.name} (${it.variant})` : it.name;
-      return `<tr>
-        <td>${escapeHtml(name)}</td>
-        <td class="qty">${escapeHtml(String(it.qty))}</td>
-      </tr>`;
-    })
-    .join('');
+
 
   return `
     <div class="sticker">
@@ -77,19 +69,6 @@ function receiptBody(r: ReceiptOrder) {
           <span class="k">Date</span>
           <span class="v small">${escapeHtml(createdAt)}</span>
         </div>
-      </div>
-
-      <div class="section itemsSection">
-        <div class="sectionTitle">Product Details</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th class="qty">Qty</th>
-            </tr>
-          </thead>
-          <tbody>${itemsHtml || '<tr><td>Item</td><td class="qty">1</td></tr>'}</tbody>
-        </table>
       </div>
     </div>
   `;
@@ -221,19 +200,6 @@ function wrapHtml(title: string, inner: string, opts?: { embed?: boolean }) {
     .metaItem.highlight .k,
     .metaItem.highlight .v { color: #fff; }
     .metaItem.highlight .v { font-size: 18px; }
-    .itemsSection { flex: 1; }
-    .sectionTitle {
-      font-size: 11px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      margin-bottom: 4px;
-    }
-    table { width:100%; border-collapse: collapse; }
-    th, td { padding: 4px 0; vertical-align: top; }
-    th { font-size: 10px; text-align: left; border-bottom: 1px solid #999; }
-    td { font-size: 12px; line-height: 1.2; }
-    .qty { width: 42px; text-align: right; font-weight: 700; }
   </style>
 </head>
 <body>
