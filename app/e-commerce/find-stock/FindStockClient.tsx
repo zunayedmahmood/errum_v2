@@ -70,6 +70,9 @@ export default function FindStockClient() {
               qrbox: { width: 250, height: 250 },
               aspectRatio: 1.0,
               showTorchButtonIfSupported: true,
+              videoConstraints: {
+                facingMode: "environment"
+              }
             },
             /* verbose= */ false
           );
