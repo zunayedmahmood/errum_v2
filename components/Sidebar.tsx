@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { PAGE_ACCESS } from '@/lib/accessMap';
 // ──────────────────────────────
 // Perfect discriminated union
 // ──────────────────────────────
@@ -49,47 +50,18 @@ interface SidebarProps {
 export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
   const pathname = usePathname();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const { hasAnyPermission, isSuperAdmin, isLoading, permissionsResolved } = useAuth();
-
-  // Map route prefixes to permission slugs (ANY of these grants access)
-  // This keeps the sidebar aligned with backend middleware while staying flexible.
-  const ROUTE_PERMISSION_MAP: Array<{ prefix: string; anyOf: string[] }> = [
-    { prefix: '/dashboard', anyOf: ['dashboard.view', 'dashboard.analytics'] },
-    { prefix: '/vendor', anyOf: ['vendors.view', 'vendor_payments.view', 'vendor_payments.manage'] },
-    { prefix: '/purchase-order', anyOf: ['purchase_orders.view', 'purchase_orders.create', 'purchase_orders.edit', 'purchase_orders.approve', 'purchase_orders.receive'] },
-    { prefix: '/store', anyOf: ['stores.view', 'stores.create', 'stores.edit', 'stores.delete'] },
-    { prefix: '/store-assingment', anyOf: ['stores.view', 'stores.create', 'stores.edit', 'stores.delete'] },
-    { prefix: '/category', anyOf: ['categories.view', 'categories.create', 'categories.edit', 'categories.delete'] },
-    { prefix: '/gallery', anyOf: ['products.view', 'products.manage_images'] },
-    { prefix: '/product', anyOf: ['products.view', 'products.create', 'products.edit', 'products.delete', 'fields.view', 'product_batches.view', 'products.manage_barcodes'] },
-    { prefix: '/inventory', anyOf: ['inventory.view', 'inventory.adjust', 'inventory.view_movements', 'product_dispatches.view'] },
-    { prefix: '/pos', anyOf: ['orders.create', 'orders.view'] },
-    { prefix: '/purchase-history', anyOf: ['orders.view', 'reports.view', 'activity_logs.view'] },
-    { prefix: '/social-commerce', anyOf: ['orders.view', 'orders.create', 'orders.edit'] },
-    { prefix: '/services-management', anyOf: ['services.view', 'services.create', 'services.edit', 'services.delete'] },
-    { prefix: '/service-orders', anyOf: ['service_orders.view', 'service_orders.create', 'service_orders.edit'] },
-    { prefix: '/orders', anyOf: ['orders.view', 'orders.create', 'orders.edit', 'orders.delete', 'orders.fulfill'] },
-    { prefix: '/preorders', anyOf: ['orders.view', 'orders.create'] },
-    { prefix: '/extra', anyOf: ['dashboard.analytics', 'reports.view'] },
-    { prefix: '/lookup', anyOf: ['inventory.view', 'orders.view'] },
-    { prefix: '/activity-logs', anyOf: ['activity_logs.view'] },
-    { prefix: '/transaction', anyOf: ['transactions.view', 'transactions.create', 'transactions.edit'] },
-    { prefix: '/accounting', anyOf: ['accounting.view', 'accounting.manage', 'accounts.view', 'transactions.view'] },
-    { prefix: '/employees', anyOf: ['employees.view', 'employees.create', 'employees.edit', 'employees.delete', 'employees.manage_roles'] },
-    { prefix: '/roles', anyOf: ['roles.view', 'roles.create', 'roles.edit', 'roles.delete'] },
-    { prefix: '/permissions', anyOf: ['permissions.manage'] },
-  ];
+  const { isRole, isSuperAdmin, isLoading } = useAuth();
 
   const canAccessHref = (href: string) => {
     if (isSuperAdmin) return true;
-    // While loading, don't aggressively hide to avoid a flash of empty sidebar.
     if (isLoading) return true;
+    
     const clean = href.split('?')[0];
-    const match = ROUTE_PERMISSION_MAP.find((m) => clean === m.prefix || clean.startsWith(m.prefix + '/'));
-    if (!match) return true; // no mapping = treat as accessible
-    // If we couldn't resolve permissions, hide mapped routes (safer default).
-    if (!permissionsResolved) return false;
-    return hasAnyPermission(match.anyOf);
+    const allowedRoles = PAGE_ACCESS[clean];
+    
+    if (!allowedRoles) return true; // no mapping = accessible
+    
+    return isRole(allowedRoles);
   };
 
   const toggleSubMenu = (label: string) => {
