@@ -1334,6 +1334,7 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/', [ProductReturnController::class, 'index']);
         Route::post('/', [ProductReturnController::class, 'store']);
         Route::get('/statistics', [ProductReturnController::class, 'statistics']);
+        Route::post('/quick-complete', [ProductReturnController::class, 'quickComplete']);
         
         Route::prefix('{id}')->group(function () {
             Route::get('/', [ProductReturnController::class, 'show']);

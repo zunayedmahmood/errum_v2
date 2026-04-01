@@ -118,6 +118,128 @@ class ProductReturnController extends Controller
     }
 
     /**
+     * Quick-complete a return (Atomic: store + QC + approve + process + complete)
+     */
+    public function quickComplete(Request $request): JsonResponse
+    {
+        $request->validate([
+            'order_id' => 'required|exists:orders,id',
+            'received_at_store_id' => 'nullable|exists:stores,id',
+            'return_reason' => 'required|in:defective_product,wrong_item,not_as_described,customer_dissatisfaction,size_issue,color_issue,quality_issue,late_delivery,changed_mind,duplicate_order,other',
+            'return_type' => 'nullable|in:customer_return,store_return,warehouse_return',
+            'items' => 'required|array|min:1',
+            'items.*.order_item_id' => 'required|exists:order_items,id',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.reason' => 'nullable|string',
+            'customer_notes' => 'nullable|string',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // 1. Create the return (logic from store())
+            $order = Order::with('items')->findOrFail($request->order_id);
+            $existingReturn = ProductReturn::where('order_id', $order->id)
+                ->whereNotIn('status', ['rejected', 'cancelled'])
+                ->first();
+            
+            if ($existingReturn) {
+                throw new \Exception("A return request (#{$existingReturn->return_number}) already exists for this order.");
+            }
+
+            $returnItems = [];
+            $totalReturnValue = 0;
+
+            foreach ($request->items as $item) {
+                $orderItem = OrderItem::findOrFail($item['order_item_id']);
+                if ($orderItem->order_id != $order->id) {
+                    throw new \Exception("Item {$item['order_item_id']} does not belong to this order");
+                }
+
+                $alreadyReturned = $this->getReturnedQuantity($orderItem->id);
+                $availableForReturn = $orderItem->quantity - $alreadyReturned;
+
+                if ($item['quantity'] > $availableForReturn) {
+                    throw new \Exception("Cannot return {$item['quantity']} units. Only {$availableForReturn} available for return.");
+                }
+
+                $returnableBarcodes = $this->getReturnableBarcodesForOrderItem($order, $orderItem, (int) $item['quantity']);
+                if ($returnableBarcodes->count() < (int) $item['quantity']) {
+                    throw new \Exception("Unable to identify sold barcode units for {$orderItem->product_name}.");
+                }
+
+                $itemReturnValue = $item['quantity'] * $orderItem->unit_price;
+                $totalReturnValue += $itemReturnValue;
+
+                $returnItems[] = [
+                    'order_item_id' => $orderItem->id,
+                    'product_id' => $orderItem->product_id,
+                    'product_batch_id' => $orderItem->product_batch_id,
+                    'product_name' => $orderItem->product_name,
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $orderItem->unit_price,
+                    'total_price' => $itemReturnValue,
+                    'reason' => $item['reason'] ?? null,
+                    'returned_barcode_ids' => $returnableBarcodes->pluck('id')->values()->all(),
+                    'returned_barcodes' => $returnableBarcodes->pluck('barcode')->values()->all(),
+                ];
+            }
+
+            $return = ProductReturn::create([
+                'return_number' => $this->generateReturnNumber(),
+                'order_id' => $order->id,
+                'customer_id' => $order->customer_id,
+                'store_id' => $order->store_id,
+                'received_at_store_id' => $request->received_at_store_id ?? $order->store_id,
+                'return_reason' => $request->return_reason,
+                'return_type' => $request->return_type,
+                'status' => 'pending',
+                'return_date' => now(),
+                'total_return_value' => $totalReturnValue,
+                'total_refund_amount' => $totalReturnValue,
+                'customer_notes' => $request->customer_notes,
+                'return_items' => $returnItems,
+            ]);
+
+            $employee = auth()->user();
+
+            // 2. Quality Check (logic from update())
+            $return->update([
+                'received_date' => now(),
+                'quality_check_passed' => true,
+                'quality_check_notes' => 'Quick-complete auto-check',
+                'internal_notes' => "Quick-completed by {$employee->name}",
+            ]);
+
+            // 3. Approve (logic from approve())
+            $return->approve($employee);
+
+            // 4. Restore Inventory (Logic inside approve handles this)
+            $this->restoreInventoryForReturn($return, $employee);
+
+            // 5. Process
+            $return->process($employee);
+
+            // 6. Complete (logic from complete())
+            $return->complete();
+
+            $return->save();
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Return quick-completed successfully',
+                'data' => $return->load(['order', 'customer', 'store', 'approvedBy']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Quick-complete failed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Create a new product return
      */
     public function store(Request $request): JsonResponse
@@ -664,10 +786,16 @@ class ProductReturnController extends Controller
                 $targetBatch = $originalBatch;
                 $isNewBatch = false;
             } else {
+                // Determine POid (Purchase Order ID) for naming
+                $poId = \App\Models\PurchaseOrderItem::where('product_batch_id', $originalBatch->id)
+                    ->value('purchase_order_id') ?? '0';
+                
+                $newBatchNumber = $poId . '-RTN-' . $return->id;
+
                 $targetBatch = ProductBatch::firstOrCreate([
                     'product_id' => $item['product_id'],
                     'store_id' => $returnStore,
-                    'batch_number' => $originalBatch->batch_number,
+                    'batch_number' => $newBatchNumber,
                 ], [
                     'quantity' => 0,
                     'cost_price' => $originalBatch->cost_price,

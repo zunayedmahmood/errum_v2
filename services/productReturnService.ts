@@ -162,6 +162,14 @@ class ProductReturnService {
   }
 
   /**
+   * Quick-complete a return (Atomic: create + QC + approve + process + complete)
+   */
+  async quickComplete(data: CreateReturnRequest) {
+    const response = await axiosInstance.post(`${this.basePath}/quick-complete`, data);
+    return response.data;
+  }
+
+  /**
    * Create a new product return
    * NOW SUPPORTS: Barcode tracking for individual unit returns
    */
