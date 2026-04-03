@@ -85,7 +85,7 @@ class OrderManagementService {
   /**
    * Get orders pending store assignment
    */
-  async getPendingAssignment(params?: { per_page?: number }): Promise<{
+  async getPendingAssignment(params?: { per_page?: number, status?: string, sort_order?: 'asc' | 'desc' }): Promise<{
     orders: PendingAssignmentOrder[];
     pagination: {
       current_page: number;
@@ -98,7 +98,7 @@ class OrderManagementService {
       console.log('📦 Fetching pending assignment orders...');
       
       const response = await axiosInstance.get('/order-management/pending-assignment', {
-        params: params || { per_page: 15 }
+        params: params || { per_page: 15, sort_order: 'asc' }
       });
 
       console.log('✅ Pending assignment orders loaded:', response.data.data);

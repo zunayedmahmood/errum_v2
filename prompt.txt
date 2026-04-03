@@ -133,34 +133,14 @@ identify the issues and only make strictly necessary changes.
 make sure the reserved_product system is aware of the changes.
 
 
-### changing social-commerce UI.
+### notepad:
 
-read the entire frontend and backend to understand how social-commerce and order creation works.
+Sareng er deployment lagbe
+Errum er scm page er UI fix + testing
+Errum er full finance module 
+Errum er orders stage -> uradhura chinta 
+Errum er full reporting with python
+Deshio order number -> POS er alada ekta serial, but, similar to E and S.
 
-currently, the social-commerce page looks like this:
-there's product selection grid where all products are shown. here they aren't grouped by sku.
-we want a change in UI. here, all the product are shown individually, like, each size variant is seperate. 
-we want it to behave like this:
-->when we searchm we want the results to b groupedBySku check backend code, there should be one method that already has that feature.
-->the product (we'll show base name) per sku is shown in lists instead of grid and we'll show the primary_image of the base product (see product feed page and its backend logic. we want the product list to behave exactly like that)
-->when we select a product, it should drop down and show the variants (just show the variant name in a list, no pics or any other details)
-
-we'll push customer details a little bit bellow and have a new table above it:
-| Mirpur  |  Bashundhara  |  Jamuna  |
-|  ✅     |      ✅       |    ❌    |
-|  10     |      2        |    0     |
-this shows which stores has enough stock (it should be showing available_inventory)
-
-->the variant, when selected will show a 'select' button. when press it, we follow the old working procedure of increasing quantity and latr adding to cart.
-->we'll bring the amount-details page functionalities to this page. 
-->we'll add the payment and store auto assign,or manual assign, basically copy from that page and past it here.
-->the position of this should be to the left.
-->customer details should be at the bottom.
-
-the previous functionalities were already working totally functional. 
-Since the system is in production, we can not afford to break anything. so, please be very careful. 
-Make only the stricly necessary changes.
-
-The new social commerce page should be highly polished, responsive and fully functional.
-avoid any integrity issues.
-make a detailed md file in Documentation/02_Apr_26 social-commerce-redesign.md explaining the changes and how it works.
+scrape sareng immediately (download everything)
+(get image from imgkit and save locally)

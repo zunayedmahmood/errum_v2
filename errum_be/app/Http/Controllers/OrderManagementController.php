@@ -26,11 +26,17 @@ class OrderManagementController extends Controller
     {
         try {
             $perPage = $request->query('per_page', 15);
+            $sortOrder = $request->query('sort_order', 'asc');
+            
+            // Validate sort order to prevent SQL injection or invalid values
+            if (!in_array(strtolower($sortOrder), ['asc', 'desc'])) {
+                $sortOrder = 'asc';
+            }
             
             $orders = Order::where('status', 'pending_assignment')
                 ->whereIn('order_type', ['ecommerce', 'social_commerce'])
                 ->with(['customer', 'items.product'])
-                ->orderBy('created_at', 'asc')
+                ->orderBy('created_at', $sortOrder)
                 ->paginate($perPage);
 
             // Add summary for each order

@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Award,
   Box,
+  ChevronDown,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -35,6 +36,7 @@ export default function StoreAssignmentPage() {
   const [pendingOrders, setPendingOrders] = useState<PendingAssignmentOrder[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Assignment state
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
@@ -53,7 +55,7 @@ export default function StoreAssignmentPage() {
   useEffect(() => {
     fetchPendingOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sortOrder]);
 
   useEffect(() => {
     if (selectedOrderId) {
@@ -444,6 +446,7 @@ export default function StoreAssignmentPage() {
           const resp = await orderManagementService.getPendingAssignment({
             per_page: 100,
             status,
+            sort_order: sortOrder,
           } as any);
 
           let orders = extractOrders(resp);
@@ -478,7 +481,14 @@ export default function StoreAssignmentPage() {
         if (!byId.has(oid)) byId.set(oid, o);
       }
 
-      const orders = Array.from(byId.values());
+      let orders = Array.from(byId.values());
+      
+      // Global sort after merging
+      orders = orders.sort((a, b) => {
+        const timeA = new Date(a.created_at).getTime();
+        const timeB = new Date(b.created_at).getTime();
+        return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+      });
 
       setPendingOrders(orders);
       console.log('📦 Loaded pending/unassigned orders:', orders.length);
@@ -612,14 +622,27 @@ export default function StoreAssignmentPage() {
                       Assign pending e-commerce orders to stores based on inventory availability
                     </p>
                   </div>
-                  <button
-                    onClick={fetchPendingOrders}
-                    disabled={isLoadingOrders}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${isLoadingOrders ? 'animate-spin' : ''}`} />
-                    Refresh
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <select
+                        value={sortOrder}
+                        onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
+                        className="appearance-none pl-3 pr-10 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer shadow-sm"
+                      >
+                        <option value="asc">Oldest First</option>
+                        <option value="desc">Newest First</option>
+                      </select>
+                      <ChevronDown className="absolute right-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
+                    </div>
+                    <button
+                      onClick={fetchPendingOrders}
+                      disabled={isLoadingOrders}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 shadow-sm"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isLoadingOrders ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </button>
+                  </div>
                 </div>
 
                 {/* Stats Cards */}
