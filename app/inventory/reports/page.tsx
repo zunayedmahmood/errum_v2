@@ -273,11 +273,13 @@ export default function InventoryReportsPage() {
   };
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'dark bg-gray-950' : 'bg-gray-50'}`}>
-      <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-      <Header toggleSidebar={() => setSidebarOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />
-      <main className="lg:ml-64">
-        <div className="p-4 md:p-6 xl:p-8">
+    <div className={darkMode ? 'dark' : ''}>
+      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+        <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Header toggleSidebar={() => setSidebarOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />
+          <main className="flex-1 overflow-auto">
+            <div className="p-4 md:p-6 xl:p-8">
           <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
@@ -484,5 +486,7 @@ export default function InventoryReportsPage() {
         </div>
       </main>
     </div>
+  </div>
+</div>
   );
 }
