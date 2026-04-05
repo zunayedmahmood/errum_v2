@@ -6,6 +6,7 @@ import GlobalToastHost from "@/components/GlobalToastHost";
 import { CartProvider } from "./e-commerce/CartContext";
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { Toaster } from 'react-hot-toast';
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,6 +38,7 @@ export default function RootLayout({
               <QZTrayLoader />
               <ReceiptPreviewModalHost />
               <GlobalToastHost />
+              <Toaster position="top-right" reverseOrder={false} />
               {children}
             </CartProvider>
           </ThemeProvider>
