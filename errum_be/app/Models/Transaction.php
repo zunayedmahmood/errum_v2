@@ -42,6 +42,8 @@ class Transaction extends Model
         'metadata' => 'array',
     ];
 
+    protected $appends = ['reference_label', 'display_id'];
+
     protected static function boot()
     {
         parent::boot();
@@ -114,6 +116,40 @@ class Transaction extends Model
             ->with(['account', 'store', 'createdBy'])
             ->orderBy('id', 'asc')
             ->get();
+    }
+
+    // Human-readable labels for reference types
+    public function getReferenceLabelAttribute(): string
+    {
+        // Check for manual reference type set in metadata or directly
+        if ($this->reference_type === 'manual') return 'Manual Entry';
+        
+        $type = $this->reference_type;
+        
+        // Handle full class names if present
+        if (str_contains($type, '\\')) {
+            $type = class_basename($type);
+        }
+
+        return match ($type) {
+            'OrderPayment', 'ServiceOrderPayment' => 'Order Payment',
+            'Expense' => 'Expense',
+            'ExpensePayment' => 'Expense Payment',
+            'Refund' => 'Refund',
+            'ProductReturn' => 'Product Return',
+            'VendorPayment' => 'Vendor Payment',
+            'Order' => 'Store Order',
+            'PurchaseOrder' => 'Purchase Order',
+            'manual' => 'Manual Entry',
+            default => $type ?: 'N/A'
+        };
+    }
+
+    // Human-readable display ID
+    public function getDisplayIdAttribute(): string
+    {
+        $year = $this->transaction_date ? $this->transaction_date->format('Y') : date('Y');
+        return "TXN-{$year}-" . str_pad($this->id, 4, '0', STR_PAD_LEFT);
     }
 
     // Scopes

@@ -12,6 +12,8 @@ export interface BackendTransaction {
   reference_type?: string;
   reference_id?: number;
   status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  display_id?: string;
+  reference_label?: string;
   metadata?: {
     category?: string;
     comment?: string;
@@ -62,6 +64,7 @@ export interface Transaction {
   comment?: string;
   receiptImage?: string;
   referenceId?: string;
+  referenceLabel?: string;
 }
 
 export interface Category {
@@ -172,9 +175,10 @@ function mapTransactionToUI(transaction: BackendTransaction): Transaction {
     category: category,
     source: source,
     createdAt: transaction.transaction_date || transaction.createdAt || transaction.created_at || new Date().toISOString(),
-    comment: metadata.comment || undefined,
-    receiptImage: metadata.receiptImage || undefined,
-    referenceId: transaction.reference_id ? `${transaction.reference_type}-${transaction.reference_id}` : transaction.transaction_number,
+    comment: metadata.comment || metadata.note || undefined,
+    receiptImage: metadata.receiptImage || (metadata.attachments && metadata.attachments[0]?.url) || undefined,
+    referenceId: transaction.display_id || (transaction.reference_id ? `${transaction.reference_type}-${transaction.reference_id}` : transaction.transaction_number),
+    referenceLabel: transaction.reference_label || source,
   };
 }
 

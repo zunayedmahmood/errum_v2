@@ -440,8 +440,9 @@ const fetchJournalEntries = async () => {
                         }}
                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       >
-                        <option value="">All Stores</option>
-                        <option value="global">Global (Errum)</option>
+                        <option value="">All Stores (Consolidated)</option>
+                        <option value="errum">Errum (Global HQ)</option>
+                        <option value="global">Global (Old Compatibility)</option>
                         {stores.map((store) => (
                           <option key={store.id} value={store.id}>
                             {store.name}
@@ -817,8 +818,13 @@ const fetchJournalEntries = async () => {
                                   href={`/accounting/transaction/${txn.id}`}
                                   className="text-indigo-600 dark:text-indigo-400 hover:underline font-mono"
                                 >
-                                  {txn.transaction_number || (`TXN-${txn.id}`)}
+                                  {(txn as any).display_id || txn.transaction_number || (`TXN-${txn.id}`)}
                                 </Link>
+                                {(txn as any).reference_label && (
+                                  <div className="text-[10px] text-gray-500 mt-1 uppercase font-semibold">
+                                    {(txn as any).reference_label}
+                                  </div>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                                 {formatDate(txn.transaction_date)}
@@ -939,7 +945,7 @@ const fetchJournalEntries = async () => {
                                     {formatDate(entry.transaction_date)}
                                   </td>
                                   <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
-                                    {entry.transaction_number}
+                                    {(entry as any).display_id || entry.transaction_number}
                                   </td>
                                   <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                                     {entry.description}

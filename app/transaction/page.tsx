@@ -7,6 +7,8 @@ import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import Link from 'next/link';
 import transactionService, { Transaction } from '@/services/transactionService';
+import ManualEntryModal from '@/components/accounting/ManualEntryModal';
+import { toast } from 'react-hot-toast';
 
 export default function TransactionsPage() {
   const { darkMode, setDarkMode } = useTheme();
@@ -18,6 +20,7 @@ export default function TransactionsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [error, setError] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     loadTransactions();
@@ -175,15 +178,24 @@ export default function TransactionsPage() {
                     <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                     <span className="font-medium">Refresh</span>
                   </button>
-                  <Link
-                    href="/transaction/new"
+                  <button
+                    onClick={() => setIsModalOpen(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black rounded-md hover:bg-gray-800 dark:hover:bg-gray-100 transition-all duration-200 font-medium text-sm"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Manual Entry
-                  </Link>
+                  </button>
                 </div>
               </div>
+
+              <ManualEntryModal 
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSuccess={() => {
+                  loadTransactions();
+                  toast.success('List updated');
+                }}
+              />
 
               {error && (
                 <div className="mb-5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-3">
@@ -394,8 +406,11 @@ export default function TransactionsPage() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-4 mb-2">
                                 <div className="flex-1 min-w-0">
-                                  <h3 className="font-semibold text-gray-900 dark:text-white mb-1 text-sm">
+                                  <h3 className="font-semibold text-gray-900 dark:text-white mb-1 text-sm flex items-center gap-2">
                                     {transaction.name}
+                                    <span className="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-mono border border-blue-100 dark:border-blue-800/50">
+                                      {transaction.referenceId}
+                                    </span>
                                   </h3>
                                   {transaction.description && (
                                     <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 leading-relaxed">
@@ -412,7 +427,7 @@ export default function TransactionsPage() {
                                       <span>{transaction.category}</span>
                                     </div>
                                     <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${sourceBadge.color}`}>
-                                      {sourceBadge.label}
+                                      {transaction.referenceLabel || sourceBadge.label}
                                     </span>
                                     {transaction.receiptImage && (
                                       <div className="flex items-center gap-1 text-gray-900 dark:text-white">
@@ -431,14 +446,8 @@ export default function TransactionsPage() {
                               </div>
 
                               {transaction.comment && (
-                                <p className="text-xs text-gray-600 dark:text-gray-400 italic mt-2 pl-3 border-l-2 border-gray-200 dark:border-gray-700 leading-relaxed">
+                                <p className="text-xs text-gray-600 dark:text-gray-400 italic mt-2 pl-3 border-l-2 border-gray-200 dark:border-gray-700 leading-relaxed bg-gray-50/50 dark:bg-gray-800/30 p-2 rounded-r">
                                   {transaction.comment}
-                                </p>
-                              )}
-
-                              {transaction.referenceId && (
-                                <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 font-mono">
-                                  Ref: {transaction.referenceId}
                                 </p>
                               )}
                             </div>

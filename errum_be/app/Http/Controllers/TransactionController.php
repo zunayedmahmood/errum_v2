@@ -52,10 +52,10 @@ class TransactionController extends Controller
             $this->whereAnyLike($query, ['transaction_number', 'description'], $search);
         }
 
-        // Sort
+        // Sort (Newest first by default)
         $sortBy = $request->get('sort_by', 'transaction_date');
         $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
+        $query->orderBy($sortBy, $sortOrder)->orderBy('id', 'desc');
 
         $perPage = $request->get('per_page', 15);
         $transactions = $query->paginate($perPage);
@@ -71,11 +71,14 @@ class TransactionController extends Controller
             'type' => 'required|in:debit,credit',
             'account_id' => 'required|exists:accounts,id',
             'description' => 'nullable|string',
-            'store_id' => 'nullable|exists:stores,id',
+            'store_id' => 'nullable|exists:stores,id', // Null for "Errum"
             'reference_type' => 'nullable|string',
             'reference_id' => 'nullable|integer',
             'metadata' => 'nullable|array',
             'status' => 'nullable|in:pending,completed,failed,cancelled',
+            'receipt_image' => 'nullable|string', // Base64
+            'note' => 'nullable|string',
+            'reference_note' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -83,36 +86,72 @@ class TransactionController extends Controller
         }
 
         $data = $validator->validated();
+        $user = auth()->user();
         
-        // Auto-detect transaction type based on reference_type if needed
-        // This helps frontend developers who might not know the accounting rules
-        if ($request->has('reference_type')) {
-            $referenceType = $request->reference_type;
+        // --- Store Scoping Security ---
+        // If not admin, force their store_id and prevent 'null' (Global/Errum)
+        if ($user->role !== 'admin') {
+            $data['store_id'] = $user->store_id; // Branch manager must use their own store
             
-            // Money IN (Debit): Customer payments
-            $moneyInTypes = ['OrderPayment', 'ServiceOrderPayment', 'CustomerPayment'];
-            
-            // Money OUT (Credit): Business expenses, vendor payments, refunds
-            $moneyOutTypes = ['Expense', 'ExpensePayment', 'VendorPayment', 'Refund', 'manual'];
-            
-            // Log warning if type doesn't match reference
-            if (in_array($referenceType, $moneyInTypes) && $data['type'] === 'credit') {
-                \Log::warning("Transaction type mismatch: {$referenceType} should be 'debit' but got 'credit'");
-            }
-            if (in_array($referenceType, $moneyOutTypes) && $data['type'] === 'debit') {
-                \Log::warning("Transaction type mismatch: {$referenceType} should be 'credit' but got 'debit'");
+            if (!$user->store_id) {
+                 return response()->json(['success' => false, 'message' => 'User not assigned to a store.'], 403);
             }
         }
+        // If admin didn't provide store_id, it stays null (Errum/Global)
         
-        // Set created_by to current authenticated user
-        if (!isset($data['created_by'])) {
-            $data['created_by'] = auth()->id();
+        // --- Handle Image Upload (Base64) ---
+        $metadata = $data['metadata'] ?? [];
+        if (!empty($request->receipt_image)) {
+            try {
+                $imageData = $request->receipt_image;
+                if (preg_match('/^data:image\/(\w+);base64,/', $imageData, $type)) {
+                    $imageData = substr($imageData, strpos($imageData, ',') + 1);
+                    $type = strtolower($type[1]); // jpg, png, etc
+
+                    if (!in_array($type, ['jpg', 'jpeg', 'gif', 'png'])) {
+                        throw new \Exception('invalid image type');
+                    }
+                    $imageData = str_replace(' ', '+', $imageData);
+                    $imageData = base64_decode($imageData);
+
+                    if ($imageData === false) {
+                        throw new \Exception('base64_decode failed');
+                    }
+                } else {
+                    throw new \Exception('did not match data URI with image data');
+                }
+
+                $fileName = 'receipt_' . time() . '_' . uniqid() . '.' . $type;
+                $path = 'transactions/receipts/' . $fileName;
+                \Storage::disk('public')->put($path, $imageData);
+                
+                $attachments = $metadata['attachments'] ?? [];
+                $attachments[] = [
+                    'url' => asset('storage/' . $path),
+                    'path' => $path,
+                    'type' => 'receipt',
+                    'uploaded_at' => now()->toDateTimeString()
+                ];
+                $metadata['attachments'] = $attachments;
+            } catch (\Exception $e) {
+                return response()->json(['success' => false, 'message' => 'Image upload failed: ' . $e->getMessage()], 422);
+            }
+        }
+
+        // Merge notes into metadata
+        if (!empty($request->note)) {
+            $metadata['note'] = $request->note;
+        }
+        if (!empty($request->reference_note)) {
+            $metadata['reference_note'] = $request->reference_note;
         }
         
-        // Set store_id to current authenticated user's store if not provided
-        if (!isset($data['store_id'])) {
-            $employee = auth()->user();
-            $data['store_id'] = $employee->store_id ?? null;
+        $data['metadata'] = $metadata;
+        $data['created_by'] = $user->id;
+        
+        // Default reference_type if manual
+        if (empty($data['reference_type'])) {
+            $data['reference_type'] = 'manual';
         }
 
         $transaction = Transaction::create($data);

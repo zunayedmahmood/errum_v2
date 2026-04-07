@@ -146,8 +146,14 @@ Read through everything and understand what needs to be done to track all transa
 Make a very detailed lengthy (300+ lines) md file for gemini in antigravity under Documentation/, titled "7_Apr_26_accounting_plan.md" explaining the entire workplan in full details, what needs to be done and which files will be affected. make it as detailed as possible.
 DO NOT change any code. I want the detailed md file only.
 
+these are the changes we want:
+->all transactions should have their transaction id. some of them are having App/../.... etc.
+->in manual entry, admins will have store selection dropdown, for branch manager it's preselected (unchangeable). branch should be optional. we also get to choose "Errum" where, errum == whole company and note store specific expenses.
+->BM will not be able to see/choose Errum.
+->manual entry allows one to add images and note/reference. it should be functional in both front and backend.
+->transaction page transaction lists should not be grouped by types. instead, newest first (before pagination)
+all these changes should be in sync with the accounting part of the site (see /accounting page and its backend code)
 
-
-Dispatch is not working properly. whenever we're dispatching, it's creating two of them. also, notun add korar jonno "scan to send" a click korle scan/barcode boshano jayna
-
-then and only after that, I want you to log into the website and test all the hrm and transaction routes (if need, you can upload this image: public/e-commerce-hero.jpg to test image upload in manual entry).. i want you to run extensive testing and identify any and all bugs and integrity issues. then, solve them. you can 
+What i want you to do:
+make me a Implementation plan md file that i can give to gemini in antigravity to make it work, without integrity issues and in an efficient way.
+name the file like this: "7_Apr_26 ..." in Documentation/ folder.

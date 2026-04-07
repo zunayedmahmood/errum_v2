@@ -49,6 +49,10 @@ class ProductMovement extends Model
         static::creating(function ($movement) {
             $movement->movement_date = $movement->movement_date ?? now();
 
+            // Ensure we have at least 0 for cost and price to satisfy DB constraints
+            $movement->unit_cost = $movement->unit_cost ?? 0;
+            $movement->unit_price = $movement->unit_price ?? 0;
+
             if (empty($movement->total_cost)) {
                 $movement->total_cost = $movement->quantity * $movement->unit_cost;
             }
