@@ -213,26 +213,43 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
       return;
     }
 
-    const quantity = parseInt(currentItem.quantity);
-    if (quantity > batchData.quantity) {
-      alert(`Only ${batchData.quantity} active units available`);
-      return;
+    const quantityToAdd = parseInt(currentItem.quantity);
+    const existingItemIndex = items.findIndex((item) => item.batch_id === currentItem.batch_id);
+
+    if (existingItemIndex !== -1) {
+      // Merge with existing item
+      const existingItem = items[existingItemIndex];
+      const newQuantity = parseInt(existingItem.quantity) + quantityToAdd;
+      
+      if (newQuantity > (existingItem.available_quantity || batchData.quantity)) {
+        alert(`Cannot add more. Total would exceed batch limit (${batchData.quantity} active units available)`);
+        return;
+      }
+
+      const updatedItems = [...items];
+      updatedItems[existingItemIndex] = {
+        ...existingItem,
+        quantity: newQuantity.toString(),
+      };
+      setItems(updatedItems);
+    } else {
+      // Add new item
+      if (quantityToAdd > batchData.quantity) {
+        alert(`Only ${batchData.quantity} active units available`);
+        return;
+      }
+
+      const newItem: DispatchItem = {
+        batch_id: batchData.id.toString(),
+        batch_number: batchData.batch_number,
+        product_name: batchData.product.name,
+        quantity: currentItem.quantity,
+        available_quantity: batchData.quantity,
+      };
+
+      setItems([...items, newItem]);
     }
 
-    if (items.some((item) => item.batch_id === currentItem.batch_id)) {
-      alert('This batch has already been added');
-      return;
-    }
-
-    const newItem: DispatchItem = {
-      batch_id: batchData.id.toString(),
-      batch_number: batchData.batch_number,
-      product_name: batchData.product.name,
-      quantity: currentItem.quantity,
-      available_quantity: batchData.quantity,
-    };
-
-    setItems([...items, newItem]);
     setCurrentItem({ batch_id: '', quantity: '' });
     setBatchData(null);
   };

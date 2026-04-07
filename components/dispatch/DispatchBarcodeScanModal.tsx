@@ -280,14 +280,18 @@ export default function DispatchBarcodeScanModal({
 
     try {
       if (mode === 'send') {
-        if (selectedItemId) {
-          await dispatchService.scanBarcode(dispatch.id, selectedItemId, code);
-        } else {
-          // "Scan to Add" flow
-          await dispatchService.scanToAddItem(dispatch.id, code);
-          // We need to signal that the dispatch items might have changed
-          if (onComplete) onComplete(); 
+        // In 'send' mode, we use scanToAddItem which is robust: 
+        // it finds the existing item or adds a new one if permitted by the backend.
+        const res = await dispatchService.scanToAddItem(dispatch.id, code);
+        const data = unpackData(res);
+        
+        // Update selection to the item that was just scanned/added
+        if (data?.dispatch_item_id) {
+          setSelectedItemId(Number(data.dispatch_item_id));
         }
+        
+        // Signal that dispatch items might have changed
+        if (onComplete) onComplete();
       } else {
         if (!selectedItemId) {
           throw new Error('Please select an item to receive');
@@ -546,13 +550,14 @@ export default function DispatchBarcodeScanModal({
                       }}
                       placeholder={mode === 'send' ? 'Scan barcode to send…' : 'Scan received barcode…'}
                       className="w-full pl-10 pr-3 py-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      // Keep input enabled even while processing so rapid scans can be queued.
-                      disabled={scanningLocked}
+                      // Do not lock the input even if item is complete, so staff can scan the next item
+                      // or use "Scan to Add" flow without manually switching items.
+                      disabled={loading}
                     />
                   </div>
                   <button
                     onClick={enqueueScan}
-                    disabled={scanningLocked || !barcode.trim()}
+                    disabled={loading || !barcode.trim()}
                     className={`px-4 py-3 rounded-lg text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
                       mode === 'send' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'
                     }`}
