@@ -442,7 +442,7 @@ export default function CheckoutClient() {
       });
       setCouponSuccess(
         `${result.data.promotion.name} applied! You save ৳${result.data.applied_amount.toFixed(2)}` +
-          (result.data.capped ? ` (max discount: ৳${result.data.max_discount})` : '')
+        (result.data.capped ? ` (max discount: ৳${result.data.max_discount})` : '')
       );
     } else {
       setAppliedCoupon(null);
@@ -1038,7 +1038,7 @@ export default function CheckoutClient() {
             return (
               <div key={step.id} className="flex items-center gap-3 flex-shrink-0">
                 <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-500 ${isActive ? 'bg-neutral-900 text-white shadow-lg shadow-neutral-200 scale-110' :
-                    isCompleted ? 'bg-green-500 text-white' : 'bg-neutral-100 text-neutral-400'
+                  isCompleted ? 'bg-green-500 text-white' : 'bg-neutral-100 text-neutral-400'
                   }`}>
                   {isCompleted ? <CheckCircle size={18} /> : <Icon size={18} />}
                 </div>
@@ -1349,8 +1349,8 @@ export default function CheckoutClient() {
                           <label
                             key={address.id}
                             className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${selectedShippingAddressId === address.id
-                                ? 'border-neutral-900 bg-neutral-50'
-                                : 'border-neutral-200 hover:border-neutral-300'
+                              ? 'border-neutral-900 bg-neutral-50'
+                              : 'border-neutral-200 hover:border-neutral-300'
                               }`}
                           >
                             <div className="flex items-start gap-3">
@@ -1435,8 +1435,8 @@ export default function CheckoutClient() {
                     <label
                       key={method.code}
                       className={`flex items-start gap-4 p-4 border-2 rounded-xl cursor-pointer transition-all ${selectedPaymentMethod === method.code
-                          ? 'border-neutral-900 bg-neutral-50'
-                          : 'border-neutral-200 hover:border-neutral-300'
+                        ? 'border-neutral-900 bg-neutral-50'
+                        : 'border-neutral-200 hover:border-neutral-300'
                         }`}
                     >
                       <input
