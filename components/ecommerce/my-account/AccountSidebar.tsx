@@ -39,12 +39,12 @@ export default function AccountSidebar() {
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <div className="p-6 border-b border-gray-200">
-        <h2 className="text-xl font-bold text-gray-900">MY ACCOUNT</h2>
+    <div className="ec-surface overflow-hidden">
+      <div className="p-6 border-b border-white/5">
+        <h2 className="text-xl font-serif text-white uppercase tracking-widest">My Account</h2>
       </div>
 
-      <nav className="p-2">
+      <nav className="p-2 space-y-1">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.path);
@@ -52,22 +52,26 @@ export default function AccountSidebar() {
             <button
               key={item.id}
               onClick={() => router.push(item.path)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
-                active ? 'bg-gray-100 text-gray-900 font-medium' : 'text-gray-700 hover:bg-gray-50'
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                active 
+                  ? 'bg-white/5 text-gold-light font-semibold shadow-lg' 
+                  : 'text-neutral-400 hover:bg-white/[0.03] hover:text-white'
               }`}
             >
-              <Icon size={20} className={active ? 'text-neutral-900' : 'text-gray-500'} />
-              <span>{item.label}</span>
+              <Icon size={18} />
+              <span className="text-sm">{item.label}</span>
             </button>
           );
         })}
 
+        <div className="h-px bg-white/5 mx-4 my-2" />
+
         <button
           onClick={() => logout()}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-md text-gray-700 hover:bg-gray-50 transition-colors mt-2"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all mt-2"
         >
-          <LogOut size={20} className="text-gray-500" />
-          <span>Logout</span>
+          <LogOut size={18} />
+          <span className="text-sm">Logout</span>
         </button>
       </nav>
     </div>

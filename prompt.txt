@@ -251,3 +251,4 @@ The e-commerce pages aren't mobile optimised (except find-stock, ignore that pag
 when you're building the suggestions, make each page (and or its components) a complete section. Like, i'll tell Ai to make changes in chunks instead of one go.
 
 
+

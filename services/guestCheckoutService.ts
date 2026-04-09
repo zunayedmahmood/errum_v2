@@ -142,6 +142,7 @@ class GuestCheckoutService {
         console.warn('⚠️ guest-checkout attempt failed, trying fallback payload...', {
           status: error?.response?.status,
           message: error?.response?.data?.message || error?.message,
+          errors: error?.response?.data?.errors,
         });
       }
     }

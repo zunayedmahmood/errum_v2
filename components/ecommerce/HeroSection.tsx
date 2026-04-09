@@ -19,47 +19,30 @@ import {
    - Search routes to /e-commerce/search?q=
 ────────────────────────────────────────────────────────────────────────── */
 
+/* Image attribution: https://unsplash.com/photos/a-pair-of-black-and-red-shoes-on-a-white-surface-7y0ywfipHdg?utm_source=unsplash&utm_medium=referral&utm_content=creditShareLink */
+
+
 const toWaMeLink = (phone: string) => {
   const digits = String(phone || '').replace(/[^0-9]/g, '');
   if (!digits) return '';
   return `https://wa.me/${digits}`;
 };
 
-const getCoverImageFromCategories = (cats: CatalogCategory[]) =>
-  cats.find(c => c.image || c.image_url)?.image || cats.find(c => c.image_url)?.image_url || '';
+const HERO_IMAGE_PATH = '/e-commerce-hero.jpg';
 
 export default function HeroSection() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [query, setQuery] = useState('');
-  const [bgUrl, setBgUrl] = useState<string>('');
+  const [bgUrl, setBgUrl] = useState<string>(HERO_IMAGE_PATH);
   const [topCategories, setTopCategories] = useState<CatalogCategory[]>([]);
 
-  // Background image: try newest product image, fallback to category image, else just keep gradients.
+  // HERO IMAGE SETTINGS
+  // In the future, logic for dynamic banners based on promos or seasons can be added here.
   useEffect(() => {
-    let alive = true;
-
-    (async () => {
-      try {
-        const res = await catalogService.getProducts({
-          per_page: 1,
-          page: 1,
-          sort_by: 'newest',
-          _suppressErrorLog: true,
-        });
-
-        const first = res?.products?.[0];
-        const img = first?.images?.[0]?.url;
-        if (alive && img) setBgUrl(img);
-      } catch {
-        // ignore
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
+    // Current logic: Use static hero image
+    setBgUrl(HERO_IMAGE_PATH);
   }, []);
 
   // Fetch top-level categories for “quick chips”.
@@ -84,12 +67,8 @@ export default function HeroSection() {
 
         if (!alive) return;
         setTopCategories(parents);
-
-        // If we still don't have a background, attempt a category hero image.
-        const catImg = getCoverImageFromCategories(parents);
-        if (catImg) setBgUrl((prev) => prev || catImg);
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return () => {
       alive = false;
@@ -120,14 +99,14 @@ export default function HeroSection() {
   };
 
   return (
-    <section className="ec-root relative overflow-hidden" style={{ minHeight: 'min(92vh, 720px)' }}>
+    <section className="ec-root relative overflow-hidden min-h-screen flex flex-col justify-center">
       {/* Background image */}
       <div className="absolute inset-0">
         {bgUrl ? (
           <img
             src={bgUrl}
             alt="Hero background"
-            className="h-full w-full object-cover"
+            className="h-full w-full object-cover object-center"
             onError={() => setBgUrl('')}
           />
         ) : null}
@@ -169,7 +148,7 @@ export default function HeroSection() {
       )}
 
       {/* Content */}
-      <div className="ec-container relative z-10 flex flex-col justify-center" style={{ minHeight: 'inherit', paddingTop: '5.5rem', paddingBottom: '5rem' }}>
+      <div className="ec-container relative z-10 flex flex-col justify-center py-20">
         <div className="mx-auto w-full max-w-3xl text-center ec-anim-fade-up">
           <p className="ec-eyebrow justify-center">Search the catalogue</p>
 

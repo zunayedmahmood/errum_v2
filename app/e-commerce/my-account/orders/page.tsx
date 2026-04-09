@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { ShoppingBag } from 'lucide-react';
 import MyAccountShell from '@/components/ecommerce/my-account/MyAccountShell';
 import checkoutService, { Order } from '@/services/checkoutService';
 
@@ -86,46 +87,88 @@ export default function MyAccountOrdersPage() {
       ) : null}
 
       {loading ? (
-        <div className="text-gray-600">Loading orders...</div>
+        <div className="flex flex-col gap-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-48 w-full bg-neutral-100 rounded-xl animate-pulse" />
+          ))}
+        </div>
       ) : (
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left">
-              <tr>
-                <th className="p-3">Order</th>
-                <th className="p-3">Date</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Total</th>
-                <th className="p-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((o) => (
-                <tr key={o.order_number} className="border-t">
-                  <td className="p-3 font-medium">#{o.order_number}</td>
-                  <td className="p-3">{new Date(o.created_at).toLocaleString()}</td>
-                  <td className="p-3">{o.status}</td>
-                  <td className="p-3">{o.total_amount}৳</td>
-                  <td className="p-3">
-                    <Link
-                      className="text-neutral-900 hover:underline"
-                      href={`/e-commerce/my-account/orders/${o.order_number}`}
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+        <div className="space-y-4">
+          {orders.map((o) => {
+            const status = (o.status || 'pending').toLowerCase();
+            const statusColors: Record<string, string> = {
+              pending: 'bg-neutral-500',
+              processing: 'bg-amber-500',
+              shipped: 'bg-blue-500',
+              delivered: 'bg-green-500',
+              cancelled: 'bg-rose-500',
+            };
+            
+            const steps = ['pending', 'processing', 'shipped', 'delivered'];
+            const currentStepIdx = steps.indexOf(status);
 
-              {!orders.length ? (
-                <tr>
-                  <td className="p-4 text-gray-600" colSpan={5}>
-                    No orders found.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+            return (
+              <div key={o.order_number} className="ec-surface overflow-hidden transition-all hover:bg-white/[0.02]">
+                <div className="p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <div>
+                      <p className="text-xs font-mono text-white/40 mb-1">#{o.order_number}</p>
+                      <p className="text-sm font-medium text-white/80">{new Date(o.created_at).toLocaleDateString(undefined, { dateStyle: 'long' })}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider text-white ${statusColors[status] || 'bg-neutral-500'}`}>
+                        {o.status}
+                      </span>
+                      <Link
+                        href={`/e-commerce/my-account/orders/${o.order_number}`}
+                        className="text-xs font-semibold text-white/50 hover:text-white transition-colors flex items-center gap-1"
+                      >
+                        Details →
+                      </Link>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between py-4 border-t border-white/5">
+                    <div className="space-y-1">
+                      <p className="text-xs text-white/40 uppercase tracking-widest">Total Amount</p>
+                      <p className="text-xl font-serif text-white">{Number(o.total_amount).toLocaleString()}৳</p>
+                    </div>
+                    {o.items_count && (
+                      <div className="text-right">
+                        <p className="text-xs text-white/40 uppercase tracking-widest">Items</p>
+                        <p className="text-lg text-white/80">{o.items_count}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 8.1 — Simplified Timeline Bar for Shipped Order */}
+                  {(status === 'shipped' || status === 'processing' || status === 'delivered') && (
+                    <div className="pt-4 border-t border-white/5">
+                      <div className="ec-order-timeline">
+                        {steps.map((step, idx) => (
+                          <div key={step} className="ec-timeline-step">
+                            <div className={`ec-timeline-dot ${idx <= currentStepIdx ? 'ec-timeline-dot-active' : ''}`} />
+                            <div className="ec-timeline-bar" />
+                            <span className="ec-timeline-label">{step}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {!orders.length ? (
+            <div className="text-center py-12 bg-neutral-100/5 rounded-2xl border border-white/5">
+              <ShoppingBag className="mx-auto mb-4 text-white/20" size={48} />
+              <p className="text-white/60">No orders found.</p>
+              <Link href="/e-commerce/" className="mt-4 ec-btn ec-btn-gold">
+                Start Shopping
+              </Link>
+            </div>
+          ) : null}
         </div>
       )}
     </MyAccountShell>

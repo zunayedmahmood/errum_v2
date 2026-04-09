@@ -150,25 +150,41 @@ export default function PaymentStatusChecker({ onPaymentVerified }: PaymentStatu
   // Render result notification
   if (paymentResult.status) {
     return (
-      <div className="fixed top-4 right-4 z-50 max-w-md animate-slide-in">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
         {paymentResult.status === 'success' && (
-          <div className="bg-green-50 border-2 border-green-500 rounded-xl shadow-lg p-4">
-            <div className="flex items-start gap-3">
-              <CheckCircle className="text-green-600 flex-shrink-0" size={24} />
-              <div className="flex-1">
-                <h4 className="font-bold text-green-900 mb-1">Payment Successful!</h4>
-                <p className="text-sm text-green-800 mb-2">{paymentResult.message}</p>
-                {paymentResult.orderNumber && (
-                  <p className="text-xs text-green-700 font-mono">
-                    Order: {paymentResult.orderNumber}
-                  </p>
-                )}
-              </div>
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center text-center p-6 ec-anim-fade-in">
+            <div className="relative mb-8">
+              <div className="w-24 h-24 rounded-full border-4 border-green-500/30 ec-success-circle" />
+              <svg 
+                className="absolute inset-0 w-24 h-24 text-green-500" 
+                viewBox="0 0 52 52"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path className="ec-check-draw" d="M14 27l7 7 16-16" />
+              </svg>
+            </div>
+            
+            <h2 className="text-4xl md:text-5xl font-serif text-white mb-4 ec-anim-fade-up ec-delay-2">Order Placed!</h2>
+            <p className="text-white/60 text-lg mb-8 max-w-md ec-anim-fade-up ec-delay-3">
+              Thank you for your purchase. Your payment was verified successfully and we're getting your order ready.
+            </p>
+            
+            <div className="flex flex-col sm:flex-row gap-4 ec-anim-fade-up ec-delay-4">
+              <button
+                onClick={() => router.push(`/e-commerce/my-account/orders/${paymentResult.orderNumber}`)}
+                className="ec-btn ec-btn-gold"
+              >
+                Track Order
+              </button>
               <button
                 onClick={() => setPaymentResult({ status: null, orderNumber: null, message: null })}
-                className="text-green-600 hover:text-green-800"
+                className="ec-btn bg-white/10 text-white hover:bg-white/20"
               >
-                ✕
+                Close
               </button>
             </div>
           </div>

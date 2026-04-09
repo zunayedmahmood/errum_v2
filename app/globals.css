@@ -599,3 +599,177 @@ body {
 .tap-bounce:active {
   animation: scaleBounce 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.ec-ticker-container {
+  display: flex;
+  overflow: hidden;
+  user-select: none;
+}
+
+.ec-ticker-track {
+  display: flex;
+  white-space: nowrap;
+  animation: ticker 30s linear infinite;
+  padding: 1rem 0;
+}
+
+.ec-ticker-track:hover {
+  animation-play-state: paused;
+}
+
+/* Horizontal scroll with peeking cards */
+.ec-horizontal-scroll {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ec-horizontal-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.ec-horizontal-scroll > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+}
+
+/* Parallax variables */
+:root {
+  --tx: 0px;
+  --ty: 0px;
+}
+
+.ec-parallax-bg {
+  transform: translate(var(--tx), var(--ty)) scale(1.1);
+  transition: transform 0.1s ease-out;
+}
+
+/* Section Reveal Base */
+.ec-reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1), transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ec-reveal-active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 8.3 — Payment Confirmation Animation */
+@keyframes ec-check-draw {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes ec-circle-pulse {
+  0% { transform: scale(0.95); opacity: 0.5; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.ec-check-draw {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: ec-check-draw 0.8s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+  animation-delay: 0.2s;
+}
+
+.ec-success-circle {
+  animation: ec-circle-pulse 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* 8.2 — Mobile Tab Navigation */
+.ec-mobile-tabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: #0d0d0d;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 90;
+}
+
+.ec-mobile-tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.ec-mobile-tab-item-active {
+  color: var(--gold-light);
+}
+
+/* Order timeline bar */
+.ec-order-timeline {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.ec-timeline-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.ec-timeline-bar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  right: -50%;
+  height: 2px;
+  background: rgba(255,255,255,0.1);
+  z-index: 0;
+}
+
+.ec-timeline-step:last-child .ec-timeline-bar {
+  display: none;
+}
+
+.ec-timeline-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #0d0d0d;
+  border: 2px solid rgba(255,255,255,0.2);
+  z-index: 1;
+  transition: all 0.3s ease;
+}
+
+.ec-timeline-dot-active {
+  background: var(--gold);
+  border-color: var(--gold);
+  box-shadow: 0 0 10px rgba(176,124,58,0.4);
+}
+
+.ec-timeline-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255,255,255,0.4);
+  margin-top: 6px;
+}

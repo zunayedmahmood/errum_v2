@@ -636,9 +636,21 @@ export default function CheckoutClient() {
       router.push(`/e-commerce/order-confirmation/${orderNumber}`);
     } catch (err: any) {
       console.error('❌ Guest checkout failed:', err);
-      setError(err?.response?.data?.message || err?.message || 'Failed to place order. Please try again.');
       
-      // 6.3 — Auto-scroll to error
+      const serverError = err?.response?.data;
+      if (serverError?.errors) {
+        console.error('📋 Server validation errors:', serverError.errors);
+        const mappedErrors: Record<string, string> = {};
+        Object.keys(serverError.errors).forEach(key => {
+          mappedErrors[key] = Array.isArray(serverError.errors[key]) ? serverError.errors[key][0] : serverError.errors[key];
+        });
+        setFieldErrors(mappedErrors);
+        setError('Please check the highlighted fields');
+      } else {
+        setError(serverError?.message || err?.message || 'Failed to place order. Please try again.');
+      }
+      
+      // Auto-scroll to error
       setTimeout(() => {
         const firstErr = formRef.current?.querySelector('[aria-invalid="true"]');
         if (firstErr) {

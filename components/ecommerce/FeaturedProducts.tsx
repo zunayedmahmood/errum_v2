@@ -177,16 +177,17 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({ categoryId, limit =
             onAction={() => router.push('/e-commerce/products')}
           />
 
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+          <div className="flex sm:grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 ec-horizontal-scroll -mx-4 px-4 sm:mx-0 sm:px-0">
             {products.map((product) => (
-              <PremiumProductCard
-                key={product.id}
-                product={product}
-                imageErrored={imageErrors.has(product.id)}
-                onImageError={handleImageError}
-                onOpen={handleProductClick}
-                onAddToCart={handleAddToCart}
-              />
+              <div key={product.id} className="w-[85vw] sm:w-auto">
+                <PremiumProductCard
+                  product={product}
+                  imageErrored={imageErrors.has(product.id)}
+                  onImageError={handleImageError}
+                  onOpen={handleProductClick}
+                  onAddToCart={handleAddToCart}
+                />
+              </div>
             ))}
           </div>
         </div>
