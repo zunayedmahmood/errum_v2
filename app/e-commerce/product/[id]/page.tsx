@@ -1039,19 +1039,13 @@ export default function ProductDetailPage() {
                 </button>
               </div>
 
-              {/* Trust & Payment Badges */}
-              <div className="pt-6 space-y-4">
-                <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-gray-400 text-center"
-                   style={{ fontFamily: "'DM Mono', monospace" }}>
-                  Secure Payment Guaranteed
-                </p>
-                <div className="flex flex-wrap justify-center gap-6 opacity-60 grayscale hover:grayscale-0 transition-all duration-500">
-                  <img src="/images/payments/visa.svg" alt="Visa" className="h-4 sm:h-5 object-contain" onError={e => (e.currentTarget.style.display = 'none')} />
-                  <img src="/images/payments/mastercard.svg" alt="Mastercard" className="h-4 sm:h-5 object-contain" onError={e => (e.currentTarget.style.display = 'none')} />
-                  <img src="/images/payments/nagad.svg" alt="Nagad" className="h-4 sm:h-5 object-contain" onError={e => (e.currentTarget.style.display = 'none')} />
-                  <img src="/images/payments/bkash.svg" alt="bKash" className="h-4 sm:h-5 object-contain" onError={e => (e.currentTarget.style.display = 'none')} />
-                  <span className="text-[10px] font-bold border rounded px-1.5 py-0.5 border-gray-300 text-gray-400">COD</span>
-                </div>
+              {/* Payment Options */}
+              <div className="pt-2">
+                <img 
+                  src="/payment_option.png" 
+                  alt="Payment Options" 
+                  className="w-full h-auto object-contain" 
+                />
               </div>
 
               {/* Accordion Sections */}
