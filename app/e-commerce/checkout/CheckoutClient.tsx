@@ -851,9 +851,9 @@ export default function CheckoutClient() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Form */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-span-7 space-y-6">
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-lg font-semibold text-neutral-900 mb-4">Contact</h2>
 
@@ -1021,28 +1021,85 @@ export default function CheckoutClient() {
             </div>
 
             {/* Summary */}
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-5">
               <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] p-6 sticky top-24 shadow-sm">
                 <h2 className="text-xl font-medium text-[var(--text-primary)] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Order Summary</h2>
 
                 <div className="space-y-4 max-h-[40vh] overflow-auto pr-1">
                   {selectedItems.map((item) => (
-                    <div key={item.id} className="flex items-center gap-4">
-                      <div className="w-14 h-14 bg-[var(--bg-surface-2)] rounded-[var(--radius-md)] overflow-hidden flex-shrink-0 border border-[var(--border-default)]">
+                    <div key={item.id} className="flex items-start gap-4 py-2 border-b border-[var(--border-default)] last:border-0">
+                      <div className="w-16 h-16 rounded-[var(--radius-md)] overflow-hidden bg-[var(--bg-surface-2)] flex-shrink-0 border border-[var(--border-default)]">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={item.images?.find((i: any) => i?.is_primary)?.image_url || (item.images?.[0] as any)?.image_url || (item.images?.[0] as any)?.url || '/placeholder-product.png'}
+                          src={item.image || item.images?.find((i: any) => i?.is_primary)?.image_url || (item.images?.[0] as any)?.image_url || '/placeholder-product.png'}
                           alt={item.name}
                           className="w-full h-full object-cover"
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[14px] font-medium text-[var(--text-primary)] truncate">{item.name}</p>
-                        <p className="text-[11px] text-[var(--text-muted)] uppercase tracking-tighter" style={{ fontFamily: "'DM Mono', monospace" }}>Qty: {item.quantity}</p>
+                        <div className="flex justify-between gap-2">
+                          <p className="text-[13px] font-medium text-[var(--text-primary)] leading-tight" style={{ fontFamily: "'Jost', sans-serif" }}>{item.name}</p>
+                          <button
+                            onClick={() => handleRemoveItem(item.id)}
+                            className="text-[var(--text-muted)] hover:text-[var(--status-danger)] transition-colors p-1"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-[var(--text-muted)] mt-1 uppercase tracking-tight" style={{ fontFamily: "'DM Mono', monospace" }}>
+                          ৳{Number(item.unit_price || 0).toLocaleString()}
+                        </p>
+                        <div className="flex items-center justify-between mt-2">
+                          <div className="flex items-center rounded-lg bg-[var(--bg-depth)] border border-[var(--border-default)]">
+                            <button
+                              onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}
+                              disabled={item.quantity <= 1}
+                              className="w-6 h-6 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-20 transition-colors"
+                            >
+                              -
+                            </button>
+                            <span className="w-6 text-center text-[11px] font-bold text-[var(--text-primary)]" style={{ fontFamily: "'DM Mono', monospace" }}>
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
+                              disabled={item.quantity >= (item.available_inventory ?? 999)}
+                              className="w-6 h-6 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-20 transition-colors"
+                            >
+                              +
+                            </button>
+                          </div>
+                          <span className="text-[13px] font-bold text-[var(--text-primary)]">
+                            ৳{(item.quantity * Number(item.unit_price || 0)).toLocaleString()}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-[14px] font-bold text-[var(--gold)]">৳{Number(item.total_price).toLocaleString()}</div>
                     </div>
                   ))}
+                </div>
+
+                {/* Coupon Input */}
+                <div className="mt-6 pt-6 border-t border-[var(--border-default)]">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="PROMO CODE"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      className="flex-1 px-4 py-3 rounded-xl bg-[var(--bg-surface-2)] border border-[var(--border-default)] text-[11px] font-bold tracking-widest text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--cyan)] transition-all"
+                      style={{ fontFamily: "'DM Mono', monospace" }}
+                    />
+                    <button
+                      onClick={handleApplyCoupon}
+                      disabled={!couponCode || couponApplyLoading}
+                      className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-root)] rounded-xl text-[10px] font-bold tracking-widest uppercase hover:opacity-90 disabled:opacity-50 transition-all whitespace-nowrap"
+                      style={{ fontFamily: "'DM Mono', monospace" }}
+                    >
+                      {couponApplyLoading ? '...' : 'Apply'}
+                    </button>
+                  </div>
+                  {couponError && <p className="text-[10px] text-rose-500 mt-2 ml-1 font-medium">{couponError}</p>}
+                  {couponSuccess && <p className="text-[10px] text-[var(--status-success)] mt-2 ml-1 font-medium">{couponSuccess}</p>}
                 </div>
 
                 <div className="border-t border-[var(--border-default)] mt-6 pt-6 space-y-3">
@@ -1056,7 +1113,7 @@ export default function CheckoutClient() {
                   </div>
                   {couponDiscount > 0 && (
                     <div className="flex justify-between items-center text-[var(--status-success)]">
-                      <span className="text-sm">Store Credit / Promo</span>
+                      <span className="text-sm underline decoration-dotted">Store Credit / Promo</span>
                       <span className="text-sm font-bold">-৳{couponDiscount.toLocaleString()}</span>
                     </div>
                   )}
@@ -1157,8 +1214,8 @@ export default function CheckoutClient() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 items-start" ref={formRef}>
-          <div className="lg:col-span-2 space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start" ref={formRef}>
+          <div className="lg:col-span-7 space-y-8">
             {/* Shipping Info */}
             {currentStep === 'shipping' && (
               <div className="ec-anim-fade-up">
@@ -1674,7 +1731,7 @@ export default function CheckoutClient() {
           </div>
 
           {/* 🔒 ORIGINAL ORDER SUMMARY - UNCHANGED */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-5">
             <div className="sticky top-24 space-y-4">
               {/* Order Summary: Collapsible on Mobile */}
               <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden shadow-sm">
@@ -1710,7 +1767,7 @@ export default function CheckoutClient() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex justify-between gap-2">
-                                <h4 className="text-[13px] font-medium text-[var(--text-primary)] leading-tight truncate" style={{ fontFamily: "'Jost', sans-serif" }}>{item.name}</h4>
+                                <h4 className="text-[13px] font-medium text-[var(--text-primary)] leading-tight" style={{ fontFamily: "'Jost', sans-serif" }}>{item.name}</h4>
                                 <button
                                   onClick={() => handleRemoveItem(item.id)}
                                   className="text-[var(--text-muted)] hover:text-[var(--status-danger)] transition-colors p-1"
