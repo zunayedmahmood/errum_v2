@@ -21,9 +21,9 @@ const PriceRangeSelector: React.FC<PriceRangeSelectorProps> = ({
   ];
 
   return (
-    <div className="ec-dark-card p-4">
-      <h3 className="font-semibold text-white mb-4" style={{ fontFamily: "'Jost', sans-serif", letterSpacing: '0.05em', fontSize: '14px', textTransform: 'uppercase' }}>Price Range</h3>
-      <div className="space-y-2">
+    <div className="space-y-4">
+      <h3 className="text-[11px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Price Range</h3>
+      <div className="space-y-2.5">
         {priceRanges.map((range) => (
           <label key={range.value} className="flex items-center cursor-pointer group">
             <div className="relative flex items-center">
@@ -39,17 +39,17 @@ const PriceRangeSelector: React.FC<PriceRangeSelectorProps> = ({
                 className={`h-4 w-4 rounded-full border transition-all flex items-center justify-center ${
                   selectedPriceRange === range.value 
                     ? 'border-[var(--gold)] bg-[var(--gold)]' 
-                    : 'border-white/20 bg-transparent group-hover:border-white/40'
+                    : 'border-[var(--border-strong)] bg-transparent group-hover:border-[var(--cyan)]'
                 }`}
               >
                 {selectedPriceRange === range.value && (
-                  <div className="h-1.5 w-1.5 rounded-full bg-black"></div>
+                  <div className="h-1 w-1 rounded-full bg-[var(--text-on-accent)]"></div>
                 )}
               </div>
             </div>
             <span 
               className={`ml-3 text-sm transition-colors ${
-                selectedPriceRange === range.value ? 'text-white font-medium' : 'text-white/60 group-hover:text-white/80'
+                selectedPriceRange === range.value ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
               }`}
               style={{ fontFamily: "'Jost', sans-serif" }}
             >

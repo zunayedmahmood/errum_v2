@@ -32,10 +32,7 @@ export default function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
     onClose();
   };
 
-  const handleViewCart = () => {
-    router.push('/e-commerce/cart');
-    onClose();
-  };
+
 
   return (
     <>
@@ -228,30 +225,9 @@ export default function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                 onMouseEnter={e => !isAnyOverStock && ((e.currentTarget as HTMLElement).style.opacity = '0.85')}
                 onMouseLeave={e => !isAnyOverStock && ((e.currentTarget as HTMLElement).style.opacity = '1')}
               >
-                Check Out
+                Checkout
               </button>
-              <button
-                onClick={handleViewCart}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: '#ffffff',
-                  color: '#111111',
-                  border: '1.5px solid #111111',
-                  borderRadius: '4px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  fontFamily: "'Jost', sans-serif",
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.10em',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#111111'; (e.currentTarget as HTMLElement).style.color = '#ffffff'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#ffffff'; (e.currentTarget as HTMLElement).style.color = '#111111'; }}
-              >
-                View Cart
-              </button>
+
             </div>
           </div>
         )}

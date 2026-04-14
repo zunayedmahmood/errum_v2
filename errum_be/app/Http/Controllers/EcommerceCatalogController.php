@@ -30,7 +30,7 @@ class EcommerceCatalogController extends Controller
     public function getProducts(Request $request)
     {
         try {
-            $perPage    = max(1, min((int) $request->get('per_page', 12), 200));
+            $perPage    = max(1, min((int) $request->get('per_page', 30), 200));
             $isGrouped  = $request->boolean('group_by_sku', true);
             $categorySlug = $request->get('category_slug') ?? $request->get('slug');
             $categoryId   = $request->get('category_id');
@@ -743,7 +743,7 @@ class EcommerceCatalogController extends Controller
     {
         try {
             $searchQuery = $request->get('q');
-            $perPage = max(1, min((int) $request->get('per_page', 12), 200));
+            $perPage = max(1, min((int) $request->get('per_page', 30), 200));
 
             if (!$searchQuery || strlen($searchQuery) < 2) {
                 return response()->json([

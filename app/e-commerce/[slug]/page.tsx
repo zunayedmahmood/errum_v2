@@ -629,23 +629,23 @@ export default function CategoryPage() {
                   </div>
 
                   {totalPages > 1 && (
-                    <div className="flex justify-center items-center mt-12 gap-3">
+                    <div className="flex justify-center items-center mt-12 gap-1.5 sm:gap-3">
                       <button
                         onClick={() => handlePageChange(currentPage - 1)}
                         disabled={currentPage === 1}
-                        className="px-5 py-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-2)] disabled:opacity-20 transition-all text-sm"
+                        className="px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-2)] disabled:opacity-20 transition-all text-xs sm:text-sm"
                       >
                         Previous
                       </button>
 
-                      <div className="flex items-center gap-1.5 mx-2">
+                      <div className="flex items-center gap-1 sm:gap-1.5 mx-1 sm:mx-2">
                         {[...Array(Math.min(totalPages, 5))].map((_, i) => {
                           const pageNum = i + 1;
                           return (
                             <button
                               key={pageNum}
                               onClick={() => handlePageChange(pageNum)}
-                              className={`h-10 w-10 rounded-xl text-sm font-medium transition-all ${currentPage === pageNum
+                              className={`h-9 w-9 sm:h-10 sm:w-10 rounded-xl text-xs sm:text-sm font-medium transition-all ${currentPage === pageNum
                                   ? 'bg-[var(--cyan)] text-[var(--text-on-accent)] shadow-lg shadow-cyan/20'
                                   : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border border-[var(--border-default)] hover:border-[var(--cyan)] hover:text-[var(--cyan)]'
                                 }`}
@@ -659,7 +659,7 @@ export default function CategoryPage() {
                       <button
                         onClick={() => handlePageChange(currentPage + 1)}
                         disabled={currentPage === totalPages}
-                        className="px-5 py-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-2)] disabled:opacity-20 transition-all text-sm"
+                        className="px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-2)] disabled:opacity-20 transition-all text-xs sm:text-sm"
                       >
                         Next
                       </button>

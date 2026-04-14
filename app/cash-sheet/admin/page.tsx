@@ -49,10 +49,10 @@ export default function AdminPanel() {
   const [toast, setToast]     = useState<{ msg: string; ok: boolean } | null>(null);
 
   useEffect(() => {
-    storeService.getStores().then(res => {
-      const list = (res.data ?? res).filter((s: Store) => !s.is_warehouse);
-      setStores(list);
-      if (list.length) setStoreId(list[0].id);
+    storeService.getAllStores().then((list: Store[]) => {
+      const filtered = list.filter((s: Store) => !s.is_warehouse);
+      setStores(filtered);
+      if (filtered.length) setStoreId(filtered[0].id);
     }).catch(() => {});
   }, []);
 
@@ -192,7 +192,7 @@ export default function AdminPanel() {
               </div>
 
               <button
-                onClick={handleAdd} disabled={saving || !amount || (needsStore && !storeId)}
+                onClick={handleAdd} disabled={saving || !amount || (needsStore && storeId === '')}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}

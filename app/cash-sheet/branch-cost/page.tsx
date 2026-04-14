@@ -36,12 +36,11 @@ export default function BranchCostPanel() {
   useEffect(() => { if (!authLoading && !authorized) router.push('/dashboard'); }, [authLoading, authorized]);
 
   useEffect(() => {
-    storeService.getStores().then(res => {
-      const list = (res.data ?? res).filter((s: Store) => !s.is_warehouse);
-      setStores(list);
-      // Branch managers default to their store
+    storeService.getAllStores().then((list: Store[]) => {
+      const filtered = list.filter((s: Store) => !s.is_warehouse);
+      setStores(filtered);
       if (!isAdmin && userStoreId) setStoreId(userStoreId);
-      else if (list.length > 0) setStoreId(list[0].id);
+      else if (filtered.length > 0) setStoreId(filtered[0].id);
     }).catch(() => {});
   }, [isAdmin, userStoreId]);
 
@@ -157,7 +156,7 @@ export default function BranchCostPanel() {
                 />
               </div>
               <button
-                onClick={handleAdd} disabled={saving || !amount || !storeId}
+                onClick={handleAdd} disabled={saving || !amount || storeId === ''}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}

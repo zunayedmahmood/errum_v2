@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import QZTrayLoader from "@/components/QzTrayLoader";
-import ReceiptPreviewModalHost from "@/components/ReceiptPreviewModalHost";
-import GlobalToastHost from "@/components/GlobalToastHost";
-import { CartProvider } from "./e-commerce/CartContext";
-import { AuthProvider } from '@/contexts/AuthContext';
-import { ThemeProvider } from '@/contexts/ThemeContext';
-import { Toaster } from 'react-hot-toast';
+import GlobalProviders from "./GlobalProviders";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,17 +26,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        <AuthProvider>
-          <ThemeProvider>
-            <CartProvider>
-              <QZTrayLoader />
-              <ReceiptPreviewModalHost />
-              <GlobalToastHost />
-              <Toaster position="top-right" reverseOrder={false} />
-              {children}
-            </CartProvider>
-          </ThemeProvider>
-        </AuthProvider>
+        <GlobalProviders>
+          {children}
+        </GlobalProviders>
       </body>
     </html>
   );

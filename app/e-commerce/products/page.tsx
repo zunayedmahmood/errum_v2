@@ -24,7 +24,7 @@ import PremiumProductCard from '@/components/ecommerce/ui/PremiumProductCard';
 import CategorySidebar from '@/components/ecommerce/category/CategorySidebar';
 import { fireToast } from '@/lib/globalToast';
 
-const PRODUCTS_PER_PAGE = 15;
+const PRODUCTS_PER_PAGE = 30;
 
 /**
  * Product Feed Page
@@ -241,7 +241,7 @@ function ProductsPageContent() {
         <button
           key={i}
           onClick={() => handlePageChange(i)}
-          className={`h-10 w-10 rounded-xl text-sm font-medium transition-all ${pagination.current_page === i
+          className={`h-9 w-9 sm:h-10 sm:w-10 rounded-xl text-xs sm:text-sm font-medium transition-all ${pagination.current_page === i
               ? 'bg-[var(--gold)] text-white shadow-lg'
               : 'bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)]'
             }`}
@@ -398,24 +398,24 @@ function ProductsPageContent() {
                 {/* Pagination */}
                 {pagination && pagination.last_page > 1 && (
                   <div className="mt-24 flex flex-col items-center gap-6">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 sm:gap-4">
                       <button
                         disabled={pagination.current_page === 1}
                         onClick={() => handlePageChange(pagination.current_page - 1)}
-                        className="h-11 px-6 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)] disabled:opacity-30 transition-all text-xs font-bold tracking-widest uppercase"
+                        className="h-9 px-4 sm:h-11 sm:px-6 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)] disabled:opacity-30 transition-all text-[10px] sm:text-xs font-bold tracking-widest uppercase"
                         style={{ fontFamily: "'DM Mono', monospace" }}
                       >
                         Prev
                       </button>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 sm:gap-2">
                         {renderPaginationRange()}
                       </div>
 
                       <button
                         disabled={pagination.current_page === pagination.last_page}
                         onClick={() => handlePageChange(pagination.current_page + 1)}
-                        className="h-11 px-6 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)] disabled:opacity-30 transition-all text-xs font-bold tracking-widest uppercase"
+                        className="h-9 px-4 sm:h-11 sm:px-6 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)] disabled:opacity-30 transition-all text-[10px] sm:text-xs font-bold tracking-widest uppercase"
                         style={{ fontFamily: "'DM Mono', monospace" }}
                       >
                         Next

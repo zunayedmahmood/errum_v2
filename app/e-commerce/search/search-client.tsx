@@ -21,7 +21,7 @@ import PriceRangeSelector from '@/components/ecommerce/products/PriceRangeSelect
 import { fireToast } from '@/lib/globalToast';
 import { buildCardProductsFromResponse } from '@/lib/ecommerceCardUtils';
 
-const PRODUCTS_PER_PAGE = 15;
+const PRODUCTS_PER_PAGE = 30;
 
 /**
  * Search Client Component
@@ -251,9 +251,9 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
           <button
             onClick={() => updateURL({ category: String(cat.id) })}
             className={`flex-1 text-left px-4 py-2.5 rounded-xl transition-all text-sm truncate ${isSelected
-                ? 'bg-[var(--gold)] text-white shadow-lg shadow-gold/20'
-                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-              } ${isMobile && !isSelected ? 'border border-white/5 bg-white/5' : ''}`}
+                ? 'bg-[var(--gold)] text-[var(--text-on-accent)] shadow-lg shadow-gold/20'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--ivory-ghost)]'
+              } ${isMobile && !isSelected ? 'border border-[var(--border-default)] bg-[var(--bg-depth)]' : ''}`}
             style={{
               fontFamily: "'Jost', sans-serif",
               paddingLeft: depth > 0 ? `${16 + depth * 12}px` : undefined
@@ -264,7 +264,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
           {hasChildren && (
             <button
               onClick={(e) => handleCategoryToggle(cat.id, e)}
-              className={`p-2 rounded-xl transition-all ${isOpen ? 'text-[var(--gold)] bg-[var(--gold)]/10' : 'text-white/20 hover:text-white/50 hover:bg-white/5'
+              className={`p-2 rounded-xl transition-all ${isOpen ? 'text-[var(--cyan)] bg-[var(--cyan-pale)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-depth)]'
                 }`}
             >
               <svg
@@ -279,7 +279,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
           )}
         </div>
         {hasChildren && isOpen && (
-          <div className="flex flex-col gap-1 mt-1 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+          <div className="flex flex-col gap-1 mt-1 max-h-[400px] overflow-y-auto ec-scrollbar pr-1">
             {cat.children.map((child: any) => renderCategory(child, depth + 1, isMobile))}
           </div>
         )}
@@ -305,9 +305,9 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
         <button
           key={i}
           onClick={() => handlePageChange(i)}
-          className={`h-10 w-10 rounded-xl text-sm font-medium transition-all ${pagination.current_page === i
-              ? 'bg-[var(--gold)] text-white shadow-lg shadow-gold/20'
-              : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+          className={`h-9 w-9 sm:h-10 sm:w-10 rounded-xl text-xs sm:text-sm font-medium transition-all ${pagination.current_page === i
+              ? 'bg-[var(--gold)] text-[var(--text-on-accent)] shadow-lg shadow-gold/20'
+              : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--ivory-ghost)] hover:text-[var(--text-primary)]'
             }`}
         >
           {i}
@@ -318,31 +318,30 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
   };
 
   return (
-    <div className="ec-root ec-bg-texture min-h-screen">
+    <div className="ec-root min-h-screen bg-[var(--bg-root)]">
       <Navigation />
 
       {/* Hero Header */}
-      <header className="relative py-12 md:py-16 overflow-hidden border-b border-white/5">
+      <header className="relative py-12 md:py-20 overflow-hidden border-b border-[var(--border-default)] bg-[var(--bg-depth)]">
         <div className="ec-container text-center relative z-10 ec-anim-fade-up">
-          <span className="ec-eyebrow mb-3">Catalogue Search</span>
-          <h1 className="text-3xl md:text-5xl font-bold text-white mb-6" style={{ fontFamily: "'Jost', sans-serif" }}>
-            Finding <span style={{ color: 'var(--gold)' }}>"{query || '...'}"</span>
+          <span className="ec-eyebrow mb-3 text-[var(--cyan)]">Catalogue Search</span>
+          <h1 className="text-4xl md:text-6xl font-medium text-[var(--text-primary)] mb-8" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+            Finding <span style={{ color: 'var(--gold)', fontStyle: 'italic' }}>"{query || '...'}"</span>
           </h1>
 
           <div className="max-w-2xl mx-auto relative group">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-white/20 group-focus-within:text-[var(--gold)] transition-colors" />
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[var(--text-muted)] group-focus-within:text-[var(--cyan)] transition-colors" />
             <input
               type="text"
               placeholder="Search by name, SKU, or category..."
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
-              className="w-full pl-14 pr-12 py-4 rounded-2xl bg-white/5 border border-white/10 text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-[var(--gold)]/30 focus:border-[var(--gold)]/40 transition-all text-base"
-              style={{ fontFamily: "'Jost', sans-serif" }}
+              className="w-full pl-14 pr-12 py-5 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--cyan-border)] transition-all text-base"
             />
             {searchInput && (
               <button
                 onClick={() => setSearchInput('')}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-white/30 hover:text-white transition-colors"
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -350,10 +349,10 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
           </div>
         </div>
 
-        {/* Background glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none opacity-10">
-          <div className="absolute top-0 left-1/4 w-[400px] h-[400px] rounded-full bg-gold/10 blur-[100px]" />
-          <div className="absolute bottom-0 right-1/4 w-[300px] h-[300px] rounded-full bg-blue-500/5 blur-[80px]" />
+        {/* Background glow (Ivory Theme) */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none opacity-20">
+          <div className="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full bg-[var(--gold-pale)] blur-[120px]" />
+          <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] rounded-full bg-[var(--cyan-pale)] blur-[100px]" />
         </div>
       </header>
 
@@ -363,7 +362,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
           {/* Sidebar (Desktop) */}
           <aside className="lg:col-span-3 space-y-10 lg:block hidden">
             <div className="space-y-4">
-              <h3 className="text-[11px] font-bold tracking-[0.2em] text-white/30 uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Product Collections</h3>
+              <h3 className="text-[11px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Product Collections</h3>
               <div className="flex flex-col gap-1.5">
                 <button
                   onClick={() => {
@@ -371,8 +370,8 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
                     setOpenCategoryId(null);
                   }}
                   className={`text-left px-4 py-2.5 rounded-xl transition-all text-sm ${selectedCategoryId === 'all'
-                      ? 'bg-[var(--gold)] text-white shadow-lg shadow-gold/20'
-                      : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                      ? 'bg-[var(--gold)] text-[var(--text-on-accent)] shadow-lg shadow-gold/20'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--ivory-ghost)]'
                     }`}
                   style={{ fontFamily: "'Jost', sans-serif" }}
                 >
@@ -388,17 +387,17 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
             />
 
             <div className="space-y-4">
-              <h3 className="text-[11px] font-bold tracking-[0.2em] text-white/30 uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Sort Results</h3>
-              <div className="ec-dark-card p-2">
+              <h3 className="text-[11px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Sort Results</h3>
+              <div className="ec-surface p-2">
                 <select
                   value={sortBy}
                   onChange={e => handleSortChange(e.target.value)}
-                  className="w-full bg-transparent text-white/80 py-2.5 px-3 focus:outline-none cursor-pointer text-sm"
+                  className="w-full bg-transparent text-[var(--text-primary)] py-2.5 px-3 focus:outline-none cursor-pointer text-sm"
                   style={{ fontFamily: "'Jost', sans-serif" }}
                 >
-                  <option value="newest" className="bg-neutral-900">Newest Arrivals</option>
-                  <option value="price_asc" className="bg-neutral-900">Price: Low to High</option>
-                  <option value="price_desc" className="bg-neutral-900">Price: High to Low</option>
+                  <option value="newest">Newest Arrivals</option>
+                  <option value="price_asc">Price: Low to High</option>
+                  <option value="price_desc">Price: High to Low</option>
                 </select>
               </div>
             </div>
@@ -408,17 +407,17 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
           <div className="lg:hidden mb-6">
             <button
               onClick={() => setShowMobileFilters(true)}
-              className="w-full py-4 rounded-xl bg-white/5 border border-white/10 text-white flex items-center justify-center gap-2 text-sm font-medium"
+              className="w-full py-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] flex items-center justify-center gap-2 text-sm font-medium"
             >
-              <Filter className="h-4 w-4" /> Filters & Sorting
+              <Filter className="h-4 w-4 text-[var(--cyan)]" /> Filters & Sorting
             </button>
           </div>
 
           {/* Results Area */}
           <div className="lg:col-span-9">
-            <div className="mb-8 flex items-center justify-between">
+            <div className="mb-12 flex items-center justify-between border-b border-[var(--border-default)] pb-6">
               {!isLoading && pagination && (
-                <p className="text-[11px] font-bold tracking-[0.2em] text-white/30 uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>
+                <p className="text-[11px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>
                   {pagination.total} items matched your search
                 </p>
               )}
@@ -427,26 +426,26 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
             {isLoading ? (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
                 {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="ec-card aspect-[3/4] rounded-2xl animate-pulse bg-white/5" />
+                  <div key={i} className="ec-card aspect-[3/4] rounded-2xl animate-pulse bg-[var(--bg-depth)]" />
                 ))}
               </div>
             ) : !query.trim() ? (
               <div className="min-h-[400px] flex flex-col items-center justify-center text-center">
-                <div className="p-8 rounded-full bg-white/5 mb-6">
-                  <Search className="h-10 w-10 text-white/10" />
+                <div className="p-8 rounded-full bg-[var(--bg-depth)] mb-6">
+                  <Search className="h-10 w-10 text-[var(--text-muted)] opacity-20" />
                 </div>
-                <h3 className="text-xl font-medium text-white mb-2" style={{ fontFamily: "'Jost', sans-serif" }}>Start searching</h3>
-                <p className="text-white/30 max-w-xs text-sm font-light" style={{ fontFamily: "'Jost', sans-serif" }}>
+                <h3 className="text-2xl font-medium text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Start searching</h3>
+                <p className="text-[var(--text-secondary)] max-w-xs text-sm font-light">
                   Enter a product name, SKU, or category to see our premium collection.
                 </p>
               </div>
             ) : products.length === 0 ? (
-              <div className="min-h-[400px] flex flex-col items-center justify-center text-center ec-surface bg-white/[0.02] backdrop-blur-md rounded-3xl border border-white/5">
-                <div className="p-8 rounded-full bg-white/5 mb-6">
-                  <ShoppingBag className="h-10 w-10 text-white/10" />
+              <div className="min-h-[400px] flex flex-col items-center justify-center text-center ec-surface py-20 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border-default)]">
+                <div className="p-8 rounded-full bg-[var(--bg-depth)] mb-6">
+                  <ShoppingBag className="h-10 w-10 text-[var(--text-muted)] opacity-20" />
                 </div>
-                <h3 className="text-xl font-medium text-white mb-2" style={{ fontFamily: "'Jost', sans-serif" }}>No matches found</h3>
-                <p className="text-white/30 max-w-xs mb-8 text-sm font-light" style={{ fontFamily: "'Jost', sans-serif" }}>
+                <h3 className="text-2xl font-medium text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>No matches found</h3>
+                <p className="text-[var(--text-secondary)] max-w-xs mb-8 text-sm font-light">
                   We couldn't find any results for "{query}". Try different keywords or adjust your filters.
                 </p>
                 <button
@@ -454,8 +453,8 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
                     setSearchInput('');
                     updateURL({ q: null, price: 'all', sort: 'newest' });
                   }}
-                  className="px-10 py-3.5 rounded-2xl bg-[var(--gold)] text-white font-semibold hover:bg-[#9a6b2e] transition-all text-sm"
-                  style={{ fontFamily: "'Jost', sans-serif" }}
+                  className="px-10 py-4 rounded-2xl bg-[var(--gold)] text-[var(--text-on-accent)] font-bold hover:opacity-90 transition-all text-[12px] tracking-[0.2em] uppercase"
+                  style={{ fontFamily: "'DM Mono', monospace" }}
                 >
                   Clear All Filters
                 </button>
@@ -480,24 +479,25 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
                   ))}
                 </div>
 
-                {/* Pagination */}
                 {pagination && pagination.last_page > 1 && (
                   <div className="mt-20 flex flex-col items-center gap-6">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       <button
                         disabled={pagination.current_page === 1}
                         onClick={() => handlePageChange(pagination.current_page - 1)}
-                        className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 disabled:opacity-20 transition-all text-sm"
+                        className="h-9 px-3 sm:h-10 sm:px-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)] hover:text-[var(--text-primary)] disabled:opacity-20 transition-all text-xs sm:text-sm font-bold tracking-widest uppercase"
+                        style={{ fontFamily: "'DM Mono', monospace" }}
                       >
                         Prev
                       </button>
-                      <div className="flex items-center gap-1.5 mx-2">
+                      <div className="flex items-center gap-1 sm:gap-1.5 mx-1 sm:mx-2">
                         {renderPaginationRange()}
                       </div>
                       <button
                         disabled={pagination.current_page === pagination.last_page}
                         onClick={() => handlePageChange(pagination.current_page + 1)}
-                        className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 disabled:opacity-20 transition-all text-sm"
+                        className="h-9 px-3 sm:h-10 sm:px-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)] hover:text-[var(--text-primary)] disabled:opacity-20 transition-all text-xs sm:text-sm font-bold tracking-widest uppercase"
+                        style={{ fontFamily: "'DM Mono', monospace" }}
                       >
                         Next
                       </button>
@@ -512,17 +512,17 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
 
       {/* Mobile Filters Drawer */}
       {showMobileFilters && (
-        <>
+        <div className="fixed inset-0 z-[100] lg:hidden">
           <div
-            className={`fixed inset-0 z-[100] bg-black/60 backdrop-blur-md ${isClosingFilters ? 'ec-anim-backdrop-out' : 'ec-anim-backdrop'}`}
+            className={`fixed inset-0 bg-black/40 backdrop-blur-sm ${isClosingFilters ? 'ec-anim-backdrop-out' : 'ec-anim-backdrop'}`}
             onClick={closeFilters}
           />
-          <div className={`fixed top-0 right-0 bottom-0 z-[101] w-[85%] max-w-[400px] bg-[#0d0d0d] shadow-[-20px_0_80px_rgba(0,0,0,0.8)] flex flex-col ${isClosingFilters ? 'ec-anim-slide-out-right' : 'ec-anim-slide-in-right'}`}>
-            <div className="flex items-center justify-between p-6 border-b border-white/5">
-              <h2 className="text-xl font-bold text-white uppercase tracking-tight" style={{ fontFamily: "'Jost', sans-serif" }}>Filters & Sorting</h2>
+          <div className={`fixed top-0 right-0 bottom-0 z-[101] w-[85%] max-w-[400px] bg-[var(--bg-root)] shadow-2xl flex flex-col ${isClosingFilters ? 'ec-anim-slide-out-right' : 'ec-anim-slide-in-right'}`}>
+            <div className="flex items-center justify-between p-6 border-b border-[var(--border-default)]">
+              <h2 className="text-xl font-medium text-[var(--text-primary)] uppercase tracking-widest" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Filters</h2>
               <button
                 onClick={closeFilters}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-white/50 hover:text-white bg-white/5 transition-all"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-depth)] border border-[var(--border-default)] transition-all"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -530,14 +530,14 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
 
             <div className="flex-1 overflow-y-auto ec-scrollbar p-6 space-y-10 pb-32">
               <div className="space-y-4">
-                <h3 className="text-[10px] font-bold tracking-[0.2em] text-white/20 uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Collections</h3>
+                <h3 className="text-[10px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Collections</h3>
                 <div className="flex flex-col gap-1.5">
                   <button
                     onClick={() => {
                       updateURL({ category: 'all' });
                       setOpenCategoryId(null);
                     }}
-                    className={`px-4 py-3 rounded-xl border text-sm text-left transition-all ${selectedCategoryId === 'all' ? 'border-[var(--gold)] bg-[var(--gold)]/10 text-white' : 'border-white/5 bg-white/5 text-white/50'}`}
+                    className={`px-4 py-4 rounded-xl border text-sm text-left font-medium transition-all ${selectedCategoryId === 'all' ? 'border-[var(--cyan-border)] bg-[var(--cyan-pale)] text-[var(--text-primary)]' : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}
                   >
                     All Collections
                   </button>
@@ -553,7 +553,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
               />
 
               <div className="space-y-4">
-                <h3 className="text-[10px] font-bold tracking-[0.2em] text-white/20 uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Sort Results</h3>
+                <h3 className="text-[10px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Sort Results</h3>
                 <div className="grid grid-cols-1 gap-2">
                   {[
                     { id: 'newest', label: 'Newest Arrivals' },
@@ -563,7 +563,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
                     <button
                       key={opt.id}
                       onClick={() => handleSortChange(opt.id)}
-                      className={`text-left p-4 rounded-xl border transition-all ${sortBy === opt.id ? 'border-[var(--gold)] bg-[var(--gold)]/10 text-white' : 'border-white/5 bg-white/5 text-white/60'}`}
+                      className={`text-left p-5 rounded-xl border transition-all text-sm font-medium ${sortBy === opt.id ? 'border-[var(--cyan-border)] bg-[var(--cyan-pale)] text-[var(--text-primary)]' : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}
                     >
                       {opt.label}
                     </button>
@@ -572,17 +572,17 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
               </div>
             </div>
 
-            <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d] to-transparent pt-10">
+            <div className="absolute bottom-0 left-0 right-0 p-6 bg-[var(--bg-root)] border-t border-[var(--border-default)]">
               <button
                 onClick={closeFilters}
-                className="w-full py-4 rounded-2xl bg-[var(--gold)] text-white font-bold shadow-[0_10px_30px_rgba(176,124,58,0.3)] transition-transform active:scale-[0.98]"
-                style={{ fontFamily: "'Jost', sans-serif" }}
+                className="w-full py-5 rounded-2xl bg-[var(--gold)] text-[var(--text-on-accent)] font-bold shadow-lg tracking-[0.2em] uppercase text-xs transition-transform active:scale-[0.98]"
+                style={{ fontFamily: "'DM Mono', monospace" }}
               >
-                APPLY FILTERS
+                Apply Filters
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
