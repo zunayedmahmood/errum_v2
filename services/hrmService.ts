@@ -43,10 +43,17 @@ export interface AttendanceRecord {
   clock_in: string | null;
   clock_out: string | null;
   status: 'present' | 'late' | 'absent' | 'leave' | 'half_day' | 'holiday_auto' | 'off_day_auto' | string;
-  is_late: boolean;
-  is_early_exit: boolean;
-  overtime_minutes: number;
-  undertime_minutes: number;
+  is_late?: boolean;
+  is_early_exit?: boolean;
+  overtime_minutes?: number;
+  undertime_minutes?: number;
+  scheduled_start_time?: string | null;
+  scheduled_end_time?: string | null;
+  duty_minutes?: number;
+  worked_minutes?: number;
+  overtime_hhmm?: string;
+  duty_hhmm?: string;
+  worked_hhmm?: string;
   employee?: {
     name: string;
   };

@@ -392,6 +392,12 @@ class AttendanceController extends Controller
                     $lateFee = $lateStats['late_fee'];
                 }
 
+                $attendance = EmployeeAttendance::query()
+                    ->where('employee_id', $employee->id)
+                    ->where('store_id', $storeId)
+                    ->whereDate('attendance_date', $date->toDateString())
+                    ->first();
+
                 if ($attendance) {
                     if ($attendance->is_applied) {
                         throw new \RuntimeException('Attendance record for employee #' . $employee->id . ' on ' . $date->toDateString() . ' is already applied to a payroll and cannot be modified');
@@ -477,6 +483,8 @@ class AttendanceController extends Controller
         $status = $validated['status'] ?? $attendance->status;
         $inTimeStr = array_key_exists('in_time', $validated) ? $validated['in_time'] : $attendance->in_time;
         $outTimeStr = array_key_exists('out_time', $validated) ? $validated['out_time'] : $attendance->out_time;
+        $lateMinutes = 0;
+        $lateFee = 0;
 
         $date = Carbon::parse($attendance->attendance_date);
         $schedule = $this->scheduleForDate($attendance->employee_id, $date);
@@ -586,13 +594,26 @@ class AttendanceController extends Controller
                 'off_day_auto' => 0,
                 'holiday_auto' => 0,
                 'upcoming' => 0,
+                'overtime_minutes' => 0,
+                'undertime_minutes' => 0,
+                'worked_minutes' => 0,
+                'duty_minutes' => 0,
             ];
 
             foreach ($days as $date) {
                 $computed = $this->computeAttendanceForDate((int) $employee->id, $storeId, $date, $attendanceMap);
                 $daily[] = $computed;
                 $summary[$computed['status']]++;
+                $summary['overtime_minutes'] += (int) ($computed['overtime_minutes'] ?? 0);
+                $summary['undertime_minutes'] += (int) ($computed['undertime_minutes'] ?? 0);
+                $summary['worked_minutes'] += (int) ($computed['worked_minutes'] ?? 0);
+                $summary['duty_minutes'] += (int) ($computed['duty_minutes'] ?? 0);
             }
+
+            $summary['overtime_hhmm'] = $this->minutesToHhmm((int) $summary['overtime_minutes']);
+            $summary['undertime_hhmm'] = $this->minutesToHhmm((int) $summary['undertime_minutes']);
+            $summary['worked_hhmm'] = $this->minutesToHhmm((int) $summary['worked_minutes']);
+            $summary['duty_hhmm'] = $this->minutesToHhmm((int) $summary['duty_minutes']);
 
             $report[] = [
                 'employee' => $employee,
@@ -1553,10 +1574,12 @@ class AttendanceController extends Controller
     private function computeAttendanceForDate(int $employeeId, int $storeId, Carbon $date, array $attendanceMap): array
     {
         $key = $employeeId . '|' . $date->toDateString();
+        $dutyWindow = $this->resolveDutyWindow($employeeId, $storeId, $date);
 
         if (isset($attendanceMap[$key])) {
             /** @var EmployeeAttendance $row */
             $row = $attendanceMap[$key];
+            $metrics = $this->computeWorkMetrics($row->in_time, $row->out_time, $dutyWindow);
             return [
                 'date' => $date->toDateString(),
                 'status' => $row->status,
@@ -1564,62 +1587,122 @@ class AttendanceController extends Controller
                 'out_time' => $row->out_time,
                 'attendance_id' => $row->id,
                 'source' => 'manual',
+                'scheduled_start_time' => $dutyWindow['start_time'] ?? null,
+                'scheduled_end_time' => $dutyWindow['end_time'] ?? null,
+                'duty_minutes' => $metrics['duty_minutes'],
+                'worked_minutes' => $metrics['worked_minutes'],
+                'overtime_minutes' => $metrics['overtime_minutes'],
+                'undertime_minutes' => $metrics['undertime_minutes'],
+                'overtime_hhmm' => $this->minutesToHhmm($metrics['overtime_minutes']),
+                'undertime_hhmm' => $this->minutesToHhmm($metrics['undertime_minutes']),
+                'worked_hhmm' => $this->minutesToHhmm($metrics['worked_minutes']),
+                'duty_hhmm' => $this->minutesToHhmm($metrics['duty_minutes']),
             ];
         }
 
         if ($this->isHoliday($storeId, $date)) {
-            return [
-                'date' => $date->toDateString(),
-                'status' => 'holiday_auto',
-                'in_time' => null,
-                'out_time' => null,
-                'attendance_id' => null,
-                'source' => 'auto',
-            ];
+            return $this->buildComputedDayPayload($date, 'holiday_auto', 'auto', $dutyWindow);
         }
 
         if ($this->isFixedDayOff($storeId, $date)) {
-            return [
-                'date' => $date->toDateString(),
-                'status' => 'off_day_auto',
-                'in_time' => null,
-                'out_time' => null,
-                'attendance_id' => null,
-                'source' => 'auto',
-            ];
+            return $this->buildComputedDayPayload($date, 'off_day_auto', 'auto', $dutyWindow);
         }
 
         $policy = $this->policyForDate($storeId, $date);
         if ($policy && $policy->mode === 'always_on_duty' && !$this->isEmployeeScheduledForDate($employeeId, $date)) {
-            return [
-                'date' => $date->toDateString(),
-                'status' => 'off_day_auto',
-                'in_time' => null,
-                'out_time' => null,
-                'attendance_id' => null,
-                'source' => 'roster_off',
-            ];
+            return $this->buildComputedDayPayload($date, 'off_day_auto', 'roster_off', $dutyWindow);
         }
 
         // Check if date is in the future
         if ($date->isFuture() && !$date->isToday()) {
-            return [
-                'date' => $date->toDateString(),
-                'status' => 'upcoming',
-                'in_time' => null,
-                'out_time' => null,
-                'attendance_id' => null,
-                'source' => 'future_scheduled',
-            ];
+            return $this->buildComputedDayPayload($date, 'upcoming', 'future_scheduled', $dutyWindow);
         }
+
+        return $this->buildComputedDayPayload($date, 'absent', 'computed_absent', $dutyWindow);
+    }
+
+
+    private function buildComputedDayPayload(Carbon $date, string $status, string $source, ?array $dutyWindow): array
+    {
+        $metrics = $this->computeWorkMetrics(null, null, $dutyWindow);
 
         return [
             'date' => $date->toDateString(),
-            'status' => 'absent',
+            'status' => $status,
             'in_time' => null,
             'out_time' => null,
             'attendance_id' => null,
-            'source' => 'computed_absent',
+            'source' => $source,
+            'scheduled_start_time' => $dutyWindow['start_time'] ?? null,
+            'scheduled_end_time' => $dutyWindow['end_time'] ?? null,
+            'duty_minutes' => $metrics['duty_minutes'],
+            'worked_minutes' => $metrics['worked_minutes'],
+            'overtime_minutes' => $metrics['overtime_minutes'],
+            'undertime_minutes' => $metrics['undertime_minutes'],
+            'overtime_hhmm' => $this->minutesToHhmm($metrics['overtime_minutes']),
+            'undertime_hhmm' => $this->minutesToHhmm($metrics['undertime_minutes']),
+            'worked_hhmm' => $this->minutesToHhmm($metrics['worked_minutes']),
+            'duty_hhmm' => $this->minutesToHhmm($metrics['duty_minutes']),
+        ];
+    }
+
+    private function resolveDutyWindow(int $employeeId, int $storeId, Carbon $date): ?array
+    {
+        $schedule = $this->scheduleForDate($employeeId, $date);
+        $policy = $this->policyForDate($storeId, $date);
+
+        $startTime = $schedule?->start_time ? substr((string) $schedule->start_time, 0, 5) : null;
+        $endTime = $schedule?->end_time ? substr((string) $schedule->end_time, 0, 5) : null;
+
+        if ((!$startTime || !$endTime) && $policy) {
+            $startTime = $startTime ?: ($policy->fixed_start_time ? substr((string) $policy->fixed_start_time, 0, 5) : null);
+            $endTime = $endTime ?: ($policy->fixed_end_time ? substr((string) $policy->fixed_end_time, 0, 5) : null);
+        }
+
+        if (!$startTime || !$endTime) {
+            return null;
+        }
+
+        $start = Carbon::parse($date->toDateString() . ' ' . $startTime, self::TIMEZONE);
+        $end = Carbon::parse($date->toDateString() . ' ' . $endTime, self::TIMEZONE);
+        if ($end->lessThanOrEqualTo($start)) {
+            $end->addDay();
+        }
+
+        return [
+            'start' => $start,
+            'end' => $end,
+            'start_time' => $startTime,
+            'end_time' => $endTime,
+            'duty_minutes' => $start->diffInMinutes($end),
+        ];
+    }
+
+    private function computeWorkMetrics(?string $inTime, ?string $outTime, ?array $dutyWindow): array
+    {
+        $dutyMinutes = (int) ($dutyWindow['duty_minutes'] ?? 0);
+        $workedMinutes = 0;
+
+        if ($inTime && $outTime) {
+            $baseDate = now(self::TIMEZONE)->toDateString();
+            $inAt = Carbon::parse($baseDate . ' ' . substr($inTime, 0, 5), self::TIMEZONE);
+            $outAt = Carbon::parse($baseDate . ' ' . substr($outTime, 0, 5), self::TIMEZONE);
+
+            if ($outAt->lessThan($inAt)) {
+                $outAt->addDay();
+            }
+
+            $workedMinutes = $inAt->diffInMinutes($outAt);
+        }
+
+        $overtimeMinutes = $dutyMinutes > 0 ? max($workedMinutes - $dutyMinutes, 0) : 0;
+        $undertimeMinutes = $dutyMinutes > 0 && $workedMinutes > 0 ? max($dutyMinutes - $workedMinutes, 0) : 0;
+
+        return [
+            'duty_minutes' => $dutyMinutes,
+            'worked_minutes' => $workedMinutes,
+            'overtime_minutes' => $overtimeMinutes,
+            'undertime_minutes' => $undertimeMinutes,
         ];
     }
 

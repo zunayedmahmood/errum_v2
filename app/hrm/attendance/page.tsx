@@ -28,7 +28,7 @@ type ReportEmployee = {
     name: string;
     employee_code?: string;
   };
-  summary: Record<string, number>;
+  summary: Record<string, number | string>;
   daily: Array<{
     date: string;
     status: string;
@@ -36,6 +36,15 @@ type ReportEmployee = {
     out_time?: string | null;
     attendance_id?: number | null;
     source?: string;
+    scheduled_start_time?: string | null;
+    scheduled_end_time?: string | null;
+    duty_minutes?: number;
+    worked_minutes?: number;
+    overtime_minutes?: number;
+    undertime_minutes?: number;
+    overtime_hhmm?: string;
+    worked_hhmm?: string;
+    duty_hhmm?: string;
   }>;
 };
 
@@ -312,6 +321,14 @@ export default function AttendanceManagerPage() {
     }
   };
 
+
+  const minutesToHhmm = (minutes?: number): string => {
+    const safe = Math.max(0, Number(minutes || 0));
+    const hh = String(Math.floor(safe / 60)).padStart(2, '0');
+    const mm = String(safe % 60).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+
   const statusConfig: Record<string, { label: string; bg: string; color: string }> = {
     present: { label: 'P', bg: 'rgba(52,211,153,0.85)', color: '#fff' },
     late: { label: 'L', bg: 'rgba(245,158,11,0.85)', color: '#fff' },
@@ -333,6 +350,20 @@ export default function AttendanceManagerPage() {
       );
     });
   }, [reportEmployees, search]);
+
+
+  const attendanceTotals = useMemo(() => {
+    return reportRows.reduce(
+      (acc, row) => {
+        acc.dutyDays += Number((row.summary.present || 0) + (row.summary.late || 0) + (row.summary.absent || 0) + (row.summary.leave || 0) + (row.summary.half_day || 0));
+        acc.overtimeMinutes += Number(row.summary.overtime_minutes || 0);
+        acc.workedMinutes += Number(row.summary.worked_minutes || 0);
+        acc.dutyMinutes += Number(row.summary.duty_minutes || 0);
+        return acc;
+      },
+      { dutyDays: 0, overtimeMinutes: 0, workedMinutes: 0, dutyMinutes: 0 }
+    );
+  }, [reportRows]);
 
   const dayMap = useMemo(() => {
     const map = new Map<number, ReportEmployee['daily'][number]>();
@@ -626,6 +657,8 @@ export default function AttendanceManagerPage() {
                       <div className="space-y-1">
                         <p><span className="text-muted">IN:</span> {dayRow?.in_time || '--:--'}</p>
                         <p><span className="text-muted">OUT:</span> {dayRow?.out_time || '--:--'}</p>
+                        <p className="text-[11px] text-muted">Duty: {dayRow?.scheduled_start_time && dayRow?.scheduled_end_time ? `${dayRow.scheduled_start_time} - ${dayRow.scheduled_end_time}` : '--:--'}</p>
+                        <p className="text-[11px]"><span className="text-indigo-300">OT:</span> {dayRow?.overtime_hhmm || minutesToHhmm(dayRow?.overtime_minutes)} <span className="text-muted">• Worked {dayRow?.worked_hhmm || minutesToHhmm(dayRow?.worked_minutes)}</span></p>
                       </div>
                     </td>
                     <td className="px-5 py-4">
@@ -697,21 +730,21 @@ export default function AttendanceManagerPage() {
           <div className="mb-3 flex items-center gap-3">
             <div className="rounded-xl p-2" style={{ background: 'rgba(245,158,11,0.12)' }}><Clock3 className="h-4 w-4 text-amber-300" /></div>
             <div>
-              <p className="text-xs uppercase tracking-widest text-muted">Manual clock time</p>
-              <p className="text-2xl font-800 text-white">{manualClockTime}</p>
+              <p className="text-xs uppercase tracking-widest text-muted">Monthly overtime</p>
+              <p className="text-2xl font-800 text-white">{minutesToHhmm(attendanceTotals.overtimeMinutes)}</p>
             </div>
           </div>
-          <p className="text-xs text-sub">The time above is used when you click clock in or clock out for any employee.</p>
+          <p className="text-xs text-sub">Auto-calculated from actual clock in and clock out against the assigned duty time.</p>
         </div>
         <div className="hrm-card rounded-2xl p-5">
           <div className="mb-3 flex items-center gap-3">
             <div className="rounded-xl p-2" style={{ background: 'rgba(201,168,76,0.12)' }}><ShieldCheck className="h-4 w-4" style={{ color: '#f0d080' }} /></div>
             <div>
-              <p className="text-xs uppercase tracking-widest text-muted">Current branch mode</p>
-              <p className="text-lg font-800 text-white">{policyForm.mode === 'fixed_day_off' ? 'Weekly holiday' : 'Roster duty'}</p>
+              <p className="text-xs uppercase tracking-widest text-muted">Manual clock time</p>
+              <p className="text-lg font-800 text-white">{manualClockTime}</p>
             </div>
           </div>
-          <p className="text-xs text-sub">Switch mode above depending on how that branch runs its staff duty planning.</p>
+          <p className="text-xs text-sub">This time is used when the manager presses clock in or clock out.</p>
         </div>
       </div>
 
@@ -731,6 +764,7 @@ export default function AttendanceManagerPage() {
               <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                 <th className="min-w-[180px] px-5 py-3 text-[10px] font-700 uppercase tracking-widest text-muted" style={{ position: 'sticky', left: 0, zIndex: 10, background: '#0e0e18', borderRight: '1px solid rgba(255,255,255,0.06)' }}>Employee</th>
                 <th className="min-w-[88px] px-4 py-3 text-center text-[10px] font-700 uppercase tracking-widest text-muted" style={{ borderRight: '1px solid rgba(255,255,255,0.06)' }}>Duty days</th>
+                <th className="min-w-[88px] px-4 py-3 text-center text-[10px] font-700 uppercase tracking-widest text-muted" style={{ borderRight: '1px solid rgba(255,255,255,0.06)' }}>Month OT</th>
                 {monthDates.map((day) => (
                   <th key={day.toISOString()} className="min-w-[28px] px-1 py-3 text-center" style={{ background: isToday(day) ? 'rgba(201,168,76,0.08)' : 'transparent' }}>
                     <div className="flex flex-col items-center">
@@ -744,7 +778,7 @@ export default function AttendanceManagerPage() {
             <tbody>
               {reportRows.length === 0 ? (
                 <tr>
-                  <td colSpan={monthDates.length + 2} className="px-5 py-14 text-center text-sm text-muted">No monthly attendance data found.</td>
+                  <td colSpan={monthDates.length + 3} className="px-5 py-14 text-center text-sm text-muted">No monthly attendance data found.</td>
                 </tr>
               ) : reportRows.map((row) => {
                 const schedule = getScheduleForEmployee(row.employee.id);
@@ -761,11 +795,14 @@ export default function AttendanceManagerPage() {
                     <td className="px-3 py-3 text-center" style={{ borderRight: '1px solid rgba(255,255,255,0.06)' }}>
                       <span className="rounded-lg px-2 py-1 text-[10px] font-700" style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399' }}>{dutyCount || row.summary.present + row.summary.late + row.summary.absent + row.summary.leave}</span>
                     </td>
+                    <td className="px-3 py-3 text-center" style={{ borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span className="rounded-lg px-2 py-1 text-[10px] font-700" style={{ background: 'rgba(99,102,241,0.12)', color: '#a5b4fc' }}>{row.summary.overtime_hhmm || minutesToHhmm(row.summary.overtime_minutes)}</span>
+                    </td>
                     {row.daily.map((day) => {
                       const cfg = statusConfig[day.status] || { label: '·', bg: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.2)' };
                       return (
                         <td key={`${row.employee.id}-${day.date}`} className="px-0.5 py-3 text-center">
-                          <div title={`${day.date} · ${day.status}${day.in_time ? ` · IN ${day.in_time}` : ''}${day.out_time ? ` · OUT ${day.out_time}` : ''}`}
+                          <div title={`${day.date} · ${day.status}${day.in_time ? ` · IN ${day.in_time}` : ''}${day.out_time ? ` · OUT ${day.out_time}` : ''}${day.overtime_hhmm ? ` · OT ${day.overtime_hhmm}` : ''}`}
                             className="mx-auto flex h-5 w-5 items-center justify-center rounded text-[8px] font-800"
                             style={{ background: cfg.bg, color: cfg.color }}>
                             {cfg.label}
