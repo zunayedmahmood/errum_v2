@@ -66,20 +66,19 @@ export default function HomePage() {
       {/* Hero section */}
       <HeroSection />
 
-      {/* Featured Categories */}
-      <SectionReveal>
-        <OurCategories categories={categories} />
-      </SectionReveal>
-      
       {/* Instagram Reels Feed */}
       <SectionReveal threshold={0.05}>
         <InstagramReelViewer />
       </SectionReveal>
 
-
       {/* New Arrivals */}
       <SectionReveal>
-        <NewArrivals />
+        <NewArrivals limit={40} />
+      </SectionReveal>
+
+      {/* Featured Categories */}
+      <SectionReveal>
+        <OurCategories categories={categories} />
       </SectionReveal>
 
       {/* Featured Products */}

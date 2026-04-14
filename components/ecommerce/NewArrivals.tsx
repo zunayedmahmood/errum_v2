@@ -133,7 +133,7 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
             <div style={{ height: '1px', width: '48px', background: '#e0e0e0' }} />
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 md:gap-6">
-            {Array.from({ length: 12 }).map((_, i) => (
+            {Array.from({ length: limit }).map((_, i) => (
               <div key={i} className="animate-pulse">
                 <div style={{ aspectRatio: '2/3', background: '#f5f5f5', borderRadius: '4px', marginBottom: '12px' }} />
                 <div style={{ height: '14px', background: '#f5f5f5', borderRadius: '4px', width: '70%', marginBottom: '6px' }} />
