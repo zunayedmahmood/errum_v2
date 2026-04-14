@@ -51,6 +51,14 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
   const [categories, setCategories] = useState<any[]>([]);
   const fetchIdRef = useRef(0);
   const [openCategoryId, setOpenCategoryId] = useState<number | string | null>(null);
+  
+  // Notify navigation about sidebar state
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('mobile-sidebar-toggle', { detail: { open: showMobileFilters } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('mobile-sidebar-toggle', { detail: { open: false } }));
+    };
+  }, [showMobileFilters]);
 
   // Filter state from URL
   const selectedCategoryId = searchParams.get('category') || 'all';

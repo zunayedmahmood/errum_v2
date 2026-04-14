@@ -183,7 +183,7 @@ export default function HeroSection() {
             Refining the Art of <em style={{ fontStyle: 'italic', fontWeight: 400 }}>Lifestyle</em>
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '15px', lineHeight: 1.6, maxWidth: '520px', margin: '0 auto 36px', fontFamily: "'Jost', sans-serif" }}>
-            Explore our curated collections of footwear, apparel, and accessories—designed for those who appreciate the finer details of everyday confidence.
+
           </p>
 
           {/* CTAs */}

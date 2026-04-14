@@ -165,16 +165,17 @@ const PremiumProductCard: React.FC<PremiumProductCardProps> = ({
           </p>
         )}
         <h3 style={{
-          fontSize: compact ? '13px' : '14px',
+          fontSize: compact ? '14px' : '16px',
           fontFamily: "'Jost', sans-serif",
           color: '#111111',
           lineHeight: 1.3,
-          fontWeight: 500,
+          fontWeight: 600,
           margin: 0,
           display: '-webkit-box',
           WebkitLineClamp: 2,
           WebkitBoxOrient: 'vertical',
           overflow: 'hidden',
+          letterSpacing: '-0.01em',
         }}>
           {product.display_name || product.base_name || product.name}
         </h3>

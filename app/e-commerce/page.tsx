@@ -57,6 +57,12 @@ export default function HomePage() {
       <SectionReveal>
         <OurCategories categories={categories} />
       </SectionReveal>
+      
+      {/* Instagram Reels Feed */}
+      <SectionReveal threshold={0.05}>
+        <InstagramReelViewer />
+      </SectionReveal>
+
 
       {/* New Arrivals */}
       <SectionReveal>
@@ -85,10 +91,7 @@ export default function HomePage() {
         );
       })}
 
-      {/* Instagram Reels Feed — keep as-is */}
-      <SectionReveal threshold={0.05}>
-        <InstagramReelViewer />
-      </SectionReveal>
+
     </div>
   );
 }

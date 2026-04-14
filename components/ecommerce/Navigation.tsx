@@ -38,6 +38,14 @@ const Navbar = () => {
 
   const userRef = useRef<HTMLDivElement>(null);
   const catsRef = useRef<HTMLDivElement>(null);
+  const { isCartOpen } = useCart();
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+
+  useEffect(() => {
+    const handleToggle = (e: any) => setIsFiltersOpen(!!e.detail?.open);
+    window.addEventListener('mobile-sidebar-toggle', handleToggle);
+    return () => window.removeEventListener('mobile-sidebar-toggle', handleToggle);
+  }, []);
 
   /* Scroll shadow */
   useEffect(() => {
@@ -524,15 +532,20 @@ const Navbar = () => {
         )}
       </nav>
 
-      {/* ── Mobile Bottom Tab Bar ─────────────────────────────────── */}
+    {/* ── Mobile Bottom Tab Bar ─────────────────────────────────── */}
       <nav
-        className="lg:hidden flex items-stretch"
+        className="flex items-stretch"
         style={{
           position: 'fixed',
           bottom: 0,
           left: 0,
           right: 0,
-          zIndex: 1005,
+          zIndex: (isCartOpen || isFiltersOpen) ? -1 : 1005,
+          opacity: (isCartOpen || isFiltersOpen) ? 0 : 1,
+          pointerEvents: (isCartOpen || isFiltersOpen) ? 'none' : 'auto',
+          visibility: (isCartOpen || isFiltersOpen) ? 'hidden' : 'visible',
+          transform: (isCartOpen || isFiltersOpen) ? 'translateY(100%)' : 'translateY(0)',
+          transition: 'all 0.4s cubic-bezier(0.32, 0.72, 0, 1)',
           background: '#ffffff',
           borderTop: '1px solid rgba(0,0,0,0.10)',
           height: '64px',

@@ -222,6 +222,14 @@ export default function CategoryPage() {
   const [totalResults, setTotalResults] = useState(0);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isClosingFilters, setIsClosingFilters] = useState(false);
+  
+  // Notify navigation about mobile sidebar state
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('mobile-sidebar-toggle', { detail: { open: isFiltersOpen } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('mobile-sidebar-toggle', { detail: { open: false } }));
+    };
+  }, [isFiltersOpen]);
 
   const [selectedPriceRange, setSelectedPriceRange] = useState<string>('all');
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());

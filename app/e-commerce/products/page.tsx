@@ -69,6 +69,14 @@ function ProductsPageContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [isClosingFilters, setIsClosingFilters] = useState(false);
+  
+  // Notify navigation about mobile sidebar state
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('mobile-sidebar-toggle', { detail: { open: showMobileFilters } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('mobile-sidebar-toggle', { detail: { open: false } }));
+    };
+  }, [showMobileFilters]);
 
   // --- Navigation Helper ---
   const updateURL = useCallback((updates: Record<string, string | number | null>) => {
