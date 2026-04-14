@@ -26,6 +26,14 @@ class Kernel extends ConsoleKernel
         $schedule->call(function () {
             app(\App\Http\Controllers\RecycleBinController::class)->autoCleanup();
         })->dailyAt('02:00')->name('recycle-bin-cleanup');
+
+        // Daily branch report — generates yesterday's per-branch CSV at 1 AM
+        // Files land in storage/app/reports/  (one CSV per branch)
+        $schedule->command('report:daily-branch')
+            ->dailyAt('01:00')
+            ->name('daily-branch-report')
+            ->withoutOverlapping()
+            ->appendOutputTo(storage_path('logs/daily-branch-report.log'));
     }
 
     /**

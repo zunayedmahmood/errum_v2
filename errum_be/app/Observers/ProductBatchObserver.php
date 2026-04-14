@@ -26,12 +26,8 @@ class ProductBatchObserver
             ['total_inventory' => 0, 'reserved_inventory' => 0, 'available_inventory' => 0]
         );
 
-        // Ensure we have the latest reserved_inventory from DB
-        $reservedProduct->refresh();
-
         $reservedProduct->total_inventory = $total;
-        // Standardize formula: available = total - reserved
-        $reservedProduct->available_inventory = $total - $reservedProduct->reserved_inventory;
+        $reservedProduct->available_inventory = max(0, $total - $reservedProduct->reserved_inventory);
         $reservedProduct->save();
     }
 }

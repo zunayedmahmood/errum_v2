@@ -437,8 +437,6 @@ Route::middleware('auth:api')->group(function () {
             Route::post('/holidays', [\App\Http\Controllers\AttendanceController::class, 'declareHoliday']);
             Route::get('/holidays', [\App\Http\Controllers\AttendanceController::class, 'listHolidays']);
             
-            Route::get('/schedules', [\App\Http\Controllers\AttendanceController::class, 'getSchedules']);
-
             Route::post('/schedules', [\App\Http\Controllers\AttendanceController::class, 'assignSchedule']);
             
             Route::post('/mark', [\App\Http\Controllers\AttendanceController::class, 'markAttendance']);
@@ -837,15 +835,12 @@ Route::middleware('auth:api')->group(function () {
     // ============================================
 
     Route::prefix('cash-sheet')->group(function () {
-        $c = \App\Http\Controllers\CashSheetController::class;
-        Route::get('/',              [$c, 'index']);
-        Route::get('/entries',       [$c, 'entries']);
-        Route::post('/branch-cost',  [$c, 'storeBranchCost']);
-        Route::delete('/branch-cost/{id}', [$c, 'destroyBranchCost']);
-        Route::post('/admin',        [$c, 'storeAdmin']);
-        Route::delete('/admin/{id}', [$c, 'destroyAdmin']);
-        Route::post('/owner',        [$c, 'storeOwner']);
-        Route::delete('/owner/{id}', [$c, 'destroyOwner']);
+        // GET  /api/cash-sheet?month=2026-04   → full monthly sheet
+        Route::get('/', [\App\Http\Controllers\CashSheetController::class, 'index']);
+        // POST /api/cash-sheet/branch          → branch manager saves daily cost + salary
+        Route::post('/branch', [\App\Http\Controllers\CashSheetController::class, 'saveBranch']);
+        // POST /api/cash-sheet/owner           → admin/owner saves disbursements + boss entries
+        Route::post('/owner', [\App\Http\Controllers\CashSheetController::class, 'saveOwner']);
     });
 
     // ============================================

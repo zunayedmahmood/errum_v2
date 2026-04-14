@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\OrderPayment;
 use App\Models\Transaction as AccountingTransaction;
+use Illuminate\Support\Str;
 
 class OrderPaymentObserver
 {
@@ -45,26 +46,76 @@ class OrderPaymentObserver
             }
         }
 
-        // Handle refunds
+        // Handle payment-level refunds (partial refund applied directly to this payment record)
         if ($orderPayment->wasChanged('refunded_amount') && $orderPayment->refunded_amount > 0) {
-            // Create credit transaction for refund
+            $refundAmount  = (float) $orderPayment->refunded_amount;
+            $order         = $orderPayment->order;
+            $groupId       = (string) \Illuminate\Support\Str::uuid();
+
+            // Calculate proportional tax reversal (inclusive tax system)
+            if ($order && $order->total_amount > 0 && $order->tax_amount > 0) {
+                $taxRatio  = (float) $order->tax_amount / (float) $order->total_amount;
+                $taxAmount = round($refundAmount * $taxRatio, 2);
+            } else {
+                $taxAmount = 0;
+            }
+            $revenueAmount = $refundAmount - $taxAmount;
+
+            $metadata = [
+                'payment_method'  => $orderPayment->paymentMethod->name ?? 'Unknown',
+                'order_number'    => $order->order_number ?? null,
+                'refund_reason'   => 'Payment refund',
+                'includes_tax_reversal' => $taxAmount > 0,
+                'tax_amount_reversed'   => $taxAmount,
+                'group_id'        => $groupId,
+            ];
+
+            // 1. Credit Cash (asset decreases — money returned to customer)
             AccountingTransaction::create([
                 'transaction_date' => now(),
-                'amount' => $orderPayment->refunded_amount,
-                'type' => 'credit',
-                'account_id' => AccountingTransaction::getCashAccountId($orderPayment->store_id),
-                'reference_type' => OrderPayment::class,
-                'reference_id' => $orderPayment->id,
-                'description' => "Refund from Order Payment - {$orderPayment->payment_number}",
-                'store_id' => $orderPayment->store_id,
-                'created_by' => auth()->id(),
-                'metadata' => [
-                    'payment_method' => $orderPayment->paymentMethod->name ?? 'Unknown',
-                    'order_number' => $orderPayment->order->order_number ?? null,
-                    'refund_reason' => 'Payment refund',
-                ],
-                'status' => 'completed',
+                'amount'           => $refundAmount,
+                'type'             => 'credit',
+                'account_id'       => AccountingTransaction::getCashAccountId($orderPayment->store_id),
+                'reference_type'   => OrderPayment::class,
+                'reference_id'     => $orderPayment->id,
+                'description'      => "Refund (Cash Out) - {$orderPayment->payment_number}",
+                'store_id'         => $orderPayment->store_id,
+                'created_by'       => auth()->id(),
+                'metadata'         => $metadata,
+                'status'           => 'completed',
             ]);
+
+            // 2. Debit Sales Revenue (revenue reversal — net of tax)
+            AccountingTransaction::create([
+                'transaction_date' => now(),
+                'amount'           => $revenueAmount,
+                'type'             => 'debit',
+                'account_id'       => AccountingTransaction::getSalesRevenueAccountId(),
+                'reference_type'   => OrderPayment::class,
+                'reference_id'     => $orderPayment->id,
+                'description'      => "Refund - Revenue Reversal (excl. tax) - {$orderPayment->payment_number}",
+                'store_id'         => $orderPayment->store_id,
+                'created_by'       => auth()->id(),
+                'metadata'         => $metadata,
+                'status'           => 'completed',
+            ]);
+
+            // 3. Debit Tax Liability (tax reversal — reduce collected tax)
+            if ($taxAmount > 0) {
+                AccountingTransaction::create([
+                    'transaction_date' => now(),
+                    'amount'           => $taxAmount,
+                    'type'             => 'debit',
+                    'account_id'       => AccountingTransaction::getTaxLiabilityAccountId(),
+                    'reference_type'   => OrderPayment::class,
+                    'reference_id'     => $orderPayment->id,
+                    'description'      => "Refund - Tax Reversal - {$orderPayment->payment_number}",
+                    'store_id'         => $orderPayment->store_id,
+                    'created_by'       => auth()->id(),
+                    'metadata'         => $metadata,
+                    'status'           => 'completed',
+                ]);
+            }
         }
     }
 

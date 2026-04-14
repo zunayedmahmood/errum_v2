@@ -561,13 +561,18 @@ class Transaction extends Model
 
         $oldItemValue = (float)$productReturn->total_return_value;
         $newOrderTotal = (float)$newOrder->total_amount;
-        $netDifference = round($newOrderTotal - $oldItemValue, 2); // positive = customer pays more
+        // Use actual cost (COGS) of the new item, not its selling price
+        $newItemCOGS = $newOrder->relationLoaded('items')
+            ? (float)$newOrder->items->sum('cogs')
+            : (float)$newOrder->load('items')->items->sum('cogs');
+        $netDifference = round($newOrderTotal - $oldItemValue, 2); // price diff for cash settlement
         $groupId = (string) Str::uuid();
 
         $metadata = [
             'exchange_type' => $netDifference > 0 ? 'upgrade' : ($netDifference < 0 ? 'downgrade' : 'even'),
             'return_number' => $productReturn->return_number,
             'old_item_value' => $oldItemValue,
+            'new_order_id' => $newOrder->id,          // Required by createFromOrderCOGS guard
             'new_order_number' => $newOrder->order_number,
             'new_order_total' => $newOrderTotal,
             'net_difference' => $netDifference,
@@ -608,11 +613,11 @@ class Transaction extends Model
         }
 
         // === ENTRY 2: Record new item COGS ===
-        // Debit COGS (cost of new item given out)
-        if ($newOrderTotal > 0) {
+        // Debit COGS (cost of new item given out — use actual cost, not selling price)
+        if ($newItemCOGS > 0) {
             static::create([
                 'transaction_date' => $transactionDate,
-                'amount' => $newOrderTotal,
+                'amount' => $newItemCOGS,
                 'type' => 'debit',
                 'account_id' => $cogsAccountId,
                 'reference_type' => Order::class,
@@ -627,7 +632,7 @@ class Transaction extends Model
             // Credit Inventory (new item removed from stock)
             static::create([
                 'transaction_date' => $transactionDate,
-                'amount' => $newOrderTotal,
+                'amount' => $newItemCOGS,
                 'type' => 'credit',
                 'account_id' => $inventoryAccountId,
                 'reference_type' => Order::class,
@@ -713,25 +718,48 @@ class Transaction extends Model
     {
         $status = $expense->payment_status === 'paid' ? 'completed' : 'pending';
         $groupId = (string) Str::uuid();
+        $expenseAccountId = static::getExpenseAccountId($expense->category_id);
+        $cashAccountId = static::getCashAccountId($expense->store_id);
 
-        return static::create([
+        $metadata = [
+            'expense_category' => $expense->category->name ?? null,
+            'vendor_name' => $expense->vendor->name ?? null,
+            'expense_type' => $expense->expense_type,
+            'group_id' => $groupId,
+        ];
+
+        // DOUBLE-ENTRY BOOKKEEPING:
+        // 1. Debit Expense Account (Expense increases - cost recognised)
+        $debitTransaction = static::create([
             'transaction_date' => $expense->expense_date,
             'amount' => $expense->total_amount,
-            'type' => 'credit', // Money going out of the business
-            'account_id' => static::getExpenseAccountId($expense->category_id),
+            'type' => 'debit',
+            'account_id' => $expenseAccountId,
             'reference_type' => Expense::class,
             'reference_id' => $expense->id,
             'description' => "Expense - {$expense->expense_number}: " . ($expense->description ?? 'No description'),
             'store_id' => $expense->store_id,
             'created_by' => $expense->created_by,
-            'metadata' => [
-                'expense_category' => $expense->category->name ?? null,
-                'vendor_name' => $expense->vendor->name ?? null,
-                'expense_type' => $expense->expense_type,
-                'group_id' => $groupId,
-            ],
+            'metadata' => $metadata,
             'status' => $status,
         ]);
+
+        // 2. Credit Cash Account (Asset decreases - money going out)
+        static::create([
+            'transaction_date' => $expense->expense_date,
+            'amount' => $expense->total_amount,
+            'type' => 'credit',
+            'account_id' => $cashAccountId,
+            'reference_type' => Expense::class,
+            'reference_id' => $expense->id,
+            'description' => "Expense Payment (Cash) - {$expense->expense_number}",
+            'store_id' => $expense->store_id,
+            'created_by' => $expense->created_by,
+            'metadata' => $metadata,
+            'status' => $status,
+        ]);
+
+        return $debitTransaction;
     }
 
     public static function createFromExpensePayment(ExpensePayment $payment): self
@@ -882,41 +910,69 @@ class Transaction extends Model
     // Helper methods for account IDs
     public static function getCashAccountId($storeId = null): ?int
     {
-        // Get cash account from database or return default
+        // Primary: find by name LIKE 'Cash' within current assets
         $query = Account::query()->where('type', 'asset')
             ->where('sub_type', 'current_asset')
             ->where('is_active', true);
         (new static)->whereLike($query, 'name', 'Cash');
         $account = $query->first();
-        
-        // If no cash account found, get any current asset account
+
+        // Secondary: find by standard account code
+        if (!$account) {
+            $account = Account::where('account_code', '1001')
+                ->where('is_active', true)
+                ->first();
+        }
+
+        // Tertiary: any current asset account
         if (!$account) {
             $account = Account::where('type', 'asset')
                 ->where('sub_type', 'current_asset')
                 ->where('is_active', true)
                 ->first();
         }
-        
-        return $account ? $account->id : 1; // Fallback to ID 1
+
+        if (!$account) {
+            throw new \RuntimeException(
+                'No cash/current-asset account found in chart of accounts. ' .
+                'Ensure account code 1001 (Cash and Cash Equivalents) exists.'
+            );
+        }
+
+        return $account->id;
     }
 
     public static function getSalesRevenueAccountId(): ?int
     {
-        // Get sales revenue account from database
+        // Primary: find by sub_type
         $account = Account::where('type', 'income')
             ->where('sub_type', 'sales_revenue')
             ->where('is_active', true)
             ->first();
-        
-        // If not found, get any sales revenue account by name
+
+        // Secondary: find by standard account code
+        if (!$account) {
+            $account = Account::where('account_code', '4001')
+                ->where('is_active', true)
+                ->first();
+        }
+
+        // Tertiary: any income account with Sales in name
         if (!$account) {
             $query = Account::query()->where('type', 'income')
                 ->where('is_active', true);
             (new static)->whereLike($query, 'name', 'Sales');
             $account = $query->first();
         }
-        
-        return $account ? $account->id : 2; // Fallback to ID 2
+
+        if (!$account) {
+            throw new \RuntimeException(
+                'No sales revenue account found in chart of accounts. ' .
+                'Ensure account code 4001 (Sales Revenue) exists.'
+            );
+        }
+
+        return $account->id;
     }
 
     public static function getServiceRevenueAccountId(): ?int
@@ -937,51 +993,68 @@ class Transaction extends Model
 
     public static function getCOGSAccountId(): ?int
     {
-        // Get COGS expense account from database
-        $query = Account::where('type', 'expense')
+        // Primary: find by sub_type or name LIKE COGS/Cost of Goods Sold
+        $account = Account::where('type', 'expense')
             ->where(function ($q) {
                 $instance = new static;
                 $instance->whereLike($q, 'name', 'COGS');
                 $instance->orWhereLike($q, 'name', 'Cost of Goods Sold');
                 $q->orWhere('sub_type', 'cogs');
+                $q->orWhere('sub_type', 'cost_of_goods_sold');
             })
-            ->where('is_active', true);
-        $account = $query->first();
-        
-        // If not found, get any expense account with COGS in name
+            ->where('is_active', true)
+            ->first();
+
+        // Secondary: find by standard account code
         if (!$account) {
-            $account = Account::where('type', 'expense')
+            $account = Account::where('account_code', '5002')
                 ->where('is_active', true)
                 ->first();
         }
-        
-        return $account ? $account->id : 3; // Fallback to ID 3
+
+        if (!$account) {
+            throw new \RuntimeException(
+                'No COGS account found in chart of accounts. ' .
+                'Ensure account code 5002 (Cost of Goods Sold) exists.'
+            );
+        }
+
+        return $account->id;
     }
 
     public static function getInventoryAccountId(): ?int
     {
-        // Get inventory asset account from database
         $likeOp = (new static)->getLikeOperator();
-        $query = Account::where('type', 'asset')
+
+        // Primary: find by name or inventory sub_type (never fall through to current_asset generically)
+        $account = Account::where('type', 'asset')
             ->where(function ($q) {
                 (new static)->whereLike($q, 'name', 'Inventory');
-                $q->orWhere('sub_type', 'inventory')
-                  ->orWhere('sub_type', 'current_asset');
+                $q->orWhere('sub_type', 'inventory');
             })
             ->where('is_active', true)
-            ->whereNotNull('id')
-            ->orderByRaw("CASE 
-                WHEN name {$likeOp} '%Inventory%' THEN 1 
-                WHEN sub_type = 'inventory' THEN 2 
-                ELSE 3 
-            END");
-        $account = $query->first();
-        
-        // If not found, use cash account as fallback (not ideal but safe)
+            ->orderByRaw("CASE
+                WHEN name {$likeOp} '%Inventory%' THEN 1
+                WHEN sub_type = 'inventory' THEN 2
+                ELSE 3
+            END")
+            ->first();
+
+        // Secondary: standard account code
         if (!$account) {
-            return static::getCashAccountId();
+            $account = Account::where('account_code', '1003')
+                ->where('is_active', true)
+                ->first();
         }
-        
+
+        if (!$account) {
+            throw new \RuntimeException(
+                'No inventory account found in chart of accounts. ' .
+                'Ensure account code 1003 (Inventory) exists. ' .
+                'Falling back to Cash would silently corrupt your ledger.'
+            );
+        }
+
         return $account->id;
     }
 
@@ -1015,8 +1088,50 @@ class Transaction extends Model
 
     private static function getExpenseAccountId($categoryId): ?int
     {
-        // Map expense categories to accounts - this should be configurable
-        return 2; // Placeholder - should be configurable based on category
+        // Try to find the specific expense category's mapped account code
+        if ($categoryId) {
+            $category = \App\Models\ExpenseCategory::find($categoryId);
+            if ($category) {
+                // Map category types to standard account codes
+                $accountCode = match ($category->type) {
+                    'personnel'      => '5003', // Personnel / Salary expenses
+                    'marketing'      => '5004', // Marketing expenses
+                    'logistics'      => '5005', // Logistics expenses
+                    'utilities'      => '5006', // Utilities expenses
+                    'maintenance'    => '5007', // Maintenance expenses
+                    'taxes'          => '5008', // Tax expenses
+                    'capital'        => '1101', // Capital goes to Fixed Assets
+                    default          => '5001', // Default: Operating Expenses
+                };
+                $account = Account::where('account_code', $accountCode)
+                    ->where('is_active', true)
+                    ->first();
+                if ($account) {
+                    return $account->id;
+                }
+            }
+        }
+
+        // Fallback: any active operating expense account by code
+        $account = Account::where('account_code', '5001')
+            ->where('is_active', true)
+            ->first();
+
+        if (!$account) {
+            // Last resort: any expense account
+            $account = Account::where('type', 'expense')
+                ->where('is_active', true)
+                ->first();
+        }
+
+        if (!$account) {
+            throw new \RuntimeException(
+                'No expense account found in chart of accounts. ' .
+                'Ensure account code 5001 (Operating Expenses) exists.'
+            );
+        }
+
+        return $account->id;
     }
 
     // Accessors

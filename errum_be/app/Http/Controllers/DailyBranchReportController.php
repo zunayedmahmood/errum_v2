@@ -218,22 +218,43 @@ class DailyBranchReportController extends Controller
     }
 
     private function loadExpenseData(array $storeIds, string $from, string $to): array
-    {
-        $rows = DB::table('expenses')
-            ->select('store_id', DB::raw('DATE(expense_date) as day'), DB::raw('SUM(total_amount) as total'))
-            ->whereIn('store_id', $storeIds)
-            ->whereDate('expense_date', '>=', $from)
-            ->whereDate('expense_date', '<=', $to)
-            ->whereIn('status', ['approved', 'paid'])
-            ->groupBy('store_id', 'day')
-            ->get();
+{
+    $out = [];
 
-        $out = [];
-        foreach ($rows as $r) {
-            $out[$r->store_id][$r->day] = (float) $r->total;
-        }
-        return $out;
+    // A) Expense module entries (exclude only draft/rejected/cancelled)
+    $rows = DB::table('expenses')
+        ->select('store_id', DB::raw('DATE(expense_date) as day'), DB::raw('SUM(total_amount) as total'))
+        ->whereIn('store_id', $storeIds)
+        ->whereDate('expense_date', '>=', $from)
+        ->whereDate('expense_date', '<=', $to)
+        ->whereNotIn('status', ['draft', 'rejected', 'cancelled'])
+        ->groupBy('store_id', 'day')
+        ->get();
+
+    foreach ($rows as $r) {
+        $out[$r->store_id][$r->day] = ($out[$r->store_id][$r->day] ?? 0) + (float) $r->total;
     }
+
+    // B) Manual accounting entries that hit EXPENSE accounts (this is what you’re adding)
+    $manual = DB::table('transactions as t')
+        ->join('accounts as a', 'a.id', '=', 't.account_id')
+        ->select('t.store_id', DB::raw('DATE(t.transaction_date) as day'), DB::raw('SUM(t.amount) as total'))
+        ->whereIn('t.store_id', $storeIds)
+        ->whereDate('t.transaction_date', '>=', $from)
+        ->whereDate('t.transaction_date', '<=', $to)
+        ->where('t.status', 'completed')
+        ->where('t.reference_type', 'manual')
+        ->where('a.type', 'expense')
+        ->where('t.type', 'debit')     // expense-side entry
+        ->groupBy('t.store_id', 'day')
+        ->get();
+
+    foreach ($manual as $r) {
+        $out[$r->store_id][$r->day] = ($out[$r->store_id][$r->day] ?? 0) + (float) $r->total;
+    }
+
+    return $out;
+}
 
     private function resolveDateRange(Request $request): array
     {

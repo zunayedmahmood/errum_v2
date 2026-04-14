@@ -9,6 +9,7 @@ use App\Models\OrderPayment;
 use App\Models\Expense;
 use App\Models\ExpensePayment;
 use App\Models\VendorPayment;
+use App\Models\Refund;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -207,24 +208,36 @@ class AccountingReportController extends Controller
         $grossProfit = $totalRevenue - $cogs;
         $grossProfitMargin = $totalRevenue > 0 ? ($grossProfit / $totalRevenue) * 100 : 0;
 
-        // Operating Expenses
-        $expensesQuery = Expense::whereBetween('expense_date', [$dateFrom, $dateTo])
+        // Operating Expenses — query the ledger (respects manual journal entries)
+        // Debit entries against expense-type accounts (excluding COGS which is already above)
+        $expenseAccounts = Account::where('type', 'expense')
+            ->where('is_active', true)
+            ->where('account_code', '!=', '5002') // Exclude COGS account (already captured above)
+            ->pluck('id');
+
+        $expenseLedgerQuery = Transaction::whereIn('account_id', $expenseAccounts)
+            ->where('type', 'debit')
+            ->where('status', 'completed')
+            ->whereBetween('transaction_date', [$dateFrom, $dateTo]);
+        $this->applyStoreFilter($expenseLedgerQuery, $request);
+        $totalExpenses = $expenseLedgerQuery->sum('amount');
+
+        // Category breakdown still uses the Expense model for display labelling
+        // (ledger entries don't carry category names, so we use the model as supplementary)
+        $expenseModelQuery = Expense::whereBetween('expense_date', [$dateFrom, $dateTo])
             ->where('status', 'approved')
             ->with('category');
-        $this->applyStoreFilter($expensesQuery, $request);
-        
-        $expenses = $expensesQuery->get();
-
-        $expensesByCategory = $expenses->groupBy('category.name')->map(function($group) {
-            return [
-                'category' => $group->first()->category->name ?? 'Uncategorized',
-                'total' => $group->sum('total_amount'),
-                'count' => $group->count(),
-                'formatted_total' => number_format($group->sum('total_amount'), 2)
-            ];
-        })->values();
-
-        $totalExpenses = $expenses->sum('total_amount');
+        $this->applyStoreFilter($expenseModelQuery, $request);
+        $expensesByCategory = $expenseModelQuery->get()
+            ->groupBy('category.name')
+            ->map(function ($group) {
+                return [
+                    'category'        => $group->first()->category->name ?? 'Uncategorized',
+                    'total'           => $group->sum('total_amount'),
+                    'count'           => $group->count(),
+                    'formatted_total' => number_format($group->sum('total_amount'), 2),
+                ];
+            })->values();
 
         // Net Profit
         $netProfit = $grossProfit - $totalExpenses;
@@ -271,10 +284,14 @@ class AccountingReportController extends Controller
         $asOfDate = $request->input('as_of_date', now()->toDateString());
 
         // ASSETS
-        // Cash and Bank Balances
+        // Cash and Bank Balances — find accounts by name containing 'Cash' within current assets
         $cashAccounts = Account::where('type', 'asset')
-            ->where('sub_type', 'cash')
+            ->where('sub_type', 'current_asset')
             ->where('is_active', true)
+            ->where(function ($q) {
+                $q->where('name', 'like', '%Cash%')
+                  ->orWhere('name', 'like', '%Bank%');
+            })
             ->get();
 
         $totalCash = 0;
@@ -328,7 +345,7 @@ class AccountingReportController extends Controller
         $accountsPayable = $apQuery->sum('total_amount');
 
         // Other liabilities from liability accounts
-        $liabilityAccounts = Account::where('account_type', 'liability')
+        $liabilityAccounts = Account::where('type', 'liability')
             ->where('is_active', true)
             ->get();
 
@@ -355,7 +372,7 @@ class AccountingReportController extends Controller
         $totalLiabilities = $accountsPayable + $otherLiabilities;
 
         // EQUITY
-        $equityAccounts = Account::where('account_type', 'equity')
+        $equityAccounts = Account::where('type', 'equity')
             ->where('is_active', true)
             ->get();
 
@@ -434,72 +451,112 @@ class AccountingReportController extends Controller
 
     /**
      * Textbook-style Cash Flow Statement
-     * 
+     * Built from the transaction ledger so it is always consistent with the Balance Sheet.
+     *
      * GET /api/accounting/cash-flow-statement
      */
     public function getCashFlowStatement(Request $request)
     {
         $dateFrom = $request->input('date_from', now()->startOfMonth()->toDateString());
-        $dateTo = $request->input('date_to', now()->toDateString());
+        $dateTo   = $request->input('date_to',   now()->toDateString());
 
-        // Operating Activities
-        $cashFromSales = OrderPayment::whereBetween('completed_at', [$dateFrom, $dateTo])
+        // Resolve account IDs once
+        $cashAccountId            = Transaction::getCashAccountId();
+        $salesRevenueAccountId    = Transaction::getSalesRevenueAccountId();
+        $serviceRevenueAccountId  = Transaction::getServiceRevenueAccountId();
+        $cogsAccountId            = Transaction::getCOGSAccountId();
+        $inventoryAccountId       = Transaction::getInventoryAccountId();
+
+        $expenseAccountIds = Account::where('type', 'expense')
+            ->where('is_active', true)
+            ->where('account_code', '!=', '5002') // Exclude COGS
+            ->pluck('id');
+
+        // ── OPERATING ACTIVITIES ─────────────────────────────────────────────
+        // Cash received from customers = debits to Cash from OrderPayment / ServiceOrderPayment references
+        $cashFromSalesQuery = Transaction::where('account_id', $cashAccountId)
+            ->where('type', 'debit')
             ->where('status', 'completed')
-            ->sum('amount');
+            ->whereBetween('transaction_date', [$dateFrom, $dateTo])
+            ->whereIn('reference_type', [
+                \App\Models\OrderPayment::class,
+                \App\Models\ServiceOrderPayment::class,
+            ]);
+        $this->applyStoreFilter($cashFromSalesQuery, $request);
+        $cashFromSales = $cashFromSalesQuery->sum('amount');
 
-        $cashPaidToVendors = VendorPayment::whereBetween('payment_date', [$dateFrom, $dateTo])
-            ->where('payment_status', 'completed')
-            ->sum('amount');
-
-        $cashPaidForExpenses = ExpensePayment::whereBetween('completed_at', [$dateFrom, $dateTo])
+        // Cash paid to vendors = credits to Cash from VendorPayment references
+        $cashToVendorsQuery = Transaction::where('account_id', $cashAccountId)
+            ->where('type', 'credit')
             ->where('status', 'completed')
-            ->whereHas('expense', function($q) {
-                $q->where('status', 'approved');
-            })
-            ->sum('amount');
+            ->whereBetween('transaction_date', [$dateFrom, $dateTo])
+            ->where('reference_type', \App\Models\VendorPayment::class);
+        $this->applyStoreFilter($cashToVendorsQuery, $request);
+        $cashPaidToVendors = $cashToVendorsQuery->sum('amount');
 
-        $netCashFromOperations = $cashFromSales - $cashPaidToVendors - $cashPaidForExpenses;
+        // Cash paid for expenses = credits to Cash from Expense / ExpensePayment references
+        $cashForExpensesQuery = Transaction::where('account_id', $cashAccountId)
+            ->where('type', 'credit')
+            ->where('status', 'completed')
+            ->whereBetween('transaction_date', [$dateFrom, $dateTo])
+            ->whereIn('reference_type', [
+                \App\Models\Expense::class,
+                \App\Models\ExpensePayment::class,
+            ]);
+        $this->applyStoreFilter($cashForExpensesQuery, $request);
+        $cashPaidForExpenses = $cashForExpensesQuery->sum('amount');
 
-        // Investing Activities (future expansion)
+        // Cash out from refunds = credits to Cash from Refund references
+        $cashRefundsQuery = Transaction::where('account_id', $cashAccountId)
+            ->where('type', 'credit')
+            ->where('status', 'completed')
+            ->whereBetween('transaction_date', [$dateFrom, $dateTo])
+            ->whereIn('reference_type', [
+                \App\Models\Refund::class,
+                \App\Models\OrderPayment::class, // payment-level refunds from observer
+            ])
+            ->where('description', 'like', '%Refund%');
+        $this->applyStoreFilter($cashRefundsQuery, $request);
+        $cashPaidAsRefunds = $cashRefundsQuery->sum('amount');
+
+        $netCashFromOperations = $cashFromSales - $cashPaidToVendors - $cashPaidForExpenses - $cashPaidAsRefunds;
+
+        // ── INVESTING ACTIVITIES (placeholder — fixed asset purchases would go here) ──
         $netCashFromInvesting = 0;
 
-        // Financing Activities (future expansion)
+        // ── FINANCING ACTIVITIES (placeholder — equity injections, loan repayments) ──
         $netCashFromFinancing = 0;
 
-        // Net Change in Cash
+        // ── CASH SUMMARY ──────────────────────────────────────────────────────
         $netCashChange = $netCashFromOperations + $netCashFromInvesting + $netCashFromFinancing;
-
-        // Opening and Closing Cash
-        $openingCash = $this->getCashBalance($dateFrom, '<', $request);
-        $closingCash = $openingCash + $netCashChange;
+        $openingCash   = $this->getCashBalance($dateFrom, '<', $request);
+        $closingCash   = $openingCash + $netCashChange;
 
         return response()->json([
             'success' => true,
             'data' => [
-                'title' => 'Cash Flow Statement',
-                'period' => [
-                    'from' => $dateFrom,
-                    'to' => $dateTo
-                ],
+                'title'  => 'Cash Flow Statement',
+                'period' => ['from' => $dateFrom, 'to' => $dateTo],
                 'cash_flow_from_operating_activities' => [
                     'cash_received_from_customers' => number_format($cashFromSales, 2),
-                    'cash_paid_to_vendors' => number_format(-$cashPaidToVendors, 2),
-                    'cash_paid_for_expenses' => number_format(-$cashPaidForExpenses, 2),
-                    'net_cash_from_operations' => number_format($netCashFromOperations, 2)
+                    'cash_paid_to_vendors'          => number_format(-$cashPaidToVendors, 2),
+                    'cash_paid_for_expenses'        => number_format(-$cashPaidForExpenses, 2),
+                    'cash_paid_as_refunds'          => number_format(-$cashPaidAsRefunds, 2),
+                    'net_cash_from_operations'      => number_format($netCashFromOperations, 2),
                 ],
                 'cash_flow_from_investing_activities' => [
-                    'net_cash_from_investing' => number_format($netCashFromInvesting, 2)
+                    'net_cash_from_investing' => number_format($netCashFromInvesting, 2),
                 ],
                 'cash_flow_from_financing_activities' => [
-                    'net_cash_from_financing' => number_format($netCashFromFinancing, 2)
+                    'net_cash_from_financing' => number_format($netCashFromFinancing, 2),
                 ],
                 'net_increase_decrease_in_cash' => number_format($netCashChange, 2),
                 'cash_summary' => [
                     'opening_cash' => number_format($openingCash, 2),
-                    'net_change' => number_format($netCashChange, 2),
-                    'closing_cash' => number_format($closingCash, 2)
-                ]
-            ]
+                    'net_change'   => number_format($netCashChange, 2),
+                    'closing_cash' => number_format($closingCash, 2),
+                ],
+            ],
         ]);
     }
 
@@ -710,7 +767,7 @@ class AccountingReportController extends Controller
         $this->applyStoreFilter($revenueQuery, $request);
         $revenue = $revenueQuery->sum('amount');
 
-        // [ARCHITECTURAL FIX] Use COGS account ledger instead of OrderItems loop
+        // COGS from ledger
         $cogsAccountId = Transaction::getCOGSAccountId();
         $cogsQuery = Transaction::where('account_id', $cogsAccountId)
             ->where('type', 'debit')
@@ -719,29 +776,46 @@ class AccountingReportController extends Controller
         $this->applyStoreFilter($cogsQuery, $request);
         $cogs = $cogsQuery->sum('amount');
 
-        $expensesQuery = Expense::where('expense_date', '<=', $asOfDate)
-            ->where('status', 'approved');
+        // Operating expenses from ledger (all expense accounts excluding COGS)
+        $expenseAccountIds = Account::where('type', 'expense')
+            ->where('is_active', true)
+            ->where('account_code', '!=', '5002')
+            ->pluck('id');
+        $expensesQuery = Transaction::whereIn('account_id', $expenseAccountIds)
+            ->where('type', 'debit')
+            ->where('status', 'completed')
+            ->where('transaction_date', '<=', $asOfDate);
         $this->applyStoreFilter($expensesQuery, $request);
-        $expenses = $expensesQuery->sum('total_amount');
+        $expenses = $expensesQuery->sum('amount');
 
         return $revenue - $cogs - $expenses;
     }
 
     /**
-     * Helper: Get cash balance at a specific date
+     * Helper: Get cash balance from the ledger at a specific date
      */
     private function getCashBalance($date, $operator = '<=', Request $request)
     {
-        $cashAccounts = Account::where('account_type', 'asset')
-            ->where('category', 'cash')
+        // Find cash/bank accounts by correct column name (type, not account_type)
+        $cashAccountIds = Account::where('type', 'asset')
+            ->where('sub_type', 'current_asset')
             ->where('is_active', true)
+            ->where(function ($q) {
+                $q->where('name', 'like', '%Cash%')
+                  ->orWhere('name', 'like', '%Bank%');
+            })
             ->pluck('id');
 
-        $query = Transaction::whereIn('account_id', $cashAccounts)
+        if ($cashAccountIds->isEmpty()) {
+            // Fallback: use the resolved cash account ID
+            $cashAccountIds = collect([Transaction::getCashAccountId()]);
+        }
+
+        $query = Transaction::whereIn('account_id', $cashAccountIds)
             ->where('transaction_date', $operator, $date)
             ->where('status', 'completed');
         $this->applyStoreFilter($query, $request);
-        
+
         return $query->sum(DB::raw('CASE WHEN type = "debit" THEN amount ELSE -amount END'));
     }
 

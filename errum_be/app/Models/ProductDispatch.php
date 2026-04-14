@@ -294,9 +294,14 @@ class ProductDispatch extends Model
 
     public function addItem(ProductBatch $batch, int $quantity)
     {
-        if ($batch->store_id !== $this->source_store_id) {
-            throw new \Exception('Batch does not belong to the source store.');
-        }
+        $barcodeAtSourceStore = $batch->barcodes()
+    ->where('current_store_id', (int)$this->source_store_id)
+    ->where('is_active', true)
+    ->exists();
+
+if (!$barcodeAtSourceStore) {
+    throw new \Exception('Batch does not belong to the source store.');
+}
 
         if ($batch->quantity < $quantity) {
             throw new \Exception('Insufficient quantity in batch.');

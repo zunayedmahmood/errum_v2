@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\ServiceOrderPayment;
 use App\Models\Transaction as AccountingTransaction;
+use Illuminate\Support\Str;
 
 class ServiceOrderPaymentObserver
 {
@@ -38,25 +39,46 @@ class ServiceOrderPaymentObserver
             }
         }
 
-        // Handle refunds
+        // Handle payment-level refunds
         if ($serviceOrderPayment->wasChanged('refunded_amount') && $serviceOrderPayment->refunded_amount > 0) {
-            // Create credit transaction for refund
+            $refundAmount = (float) $serviceOrderPayment->refunded_amount;
+            $groupId      = (string) Str::uuid();
+
+            $metadata = [
+                'payment_method'      => $serviceOrderPayment->paymentMethod->name ?? 'Unknown',
+                'service_order_number'=> $serviceOrderPayment->serviceOrder->order_number ?? null,
+                'refund_reason'       => 'Payment refund',
+                'group_id'            => $groupId,
+            ];
+
+            // 1. Credit Cash (asset decreases — money returned to customer)
             AccountingTransaction::create([
                 'transaction_date' => now(),
-                'amount' => $serviceOrderPayment->refunded_amount,
-                'type' => 'credit',
-                'account_id' => AccountingTransaction::getCashAccountId($serviceOrderPayment->store_id),
-                'reference_type' => ServiceOrderPayment::class,
-                'reference_id' => $serviceOrderPayment->id,
-                'description' => "Refund from Service Order Payment - {$serviceOrderPayment->payment_number}",
-                'store_id' => $serviceOrderPayment->store_id,
-                'created_by' => auth()->id(),
-                'metadata' => [
-                    'payment_method' => $serviceOrderPayment->paymentMethod->name ?? 'Unknown',
-                    'service_order_number' => $serviceOrderPayment->serviceOrder->order_number ?? null,
-                    'refund_reason' => 'Payment refund',
-                ],
-                'status' => 'completed',
+                'amount'           => $refundAmount,
+                'type'             => 'credit',
+                'account_id'       => AccountingTransaction::getCashAccountId($serviceOrderPayment->store_id),
+                'reference_type'   => ServiceOrderPayment::class,
+                'reference_id'     => $serviceOrderPayment->id,
+                'description'      => "Refund (Cash Out) - {$serviceOrderPayment->payment_number}",
+                'store_id'         => $serviceOrderPayment->store_id,
+                'created_by'       => auth()->id(),
+                'metadata'         => $metadata,
+                'status'           => 'completed',
+            ]);
+
+            // 2. Debit Service Revenue (revenue reversal)
+            AccountingTransaction::create([
+                'transaction_date' => now(),
+                'amount'           => $refundAmount,
+                'type'             => 'debit',
+                'account_id'       => AccountingTransaction::getServiceRevenueAccountId(),
+                'reference_type'   => ServiceOrderPayment::class,
+                'reference_id'     => $serviceOrderPayment->id,
+                'description'      => "Refund - Service Revenue Reversal - {$serviceOrderPayment->payment_number}",
+                'store_id'         => $serviceOrderPayment->store_id,
+                'created_by'       => auth()->id(),
+                'metadata'         => $metadata,
+                'status'           => 'completed',
             ]);
         }
     }

@@ -67,7 +67,7 @@ class TransactionController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'transaction_date' => 'required|date',
-            'amount' => 'required|numeric|min:0',
+            'amount' => 'required|numeric|min:0.01',
             'type' => 'required|in:debit,credit',
             'account_id' => 'required|exists:accounts,id',
             'description' => 'nullable|string',
@@ -79,7 +79,8 @@ class TransactionController extends Controller
             'receipt_image' => 'nullable|string', // Base64
             'note' => 'nullable|string',
             'reference_note' => 'nullable|string',
-            'counter_account_id' => 'nullable|exists:accounts,id',
+            // counter_account_id is required — single-entry transactions are not permitted
+            'counter_account_id' => 'required|exists:accounts,id|different:account_id',
         ]);
 
         if ($validator->fails()) {
@@ -156,40 +157,29 @@ class TransactionController extends Controller
         }
 
         // --- DOUBLE-ENTRY ENFORCEMENT ---
-        // If counter_account_id is provided, create two transactions (Double Entry)
-        if (!empty($request->counter_account_id)) {
-            $groupId = (string) \Illuminate\Support\Str::uuid();
-            $data['metadata'] = array_merge($data['metadata'] ?? [], ['group_id' => $groupId]);
-            $counterAccountId = $request->counter_account_id;
-            
-            return DB::transaction(function () use ($data, $counterAccountId, $groupId, $user) {
-                // 1. Primary Transaction
-                $transaction = Transaction::create($data);
-                
-                // 2. Counter-entry Transaction
-                $counterData = $data;
-                $counterData['account_id'] = $counterAccountId;
-                $counterData['type'] = ($data['type'] === 'debit') ? 'credit' : 'debit';
-                $counterData['transaction_number'] = null; // Let model generate new one
-                
-                Transaction::create($counterData);
-                
-                return response()->json([
-                    'success' => true,
-                    'data' => $transaction->load(['account', 'store', 'createdBy']),
-                    'message' => 'Balanced journal entry created successfully'
-                ], 201);
-            });
-        }
+        // counter_account_id is required. Every manual entry must be balanced.
+        $groupId = (string) \Illuminate\Support\Str::uuid();
+        $data['metadata'] = array_merge($data['metadata'] ?? [], ['group_id' => $groupId]);
+        $counterAccountId = $request->counter_account_id;
 
-        // Single-entry (Legacy/Wait-listed)
-        $transaction = Transaction::create($data);
+        return DB::transaction(function () use ($data, $counterAccountId, $groupId) {
+            // 1. Primary Transaction
+            $transaction = Transaction::create($data);
 
-        return response()->json([
-            'success' => true,
-            'data' => $transaction->load(['account', 'store', 'createdBy']),
-            'message' => 'Transaction created successfully (Unbalanced)'
-        ], 201);
+            // 2. Counter-entry Transaction (opposite side)
+            $counterData = $data;
+            $counterData['account_id'] = $counterAccountId;
+            $counterData['type'] = ($data['type'] === 'debit') ? 'credit' : 'debit';
+            $counterData['transaction_number'] = null; // Let model generate new one
+
+            Transaction::create($counterData);
+
+            return response()->json([
+                'success' => true,
+                'data' => $transaction->load(['account', 'store', 'createdBy']),
+                'message' => 'Balanced journal entry created successfully',
+            ], 201);
+        });
     }
 
     public function show($id)
@@ -558,21 +548,16 @@ class TransactionController extends Controller
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
         }
 
-        $transactions = Transaction::whereIn('id', $request->transaction_ids)
-            ->where('status', 'pending')
-            ->get();
-
-        $completed = 0;
-        foreach ($transactions as $transaction) {
-            if ($transaction->complete()) {
-                $completed++;
-            }
-        }
+        $completed = DB::transaction(function () use ($request) {
+            return Transaction::whereIn('id', $request->transaction_ids)
+                ->where('status', 'pending')
+                ->update(['status' => 'completed', 'updated_at' => now()]);
+        });
 
         return response()->json([
             'success' => true,
             'message' => "{$completed} transaction(s) completed successfully",
-            'data' => ['completed_count' => $completed]
+            'data' => ['completed_count' => $completed],
         ]);
     }
 }

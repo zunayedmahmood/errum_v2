@@ -164,18 +164,12 @@ class DashboardController extends Controller
         $netMarginPercentage = $totalSales > 0 ? ($netProfit / $totalSales) * 100 : 0;
 
         // 3. INVENTORY METRICS
-        $inventory = MasterInventory::where('store_id', $store->id)
-            ->with('product', 'batch')
-            ->get();
+        $inventorySummary = MasterInventory::getStoreInventorySummary($store->id);
 
-        $totalInventoryValue = $inventory->sum(function ($item) {
-            $sellPrice = $item->batch ? ($item->batch->selling_price ?? 0) : 0;
-            return $sellPrice * $item->quantity;
-        });
-
-        $lowStockCount = $inventory->where('quantity', '<', 10)->count();
-        $outOfStockCount = $inventory->where('quantity', '<=', 0)->count();
-        $totalProducts = $inventory->count();
+$totalInventoryValue = (float) ($inventorySummary['total_value'] ?? 0);
+$lowStockCount = (int) ($inventorySummary['low_stock_items'] ?? 0);
+$outOfStockCount = (int) ($inventorySummary['out_of_stock_items'] ?? 0);
+$totalProducts = (int) ($inventorySummary['total_products'] ?? 0);
 
         // 4. TOP PRODUCTS (by quantity sold)
         $topProducts = OrderItem::whereIn('order_id', $orderIds)

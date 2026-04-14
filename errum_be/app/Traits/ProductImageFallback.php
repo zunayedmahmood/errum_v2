@@ -11,10 +11,16 @@ use Illuminate\Support\Collection;
 trait ProductImageFallback
 {
     /**
-     * Build a merged, de-duplicated, primary-first image list for a product.
+     * Build a sorted, primary-correct image list for a product.
      *
-     * - Always includes "core" images from the SKU group.
-     * - If the current product has image(s), its image becomes primary.
+     * Rules (no merging — eliminates duplication):
+     *  - If the product has its OWN active images  → return only those.
+     *  - If the product has NO own images           → return the base/core images
+     *                                                  (from findCoreImagesForSkuGroup).
+     *  - Base products always return only their own images.
+     *  - is_primary values are taken verbatim from the DB.
+     *    The ONLY modification: if no image in the chosen set has is_primary=true,
+     *    the first image in sort order is marked primary in the response (not persisted).
      *
      * @param  Product  $product
      * @param  array<int,string>  $mapFields
@@ -26,52 +32,44 @@ trait ProductImageFallback
             $product->load(['images']);
         }
 
-        $variantImages = $product->images
+        // Own active images, sorted by: primary first → sort_order → created_at
+        $ownImages = $product->images
             ->where('is_active', true)
             ->sortBy(function ($img) {
-                return [($img->is_primary ? 0 : 1), (int)($img->sort_order ?? 0), (string)($img->created_at ?? '')];
+                return [
+                    ($img->is_primary ? 0 : 1),
+                    (int)($img->sort_order ?? 0),
+                    (string)($img->created_at ?? ''),
+                ];
             })
             ->values();
 
-        $coreImages = $this->findCoreImagesForSkuGroup($product);
-
-        $primary = null;
-        if ($variantImages->count() > 0) {
-            $primary = $variantImages->firstWhere('is_primary', true) ?: $variantImages->first();
-        } elseif ($coreImages->count() > 0) {
-            $primary = $coreImages->firstWhere('is_primary', true) ?: $coreImages->first();
+        if ($ownImages->count() > 0) {
+            // Variant has own images: use only those — no base images mixed in.
+            $imageSet = $ownImages;
+        } else {
+            // No own images: fall back to core/base images for this SKU group.
+            $coreImages = $this->findCoreImagesForSkuGroup($product);
+            $imageSet = $coreImages->sortBy(function ($img) {
+                return [
+                    ($img->is_primary ? 0 : 1),
+                    (int)($img->sort_order ?? 0),
+                    (string)($img->created_at ?? ''),
+                ];
+            })->values();
         }
 
-        $merged = [];
-        $seen = [];
-        $push = function ($img) use (&$merged, &$seen) {
-            if (!$img) return;
-            $key = (string)($img->image_path ?? $img->id);
-            if ($key === '') return;
-            if (isset($seen[$key])) return;
-            $seen[$key] = true;
-            $merged[] = $img;
-        };
-
-        foreach ($variantImages as $img) { $push($img); }
-        foreach ($coreImages as $img) { $push($img); }
-
-        $primaryPath = $primary ? (string)($primary->image_path ?? '') : '';
-        foreach ($merged as $img) {
-            $img->is_primary = ($primaryPath !== '' && (string)($img->image_path ?? '') === $primaryPath);
+        if ($imageSet->isEmpty()) {
+            return [];
         }
 
-        usort($merged, function ($a, $b) {
-            $pa = $a->is_primary ? 0 : 1;
-            $pb = $b->is_primary ? 0 : 1;
-            if ($pa !== $pb) return $pa <=> $pb;
-            $sa = (int)($a->sort_order ?? 0);
-            $sb = (int)($b->sort_order ?? 0);
-            if ($sa !== $sb) return $sa <=> $sb;
-            return strcmp((string)($a->created_at ?? ''), (string)($b->created_at ?? ''));
-        });
+        // Determine whether any image already carries the primary flag from DB.
+        $hasPrimary = $imageSet->contains(fn($img) => (bool)$img->is_primary);
 
-        return array_map(function ($img) use ($mapFields) {
+        return $imageSet->values()->map(function ($img, $idx) use ($mapFields, $hasPrimary) {
+            // Trust DB is_primary; only synthesise it for the first item when none is set.
+            $isPrimary = $hasPrimary ? (bool)$img->is_primary : ($idx === 0);
+
             $out = [];
             foreach ($mapFields as $field) {
                 switch ($field) {
@@ -81,12 +79,15 @@ trait ProductImageFallback
                     case 'image_path':
                         $out['image_path'] = $img->image_path;
                         break;
+                    case 'is_primary':
+                        $out['is_primary'] = $isPrimary;
+                        break;
                     default:
                         $out[$field] = $img->{$field} ?? null;
                 }
             }
             return $out;
-        }, $merged);
+        })->toArray();
     }
 
     /**
