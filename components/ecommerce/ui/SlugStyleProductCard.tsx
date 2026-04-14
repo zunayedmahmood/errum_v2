@@ -78,7 +78,7 @@ export default function SlugStyleProductCard({
           onClick={goToProduct}
           className="w-full bg-neutral-900 text-white py-2 px-4 rounded-lg hover:bg-neutral-800 transition-colors"
         >
-          View Product
+          Choose Options
         </button>
       </div>
     </div>

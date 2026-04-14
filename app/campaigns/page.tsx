@@ -136,14 +136,13 @@ export default function CampaignsPage() {
       const params: any = {};
       if (filterAutomatic !== null) params.is_automatic = filterAutomatic;
       if (filterActive !== null) params.is_active = filterActive;
-      const data = await campaignService.getCampaigns(params);
-      const list = Array.isArray(data) ? data : Array.isArray((data as any)?.data) ? (data as any).data : [];
-      setCampaigns(list);
+      const list = await campaignService.getCampaigns({ ...params, search: search.trim() || undefined });
+      setCampaigns(Array.isArray(list) ? list : []);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to load campaigns');
       setCampaigns([]);
     } finally { setLoading(false); }
-  }, [filterAutomatic, filterActive]);
+  }, [filterAutomatic, filterActive, search]);
 
   useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
 

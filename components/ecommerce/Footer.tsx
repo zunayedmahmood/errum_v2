@@ -49,15 +49,15 @@ export default function Footer() {
         <section style={{ padding: '56px 0 0' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '32px' }}>
             <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
-            <h2 style={{ fontFamily: "'Jost', sans-serif", fontSize: '16px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', color: '#111111', margin: 0 }}>
-              Our All Outlets
+            <h2 style={{ fontFamily: "'Jost', sans-serif", fontSize: '15px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', color: '#111111', margin: 0 }}>
+              Our Outlets
             </h2>
             <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(1, 1fr)', gap: '16px', marginBottom: '48px' }} className="sm:grid-cols-3">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-8 px-2 lg:px-48 mb-12">
             {outlets.map((outlet, idx) => (
-              <div key={idx} style={{ overflow: 'hidden', borderRadius: '4px', border: '1px solid rgba(0,0,0,0.08)', background: '#ffffff' }}>
+              <div key={idx} style={{ overflow: 'hidden', borderRadius: '4px', border: '1px solid rgba(0,0,0,0.08)', background: '#ffffff', maxWidth: '320px', margin: '0 auto' }}>
                 <div style={{ position: 'relative', aspectRatio: '4/3', overflow: 'hidden' }}>
                   <img
                     src={outlet.image}
@@ -67,8 +67,8 @@ export default function Footer() {
                     onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
                   />
                 </div>
-                <div style={{ padding: '12px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-                  <h3 style={{ fontFamily: "'Jost', sans-serif", fontSize: '14px', fontWeight: 700, color: '#111111', margin: 0, textAlign: 'center', letterSpacing: '0.04em' }}>
+                <div style={{ padding: '8px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                  <h3 style={{ fontFamily: "'Jost', sans-serif", fontSize: '12px', fontWeight: 700, color: '#111111', margin: 0, textAlign: 'center', letterSpacing: '0.04em' }}>
                     {outlet.name}
                   </h3>
                 </div>
@@ -78,18 +78,37 @@ export default function Footer() {
         </section>
 
         {/* ── Main footer grid ── */}
-        <div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: '48px', display: 'grid', gridTemplateColumns: 'repeat(1, 1fr)', gap: '32px' }} className="sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 md:gap-12" style={{ borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: '48px' }}>
 
-          {/* Column 1 — Brand */}
+          {/* Column 1 — Brand & Info */}
           <div>
             <Link href="/e-commerce" style={{ display: 'inline-block', marginBottom: '16px', textDecoration: 'none' }}>
               <span style={{ fontFamily: "'Jost', sans-serif", fontSize: '24px', fontWeight: 800, letterSpacing: '0.05em', color: '#111111' }}>
                 ERRUM
               </span>
             </Link>
-            <p style={{ fontSize: '13px', lineHeight: 1.7, color: '#555555', maxWidth: '240px', fontFamily: "'Jost', sans-serif", marginBottom: '20px' }}>
+            <p style={{ fontSize: '13px', lineHeight: 1.7, color: '#555555', maxWidth: '300px', fontFamily: "'Jost', sans-serif", marginBottom: '24px' }}>
               A complete lifestyle brand — footwear, clothing, watches, and bags curated for everyday confidence across Bangladesh.
             </p>
+
+            <p style={COL_HEADER_STYLE}>Quick Info</p>
+            <nav style={{ marginBottom: '24px' }}>
+              {[
+                { href: '/e-commerce/about', label: 'About Us' },
+                { href: '/e-commerce/contact', label: 'Contact Us' },
+                { href: '/e-commerce/track', label: 'Track Your Order' },
+                { href: '/e-commerce/categories', label: 'All Categories' },
+                { href: '/e-commerce/products', label: 'New & Popular' },
+              ].map(({ href, label }) => (
+                <Link key={href} href={href}
+                  style={LINK_STYLE}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#111111'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#555555'}
+                >
+                  {label}
+                </Link>
+              ))}
+            </nav>
 
             {/* Social Icons */}
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -120,29 +139,7 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Column 2 — Info */}
-          <div>
-            <p style={COL_HEADER_STYLE}>Info</p>
-            <nav>
-              {[
-                { href: '/e-commerce/about', label: 'About Us' },
-                { href: '/e-commerce/contact', label: 'Contact Us' },
-                { href: '/e-commerce/track', label: 'Track Your Order' },
-                { href: '/e-commerce/categories', label: 'All Categories' },
-                { href: '/e-commerce/products', label: 'New & Popular' },
-              ].map(({ href, label }) => (
-                <Link key={href} href={href}
-                  style={LINK_STYLE}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#111111'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#555555'}
-                >
-                  {label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-
-          {/* Column 3 — Useful Links */}
+          {/* Column 2 — Useful Links */}
           <div>
             <p style={COL_HEADER_STYLE}>Useful Links</p>
             <nav>
@@ -164,7 +161,7 @@ export default function Footer() {
             </nav>
           </div>
 
-          {/* Column 4 — Our Promise + Stores */}
+          {/* Column 3 — Our Promise + WhatsApp */}
           <div>
             <p style={COL_HEADER_STYLE}>Our Promise</p>
             <div style={{ marginBottom: '24px' }}>
@@ -180,7 +177,6 @@ export default function Footer() {
               ))}
             </div>
 
-            {/* WhatsApp international moved here */}
             <a href="https://wa.me/8801942565664" target="_blank" rel="noreferrer"
               style={{ padding: '10px 12px', background: '#ffffff', borderRadius: '4px', border: '1px solid rgba(37,211,102,0.25)', display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}
             >

@@ -127,7 +127,7 @@ export default function BestSellerProducts() {
         const sorted = productsWithStats
           .filter(p => p.soldCount > 0)
           .sort((a, b) => b.soldCount - a.soldCount)
-          .slice(0, 5);
+          .slice(0, 4);
 
         setBestSellers(sorted);
       } catch (err) {
@@ -220,7 +220,7 @@ export default function BestSellerProducts() {
             <p className="text-lg text-gray-600">Our customers' favorite picks</p>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             {bestSellers.map((product) => {
               const isInWishlist = wishlistIds.has(product.variations[0].id);
 

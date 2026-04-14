@@ -127,7 +127,7 @@ const PremiumProductCard: React.FC<PremiumProductCardProps> = ({
         {/* Quick Add button — appears on hover */}
         {hasStock && (
           <button
-            onClick={e => { e.stopPropagation(); onAddToCart(product, e); }}
+            onClick={e => { e.stopPropagation(); onOpen(product); }}
             style={{
               position: 'absolute',
               bottom: 0,
@@ -152,8 +152,7 @@ const PremiumProductCard: React.FC<PremiumProductCardProps> = ({
               zIndex: 10,
             }}
           >
-            <ShoppingBag style={{ width: '14px', height: '14px' }} />
-            Add to Bag
+            Choose Options
           </button>
         )}
       </div>

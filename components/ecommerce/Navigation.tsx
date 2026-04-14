@@ -147,7 +147,7 @@ const Navbar = () => {
             </Link>
 
             {/* ── Desktop nav links ── */}
-            <div style={{ display: 'none' }} className="lg:flex items-center gap-8">
+            <div className="hidden lg:flex items-center gap-8">
               <Link href="/e-commerce" style={{
                 fontFamily: "'Jost', sans-serif",
                 fontSize: '13px',
@@ -306,7 +306,7 @@ const Navbar = () => {
 
               {/* Account — desktop only */}
               {isAuthenticated ? (
-                <div style={{ position: 'relative', display: 'none' }} className="sm:block" ref={userRef}>
+                <div style={{ position: 'relative' }} className="hidden sm:block" ref={userRef}>
                   <button
                     onClick={() => setShowUser(v => !v)}
                     style={{ display: 'flex', height: '38px', alignItems: 'center', gap: '6px', borderRadius: '999px', padding: '0 12px', color: '#555555', background: 'none', border: 'none', cursor: 'pointer', transition: 'background 0.15s, color 0.15s' }}
@@ -350,8 +350,8 @@ const Navbar = () => {
                 </div>
               ) : (
                 <Link href="/e-commerce/login"
-                  style={{ display: 'none', width: '38px', height: '38px', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: '#555555', textDecoration: 'none', transition: 'background 0.15s, color 0.15s' }}
-                  className="sm:flex"
+                  style={{ width: '38px', height: '38px', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: '#555555', textDecoration: 'none', transition: 'background 0.15s, color 0.15s' }}
+                  className="hidden sm:flex"
                   aria-label="Login"
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f0f0f0'; (e.currentTarget as HTMLElement).style.color = '#111111'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = '#555555'; }}
@@ -526,35 +526,33 @@ const Navbar = () => {
 
       {/* ── Mobile Bottom Tab Bar ─────────────────────────────────── */}
       <nav
-        className="lg:hidden"
+        className="lg:hidden flex items-stretch"
         style={{
           position: 'fixed',
           bottom: 0,
           left: 0,
           right: 0,
-          zIndex: 200,
+          zIndex: 1005,
           background: '#ffffff',
           borderTop: '1px solid rgba(0,0,0,0.10)',
-          display: 'flex',
-          alignItems: 'stretch',
-          height: '60px',
-          boxShadow: '0 -2px 12px rgba(0,0,0,0.08)',
+          height: '64px',
+          boxShadow: '0 -4px 16px rgba(0,0,0,0.12)',
         }}
       >
-        {/* Home */}
+        {/* Brand/Home */}
         <Link href="/e-commerce"
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: isHomePage ? '#111111' : '#999999', transition: 'color 0.15s' }}
+          style={{ flex: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', textDecoration: 'none', color: '#111111' }}
         >
-          <Home style={{ width: '20px', height: '20px' }} />
-          <span style={{ fontSize: '10px', fontWeight: isHomePage ? 700 : 500 }}>Home</span>
+          <img src="/logo.png" alt="" style={{ height: '22px', width: 'auto' }} />
+          <span style={{ fontSize: '11px', fontWeight: 800, fontFamily: "'Jost', sans-serif", letterSpacing: '0.02em' }}>ERRUM</span>
         </Link>
 
         {/* Search */}
         <Link href="/e-commerce/search"
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: isSearchPage ? '#111111' : '#999999', transition: 'color 0.15s' }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: isSearchPage ? '#111111' : '#777777', transition: 'color 0.15s' }}
         >
-          <Search style={{ width: '20px', height: '20px' }} />
-          <span style={{ fontSize: '10px', fontWeight: isSearchPage ? 700 : 500 }}>Search</span>
+          <Search style={{ width: '22px', height: '22px', strokeWidth: isSearchPage ? 2.5 : 2 }} />
+          <span style={{ fontSize: '11px', fontWeight: isSearchPage ? 800 : 600 }}>Search</span>
         </Link>
 
         {/* New Arrivals / Center */}
@@ -562,64 +560,65 @@ const Navbar = () => {
           style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: '#111111', transition: 'color 0.15s', position: 'relative' }}
         >
           <div style={{
-            width: '42px',
-            height: '42px',
+            width: '48px',
+            height: '48px',
             borderRadius: '50%',
             background: '#111111',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            marginTop: '-20px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+            marginTop: '-24px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             flexShrink: 0,
           }}>
-            <Sparkles style={{ width: '18px', height: '18px', color: '#ffffff' }} />
+            <Sparkles style={{ width: '22px', height: '22px', color: '#ffffff' }} />
           </div>
-          <span style={{ fontSize: '10px', fontWeight: isNewArrival ? 700 : 500, color: isNewArrival ? '#111111' : '#999999' }}>Arrival</span>
+          <span style={{ fontSize: '11px', fontWeight: isNewArrival ? 800 : 600, color: isNewArrival ? '#111111' : '#777777' }}>New</span>
         </Link>
 
         {/* Cart */}
         <button
           onClick={() => setIsCartOpen(true)}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', background: 'none', border: 'none', cursor: 'pointer', color: '#999999', position: 'relative', transition: 'color 0.15s' }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', background: 'none', border: 'none', cursor: 'pointer', color: '#777777', position: 'relative', transition: 'color 0.15s' }}
         >
           <div style={{ position: 'relative' }}>
-            <ShoppingCart style={{ width: '20px', height: '20px' }} />
+            <ShoppingCart style={{ width: '22px', height: '22px', strokeWidth: 2 }} />
             {cartCount > 0 && (
               <span style={{
                 position: 'absolute',
                 top: '-6px',
                 right: '-8px',
                 display: 'flex',
-                height: '16px',
-                minWidth: '16px',
+                height: '18px',
+                minWidth: '18px',
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: '999px',
                 background: '#111111',
                 color: '#ffffff',
-                fontSize: '9px',
-                fontWeight: 700,
-                padding: '0 3px',
+                fontSize: '10px',
+                fontWeight: 800,
+                padding: '0 4px',
+                border: '1.5px solid #ffffff',
               }}>
                 {cartCount > 99 ? '99+' : cartCount}
               </span>
             )}
           </div>
-          <span style={{ fontSize: '10px', fontWeight: 500 }}>Cart</span>
+          <span style={{ fontSize: '11px', fontWeight: 600 }}>Cart</span>
         </button>
 
         {/* Account */}
         <Link href={isAuthenticated ? "/e-commerce/my-account" : "/e-commerce/login"}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: isAccountPage ? '#111111' : '#999999', transition: 'color 0.15s' }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: isAccountPage ? '#111111' : '#777777', transition: 'color 0.15s' }}
         >
-          <User style={{ width: '20px', height: '20px' }} />
-          <span style={{ fontSize: '10px', fontWeight: isAccountPage ? 700 : 500 }}>Account</span>
+          <User style={{ width: '22px', height: '22px', strokeWidth: isAccountPage ? 2.5 : 2 }} />
+          <span style={{ fontSize: '11px', fontWeight: isAccountPage ? 800 : 600 }}>Profile</span>
         </Link>
       </nav>
 
       {/* Spacer for mobile bottom bar */}
-      <div className="lg:hidden" style={{ height: '60px' }} />
+      <div className="lg:hidden" style={{ height: '64px' }} />
     </>
   );
 };
