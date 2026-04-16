@@ -8,6 +8,7 @@ import { useCustomerAuth } from '@/contexts/CustomerAuthContext';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
 import cartService from '@/services/cartService';
 import { useCart } from '@/app/e-commerce/CartContext';
+import GlobalCategorySidebar from './category/GlobalCategorySidebar';
 
 
 const slugify = (value: string) =>
@@ -40,6 +41,7 @@ const Navbar = () => {
   const catsRef = useRef<HTMLDivElement>(null);
   const { isCartOpen } = useCart();
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [isCategorySidebarOpen, setIsCategorySidebarOpen] = useState(false);
 
   useEffect(() => {
     const handleToggle = (e: any) => setIsFiltersOpen(!!e.detail?.open);
@@ -130,11 +132,11 @@ const Navbar = () => {
           bottom: 0,
           left: 0,
           right: 0,
-          zIndex: (isCartOpen || isFiltersOpen) ? -1 : 10000,
-          opacity: (isCartOpen || isFiltersOpen) ? 0 : 1,
-          pointerEvents: (isCartOpen || isFiltersOpen) ? 'none' : 'auto',
-          visibility: (isCartOpen || isFiltersOpen) ? 'hidden' : 'visible',
-          transform: (isCartOpen || isFiltersOpen) ? 'translateY(100%)' : 'translateY(0)',
+          zIndex: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? -1 : 10000,
+          opacity: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 0 : 1,
+          pointerEvents: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 'none' : 'auto',
+          visibility: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 'hidden' : 'visible',
+          transform: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 'translateY(100%)' : 'translateY(0)',
           transition: 'all 0.4s cubic-bezier(0.32, 0.72, 0, 1)',
           background: '#ffffff',
           borderTop: '1px solid rgba(0,0,0,0.10)',
@@ -211,14 +213,21 @@ const Navbar = () => {
           <span style={{ fontSize: '13px', fontWeight: 700 }}>Cart</span>
         </button>
 
-        {/* Account */}
-        <Link href={isAuthenticated ? "/e-commerce/my-account" : "/e-commerce/login"}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: isAccountPage ? '#111111' : '#777777', transition: 'color 0.15s' }}
+        {/* Categories */}
+        <button
+          onClick={() => setIsCategorySidebarOpen(true)}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', background: 'none', border: 'none', cursor: 'pointer', color: '#777777', position: 'relative', transition: 'color 0.15s' }}
         >
-          <User style={{ width: '22px', height: '22px', strokeWidth: isAccountPage ? 2.5 : 2 }} />
-          <span style={{ fontSize: '13px', fontWeight: isAccountPage ? 800 : 700 }}>Profile</span>
-        </Link>
+          <Menu style={{ width: '22px', height: '22px', strokeWidth: 2 }} />
+          <span style={{ fontSize: '13px', fontWeight: 700 }}>Categories</span>
+        </button>
       </nav>
+
+      <GlobalCategorySidebar 
+        categories={categories} 
+        isOpen={isCategorySidebarOpen} 
+        onClose={() => setIsCategorySidebarOpen(false)} 
+      />
     </>
   );
 };

@@ -117,7 +117,7 @@ export default function CampaignsPage() {
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   const [showProductDropdown, setShowProductDropdown] = useState(false);
   const productRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // category tree
   const [categoryTree, setCategoryTree] = useState<CategoryTree[]>([]);
@@ -136,7 +136,8 @@ export default function CampaignsPage() {
       const params: any = {};
       if (filterAutomatic !== null) params.is_automatic = filterAutomatic;
       if (filterActive !== null) params.is_active = filterActive;
-      const list = await campaignService.getCampaigns({ ...params, search: search.trim() || undefined });
+      const res = await campaignService.getCampaigns({ ...params, search: search.trim() || undefined });
+      const list = Array.isArray(res) ? res : (res?.data?.data || res?.data || []);
       setCampaigns(Array.isArray(list) ? list : []);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to load campaigns');
@@ -307,7 +308,7 @@ export default function CampaignsPage() {
       <div className="flex h-screen overflow-hidden">
         <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} darkMode={darkMode} setDarkMode={setDarkMode} />
+          <Header toggleSidebar={() => setSidebarOpen(!sidebarOpen)} darkMode={darkMode} setDarkMode={setDarkMode} />
           <main className="flex-1 overflow-y-auto p-6">
 
             {/* header */}
