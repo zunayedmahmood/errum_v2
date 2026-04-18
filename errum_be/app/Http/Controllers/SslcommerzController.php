@@ -168,7 +168,7 @@ class SslcommerzController extends Controller
 
             DB::commit();
 
-            return redirect($this->getFrontendUrl() . '/e-commerce/checkout?error=payment_failed&tran_id=' . $transactionId);
+            return redirect($this->getFrontendUrl() . '/e-commerce/order-confirmation/' . ($order ? $order->order_number : 'unknown'));
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('SSLCommerz failure callback error: ' . $e->getMessage());
@@ -208,7 +208,7 @@ class SslcommerzController extends Controller
 
             DB::commit();
 
-            return redirect($this->getFrontendUrl() . '/e-commerce/checkout?error=payment_cancelled&tran_id=' . $transactionId);
+            return redirect($this->getFrontendUrl() . '/e-commerce/checkout');
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('SSLCommerz cancel callback error: ' . $e->getMessage());

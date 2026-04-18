@@ -486,12 +486,30 @@ export default function VendorPaymentPage() {
     return rawSku.toLowerCase().replace(/\s+/g, '');
   };
 
-  const extractTrailingSize = (p: Product): number | null => {
-    const name = (p.name || '').trim();
+  const getVariationSortWeight = (p: Product): number => {
+    const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'XXXXL', 'FREE SIZE', 'FREESIZE', 'ONE SIZE', 'ONESIZE'];
+    
+    // 1. Try variation_suffix for standard tokens
+    const suffix = (p.variation_suffix || '').toUpperCase().replace(/^-/, '').trim();
+    const sidx = SIZE_ORDER.indexOf(suffix);
+    if (sidx !== -1) return sidx;
+
+    // 2. Try tokens in the name
+    const name = (p.name || '').toUpperCase();
+    const tokens = name.split(/[-\s]+/).map(t => t.trim());
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      const idx = SIZE_ORDER.indexOf(tokens[i]);
+      if (idx !== -1) return idx;
+    }
+
+    // 3. Try numeric at the end (e.g., shoe sizes)
     const m = name.match(/(\d+(?:\.\d+)?)\s*$/);
-    if (!m) return null;
-    const n = parseFloat(m[1]);
-    return isNaN(n) ? null : n;
+    if (m) {
+      const n = parseFloat(m[1]);
+      return 100 + (isNaN(n) ? 0 : n);
+    }
+
+    return 1000; // Unrecognized
   };
 
   const getVariantGroupProducts = (p: Product): Product[] => {
@@ -518,12 +536,10 @@ export default function VendorPaymentPage() {
     const options: ProductWithId[] = getVariantGroupProducts(base)
       .filter((x): x is ProductWithId => typeof (x as any)?.id === 'number')
       .sort((a, b) => {
-        const sa = extractTrailingSize(a);
-        const sb = extractTrailingSize(b);
-        if (sa === null && sb === null) return (a.name || '').localeCompare(b.name || '');
-        if (sa === null) return 1;
-        if (sb === null) return -1;
-        return sa - sb;
+        const wa = getVariationSortWeight(a);
+        const wb = getVariationSortWeight(b);
+        if (wa !== wb) return wa - wb;
+        return (a.name || '').localeCompare(b.name || '');
       });
 
     const inputs: Record<number, { quantity: string; unit_cost: string; unit_sell_price: string }> = {};
