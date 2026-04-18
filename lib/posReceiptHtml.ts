@@ -220,60 +220,9 @@ function pickAddressFromObject(obj: any): string {
 
 function resolveStoreDisplay(order: any, r: ReceiptOrder): { brand: string; tagline: string; address: string; phone: string } {
   const brand = 'ERRUM BD';
-  const defaultAddress = 'Level 03, Lift 2, Haji Kujrot Ali Mollah Super Market, Dhaka 1216';
-  const defaultPhone = '01942-565664';
-
-  const objectCandidates = [
-    order?.store,
-    order?.branch,
-    order?.outlet,
-    order?.assigned_store,
-    order?.assignedStore,
-    order?.shop,
-  ];
-
-  const storeObj = objectCandidates.find((x) => x && typeof x === 'object');
-
-  const tagline =
-    pickFirstNonEmpty(
-      storeObj?.name,
-      storeObj?.store_name,
-      storeObj?.branch_name,
-      storeObj?.outlet_name,
-      order?.store_name,
-      order?.storeName,
-      order?.branch_name,
-      order?.branchName,
-      order?.outlet_name,
-      order?.outletName,
-      order?.shop_name,
-      r.storeName
-    ) || brand;
-
-  const address =
-    pickFirstNonEmpty(
-      pickAddressFromObject(storeObj),
-      order?.store_address,
-      order?.storeAddress,
-      order?.branch_address,
-      order?.branchAddress,
-      order?.outlet_address,
-      order?.outletAddress,
-      order?.shop_address,
-      order?.shopAddress
-    ) || defaultAddress;
-
-  const phone =
-    pickFirstNonEmpty(
-      storeObj?.phone,
-      storeObj?.mobile,
-      storeObj?.contact_phone,
-      storeObj?.contactPhone,
-      order?.store_phone,
-      order?.storePhone,
-      order?.branch_phone,
-      order?.branchPhone
-    ) || defaultPhone;
+  const tagline = r.storeName || brand;
+  const address = r.storeAddress || '';
+  const phone = r.storePhone || '';
 
   return { brand, tagline, address, phone };
 }

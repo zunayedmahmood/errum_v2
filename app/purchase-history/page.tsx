@@ -110,21 +110,28 @@ export default function PurchaseHistoryPage() {
   const [showExchangeModal, setShowExchangeModal] = useState(false);
   const [selectedOrderForAction, setSelectedOrderForAction] = useState<any | null>(null);
 
+  // Initialize roles and initial store selection
   useEffect(() => {
+    if (!user) return;
+    
     const roleSlug = user?.role?.slug || '';
-    const storeId = scopedStoreId ? String(scopedStoreId) : (user?.store_id || '');
     setUserRole(roleSlug);
+    
+    const storeId = scopedStoreId ? String(scopedStoreId) : (user?.store_id || '');
     setUserStoreId(storeId);
 
-    if (storeId && (roleSlug === 'branch-manager' || !canSelectStore)) {
-      if (selectedStore === '') {
-        setSelectedStore(storeId);
-      }
+    // Auto-select store if scoped (security requirement)
+    if (scopedStoreId) {
+      setSelectedStore(String(scopedStoreId));
     }
 
-    fetchOrders();
     fetchStores();
-  }, [user?.id, scopedStoreId, selectedStore]);
+  }, [user?.id, scopedStoreId]);
+
+  // Fetch orders when relevant filters change
+  useEffect(() => {
+    fetchOrders();
+  }, [selectedStore, startDate, endDate, searchTerm]);
 
   const fetchOrders = async () => {
     try {
@@ -133,13 +140,18 @@ export default function PurchaseHistoryPage() {
         order_type: 'counter',
         per_page: 50,
       };
-      // Enforce store scoping for branch/store roles
+
+      // Security: Always prioritize scopedStoreId (enforced for non-admins)
       if (scopedStoreId) {
         filters.store_id = scopedStoreId;
       } else if (selectedStore) {
-        // Admins can optionally filter by store from the dropdown
+        // Admins can filter by any store from the dropdown
         filters.store_id = Number(selectedStore);
       }
+
+      if (searchTerm) filters.search = searchTerm;
+      if (startDate) filters.date_from = startDate;
+      if (endDate) filters.date_to = endDate;
       
       const result = await orderService.getAll(filters);
       setOrders(result.data);
@@ -154,10 +166,11 @@ export default function PurchaseHistoryPage() {
 
   const fetchStores = async () => {
     try {
-      // If store-scoped, only show user's assigned store in dropdown.
-      if (scopedStoreId) {
+      // If store-scoped/restricted, only fetch user's assigned store details for the display field
+      if (!canSelectStore && (scopedStoreId || user?.store_id)) {
         try {
-          const res: any = await storeService.getStore(Number(scopedStoreId));
+          const targetId = scopedStoreId || user?.store_id;
+          const res: any = await storeService.getStore(Number(targetId));
           const storeObj = res?.data ?? res;
           if (storeObj) {
             setStores([
@@ -170,14 +183,18 @@ export default function PurchaseHistoryPage() {
             return;
           }
         } catch {
-          // fallback below
+          // fallback to empty
         }
       }
 
-      // If user can't select stores, don't show any store dropdown options.
-      if (!canSelectStore) {
+      // If user has multi-store access (admin/moderator), fetch all stores for dropdown
+      if (canSelectStore) {
+        const response = await axiosInstance.get('/stores');
+        const result = response.data;
+        let storesData: Store[] = result?.success && Array.isArray(result.data) ? result.data : (Array.isArray(result) ? result : []);
+        setStores(storesData);
+      } else {
         setStores([]);
-        return;
       }
 
       const response = await axiosInstance.get('/stores');
@@ -485,8 +502,10 @@ export default function PurchaseHistoryPage() {
       );
       console.log(`New order total: ৳${newOrderTotal.toLocaleString()}`);
 
-      // ✅ Per guidelines: New order payment = full new order amount
-      // Customer has full refund, uses it to "pay" for new items
+      // Create order WITHOUT an inline payment — the inline payment path creates a
+      // pending payment record but never calls process()+complete() on it, so the
+      // order stays "outstanding" even for an even exchange.
+      // We will complete the payment explicitly in STEP 4b below.
       const newOrderData = {
         order_type: 'counter' as const,
         store_id: selectedOrderForAction.store.id,
@@ -499,18 +518,26 @@ export default function PurchaseHistoryPage() {
           barcode: p.barcode,
           barcode_id: p.barcode_id,
         })),
-        payment: {
-          payment_method_id: 1, // Cash
-          amount: newOrderTotal, // Full amount of new items
-          payment_type: 'full' as const,
-        },
+        // ⚠️ No 'payment' key here — see STEP 4b
         notes: `Exchange from order #${selectedOrderForAction.order_number} | Return: #${returnNumber}`,
       };
 
-      console.log(`📝 Order includes payment: ৳${newOrderTotal.toLocaleString()} (customer "pays" with refund)`);
-      console.log('Creating new order with data:', newOrderData);
+      console.log('Creating new order (no payment yet)...');
       const newOrder = await orderService.create(newOrderData);
       console.log(`✅ New order created: #${newOrder.order_number} (ID: ${newOrder.id})`);
+
+      // STEP 4b: Explicitly create + auto-complete the payment so the order is marked "paid"
+      // Using auto_complete:true triggers process() + complete() on the payment,
+      // which updates the order's payment_status to "paid".
+      console.log('\n💳 STEP 4b: Completing payment for new exchange order...');
+      await axiosInstance.post(`/orders/${newOrder.id}/payments/simple`, {
+        payment_method_id: 1, // Cash
+        amount: newOrderTotal,
+        payment_type: 'full',
+        auto_complete: true,
+        notes: `Exchange payment - Original Order: #${selectedOrderForAction.order_number}`,
+      });
+      console.log(`✅ Payment completed for order #${newOrder.order_number} — order is now PAID`);
 
       // Log what happens with the money difference
       if (exchangeData.paymentRefund.type === 'payment') {
@@ -649,7 +676,7 @@ export default function PurchaseHistoryPage() {
                   Purchase History
                 </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {userRole === 'store_manager' 
+                  {userRole === 'branch-manager' 
                     ? 'View and manage your store counter sales' 
                     : 'View and manage all counter sales transactions'}
                 </p>
@@ -687,22 +714,24 @@ export default function PurchaseHistoryPage() {
                     />
                   </div>
                   
-                  {!canSelectStore && userRole !== 'branch-manager' && scopedStoreId ? (
-                    <input
-                      type="text"
-                      readOnly
-                      value={
-                        stores.find((s) => String(s.id) === String(selectedStore))
-                          ? `${stores.find((s) => String(s.id) === String(selectedStore))?.name ?? ''} - ${stores.find((s) => String(s.id) === String(selectedStore))?.location ?? ''}`
-                          : 'My Store'
-                      }
-                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-white text-sm"
-                    />
+                  {!canSelectStore && scopedStoreId ? (
+                    <div className="relative">
+                      <input
+                        type="text"
+                        readOnly
+                        value={
+                          stores.find((s) => String(s.id) === String(selectedStore))
+                            ? `${stores.find((s) => String(s.id) === String(selectedStore))?.name ?? ''} - ${stores.find((s) => String(s.id) === String(selectedStore))?.location ?? ''}`
+                            : 'Loading Store...'
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-white text-sm cursor-not-allowed"
+                      />
+                    </div>
                   ) : (
                     <select
                       value={selectedStore}
                       onChange={(e) => setSelectedStore(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     >
                       <option value="">All Stores</option>
                       {stores.map((store) => (

@@ -88,12 +88,12 @@ function wrapHtml(title: string, inner: string, opts?: { embed?: boolean }) {
 </html>`;
 }
 
-function companyInfoBlock() {
+function companyInfoBlock(r: any) {
   return `
     <div class="company">
-      <div class="name">Errum BD</div>
-      <div class="line">Level 03, Lift 2, Haji Kujrot Ali Mollah Super Market, Dhaka 1216</div>
-      <div class="line">Mobile: 01942-565664</div>
+      <div class="name">${escapeHtml(r.storeName || 'Errum BD')}</div>
+      <div class="line">${escapeHtml(r.storeAddress || '')}</div>
+      <div class="line">Mobile: ${escapeHtml(r.storePhone || '')}</div>
     </div>
   `;
 }
@@ -144,7 +144,7 @@ function render(order: any) {
         <div class="subtle" style="margin-top:4px; font-size:12px;">Social Commerce Order Document</div>
         <div style="margin-top:10px;"><span class="tag">${escapeHtml(paymentLabel)}</span></div>
       </div>
-      ${companyInfoBlock()}
+      ${companyInfoBlock(r)}
     </div>
 
     <div class="spacer"></div>
