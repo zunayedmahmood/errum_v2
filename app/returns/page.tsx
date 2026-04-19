@@ -568,31 +568,37 @@ function DetailModal({ ret, onClose, onAction }: DetailModalProps) {
             )}
 
             {/* Actions */}
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-              {ret.status === 'pending' && (
-                <>
-                  <button onClick={() => setApproveOpen(true)}
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">
-                    <Check className="w-4 h-4" /> Approve
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex flex-wrap gap-2">
+                {ret.status === 'pending' && (
+                  <>
+                    <button onClick={() => setApproveOpen(true)}
+                      className="flex items-center gap-1.5 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">
+                      <Check className="w-4 h-4" /> Approve
+                    </button>
+                    <button onClick={() => setRejectOpen(true)}
+                      className="flex items-center gap-1.5 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium">
+                      <X className="w-4 h-4" /> Reject
+                    </button>
+                  </>
+                )}
+                {ret.status === 'approved' && (
+                  <button onClick={() => setProcessOpen(true)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium">
+                    <RefreshCcw className="w-4 h-4" /> Process Return
                   </button>
-                  <button onClick={() => setRejectOpen(true)}
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium">
-                    <X className="w-4 h-4" /> Reject
+                )}
+                {ret.status === 'completed' && (
+                  <button onClick={() => setRefundOpen(true)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium">
+                    <DollarSign className="w-4 h-4" /> Issue Refund
                   </button>
-                </>
-              )}
-              {ret.status === 'approved' && (
-                <button onClick={() => setProcessOpen(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium">
-                  <RefreshCcw className="w-4 h-4" /> Process Return
-                </button>
-              )}
-              {ret.status === 'completed' && (
-                <button onClick={() => setRefundOpen(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium">
-                  <DollarSign className="w-4 h-4" /> Issue Refund
-                </button>
-              )}
+                )}
+              </div>
+              <button onClick={onClose}
+                className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 font-medium">
+                Close
+              </button>
             </div>
           </div>
         </div>

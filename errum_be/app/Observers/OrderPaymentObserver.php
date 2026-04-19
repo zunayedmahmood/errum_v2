@@ -15,7 +15,7 @@ class OrderPaymentObserver
     {
         // Skip exchange balance carryover and store credit payments — these are not
         // real cash inflows. The cash/revenue side is already handled by createFromExchange().
-        $nonCashTypes = ['exchange_balance', 'store_credit', 'balance_carryover'];
+        $nonCashTypes = ['exchange_balance', 'store_credit', 'balance_carryover', 'exchange_surplus'];
         if (in_array($orderPayment->payment_type, $nonCashTypes)) {
             return;
         }

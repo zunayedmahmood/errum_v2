@@ -1480,6 +1480,11 @@ Route::middleware('auth:api')->group(function () {
         });
     });
 
+    // Exchange Management Routes
+    Route::prefix('exchange')->group(function () {
+        Route::post('/process', [ExchangeController::class, 'process']);
+    });
+
     // Defective Product Management Routes
     Route::prefix('defective-products')->group(function () {
         // List and statistics

@@ -1632,6 +1632,8 @@ class OrderController extends Controller
             'store' => $order->store ? [
                 'id' => $order->store->id,
                 'name' => $order->store->name,
+                'address' => $order->store->address,
+                'phone' => $order->store->phone,
             ] : null,
             'salesman' => $order->createdBy ? [
                 'id' => $order->createdBy->id,

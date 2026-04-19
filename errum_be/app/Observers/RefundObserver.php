@@ -13,6 +13,11 @@ class RefundObserver
      */
     public function created(Refund $refund): void
     {
+        // Skip ledger creation for exchange refunds as it's handled by Transaction::createFromExchange
+        if ($refund->refund_type === 'exchange_refund') {
+            return;
+        }
+
         // Create cash/revenue transaction when refund is created
         AccountingTransaction::createFromRefund($refund);
 

@@ -1877,43 +1877,29 @@ export default function LookupPage() {
   const handleExchangeSubmit = async (exchangeData: any) => {
     try {
       if (!selectedOrderForAction) return;
-      console.log('🔄 Processing exchange:', exchangeData);
+      console.log('🔄 Processing consolidated exchange:', exchangeData);
 
-      // Step 1: Create and complete return for old products (using quickComplete)
-      const returnRequest: CreateReturnRequest = {
+      // Construct the comprehensive payload for the atomic backend transaction
+      const payload = {
         order_id: selectedOrderForAction.id,
-        return_reason: 'other',
-        return_type: 'customer_return',
-        received_at_store_id: exchangeData.exchangeAtStoreId,
-        items: exchangeData.removedProducts.map((item: any) => ({
-          order_item_id: item.order_item_id,
-          quantity: item.quantity,
-          product_barcode_id: item.product_barcode_id,
-        })),
-        customer_notes: `Exchange transaction - Original Order: ${selectedOrderForAction.order_number}`,
-      };
-
-      const returnRes = await productReturnService.quickComplete(returnRequest);
-      const returnId = returnRes.data.id;
-      const returnNumber = returnRes.data.return_number;
-      //returnValue: total value of the items being returned
-      const returnValue = parseFloat(returnRes.data.total_return_value || returnRes.data.total_refund_amount || 0);
-
-      // Step 2: Create new order for replacement products
-      const newOrderTotal = exchangeData.replacementProducts.reduce(
-        (sum: number, p: any) => sum + (p.unit_price * p.quantity),
-        0
-      );
-
-      const exchangeBalance = Math.min(returnValue, newOrderTotal);
-      const customerExtraPayment = Math.max(0, newOrderTotal - returnValue);
-      const customerRefundDue = Math.max(0, returnValue - newOrderTotal);
-
-      const newOrderData = {
-        order_type: 'counter' as const,
-        store_id: exchangeData.exchangeAtStoreId || selectedOrderForAction.store?.id || selectedOrderForAction.store_id,
+        exchangeAtStoreId: exchangeData.exchangeAtStoreId,
         customer_id: selectedOrderForAction.customer?.id,
-        items: exchangeData.replacementProducts.map((p: any) => ({
+        removedProducts: exchangeData.removedProducts.map((item: any) => {
+          const originalItem = selectedOrderForAction.items.find((i: any) => i.id === item.order_item_id);
+          const unitPrice = parseFloat(originalItem?.unit_price || '0');
+          return {
+            order_item_id: item.order_item_id,
+            product_id: originalItem?.product_id,
+            product_batch_id: originalItem?.product_batch_id || originalItem?.batch_id,
+            quantity: item.quantity,
+            unit_price: unitPrice,
+            total_price: unitPrice * item.quantity,
+            product_barcode_id: item.product_barcode_id,
+            return_reason: 'other', // Default reason
+            quality_check_passed: true, // Defaulting for quick exchange
+          };
+        }),
+        replacementProducts: exchangeData.replacementProducts.map((p: any) => ({
           product_id: p.product_id,
           batch_id: p.batch_id,
           quantity: p.quantity,
@@ -1921,72 +1907,44 @@ export default function LookupPage() {
           barcode: p.barcode,
           barcode_id: p.barcode_id,
         })),
-        notes: `Exchange from order #${selectedOrderForAction.order_number} | Return: #${returnNumber}`,
+        paymentRefund: {
+          type: exchangeData.paymentRefund?.type === 'payment' ? 'surplus' : (exchangeData.paymentRefund?.type === 'refund' ? 'refund' : 'even'),
+          amount: exchangeData.paymentRefund?.total || 0,
+          method: exchangeData.paymentRefund?.card > 0 ? 'card' : 
+                  (exchangeData.paymentRefund?.bkash > 0 ? 'bkash' : 
+                  (exchangeData.paymentRefund?.nagad > 0 ? 'nagad' : 'cash')),
+          details: {
+            cash: exchangeData.paymentRefund?.cash || 0,
+            card: exchangeData.paymentRefund?.card || 0,
+            bkash: exchangeData.paymentRefund?.bkash || 0,
+            nagad: exchangeData.paymentRefund?.nagad || 0,
+          }
+        },
+        notes: `Exchange transaction via Lookup Page - Original Order: ${selectedOrderForAction.order_number}`,
       };
 
-      const newOrder = await orderService.create(newOrderData);
-
-      // Step 3: Settle the new order payments (Net settlement)
-      // 3a. Portions covered by return (using exchange_balance to exclude from cash sheet col)
-      if (exchangeBalance > 0) {
-        await axiosInstance.post(`/orders/${newOrder.id}/payments/simple`, {
-          payment_method_id: 1, // Cash
-          amount: exchangeBalance,
-          payment_type: 'exchange_balance',
-          auto_complete: true,
-          notes: `Exchange credit from Return #${returnNumber}`,
-        });
-      }
-
-      // 3b. Portions paid by customer in surplus
-      if (customerExtraPayment > 0) {
-        await axiosInstance.post(`/orders/${newOrder.id}/payments/simple`, {
-          payment_method_id: 1, // Cash
-          amount: customerExtraPayment,
-          payment_type: 'full',
-          auto_complete: true,
-          notes: `Surplus payment for exchange from Return #${returnNumber}`,
-        });
-      }
-
-      await orderService.complete(newOrder.id);
-
-      // Step 4: Handle Refund for residual balance (if return value > replacement value)
-      if (customerRefundDue > 0) {
-        const refundRequest: CreateRefundRequest = {
-          return_id: returnId,
-          refund_type: 'partial_amount',
-          refund_amount: customerRefundDue,
-          refund_method: 'cash',
-          internal_notes: `Net refund for exchange (Difference after replacement) - Original Order: ${selectedOrderForAction.order_number}`,
-        };
-
-        const refundRes = await refundService.create(refundRequest);
-        await refundService.process(refundRes.data.id);
-        await refundService.complete(refundRes.data.id, {
-          transaction_reference: `EXCHANGE-NET-REFUND-${Date.now()}`,
-        });
-      }
-
-      // Step 5: Link the return and the new order for accounting
-      try {
-        await axiosInstance.post(`/returns/${returnId}/exchange`, {
-          new_order_id: newOrder.id,
-          notes: `Automatic net-settlement link from lookup. Original: #${selectedOrderForAction.order_number}`
-        });
-      } catch (linkErr) {
-        console.warn('⚠️ Link failed (non-critical):', linkErr);
-      }
-
-      alert(`✅ Exchange successfully processed!\n\nReturn: #${returnNumber}\nNew Order: #${newOrder.order_number}\nStatus: PAID`);
+      const response = await axiosInstance.post('/exchange/process', payload);
+      
+      console.log('✅ Exchange processed successfully:', response.data);
+      alert('Exchange processed successfully!');
+      
+      // Close modal and refresh data
       setShowExchangeModal(false);
       setSelectedOrderForAction(null);
+
       if (activeTab === 'order' && orderNumber) {
         handleSearchOrder();
+      } else if (activeTab === 'customer' && phoneNumber) {
+        handleSearchCustomer();
+      } else {
+        // Fallback refresh
+        window.location.reload();
       }
+
     } catch (error: any) {
-      console.error('❌ Exchange failed:', error);
-      alert(`Error: ${error.response?.data?.message || error.message || 'Failed to process exchange'}`);
+      console.error('❌ Consolidated exchange processing failed:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to process exchange';
+      alert(`Error: ${errorMessage}`);
     }
   };
 

@@ -104,12 +104,19 @@ export function normalizeOrderForReceipt(order: any): ReceiptOrder {
     safeString(storeObj?.name) || safeString(storeObj?.store_name) || safeString(order?.storeName) || safeString(order?.store) || 'Main Store';
   
   const storeAddress = 
-    safeString(storeObj?.address) || safeString(storeObj?.store_address) || safeString(order?.storeAddress) || 
-    safeString(order?.store_address) || storeName || CLIENT_ADDRESS; // Use store name as default address if missing
+    safeString(storeObj?.address) || 
+    safeString(storeObj?.store_address) || 
+    safeString(order?.storeAddress) || 
+    safeString(order?.store_address) || 
+    CLIENT_ADDRESS;
 
   const storePhone = 
-    safeString(storeObj?.phone) || safeString(storeObj?.mobile) || safeString(storeObj?.contact_phone) || 
-    safeString(order?.storePhone) || safeString(order?.store_phone) || CLIENT_MOBILE;
+    safeString(storeObj?.phone) || 
+    safeString(storeObj?.mobile) || 
+    safeString(storeObj?.contact_phone) || 
+    safeString(order?.storePhone) || 
+    safeString(order?.store_phone) || 
+    CLIENT_MOBILE;
 
   // Salesperson
   const salesBy =
