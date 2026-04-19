@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
-  
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -42,7 +42,7 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (err: any) {
       console.error("Login error:", err);
-      
+
       // Handle different error types
       if (err.response) {
         // Server responded with error status

@@ -16,7 +16,7 @@ class AuthController extends Controller
      */
     public function __construct()
     {
-        $this->middleware('auth:api', ['except' => ['login', 'signup']]);
+        $this->middleware('auth:api', ['except' => ['login', 'signup', 'resetPassword']]);
     }
 
     /**
@@ -149,13 +149,38 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Get the guard to be used during authentication.
-     *
-     * @return \Illuminate\Contracts\Auth\Guard
-     */
     public function guard()
     {
         return Auth::guard('api');
+    }
+    /**
+     * Reset password for an employee
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resetPassword(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string|min:6',
+        ]);
+
+        $employee = \App\Models\Employee::where('email', $request->email)->first();
+        
+        if (!$employee) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Employee not found with this email'
+            ], 404);
+        }
+
+        $employee->password = bcrypt($request->password);
+        $employee->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password has been reset successfully'
+        ]);
     }
 }

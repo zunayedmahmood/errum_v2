@@ -63,6 +63,7 @@ use App\Http\Controllers\SslcommerzController;
 
 Route::post('/signup', [AuthController::class, 'signup']);
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 // ============================================
 // E-COMMERCE GUEST CHECKOUT (NO AUTH REQUIRED)
