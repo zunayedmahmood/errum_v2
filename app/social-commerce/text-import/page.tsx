@@ -390,14 +390,27 @@ export default function SocialTextImportPage() {
     [resolvedItems]
   );
 
+  const baseTotalBeforeAutoAdjustments = useMemo(() => {
+    return Number(Math.max(0, subtotal + deliveryChargeValue - manualDiscountValue).toFixed(2));
+  }, [subtotal, deliveryChargeValue, manualDiscountValue]);
+
   const extraDiscount = useMemo(() => {
     if (!targetTotalValue) return 0;
-    return Math.max(0, Number((subtotal + deliveryChargeValue - manualDiscountValue - targetTotalValue).toFixed(2)));
-  }, [subtotal, deliveryChargeValue, manualDiscountValue, targetTotalValue]);
+    return Math.max(0, Number((baseTotalBeforeAutoAdjustments - targetTotalValue).toFixed(2)));
+  }, [baseTotalBeforeAutoAdjustments, targetTotalValue]);
+
+  const extraAutoShipping = useMemo(() => {
+    if (!targetTotalValue) return 0;
+    return Math.max(0, Number((targetTotalValue - baseTotalBeforeAutoAdjustments).toFixed(2)));
+  }, [baseTotalBeforeAutoAdjustments, targetTotalValue]);
+
+  const effectiveShippingCharge = useMemo(() => {
+    return Number((deliveryChargeValue + extraAutoShipping).toFixed(2));
+  }, [deliveryChargeValue, extraAutoShipping]);
 
   const grandTotal = useMemo(() => {
-    return Number(Math.max(0, subtotal + deliveryChargeValue - manualDiscountValue - extraDiscount).toFixed(2));
-  }, [subtotal, deliveryChargeValue, manualDiscountValue, extraDiscount]);
+    return Number(Math.max(0, subtotal + effectiveShippingCharge - manualDiscountValue - extraDiscount).toFixed(2));
+  }, [subtotal, effectiveShippingCharge, manualDiscountValue, extraDiscount]);
 
   const targetGap = useMemo(() => {
     if (!targetTotalValue) return 0;
@@ -526,11 +539,6 @@ export default function SocialTextImportPage() {
       return;
     }
 
-    if (targetTotalValue && targetGap > 0) {
-      fireToast('Target total is higher than the current order total. Increase delivery or reduce discount manually.', 'error');
-      return;
-    }
-
     const lineDiscounts = allocateDiscounts(resolvedItems, manualDiscountValue + extraDiscount);
 
     const orderData = {
@@ -550,13 +558,14 @@ export default function SocialTextImportPage() {
         unit_price: item.unitPrice,
         discount_amount: lineDiscounts[index] || 0,
       })),
-      shipping_amount: deliveryChargeValue,
+      shipping_amount: effectiveShippingCharge,
       notes: [
         'Created from Social Text Import.',
         socialId.trim() ? `Social ID: ${socialId.trim()}.` : '',
         targetTotalValue ? `Target total: ${targetTotalValue}.` : '',
         manualDiscountValue ? `Manual discount: ${manualDiscountValue}.` : '',
         extraDiscount ? `Extra auto discount: ${extraDiscount}.` : '',
+        extraAutoShipping ? `Extra auto shipping: ${extraAutoShipping}.` : '',
       ].filter(Boolean).join(' '),
     };
 
@@ -729,16 +738,21 @@ export default function SocialTextImportPage() {
                 <div className="rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 space-y-2 text-sm">
                   <div className="flex items-center justify-between"><span className="text-gray-600 dark:text-gray-400">Subtotal</span><span>{subtotal.toFixed(2)} ৳</span></div>
                   <div className="flex items-center justify-between"><span className="text-gray-600 dark:text-gray-400">Delivery</span><span>{deliveryChargeValue.toFixed(2)} ৳</span></div>
+                  <div className="flex items-center justify-between"><span className="text-gray-600 dark:text-gray-400">Extra auto shipping</span><span>{extraAutoShipping.toFixed(2)} ৳</span></div>
                   <div className="flex items-center justify-between"><span className="text-gray-600 dark:text-gray-400">Manual discount</span><span>- {manualDiscountValue.toFixed(2)} ৳</span></div>
                   <div className="flex items-center justify-between"><span className="text-gray-600 dark:text-gray-400">Extra auto discount</span><span>- {extraDiscount.toFixed(2)} ৳</span></div>
                   <div className="border-t border-dashed border-gray-300 dark:border-gray-700 pt-2 flex items-center justify-between font-semibold text-base"><span>Grand total</span><span>{grandTotal.toFixed(2)} ৳</span></div>
                 </div>
 
                 {targetTotalValue ? (
-                  <div className={`rounded-xl px-3 py-2 text-sm ${targetGap > 0 ? 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'}`}>
-                    {targetGap > 0
-                      ? `Target is higher by ${targetGap.toFixed(2)} ৳. The system only auto-deducts downward, so adjust manually if needed.`
-                      : 'Target matched through discount adjustment.'}
+                  <div className={`rounded-xl px-3 py-2 text-sm ${Math.abs(targetGap) > 0.01 ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'}`}>
+                    {Math.abs(targetGap) > 0.01
+                      ? `Target is still off by ${Math.abs(targetGap).toFixed(2)} ৳. Please review the prices and adjustments.`
+                      : extraAutoShipping > 0
+                        ? `Target matched by adding ${extraAutoShipping.toFixed(2)} ৳ to shipping.`
+                        : extraDiscount > 0
+                          ? `Target matched by auto discount of ${extraDiscount.toFixed(2)} ৳.`
+                          : 'Target already matches the current order total.'}
                   </div>
                 ) : null}
 

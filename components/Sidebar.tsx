@@ -115,7 +115,6 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     { icon: ShoppingCart, label: 'POS', href: '/pos' },
     { icon: ClipboardList, label: 'Purchase History', href: '/purchase-history' },
     { icon: ShoppingCart, label: 'Social Commerce', href: '/social-commerce' },
-    { icon: FileText, label: 'Social Text Import', href: '/social-commerce/text-import' },
     {
       icon: Wrench,
       label: 'Services',
