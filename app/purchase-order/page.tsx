@@ -99,8 +99,8 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }: {
   const sizeClasses = {
     'md': 'max-w-md',
     'lg': 'max-w-lg',
-    'xl': 'max-w-4xl',
-    '2xl': 'max-w-6xl'
+    'xl': 'max-w-6xl',
+    '2xl': 'max-w-[1400px]'
   };
 
   return (
@@ -1413,7 +1413,7 @@ export default function PurchaseOrdersPage() {
       {/* Edit Modal */}
       {showEditModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-[1400px] w-full max-h-[90vh] overflow-hidden">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Purchase Order</h2>
               <button

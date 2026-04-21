@@ -76,7 +76,7 @@ const Modal = ({
   const sizeClasses: Record<'md' | 'lg' | 'xl', string> = {
     md: 'max-w-md',
     lg: 'max-w-4xl',
-    xl: 'max-w-6xl',
+    xl: 'max-w-[1400px]',
   };
 
   return (
