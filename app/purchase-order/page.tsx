@@ -92,7 +92,7 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }: {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
-  size?: 'md' | 'lg' | 'xl' | '2xl';
+  size?: 'md' | 'lg' | 'xl' | '2xl' | '3xl';
 }) => {
   if (!isOpen) return null;
 
@@ -100,7 +100,8 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }: {
     'md': 'max-w-md',
     'lg': 'max-w-lg',
     'xl': 'max-w-6xl',
-    '2xl': 'max-w-[1400px]'
+    '2xl': 'max-w-[1400px]',
+    '3xl': 'max-w-[95vw]'
   };
 
   return (
@@ -575,9 +576,7 @@ export default function PurchaseOrdersPage() {
 
       const items = (fullPO.items ?? []).map((it: any) => ({
         id: it.id,
-        product_label: it.product?.name
-          ? `${it.product.name}${it.product.sku ? ` (${it.product.sku})` : ''}`
-          : `Item #${it.id}`,
+        product_label: it.product?.name || `Item #${it.id}`,
         quantity_ordered: String(it.quantity_ordered ?? 0),
         unit_cost: String(it.unit_cost ?? 0),
         unit_sell_price: String(it.unit_sell_price ?? 0),
@@ -742,7 +741,7 @@ export default function PurchaseOrdersPage() {
       return;
     }
 
-    const label = `${p.name}${p.sku ? ` (${p.sku})` : ''}`;
+    const label = p.name;
     setEditForm((prev) => ({
       ...prev,
       new_items: [
@@ -1168,7 +1167,7 @@ export default function PurchaseOrdersPage() {
                                 </td>
                                 <AccessControl roles={['super-admin', 'admin']}>
                                   <td className="px-4 py-2 text-right text-gray-900 dark:text-gray-100">
-                                  ৳{formatCurrency(item.unit_cost)}
+                                    ৳{formatCurrency(item.unit_cost)}
                                   </td>
                                 </AccessControl>
                                 <AccessControl roles={['super-admin', 'admin']}>
@@ -1234,7 +1233,7 @@ export default function PurchaseOrdersPage() {
         isOpen={showViewModal}
         onClose={() => setShowViewModal(false)}
         title="Purchase Order Details"
-        size="lg"
+        size="3xl"
       >
         {selectedPO && (
           <div className="space-y-4">
@@ -1315,53 +1314,65 @@ export default function PurchaseOrdersPage() {
             </div>
 
             <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-              <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Items</h4>
-              <div className="space-y-2">
+              <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 text-2xl">Items</h4>
+
+              {/* Header Row */}
+              <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-gray-100 dark:bg-gray-800/80 rounded-t-lg font-semibold text-xl text-gray-700 dark:text-gray-300 mb-2">
+                <div className="col-span-12 md:col-span-5">Product Info</div>
+                <div className="hidden md:block md:col-span-1 text-center">Qty</div>
+                <AccessControl roles={['super-admin', 'admin']}>
+                  <div className="hidden md:block md:col-span-3 text-center">Cost Price / Unit</div>
+                </AccessControl>
+                <div className={`hidden md:block text-center ${isRole(['super-admin', 'admin']) ? 'md:col-span-3' : 'md:col-span-6'}`}>Unit Sell Price</div>
+              </div>
+
+              <div className="space-y-3">
                 {Array.isArray(selectedPO.items) && selectedPO.items.map((item, idx) => {
                   const img = pickPOItemImage(item);
+                  const isAdmin = isRole(['super-admin', 'admin']);
                   return (
-                    <div key={idx} className="flex justify-between gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                      <div className="flex items-start gap-3 min-w-0">
+                    <div key={idx} className="grid grid-cols-12 items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                      {/* Product Info */}
+                      <div className="col-span-12 md:col-span-5 flex items-start gap-4 min-w-0">
                         {img && (
                           <button
                             type="button"
                             onClick={() => setImagePreview({ url: img, name: item.product_name || 'Product image' })}
-                            className="w-11 h-11 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 flex-shrink-0"
+                            className="w-16 h-16 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 flex-shrink-0"
                             title="View image"
                           >
-                            <img
-                              src={img}
-                              alt={item.product_name || 'Product'}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                if (!e.currentTarget.src.includes('/placeholder-product.png')) {
-                                  e.currentTarget.src = '/placeholder-product.png';
-                                }
-                              }}
-                            />
+                            <img src={img} alt={item.product_name || 'Product'} className="w-full h-full object-cover" />
                           </button>
                         )}
-
                         <div className="min-w-0">
-                          <p className="text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">{item.product_name}</p>
-                          <AccessControl roles={['super-admin', 'admin']}>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              Qty: {item.quantity_ordered} × ৳{formatCurrency(item.unit_cost)}
-                            </p>
-                          </AccessControl>
-                          <AccessControl roles={['online-moderator']}>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              Qty: {item.quantity_ordered} × ৳{formatCurrency(item.unit_sell_price)} (Selling Price)
-                            </p>
-                          </AccessControl>
+                          <p className="text-xl font-semibold text-gray-900 dark:text-gray-100 leading-tight">
+                            {item.product_name}
+                          </p>
+                          <div className="md:hidden mt-2 space-y-1">
+                            <p className="text-lg font-semibold">Qty: {item.quantity_ordered}</p>
+                            <AccessControl roles={['super-admin', 'admin']}>
+                              <p className="text-lg font-semibold">Cost: ৳{formatCurrency(item.unit_cost)}</p>
+                            </AccessControl>
+                            <p className="text-lg font-semibold">Sell: ৳{formatCurrency(item.unit_sell_price)}</p>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right flex-shrink-0">
-                        <AccessControl roles={['super-admin', 'admin']}>
-                          <p className="font-semibold text-gray-900 dark:text-gray-100">
-                            ৳{formatCurrency((item.quantity_ordered || 0) * (item.unit_cost || 0))}
-                          </p>
-                        </AccessControl>
+
+                      {/* Qty */}
+                      <div className="hidden md:block md:col-span-1 text-center text-xl font-bold text-gray-900 dark:text-gray-100">
+                        {item.quantity_ordered}
+                      </div>
+
+                      {/* Cost Price (Admin Only) */}
+                      <AccessControl roles={['super-admin', 'admin']}>
+                        <div className="hidden md:block md:col-span-3 text-center text-xl font-semibold text-gray-900 dark:text-gray-100">
+                          ৳{formatCurrency(item.unit_cost)}
+                        </div>
+                      </AccessControl>
+
+                      {/* Unit Sell Price */}
+                      <div className={`hidden md:block text-center text-xl font-semibold text-gray-900 dark:text-gray-100 ${isAdmin ? 'md:col-span-3' : 'md:col-span-6'}`}>
+                        ৳{formatCurrency(item.unit_sell_price)}
                       </div>
                     </div>
                   );
@@ -1370,35 +1381,35 @@ export default function PurchaseOrdersPage() {
             </div>
 
             <AccessControl roles={['super-admin', 'admin']}>
-              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-4">
+                <div className="space-y-3 max-w-sm ml-auto">
+                  <div className="flex justify-between text-xl font-semibold">
                     <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
-                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                    <span className="text-gray-900 dark:text-gray-100">
                       ৳{formatCurrency(selectedPO.subtotal_amount)}
                     </span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-xl font-semibold">
                     <span className="text-gray-600 dark:text-gray-400">Tax</span>
-                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                    <span className="text-gray-900 dark:text-gray-100">
                       ৳{formatCurrency(selectedPO.tax_amount)}
                     </span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-xl font-semibold">
                     <span className="text-gray-600 dark:text-gray-400">Discount</span>
-                    <span className="font-medium text-red-600 dark:text-red-400">
+                    <span className="text-red-600 dark:text-red-400">
                       -৳{formatCurrency(selectedPO.discount_amount)}
                     </span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-xl font-semibold">
                     <span className="text-gray-600 dark:text-gray-400">Shipping</span>
-                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                    <span className="text-gray-900 dark:text-gray-100">
                       ৳{formatCurrency(selectedPO.shipping_cost)}
                     </span>
                   </div>
-                  <div className="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
-                    <span className="text-lg font-bold text-gray-800 dark:text-gray-200">Total</span>
-                    <span className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                  <div className="flex justify-between pt-4 border-t-2 border-gray-200 dark:border-gray-700 mt-2">
+                    <span className="text-2xl font-bold text-gray-800 dark:text-gray-200">Total Amount</span>
+                    <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                       ৳{formatCurrency(selectedPO.total_amount)}
                     </span>
                   </div>
@@ -1710,7 +1721,7 @@ export default function PurchaseOrdersPage() {
                                   <img src={pickPOItemImage(it)!} alt={it.product_label} className="w-full h-full object-cover" />
                                 </button>
                               )}
-                              <span className="text-xl font-semibold text-gray-900 dark:text-white truncate">{it.product_label}</span>
+                              <span className="text-2xl font-semibold text-gray-900 dark:text-white truncate">{it.product_label}</span>
                             </div>
                           </td>
                           <td className="px-4 py-2">
@@ -1777,7 +1788,7 @@ export default function PurchaseOrdersPage() {
                                   <img src={pickPOItemImage(it)!} alt={it.product_label} className="w-full h-full object-cover" />
                                 </button>
                               )}
-                              <span className="text-xl font-semibold text-gray-900 dark:text-white truncate">{it.product_label}</span>
+                              <span className="text-2xl font-semibold text-gray-900 dark:text-white truncate">{it.product_label}</span>
                             </div>
                           </td>
                           <td className="px-4 py-2">

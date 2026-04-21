@@ -406,27 +406,7 @@ export default function ProductPage() {
    * Uses custom_fields if present; otherwise parses the name.
    */
   const getBaseName = (product: Product): string => {
-    const { color, size } = getColorAndSize(product);
-    const original = (product.name || '').trim();
-    let name = original;
-
-    // If the backend has custom fields, we can safely strip suffixes.
-    if (color && size) {
-      const pattern = new RegExp(`\\s*-\\s*${String(color).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\s*-\\s*${String(size).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i');
-      name = name.replace(pattern, '');
-    } else if (color) {
-      const pattern = new RegExp(`\\s*-\\s*${String(color).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i');
-      name = name.replace(pattern, '');
-    } else if (size) {
-      const pattern = new RegExp(`\\s*-\\s*${String(size).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i');
-      name = name.replace(pattern, '');
-    } else {
-      // Fallback: parse "Base - Color - Size" naming
-      const parsed = parseVariantFromName(original);
-      if (parsed.base) name = parsed.base;
-    }
-
-    return (name || original).trim();
+    return ((product as any).base_name || product.name || '').trim();
   };
 
   /**
@@ -434,34 +414,11 @@ export default function ProductPage() {
    * If variants use a consistent naming scheme ("Base - Color - Size"),
    * we pick the most common parsed base across variants.
    */
-  const getGroupBaseName = (variants: { name: string }[], fallbackName: string) => {
-    const bases = variants
-      .map(v => (parseVariantFromName(v.name).base || '').trim())
-      .filter(Boolean);
-    if (bases.length === 0) return fallbackName;
-
-    const counts = new Map<string, number>();
-    const originalMap = new Map<string, string>();
-    bases.forEach(b => {
-      const key = b.toLowerCase();
-      counts.set(key, (counts.get(key) || 0) + 1);
-      if (!originalMap.has(key)) originalMap.set(key, b);
-    });
-
-    // Pick most frequent; tie-breaker: shortest (cleanest)
-    let bestKey = '';
-    let bestCount = -1;
-    let bestLen = Infinity;
-    for (const [key, c] of counts.entries()) {
-      const candidate = originalMap.get(key) || key;
-      const len = candidate.length;
-      if (c > bestCount || (c === bestCount && len < bestLen)) {
-        bestKey = key;
-        bestCount = c;
-        bestLen = len;
-      }
-    }
-    return (originalMap.get(bestKey) || fallbackName).trim();
+  const getGroupBaseName = (variants: any[], fallbackName: string) => {
+    if (!variants || variants.length === 0) return fallbackName;
+    // Pick the first product of the group and use its base_name
+    const first = variants[0];
+    return (first.base_name || first.name || fallbackName).trim();
   };
 
   // Enhanced image URL processing
@@ -580,6 +537,7 @@ export default function ProductPage() {
       group.variants.push({
         id: product.id,
         name: product.name,
+        base_name: (product as any).base_name,
         sku: product.sku,
         color,
         size,
