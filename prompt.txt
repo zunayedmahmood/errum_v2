@@ -347,3 +347,15 @@ try to avoid direct animal Emojis or pictures. we will prefer geometrics shapes/
 This website should be highly optmised and built with mobile view as first priority while also catering to desktop view.
 
 I want you to make an md file with the full instructions for an AI model to make these changes.
+
+
+### making inventory view as xcel:
+
+we want the inventory view page to behave like this:
+currently, we have a dropdown view. we want to make it like an excel sheet.
+
+we will show the existing datas in a meaningful excel format. an example has been given in picture.
+we do not more coloumns than the data we are already showing. 
+Since the system is in production, we can not afford to break anything. so, please be very careful. 
+We do not want any change to the backend.
+
