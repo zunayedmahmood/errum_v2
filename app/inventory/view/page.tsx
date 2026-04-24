@@ -22,6 +22,8 @@ interface Category {
 
 interface ProductVariation {
   productId: number;
+  category_id?: number;
+  variation_suffix?: string;
   quantity: number;
   availableQuantity: number;
   reservedQuantity: number;
@@ -262,7 +264,8 @@ function ViewInventoryPageContent() {
     };
   };
 
-  const getCategoryPaths = (categoryId: number, cats: Category[]): { category: string; subcategory: string } => {
+  const getCategoryPaths = (categoryId: number | undefined, cats: Category[]): { category: string; subcategory: string } => {
+    if (!categoryId) return { category: 'Uncategorized', subcategory: '-' };
     const cat = cats.find(c => c.id === categoryId);
     if (!cat) return { category: 'Uncategorized', subcategory: '-' };
 
@@ -441,6 +444,8 @@ function ViewInventoryPageContent() {
       if (!existing) {
         g.variations.push({
           productId: item.product_id,
+          category_id: item.category_id,
+          variation_suffix: item.variation_suffix,
           quantity: qty,
           availableQuantity: avail,
           reservedQuantity: res,
@@ -702,57 +707,64 @@ function ViewInventoryPageContent() {
               ) : (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
                   <div className="overflow-x-auto max-h-[calc(100vh-320px)] scrollbar-thin">
-                    <table className="w-full border-collapse border border-gray-200 dark:border-gray-700 text-[11px]">
+                    <table className="w-full border-collapse border border-gray-200 dark:border-gray-700 text-xl font-medium">
                       <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-20">
                         <tr className="border-b border-gray-200 dark:border-gray-700">
-                          <th className="p-2 text-left font-bold text-gray-700 dark:text-gray-300 sticky left-0 bg-gray-50 dark:bg-gray-900 z-30 border-r border-gray-200 dark:border-gray-700">SKU</th>
-                          <th className="p-2 text-left font-bold text-gray-700 dark:text-gray-300 min-w-[180px] border-r border-gray-200 dark:border-gray-700">Product Name</th>
-                          <th className="p-2 text-left font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Category</th>
-                          <th className="p-2 text-left font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Subcategory</th>
-                          <th className="p-2 text-left font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Variation</th>
-
+                          <th className="p-4 text-left font-bold text-gray-700 dark:text-gray-300 sticky left-0 bg-gray-50 dark:bg-gray-900 z-30 border-r border-gray-200 dark:border-gray-700">SKU</th>
+                          <th className="p-4 text-left font-bold text-gray-700 dark:text-gray-300 min-w-[250px] border-r border-gray-200 dark:border-gray-700">Product Name</th>
+                          <th className="p-4 text-left font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Category</th>
+                          <th className="p-4 text-left font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Subcategory</th>
+                          <th className="p-4 text-left font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Variation</th>
+                          
                           {allStores.map(store => (
-                            <th key={store.id} className="p-2 text-center font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap min-w-[80px] border-r border-gray-200 dark:border-gray-700">
+                            <th key={store.id} className="p-4 text-center font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap min-w-[120px] border-r border-gray-200 dark:border-gray-700">
                               {store.name}
                             </th>
                           ))}
-
-                          <th className="p-2 text-center font-bold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-r border-gray-200 dark:border-gray-700">Available</th>
-                          <th className="p-2 text-center font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Physical</th>
-                          <th className="p-2 text-center font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Reserved</th>
-                          <th className="p-2 text-center font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10 border-r border-gray-200 dark:border-gray-700">SKU Total</th>
-                          <th className="p-2 text-left font-bold text-gray-700 dark:text-gray-300">Defective or Used</th>
-                          {/* I don't know what this represents. AI model pls check and confirm. */}
+                          
+                          <th className="p-4 text-center font-bold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-r border-gray-200 dark:border-gray-700">Available</th>
+                          <th className="p-4 text-center font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Physical</th>
+                          <th className="p-4 text-center font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Reserved</th>
+                          <th className="p-4 text-center font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10 border-r border-gray-200 dark:border-gray-700">SKU Total</th>
+                          <th className="p-4 text-left font-bold text-gray-700 dark:text-gray-300">Defective or Used</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white dark:bg-gray-800">
                         {visibleProducts.map((group) => (
                           group.variations.map((variation, vIdx) => {
                             const pid = variation.productId;
-                            const meta = metaCacheRef.current[pid];
-                            const { category, subcategory } = getCategoryPaths(meta?.category_id, categories);
-                            const suffix = getVariationSuffix(pid);
+                            // Prefer category_id from the variation object (backend provided)
+                            const { category, subcategory } = getCategoryPaths(variation.category_id, categories);
+                            
+                            // Prefer variation_suffix from the variation object
+                            const suffix = variation.variation_suffix || getVariationSuffix(pid);
                             const extra = extraMap?.get(pid);
+                            const rowSpan = group.variations.length;
 
                             return (
                               <tr
                                 key={pid}
-                                className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors"
+                                className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors"
                               >
-                                <td className="p-2 font-mono text-gray-600 dark:text-gray-400 sticky left-0 bg-white dark:bg-gray-800 z-10 border-r border-gray-200 dark:border-gray-700">
-                                  {group.sku}
-                                </td>
-                                <td className="p-2 font-medium text-gray-900 dark:text-white leading-tight border-r border-gray-200 dark:border-gray-700">
-                                  {group.productName}
-                                </td>
-                                <td className="p-2 text-gray-600 dark:text-gray-400 whitespace-nowrap border-r border-gray-200 dark:border-gray-700">
-                                  {category}
-                                </td>
-                                <td className="p-2 text-gray-600 dark:text-gray-400 whitespace-nowrap border-r border-gray-200 dark:border-gray-700">
-                                  {subcategory}
-                                </td>
-                                <td className="p-2 border-r border-gray-200 dark:border-gray-700">
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium">
+                                {vIdx === 0 && (
+                                  <>
+                                    <td rowSpan={rowSpan} className="p-4 font-mono text-gray-600 dark:text-gray-400 sticky left-0 bg-white dark:bg-gray-800 z-10 border-r border-gray-200 dark:border-gray-700 align-top">
+                                      {group.sku}
+                                    </td>
+                                    <td rowSpan={rowSpan} className="p-4 font-bold text-gray-900 dark:text-white leading-tight border-r border-gray-200 dark:border-gray-700 align-top">
+                                      {group.productName}
+                                    </td>
+                                    <td rowSpan={rowSpan} className="p-4 text-gray-600 dark:text-gray-400 whitespace-nowrap border-r border-gray-200 dark:border-gray-700 align-top">
+                                      {category}
+                                    </td>
+                                    <td rowSpan={rowSpan} className="p-4 text-gray-600 dark:text-gray-400 whitespace-nowrap border-r border-gray-200 dark:border-gray-700 align-top">
+                                      {subcategory}
+                                    </td>
+                                  </>
+                                )}
+                                
+                                <td className="p-4 border-r border-gray-200 dark:border-gray-700">
+                                  <span className="inline-flex items-center px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-bold">
                                     {suffix}
                                   </span>
                                 </td>
@@ -760,9 +772,9 @@ function ViewInventoryPageContent() {
                                 {allStores.map(store => {
                                   const storeStock = variation.stores.find(s => s.store_id === store.id);
                                   return (
-                                    <td key={store.id} className="p-2 text-center border-r border-gray-200 dark:border-gray-700">
+                                    <td key={store.id} className="p-4 text-center border-r border-gray-200 dark:border-gray-700">
                                       {storeStock ? (
-                                        <span className="font-semibold text-gray-900 dark:text-white">{storeStock.quantity}</span>
+                                        <span className="font-bold text-gray-900 dark:text-white">{storeStock.quantity}</span>
                                       ) : (
                                         <span className="text-gray-300 dark:text-gray-600">-</span>
                                       )}
@@ -770,32 +782,32 @@ function ViewInventoryPageContent() {
                                   );
                                 })}
 
-                                <td className="p-2 text-center bg-blue-50/20 dark:bg-blue-900/5 border-r border-gray-200 dark:border-gray-700">
+                                <td className="p-4 text-center bg-blue-50/20 dark:bg-blue-900/5 border-r border-gray-200 dark:border-gray-700">
                                   <span className="font-bold text-blue-600 dark:text-blue-400">
                                     {variation.availableQuantity}
                                   </span>
                                 </td>
-                                <td className="p-2 text-center font-medium text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
+                                <td className="p-4 text-center font-bold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
                                   {variation.quantity}
                                 </td>
-                                <td className="p-2 text-center text-amber-600 dark:text-amber-500 border-r border-gray-200 dark:border-gray-700">
+                                <td className="p-4 text-center text-amber-600 dark:text-amber-500 border-r border-gray-200 dark:border-gray-700">
                                   {variation.reservedQuantity > 0 ? variation.reservedQuantity : '-'}
                                 </td>
-                                <td className="p-2 text-center bg-emerald-50/20 dark:bg-emerald-900/5 border-r border-gray-200 dark:border-gray-700">
-                                  {vIdx === 0 ? (
-                                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{group.totalStock}</span>
-                                  ) : (
-                                    <span className="text-gray-400 dark:text-gray-600 opacity-20">{group.totalStock}</span>
-                                  )}
-                                </td>
-                                <td className="p-2">
+
+                                {vIdx === 0 && (
+                                  <td rowSpan={rowSpan} className="p-4 text-center bg-emerald-50/20 dark:bg-emerald-900/5 border-r border-gray-200 dark:border-gray-700 align-middle">
+                                    <span className="font-black text-emerald-600 dark:text-emerald-400">{group.totalStock}</span>
+                                  </td>
+                                )}
+
+                                <td className="p-4 border-r border-gray-200 dark:border-gray-700">
                                   {extra ? (
-                                    <div className="flex flex-col gap-0.5 min-w-[60px]">
+                                    <div className="flex flex-col gap-1 min-w-[100px]">
                                       {extra.defective > 0 && (
-                                        <span className="text-[9px] font-bold text-red-500 uppercase">Def: {extra.defective}</span>
+                                        <span className="text-sm font-black text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded uppercase">Def: {extra.defective}</span>
                                       )}
                                       {extra.used > 0 && (
-                                        <span className="text-[9px] font-bold text-purple-500 uppercase">Used: {extra.used}</span>
+                                        <span className="text-sm font-black text-purple-600 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded uppercase">Used: {extra.used}</span>
                                       )}
                                     </div>
                                   ) : '-'}

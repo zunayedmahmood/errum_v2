@@ -359,3 +359,7 @@ we do not more coloumns than the data we are already showing.
 Since the system is in production, we can not afford to break anything. so, please be very careful. 
 We do not want any change to the backend.
 
+
+Currently, for 5 variation of 1 sku, we get 5 entries in the SKU coloumn and product name coloumn. instead, for 1 sku, these rows should be merged to 1. the same for SKU total. (do this instead of hiding the value).
+
+

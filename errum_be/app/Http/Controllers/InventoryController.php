@@ -64,8 +64,10 @@ class InventoryController extends Controller
 
                     return [
                         'product_id' => $product->id,
+                        'category_id' => $product->category_id,
                         'product_name' => $product->name,
                         'base_name' => $product->base_name,
+                        'variation_suffix' => $product->variation_suffix,
                         'sku' => $product->sku,
                         'total_quantity' => $totalQuantity,
                         'available_quantity' => $availableQuantity,
@@ -131,7 +133,10 @@ class InventoryController extends Controller
 
                     return [
                         'product_id' => $product->id,
+                        'category_id' => $product->category_id,
                         'product_name' => $product->name,
+                        'base_name' => $product->base_name,
+                        'variation_suffix' => $product->variation_suffix,
                         'sku' => $product->sku,
                         'total_quantity' => $totalQuantity,
                         'available_quantity' => $availableQuantity,
