@@ -47,21 +47,22 @@ class CashSheetController extends Controller
 {
     private const CASH_TYPES = ['cash'];
 
-    // ── GET /api/cash-sheet ──────────────────────────────────────────────
-
     public function index(Request $request)
     {
         $request->validate(['month' => 'nullable|date_format:Y-m']);
-        $month    = $request->input('month', now()->format('Y-m'));
-        $dateFrom = Carbon::parse($month.'-01')->startOfMonth()->toDateString();
-        $dateTo   = Carbon::parse($month.'-01')->endOfMonth()->toDateString();
 
-        $stores   = Store::where('is_active', true)
-                         ->orderBy('is_warehouse')
-                         ->orderBy('id')
-                         ->get(['id','name','is_warehouse']);
-        $storeIds = $stores->pluck('id')->toArray();
-        $dates    = collect(CarbonPeriod::create($dateFrom, $dateTo))->map(fn($d) => $d->toDateString());
+        $month    = $request->input('month', now()->format('Y-m'));
+        $dateFrom = Carbon::parse($month . '-01')->startOfMonth()->toDateString();
+        $dateTo   = Carbon::parse($month . '-01')->endOfMonth()->toDateString();
+
+        $stores = Store::where('is_active', true)
+            ->orderBy('is_warehouse')
+            ->orderBy('id')
+            ->get(['id', 'name', 'is_warehouse']);
+
+        $storeIds = $stores->pluck('id')->map(fn ($id) => (int) $id)->toArray();
+        $dates    = collect(CarbonPeriod::create($dateFrom, $dateTo))
+            ->map(fn ($d) => $d->toDateString());
 
         $rawSales      = $this->loadBranchSales($storeIds, $dateFrom, $dateTo);
         $rawPayments   = $this->loadBranchPayments($storeIds, $dateFrom, $dateTo);
@@ -72,6 +73,7 @@ class CashSheetController extends Controller
         $ownerData     = $this->loadOwnerEntries($dateFrom, $dateTo);
 
         $rows = [];
+
         foreach ($dates as $date) {
             $branches  = [];
             $totalCash = 0;
@@ -79,15 +81,16 @@ class CashSheetController extends Controller
             $totalSale = 0;
 
             foreach ($stores as $store) {
-                $sid = $store->id;
+                $sid = (int) $store->id;
+                $storeKey = (string) $sid;
 
-                $raw_cash     = (float)($rawPayments[$sid][$date]['cash'] ?? 0);
-                $raw_bank     = (float)($rawPayments[$sid][$date]['bank'] ?? 0);
-                $sale         = (float)($rawSales[$sid][$date] ?? 0);
-                $ex_on        = (float)($branchReturns[$sid][$date] ?? 0);
-                $daily_cost   = (float)($branchCosts[$sid][$date] ?? 0);
-                $salary       = (float)($adminData[$sid][$date]['salary_setaside'] ?? 0);
-                $cash_to_bank = (float)($adminData[$sid][$date]['cash_to_bank']    ?? 0);
+                $raw_cash     = (float) ($rawPayments[$storeKey][$date]['cash'] ?? 0);
+                $raw_bank     = (float) ($rawPayments[$storeKey][$date]['bank'] ?? 0);
+                $sale         = (float) ($rawSales[$storeKey][$date] ?? 0);
+                $ex_on        = (float) ($branchReturns[$storeKey][$date] ?? 0);
+                $daily_cost   = (float) ($branchCosts[$storeKey][$date] ?? 0);
+                $salary       = (float) ($adminData[$storeKey][$date]['salary_setaside'] ?? 0);
+                $cash_to_bank = (float) ($adminData[$storeKey][$date]['cash_to_bank'] ?? 0);
 
                 $disp_cash = max(0, $raw_cash - $salary - $cash_to_bank);
                 $disp_bank = $raw_bank + $cash_to_bank;
@@ -95,14 +98,15 @@ class CashSheetController extends Controller
                 $branches[] = [
                     'store_id'     => $sid,
                     'store_name'   => $store->name,
-                    'daily_sale'   => $sale,
-                    'raw_cash'     => $raw_cash,
-                    'cash'         => $disp_cash,
-                    'bank'         => $disp_bank,
-                    'ex_on'        => $ex_on,
-                    'salary'       => $salary,
-                    'cash_to_bank' => $cash_to_bank,
-                    'daily_cost'   => $daily_cost,
+                    'is_warehouse' => (bool) $store->is_warehouse,
+                    'daily_sale'   => round($sale, 2),
+                    'raw_cash'     => round($raw_cash, 2),
+                    'cash'         => round($disp_cash, 2),
+                    'bank'         => round($disp_bank, 2),
+                    'ex_on'        => round($ex_on, 2),
+                    'salary'       => round($salary, 2),
+                    'cash_to_bank' => round($cash_to_bank, 2),
+                    'daily_cost'   => round($daily_cost, 2),
                 ];
 
                 $totalSale += $sale;
@@ -111,21 +115,21 @@ class CashSheetController extends Controller
             }
 
             $online     = $onlineData[$date] ?? [];
-            $ol_sales   = (float)($online['daily_sales']   ?? 0);
-            $ol_advance = (float)($online['advance']        ?? 0);
-            $ol_payment = (float)($online['online_payment'] ?? 0);
-            $ol_cod     = (float)($online['cod']            ?? 0);
+            $ol_sales   = (float) ($online['daily_sales'] ?? 0);
+            $ol_advance = (float) ($online['advance'] ?? 0);
+            $ol_payment = (float) ($online['online_payment'] ?? 0);
+            $ol_cod     = (float) ($online['cod'] ?? 0);
 
             $totalBank += $ol_advance; // online advance → bank
 
-            $sslzc_recv  = (float)($adminData['_global'][$date]['sslzc']  ?? 0);
-            $pathao_recv = (float)($adminData['_global'][$date]['pathao'] ?? 0);
+            $sslzc_recv  = (float) ($adminData['_global'][$date]['sslzc'] ?? 0);
+            $pathao_recv = (float) ($adminData['_global'][$date]['pathao'] ?? 0);
 
             $owner       = $ownerData[$date] ?? [];
-            $cash_invest = (float)($owner['cash_invest'] ?? 0);
-            $bank_invest = (float)($owner['bank_invest'] ?? 0);
-            $cash_cost   = (float)($owner['cash_cost']   ?? 0);
-            $bank_cost   = (float)($owner['bank_cost']   ?? 0);
+            $cash_invest = (float) ($owner['cash_invest'] ?? 0);
+            $bank_invest = (float) ($owner['bank_invest'] ?? 0);
+            $cash_cost   = (float) ($owner['cash_cost'] ?? 0);
+            $bank_cost   = (float) ($owner['bank_cost'] ?? 0);
 
             $final_bank      = $totalBank + $sslzc_recv + $pathao_recv;
             $total_cash      = $totalCash + $cash_invest;
@@ -137,30 +141,30 @@ class CashSheetController extends Controller
                 'date'     => $date,
                 'branches' => $branches,
                 'online'   => [
-                    'daily_sales'    => $ol_sales,
-                    'advance'        => $ol_advance,
-                    'online_payment' => $ol_payment,
-                    'cod'            => $ol_cod,
+                    'daily_sales'    => round($ol_sales, 2),
+                    'advance'        => round($ol_advance, 2),
+                    'online_payment' => round($ol_payment, 2),
+                    'cod'            => round($ol_cod, 2),
                 ],
                 'disbursements' => [
-                    'sslzc_received'  => $sslzc_recv,
-                    'pathao_received' => $pathao_recv,
+                    'sslzc_received'  => round($sslzc_recv, 2),
+                    'pathao_received' => round($pathao_recv, 2),
                 ],
                 'totals' => [
-                    'total_sale' => $totalSale + $ol_sales,
-                    'cash'       => $totalCash,
-                    'bank'       => $totalBank,
-                    'final_bank' => $final_bank,
+                    'total_sale' => round($totalSale + $ol_sales, 2),
+                    'cash'       => round($totalCash, 2),
+                    'bank'       => round($totalBank, 2),
+                    'final_bank' => round($final_bank, 2),
                 ],
                 'owner' => [
-                    'cash_invest'     => $cash_invest,
-                    'bank_invest'     => $bank_invest,
-                    'total_cash'      => $total_cash,
-                    'total_bank'      => $total_bank,
-                    'cash_cost'       => $cash_cost,
-                    'bank_cost'       => $bank_cost,
-                    'cash_after_cost' => $cash_after_cost,
-                    'bank_after_cost' => $bank_after_cost,
+                    'cash_invest'     => round($cash_invest, 2),
+                    'bank_invest'     => round($bank_invest, 2),
+                    'total_cash'      => round($total_cash, 2),
+                    'total_bank'      => round($total_bank, 2),
+                    'cash_cost'       => round($cash_cost, 2),
+                    'bank_cost'       => round($bank_cost, 2),
+                    'cash_after_cost' => round($cash_after_cost, 2),
+                    'bank_after_cost' => round($bank_after_cost, 2),
                 ],
             ];
         }
@@ -168,13 +172,15 @@ class CashSheetController extends Controller
         return response()->json([
             'success' => true,
             'month'   => $month,
-            'stores'  => $stores->map(fn($s) => ['id' => $s->id, 'name' => $s->name, 'is_warehouse' => (bool) $s->is_warehouse]),
+            'stores'  => $stores->map(fn ($s) => [
+                'id'           => (int) $s->id,
+                'name'         => $s->name,
+                'is_warehouse' => (bool) $s->is_warehouse,
+            ]),
             'data'    => $rows,
             'summary' => $this->buildSummary($rows, $stores),
         ]);
     }
-
-    // ── GET /api/cash-sheet/entries?date=2026-04-14 ──────────────────────
 
     public function entries(Request $request)
     {
@@ -184,16 +190,20 @@ class CashSheetController extends Controller
         return response()->json([
             'success'       => true,
             'date'          => $date,
-            'branch_costs'  => BranchCostEntry::with(['store:id,name,is_warehouse','createdBy:id,name'])
-                                ->whereDate('entry_date', $date)->orderByDesc('created_at')->get(),
-            'admin_entries' => AdminEntry::with(['store:id,name,is_warehouse','createdBy:id,name'])
-                                ->whereDate('entry_date', $date)->orderByDesc('created_at')->get(),
+            'branch_costs'  => BranchCostEntry::with(['store:id,name,is_warehouse', 'createdBy:id,name'])
+                ->whereDate('entry_date', $date)
+                ->orderByDesc('created_at')
+                ->get(),
+            'admin_entries' => AdminEntry::with(['store:id,name,is_warehouse', 'createdBy:id,name'])
+                ->whereDate('entry_date', $date)
+                ->orderByDesc('created_at')
+                ->get(),
             'owner_entries' => OwnerEntry::with(['createdBy:id,name'])
-                                ->whereDate('entry_date', $date)->orderByDesc('created_at')->get(),
+                ->whereDate('entry_date', $date)
+                ->orderByDesc('created_at')
+                ->get(),
         ]);
     }
-
-    // ── POST /api/cash-sheet/branch-cost ────────────────────────────────
 
     public function storeBranchCost(Request $request)
     {
@@ -203,8 +213,16 @@ class CashSheetController extends Controller
             'amount'     => 'required|numeric|min:0.01',
             'details'    => 'nullable|string|max:500',
         ]);
-        $entry = BranchCostEntry::create([...$v, 'created_by' => Auth::guard('api')->id()]);
-        return response()->json(['success' => true, 'entry' => $entry->load('createdBy:id,name')], 201);
+
+        $entry = BranchCostEntry::create([
+            ...$v,
+            'created_by' => Auth::guard('api')->id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'entry'   => $entry->load(['store:id,name,is_warehouse', 'createdBy:id,name']),
+        ], 201);
     }
 
     public function destroyBranchCost(int $id)
@@ -212,8 +230,6 @@ class CashSheetController extends Controller
         BranchCostEntry::findOrFail($id)->delete();
         return response()->json(['success' => true]);
     }
-
-    // ── POST /api/cash-sheet/admin ───────────────────────────────────────
 
     public function storeAdmin(Request $request)
     {
@@ -224,15 +240,21 @@ class CashSheetController extends Controller
             'amount'     => 'required|numeric|min:0.01',
             'details'    => 'nullable|string|max:500',
         ]);
-        if (in_array($v['type'], ['salary_setaside','cash_to_bank']) && empty($v['store_id'])) {
+
+        if (in_array($v['type'], ['salary_setaside', 'cash_to_bank'], true) && empty($v['store_id'])) {
             return response()->json(['message' => 'store_id required for this type.'], 422);
         }
+
         $entry = AdminEntry::create([
             ...$v,
-            'store_id'   => in_array($v['type'], ['sslzc','pathao']) ? null : $v['store_id'],
+            'store_id'   => in_array($v['type'], ['sslzc', 'pathao'], true) ? null : $v['store_id'],
             'created_by' => Auth::guard('api')->id(),
         ]);
-        return response()->json(['success' => true, 'entry' => $entry->load(['store:id,name','createdBy:id,name'])], 201);
+
+        return response()->json([
+            'success' => true,
+            'entry'   => $entry->load(['store:id,name,is_warehouse', 'createdBy:id,name']),
+        ], 201);
     }
 
     public function destroyAdmin(int $id)
@@ -240,8 +262,6 @@ class CashSheetController extends Controller
         AdminEntry::findOrFail($id)->delete();
         return response()->json(['success' => true]);
     }
-
-    // ── POST /api/cash-sheet/owner ───────────────────────────────────────
 
     public function storeOwner(Request $request)
     {
@@ -251,8 +271,16 @@ class CashSheetController extends Controller
             'amount'     => 'required|numeric|min:0.01',
             'details'    => 'nullable|string|max:500',
         ]);
-        $entry = OwnerEntry::create([...$v, 'created_by' => Auth::guard('api')->id()]);
-        return response()->json(['success' => true, 'entry' => $entry->load('createdBy:id,name')], 201);
+
+        $entry = OwnerEntry::create([
+            ...$v,
+            'created_by' => Auth::guard('api')->id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'entry'   => $entry->load(['createdBy:id,name']),
+        ], 201);
     }
 
     public function destroyOwner(int $id)
@@ -261,62 +289,113 @@ class CashSheetController extends Controller
         return response()->json(['success' => true]);
     }
 
-    // ── Private loaders ──────────────────────────────────────────────────
-
     private function loadBranchSales(array $ids, string $from, string $to): array
     {
         $out = [];
-        DB::table('orders')
-            ->select('store_id', DB::raw('DATE(created_at) as day'), DB::raw('SUM(total_amount) as total'))
-            ->whereIn('store_id', $ids)->where('order_type','counter')
-            ->whereDate('created_at','>=',$from)->whereDate('created_at','<=',$to)
-            ->whereNotIn('status',['cancelled','refunded'])
-            ->groupBy('store_id','day')->get()
-            ->each(fn($r) => $out[$r->store_id][$r->day] = (float)$r->total);
+
+        $rows = DB::table('orders as o')
+            ->join('order_payments as op', 'op.order_id', '=', 'o.id')
+            ->select(
+                'op.store_id',
+                DB::raw('DATE(COALESCE(op.completed_at, o.created_at)) as day'),
+                'o.id as order_id',
+                'o.total_amount'
+            )
+            ->whereIn('op.store_id', $ids)
+            ->where('o.order_type', 'counter')
+            ->whereNotIn('o.status', ['cancelled', 'refunded'])
+            ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '>=', $from)
+            ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '<=', $to)
+            ->groupBy('op.store_id', 'day', 'o.id', 'o.total_amount')
+            ->get();
+
+        $grouped = [];
+        foreach ($rows as $r) {
+            $storeKey = (string) $r->store_id;
+            $day = $r->day;
+            $grouped[$storeKey][$day] = ($grouped[$storeKey][$day] ?? 0) + (float) $r->total_amount;
+        }
+
+        foreach ($grouped as $storeId => $days) {
+            foreach ($days as $day => $total) {
+                $out[$storeId][$day] = round($total, 2);
+            }
+        }
+
         return $out;
     }
 
     private function loadBranchPayments(array $ids, string $from, string $to): array
     {
         $out = [];
+
         DB::table('order_payments as op')
-            ->join('payment_methods as pm','pm.id','=','op.payment_method_id')
-            ->join('orders as o','o.id','=','op.order_id')
-            ->select('op.store_id', DB::raw('DATE(op.completed_at) as day'), 'pm.type as mt', DB::raw('SUM(op.amount) as total'))
-            ->whereIn('op.store_id',$ids)->where('o.order_type','counter')
-            ->whereDate('op.completed_at','>=',$from)->whereDate('op.completed_at','<=',$to)
-            ->where('op.status','completed')
-            ->whereNotIn('op.payment_type',['exchange_balance','store_credit','balance_carryover'])
+            ->join('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->select(
+                'op.store_id',
+                DB::raw('DATE(op.completed_at) as day'),
+                'pm.type as mt',
+                DB::raw('SUM(op.amount) as total')
+            )
+            ->whereIn('op.store_id', $ids)
+            ->where('o.order_type', 'counter')
+            ->whereDate('op.completed_at', '>=', $from)
+            ->whereDate('op.completed_at', '<=', $to)
+            ->where('op.status', 'completed')
+            ->whereNotIn('op.payment_type', ['exchange_balance', 'store_credit', 'balance_carryover'])
             ->whereNotNull('op.completed_at')
-            ->groupBy('op.store_id','day','pm.type')->get()
-            ->each(function($r) use (&$out) {
-                $b = in_array($r->mt, self::CASH_TYPES) ? 'cash' : 'bank';
-                $out[$r->store_id][$r->day][$b] = ($out[$r->store_id][$r->day][$b] ?? 0) + (float)$r->total;
+            ->groupBy('op.store_id', 'day', 'pm.type')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $bucket = in_array($r->mt, self::CASH_TYPES, true) ? 'cash' : 'bank';
+                $storeKey = (string) $r->store_id;
+                $out[$storeKey][$r->day][$bucket] = ($out[$storeKey][$r->day][$bucket] ?? 0) + (float) $r->total;
             });
+
         return $out;
     }
 
     private function loadBranchReturns(array $ids, string $from, string $to): array
     {
         $out = [];
+
         DB::table('product_returns as pr')
-            ->join('orders as o','o.id','=','pr.order_id')
-            ->select('o.store_id', DB::raw('DATE(pr.created_at) as day'), DB::raw('SUM(pr.total_return_value) as total'))
-            ->whereIn('o.store_id',$ids)->where('o.order_type','counter')
-            ->whereIn('pr.status',['approved','completed'])
-            ->whereDate('pr.created_at','>=',$from)->whereDate('pr.created_at','<=',$to)
-            ->groupBy('o.store_id','day')->get()
-            ->each(fn($r) => $out[$r->store_id][$r->day] = (float)$r->total);
+            ->join('orders as o', 'o.id', '=', 'pr.order_id')
+            ->select(
+                'o.store_id',
+                DB::raw('DATE(pr.created_at) as day'),
+                DB::raw('SUM(pr.total_return_value) as total')
+            )
+            ->whereIn('o.store_id', $ids)
+            ->where('o.order_type', 'counter')
+            ->whereIn('pr.status', ['approved', 'completed'])
+            ->whereDate('pr.created_at', '>=', $from)
+            ->whereDate('pr.created_at', '<=', $to)
+            ->groupBy('o.store_id', 'day')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $storeKey = (string) $r->store_id;
+                $out[$storeKey][$r->day] = (float) $r->total;
+            });
+
         return $out;
     }
 
     private function loadBranchCosts(array $ids, string $from, string $to): array
     {
         $out = [];
+
         BranchCostEntry::select('store_id', DB::raw('DATE(entry_date) as day'), DB::raw('SUM(amount) as total'))
-            ->whereIn('store_id',$ids)->whereBetween('entry_date',[$from,$to])
-            ->groupBy('store_id','day')->get()
-            ->each(fn($r) => $out[$r->store_id][$r->day] = (float)$r->total);
+            ->whereIn('store_id', $ids)
+            ->whereBetween('entry_date', [$from, $to])
+            ->groupBy('store_id', 'day')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $storeKey = (string) $r->store_id;
+                $out[$storeKey][$r->day] = (float) $r->total;
+            });
+
         return $out;
     }
 
@@ -324,38 +403,59 @@ class CashSheetController extends Controller
     private function loadAdminEntries(string $from, string $to): array
     {
         $out = [];
-        AdminEntry::select('store_id','type', DB::raw('DATE(entry_date) as day'), DB::raw('SUM(amount) as total'))
-            ->whereBetween('entry_date',[$from,$to])
-            ->groupBy('store_id','type','day')->get()
-            ->each(function($r) use (&$out) {
-                $key = in_array($r->type,['sslzc','pathao']) ? '_global' : (string)$r->store_id;
-                $out[$key][$r->day][$r->type] = ($out[$key][$r->day][$r->type] ?? 0) + (float)$r->total;
+
+        AdminEntry::select('store_id', 'type', DB::raw('DATE(entry_date) as day'), DB::raw('SUM(amount) as total'))
+            ->whereBetween('entry_date', [$from, $to])
+            ->groupBy('store_id', 'type', 'day')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $key = in_array($r->type, ['sslzc', 'pathao'], true) ? '_global' : (string) $r->store_id;
+                $out[$key][$r->day][$r->type] = ($out[$key][$r->day][$r->type] ?? 0) + (float) $r->total;
             });
+
         return $out;
     }
 
     private function loadOnlineData(string $from, string $to): array
     {
         $out = [];
+
         DB::table('orders')
-            ->select(DB::raw('DATE(created_at) as day'), DB::raw('SUM(total_amount) as ts'), DB::raw('SUM(paid_amount) as adv'), DB::raw('SUM(outstanding_amount) as cod'))
-            ->where('order_type','social_commerce')
-            ->whereDate('created_at','>=',$from)->whereDate('created_at','<=',$to)
-            ->whereNotIn('status',['cancelled','refunded'])->groupBy('day')->get()
-            ->each(function($r) use (&$out) {
-                $out[$r->day]['daily_sales'] = ($out[$r->day]['daily_sales'] ?? 0) + (float)$r->ts;
-                $out[$r->day]['advance']     = ($out[$r->day]['advance']     ?? 0) + (float)$r->adv;
-                $out[$r->day]['cod']         = ($out[$r->day]['cod']         ?? 0) + (float)$r->cod;
+            ->select(
+                DB::raw('DATE(created_at) as day'),
+                DB::raw('SUM(total_amount) as ts'),
+                DB::raw('SUM(paid_amount) as adv'),
+                DB::raw('SUM(outstanding_amount) as cod')
+            )
+            ->where('order_type', 'social_commerce')
+            ->whereDate('created_at', '>=', $from)
+            ->whereDate('created_at', '<=', $to)
+            ->whereNotIn('status', ['cancelled', 'refunded'])
+            ->groupBy('day')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $out[$r->day]['daily_sales'] = ($out[$r->day]['daily_sales'] ?? 0) + (float) $r->ts;
+                $out[$r->day]['advance']     = ($out[$r->day]['advance'] ?? 0) + (float) $r->adv;
+                $out[$r->day]['cod']         = ($out[$r->day]['cod'] ?? 0) + (float) $r->cod;
             });
+
         DB::table('orders')
-            ->select(DB::raw('DATE(created_at) as day'), DB::raw('SUM(total_amount) as ts'), DB::raw('SUM(paid_amount) as op'))
-            ->where('order_type','ecommerce')
-            ->whereDate('created_at','>=',$from)->whereDate('created_at','<=',$to)
-            ->whereNotIn('status',['cancelled','refunded'])->groupBy('day')->get()
-            ->each(function($r) use (&$out) {
-                $out[$r->day]['daily_sales']    = ($out[$r->day]['daily_sales']    ?? 0) + (float)$r->ts;
-                $out[$r->day]['online_payment'] = ($out[$r->day]['online_payment'] ?? 0) + (float)$r->op;
+            ->select(
+                DB::raw('DATE(created_at) as day'),
+                DB::raw('SUM(total_amount) as ts'),
+                DB::raw('SUM(paid_amount) as op')
+            )
+            ->where('order_type', 'ecommerce')
+            ->whereDate('created_at', '>=', $from)
+            ->whereDate('created_at', '<=', $to)
+            ->whereNotIn('status', ['cancelled', 'refunded'])
+            ->groupBy('day')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $out[$r->day]['daily_sales']    = ($out[$r->day]['daily_sales'] ?? 0) + (float) $r->ts;
+                $out[$r->day]['online_payment'] = ($out[$r->day]['online_payment'] ?? 0) + (float) $r->op;
             });
+
         return $out;
     }
 
@@ -364,7 +464,7 @@ class CashSheetController extends Controller
         $out = [];
 
         DB::table('owner_entries')
-            ->selectRaw('entry_date as day, type, SUM(amount) as total')
+            ->selectRaw('DATE(entry_date) as day, type, SUM(amount) as total')
             ->whereDate('entry_date', '>=', $from)
             ->whereDate('entry_date', '<=', $to)
             ->groupBy('day', 'type')
@@ -379,30 +479,69 @@ class CashSheetController extends Controller
 
     private function buildSummary(array $rows, $stores): array
     {
-        $s = [
+        $summary = [
             'branches'      => [],
-            'online'        => ['daily_sales'=>0,'advance'=>0,'online_payment'=>0,'cod'=>0],
-            'disbursements' => ['sslzc_received'=>0,'pathao_received'=>0],
-            'totals'        => ['total_sale'=>0,'cash'=>0,'bank'=>0,'final_bank'=>0],
-            'owner'         => ['cash_invest'=>0,'bank_invest'=>0,'total_cash'=>0,'total_bank'=>0,'cash_cost'=>0,'bank_cost'=>0,'cash_after_cost'=>0,'bank_after_cost'=>0],
+            'online'        => ['daily_sales' => 0, 'advance' => 0, 'online_payment' => 0, 'cod' => 0],
+            'disbursements' => ['sslzc_received' => 0, 'pathao_received' => 0],
+            'totals'        => ['total_sale' => 0, 'cash' => 0, 'bank' => 0, 'final_bank' => 0],
+            'owner'         => [
+                'cash_invest' => 0,
+                'bank_invest' => 0,
+                'total_cash' => 0,
+                'total_bank' => 0,
+                'cash_cost' => 0,
+                'bank_cost' => 0,
+                'cash_after_cost' => 0,
+                'bank_after_cost' => 0,
+            ],
         ];
+
         foreach ($stores as $st) {
-            $s['branches'][$st->id] = ['store_id'=>$st->id,'store_name'=>$st->name,'daily_sale'=>0,'cash'=>0,'bank'=>0,'ex_on'=>0,'salary'=>0,'cash_to_bank'=>0,'daily_cost'=>0];
+            $summary['branches'][$st->id] = [
+                'store_id'     => (int) $st->id,
+                'store_name'   => $st->name,
+                'is_warehouse' => (bool) $st->is_warehouse,
+                'daily_sale'   => 0,
+                'cash'         => 0,
+                'bank'         => 0,
+                'ex_on'        => 0,
+                'salary'       => 0,
+                'cash_to_bank' => 0,
+                'daily_cost'   => 0,
+            ];
         }
+
         foreach ($rows as $row) {
             foreach ($row['branches'] as $b) {
-                foreach (['daily_sale','cash','bank','ex_on','salary','cash_to_bank','daily_cost'] as $f) {
-                    $s['branches'][$b['store_id']][$f] += $b[$f];
+                foreach (['daily_sale', 'cash', 'bank', 'ex_on', 'salary', 'cash_to_bank', 'daily_cost'] as $field) {
+                    $summary['branches'][$b['store_id']][$field] += (float) $b[$field];
                 }
             }
-            foreach (['daily_sales','advance','online_payment','cod'] as $f) $s['online'][$f] += $row['online'][$f];
-            $s['disbursements']['sslzc_received']  += $row['disbursements']['sslzc_received'];
-            $s['disbursements']['pathao_received'] += $row['disbursements']['pathao_received'];
-            foreach (['total_sale','cash','bank','final_bank'] as $f) $s['totals'][$f] += $row['totals'][$f];
-            foreach (['cash_invest','bank_invest','total_cash','total_bank','cash_cost','bank_cost','cash_after_cost','bank_after_cost'] as $f) $s['owner'][$f] += $row['owner'][$f];
+
+            foreach (['daily_sales', 'advance', 'online_payment', 'cod'] as $field) {
+                $summary['online'][$field] += (float) $row['online'][$field];
+            }
+
+            $summary['disbursements']['sslzc_received'] += (float) $row['disbursements']['sslzc_received'];
+            $summary['disbursements']['pathao_received'] += (float) $row['disbursements']['pathao_received'];
+
+            foreach (['total_sale', 'cash', 'bank', 'final_bank'] as $field) {
+                $summary['totals'][$field] += (float) $row['totals'][$field];
+            }
+
+            foreach (['cash_invest', 'bank_invest', 'total_cash', 'total_bank', 'cash_cost', 'bank_cost', 'cash_after_cost', 'bank_after_cost'] as $field) {
+                $summary['owner'][$field] += (float) $row['owner'][$field];
+            }
         }
-        array_walk_recursive($s, fn(&$v) => $v = is_float($v) ? round($v,2) : $v);
-        $s['branches'] = array_values($s['branches']);
-        return $s;
+
+        array_walk_recursive($summary, function (&$value) {
+            if (is_float($value) || is_int($value)) {
+                $value = round((float) $value, 2);
+            }
+        });
+
+        $summary['branches'] = array_values($summary['branches']);
+
+        return $summary;
     }
 }

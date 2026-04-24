@@ -438,6 +438,8 @@ Route::middleware('auth:api')->group(function () {
             Route::post('/holidays', [\App\Http\Controllers\AttendanceController::class, 'declareHoliday']);
             Route::get('/holidays', [\App\Http\Controllers\AttendanceController::class, 'listHolidays']);
             
+            
+            Route::get('/schedules', [\App\Http\Controllers\AttendanceController::class, 'getSchedules']); // added
             Route::post('/schedules', [\App\Http\Controllers\AttendanceController::class, 'assignSchedule']);
             
             Route::post('/mark', [\App\Http\Controllers\AttendanceController::class, 'markAttendance']);
@@ -836,12 +838,22 @@ Route::middleware('auth:api')->group(function () {
     // ============================================
 
     Route::prefix('cash-sheet')->group(function () {
-        // GET  /api/cash-sheet?month=2026-04   → full monthly sheet
+        // GET  /api/cash-sheet?month=2026-04          → full monthly sheet
         Route::get('/', [\App\Http\Controllers\CashSheetController::class, 'index']);
-        // POST /api/cash-sheet/branch          → branch manager saves daily cost + salary
-        Route::post('/branch', [\App\Http\Controllers\CashSheetController::class, 'saveBranch']);
-        // POST /api/cash-sheet/owner           → admin/owner saves disbursements + boss entries
-        Route::post('/owner', [\App\Http\Controllers\CashSheetController::class, 'saveOwner']);
+        // GET  /api/cash-sheet/entries?date=2026-04-14 → raw entries for a date (detail panel)
+        Route::get('/entries', [\App\Http\Controllers\CashSheetController::class, 'entries']);
+
+        // Branch cost entries (branch managers)
+        Route::post('/branch-cost', [\App\Http\Controllers\CashSheetController::class, 'storeBranchCost']);
+        Route::delete('/branch-cost/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyBranchCost']);
+
+        // Admin entries (salary set-aside, cash→bank, sslzc, pathao)
+        Route::post('/admin', [\App\Http\Controllers\CashSheetController::class, 'storeAdmin']);
+        Route::delete('/admin/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyAdmin']);
+
+        // Owner entries (investments + costs)
+        Route::post('/owner', [\App\Http\Controllers\CashSheetController::class, 'storeOwner']);
+        Route::delete('/owner/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyOwner']);
     });
 
     // ============================================

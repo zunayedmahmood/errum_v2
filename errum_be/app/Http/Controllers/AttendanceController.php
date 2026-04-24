@@ -1084,7 +1084,7 @@ class AttendanceController extends Controller
             'is_applied' => false,
         ]);
 
-        $this->writeRewardFineHistory(
+        $this->safeWriteRewardFineHistory(
             $entry,
             'created',
             null,
@@ -1139,7 +1139,7 @@ class AttendanceController extends Controller
             'updated_by' => $actor->id,
         ]);
 
-        $this->writeRewardFineHistory(
+        $this->safeWriteRewardFineHistory(
             $entry,
             'updated',
             $old,
@@ -1177,7 +1177,7 @@ class AttendanceController extends Controller
         $old = $entry->toArray();
         $entry->delete();
 
-        $this->writeRewardFineHistory(
+        $this->safeWriteRewardFineHistory(
             $entry,
             'deleted',
             $old,
@@ -1437,7 +1437,7 @@ class AttendanceController extends Controller
                     'updated_by' => $actor->id,
                 ]);
 
-                $this->writeRewardFineHistory(
+                $this->safeWriteRewardFineHistory(
                     $entry,
                     'applied',
                     $oldState,
@@ -1488,7 +1488,8 @@ class AttendanceController extends Controller
 
     private function isManager(Employee $employee): bool
     {
-        return $employee->role?->slug === 'manager';
+        $slug = $employee->role?->slug;
+        return in_array($slug, ['manager', 'branch-manager', 'branch_manager'], true);
     }
 
     private function assertStoreAccess(Employee $actor, int $storeId, bool $allowAdminAny = true): void
@@ -1781,6 +1782,26 @@ class AttendanceController extends Controller
         $from = Carbon::parse($validated['from']);
         $to = Carbon::parse($validated['to']);
         return [$from, $to];
+    }
+
+    private function safeWriteRewardFineHistory(
+        EmployeeRewardFine $entry,
+        string $action,
+        ?array $old,
+        ?array $new,
+        ?string $reason,
+        int $changedBy,
+        array $metadata = []
+    ): void {
+        try {
+            $this->writeRewardFineHistory($entry, $action, $old, $new, $reason, $changedBy, $metadata);
+        } catch (\Throwable $e) {
+            logger()->warning('Reward/fine history write failed after main entry save', [
+                'reward_fine_id' => $entry->id ?? null,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function writeRewardFineHistory(
