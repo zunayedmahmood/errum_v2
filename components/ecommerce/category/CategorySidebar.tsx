@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 interface Category {
@@ -39,6 +40,8 @@ export default function CategorySidebar({
   activeCategory,
   onCategoryChange,
   selectedPriceRange,
+  onPriceRangeChange,
+  selectedStock,
   onStockChange,
   selectedSort,
   onSortChange,
@@ -46,6 +49,7 @@ export default function CategorySidebar({
   onSearchChange,
   useIdForRouting = false,
 }: CategorySidebarProps) {
+  const router = useRouter();
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
 
   const toggleCategory = (categoryId: number) => {
@@ -86,7 +90,11 @@ export default function CategorySidebar({
           style={{ paddingLeft: `${8 + level * 16}px` }}
         >
           <span
-            onClick={() => onCategoryChange(categoryRouteValue(category))}
+            onClick={() => {
+              const slug = slugify(category.name);
+              router.push(`/e-commerce/${encodeURIComponent(slug)}`);
+              onCategoryChange(categoryRouteValue(category));
+            }}
             className="flex-1"
           >
             {category.name}
@@ -161,7 +169,10 @@ export default function CategorySidebar({
                 ? 'bg-[var(--cyan-pale)] text-[var(--cyan)] font-medium border border-[var(--cyan-border)]'
                 : 'hover:bg-[var(--ivory-ghost)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
-            onClick={() => onCategoryChange('all')}
+            onClick={() => {
+              router.push('/e-commerce/products');
+              onCategoryChange('all');
+            }}
           >
             All Categories
           </div>

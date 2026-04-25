@@ -35,7 +35,8 @@ export default function GlobalCategorySidebar({ categories, isOpen, onClose }: G
   };
 
   const navigateToCategory = (category: CatalogCategory) => {
-    router.push(`/e-commerce/products?category=${slugify(category.name)}`);
+    const slug = slugify(category.name);
+    router.push(`/e-commerce/${encodeURIComponent(slug)}`);
     onClose();
   };
 

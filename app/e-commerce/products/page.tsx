@@ -69,7 +69,7 @@ function ProductsPageContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [isClosingFilters, setIsClosingFilters] = useState(false);
-  
+
   // Notify navigation about mobile sidebar state
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('mobile-sidebar-toggle', { detail: { open: showMobileFilters } }));
@@ -250,8 +250,8 @@ function ProductsPageContent() {
           key={i}
           onClick={() => handlePageChange(i)}
           className={`h-9 w-9 sm:h-10 sm:w-10 rounded-xl text-xs sm:text-sm font-medium transition-all ${pagination.current_page === i
-              ? 'bg-[var(--gold)] text-white shadow-lg'
-              : 'bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)]'
+            ? 'bg-[var(--gold)] text-white shadow-lg'
+            : 'bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)]'
             }`}
         >
           {i}
@@ -308,7 +308,7 @@ function ProductsPageContent() {
                 selectedPriceRange={priceRange}
                 onPriceRangeChange={handlePriceChange}
                 selectedStock="all"
-                onStockChange={() => {}}
+                onStockChange={() => { }}
                 useIdForRouting={true}
               />
 
@@ -440,15 +440,15 @@ function ProductsPageContent() {
       {/* Mobile Filters Drawer */}
       {showMobileFilters && (
         <div className="fixed inset-0 z-[100] xl:hidden">
-          <div 
+          <div
             className={`fixed inset-0 bg-black/40 backdrop-blur-sm ${isClosingFilters ? 'ec-anim-backdrop-out' : 'ec-anim-backdrop'}`}
             onClick={closeFilters}
           />
           <div className={`fixed top-0 right-0 bottom-0 z-[101] w-[85%] max-w-sm bg-[var(--bg-root)] shadow-2xl flex flex-col ${isClosingFilters ? 'ec-anim-slide-out-right' : 'ec-anim-slide-in-right'}`}>
             <div className="flex items-center justify-between p-8 border-b border-[var(--border-default)]">
               <h2 className="text-xl font-medium text-[var(--text-primary)] uppercase tracking-widest" style={{ fontFamily: "'Poppins', sans-serif" }}>Filters</h2>
-              <button 
-                onClick={closeFilters} 
+              <button
+                onClick={closeFilters}
                 className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-depth)] border border-[var(--border-default)] transition-all"
               >
                 <X className="h-5 w-5" />
@@ -456,7 +456,7 @@ function ProductsPageContent() {
             </div>
 
             <div className="flex-1 overflow-y-auto ec-scrollbar p-8 space-y-12 pb-32">
-                <CategorySidebar
+              <CategorySidebar
                 categories={categories}
                 activeCategory={String(categoryId)}
                 onCategoryChange={(val) => {
@@ -474,27 +474,27 @@ function ProductsPageContent() {
               />
 
               <div className="mt-8 space-y-4">
-                 <h3 className="text-[10px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>Sort By</h3>
-                 <div className="grid grid-cols-1 gap-3">
-                   {[
-                     { id: 'newest', label: 'Newest First' },
-                     { id: 'price_asc', label: 'Price: Low to High' },
-                     { id: 'price_desc', label: 'Price: High to Low' },
-                   ].map(opt => (
-                     <button
-                       key={opt.id}
-                       onClick={() => handleSortChange(opt.id)}
-                       className={`text-left p-5 rounded-2xl border transition-all text-sm font-medium ${sortBy === opt.id ? 'border-[var(--cyan-border)] bg-[var(--cyan-pale)] text-[var(--cyan)]' : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}
-                     >
-                       {opt.label}
-                     </button>
-                   ))}
-                 </div>
+                <h3 className="text-[10px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>Sort By</h3>
+                <div className="grid grid-cols-1 gap-3">
+                  {[
+                    { id: 'newest', label: 'Newest First' },
+                    { id: 'price_asc', label: 'Price: Low to High' },
+                    { id: 'price_desc', label: 'Price: High to Low' },
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => handleSortChange(opt.id)}
+                      className={`text-left p-5 rounded-2xl border transition-all text-sm font-medium ${sortBy === opt.id ? 'border-[var(--cyan-border)] bg-[var(--cyan-pale)] text-[var(--cyan)]' : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
             <div className="absolute bottom-0 left-0 right-0 p-8 bg-[var(--bg-root)] border-t border-[var(--border-default)]">
-              <button 
+              <button
                 onClick={closeFilters}
                 className="w-full py-5 rounded-2xl bg-[var(--gold)] text-white font-bold shadow-lg tracking-widest uppercase text-xs"
                 style={{ fontFamily: "'Poppins', sans-serif" }}
