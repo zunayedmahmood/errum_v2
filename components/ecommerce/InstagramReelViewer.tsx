@@ -87,7 +87,7 @@ export default function InstagramReelViewer() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '32px' }}>
           <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
           <h2 style={{
-            fontFamily: "'Jost', sans-serif",
+            fontFamily: "'Poppins', sans-serif",
             fontSize: '18px',
             fontWeight: 800,
             textTransform: 'uppercase',
@@ -100,7 +100,7 @@ export default function InstagramReelViewer() {
           <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
         </div>
         <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 40px' }}>
-          <p style={{ color: '#666666', fontSize: '14px', lineHeight: 1.6, fontFamily: "'Jost', sans-serif", margin: 0 }}>
+          <p style={{ color: '#666666', fontSize: '14px', lineHeight: 1.6, fontFamily: "'Poppins', sans-serif", margin: 0 }}>
             Explore our latest drops, community styling, and behind-the-scenes highlights straight from our studio.
           </p>
           <a
@@ -113,7 +113,7 @@ export default function InstagramReelViewer() {
               gap: '8px',
               marginTop: '16px',
               color: '#111111',
-              fontFamily: "'Jost', sans-serif",
+              fontFamily: "'Poppins', sans-serif",
               fontSize: '12px',
               fontWeight: 700,
               textTransform: 'uppercase',

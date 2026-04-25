@@ -168,11 +168,11 @@ export default function PaymentStatusChecker({ onPaymentVerified }: PaymentStatu
               </svg>
             </div>
 
-            <h2 className="text-5xl md:text-6xl font-medium text-[var(--text-primary)] mb-4 ec-anim-fade-up" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Order Placed!</h2>
+            <h2 className="text-5xl md:text-6xl font-medium text-[var(--text-primary)] mb-4 ec-anim-fade-up" style={{ fontFamily: "'Poppins', sans-serif" }}>Order Placed!</h2>
             
             <div className="ec-anim-fade-up ec-delay-1 mb-8">
-               <p className="text-[var(--text-muted)] text-[10px] uppercase font-bold tracking-[0.3em] mb-2" style={{ fontFamily: "'DM Mono', monospace" }}>Confirmation ID</p>
-               <p className="text-[var(--cyan)] text-xl font-bold tracking-widest" style={{ fontFamily: "'DM Mono', monospace" }}>#{paymentResult.orderNumber}</p>
+               <p className="text-[var(--text-muted)] text-[10px] uppercase font-bold tracking-[0.3em] mb-2" style={{ fontFamily: "'Poppins', sans-serif" }}>Confirmation ID</p>
+               <p className="text-[var(--cyan)] text-xl font-bold tracking-widest" style={{ fontFamily: "'Poppins', sans-serif" }}>#{paymentResult.orderNumber}</p>
             </div>
 
             <p className="text-[var(--text-secondary)] text-[15px] mb-10 max-w-md ec-anim-fade-up ec-delay-2 leading-relaxed">

@@ -98,7 +98,7 @@ export default function HeroSection() {
                   padding: '16px 120px 16px 48px',
                   fontSize: '15px',
                   color: '#111111',
-                  fontFamily: "'Jost', sans-serif",
+                  fontFamily: "'Poppins', sans-serif",
                   outline: 'none',
                   border: 'none',
                 }}
@@ -125,7 +125,7 @@ export default function HeroSection() {
                   borderRadius: '4px',
                   fontSize: '12px',
                   fontWeight: 700,
-                  fontFamily: "'Jost', sans-serif",
+                  fontFamily: "'Poppins', sans-serif",
                   textTransform: 'uppercase',
                   letterSpacing: '0.08em',
                   cursor: query.trim() ? 'pointer' : 'not-allowed',
@@ -158,7 +158,7 @@ export default function HeroSection() {
                     backdropFilter: 'blur(4px)',
                     textDecoration: 'none',
                     transition: 'background 0.15s, border-color 0.15s',
-                    fontFamily: "'Jost', sans-serif",
+                    fontFamily: "'Poppins', sans-serif",
                   }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.25)'; (e.currentTarget as HTMLElement).style.borderColor = '#ffffff'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.12)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.6)'; }}
@@ -171,7 +171,7 @@ export default function HeroSection() {
 
           {/* Hero text */}
           <h1 style={{
-            fontFamily: "'Jost', sans-serif",
+            fontFamily: "'Poppins', sans-serif",
             fontSize: 'clamp(32px, 6vw, 64px)',
             fontWeight: 800,
             color: '#ffffff',
@@ -182,7 +182,7 @@ export default function HeroSection() {
           }}>
             Refining the Art of <em style={{ fontStyle: 'italic', fontWeight: 400 }}>Lifestyle</em>
           </h1>
-          <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '15px', lineHeight: 1.6, maxWidth: '520px', margin: '0 auto 36px', fontFamily: "'Jost', sans-serif" }}>
+          <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '15px', lineHeight: 1.6, maxWidth: '520px', margin: '0 auto 36px', fontFamily: "'Poppins', sans-serif" }}>
 
           </p>
 
@@ -195,7 +195,7 @@ export default function HeroSection() {
               borderRadius: '4px',
               fontSize: '12px',
               fontWeight: 700,
-              fontFamily: "'Jost', sans-serif",
+              fontFamily: "'Poppins', sans-serif",
               textTransform: 'uppercase',
               letterSpacing: '0.12em',
               textDecoration: 'none',
@@ -216,7 +216,7 @@ export default function HeroSection() {
                 borderRadius: '4px',
                 fontSize: '12px',
                 fontWeight: 700,
-                fontFamily: "'Jost', sans-serif",
+                fontFamily: "'Poppins', sans-serif",
                 textTransform: 'uppercase',
                 letterSpacing: '0.12em',
                 textDecoration: 'none',

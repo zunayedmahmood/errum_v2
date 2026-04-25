@@ -19,7 +19,7 @@ const LINK_STYLE: React.CSSProperties = {
   lineHeight: 2,
   display: 'block',
   transition: 'color 0.15s',
-  fontFamily: "'Jost', sans-serif",
+  fontFamily: "'Poppins', sans-serif",
 };
 
 const COL_HEADER_STYLE: React.CSSProperties = {
@@ -29,7 +29,7 @@ const COL_HEADER_STYLE: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: '0.10em',
   marginBottom: '16px',
-  fontFamily: "'Jost', sans-serif",
+  fontFamily: "'Poppins', sans-serif",
 };
 
 export default function Footer() {
@@ -49,7 +49,7 @@ export default function Footer() {
         <section style={{ padding: '56px 0 0' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '32px' }}>
             <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
-            <h2 style={{ fontFamily: "'Jost', sans-serif", fontSize: '15px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', color: '#111111', margin: 0 }}>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: '15px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', color: '#111111', margin: 0 }}>
               Our Outlets
             </h2>
             <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
@@ -68,7 +68,7 @@ export default function Footer() {
                   />
                 </div>
                 <div style={{ padding: '8px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-                  <h3 style={{ fontFamily: "'Jost', sans-serif", fontSize: '12px', fontWeight: 700, color: '#111111', margin: 0, textAlign: 'center', letterSpacing: '0.04em' }}>
+                  <h3 style={{ fontFamily: "'Poppins', sans-serif", fontSize: '12px', fontWeight: 700, color: '#111111', margin: 0, textAlign: 'center', letterSpacing: '0.04em' }}>
                     {outlet.name}
                   </h3>
                 </div>
@@ -83,11 +83,11 @@ export default function Footer() {
           {/* Column 1 — Brand & Info */}
           <div>
             <Link href="/e-commerce" style={{ display: 'inline-block', marginBottom: '16px', textDecoration: 'none' }}>
-              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: '24px', fontWeight: 800, letterSpacing: '0.05em', color: '#111111' }}>
+              <span style={{ fontFamily: "'Poppins', sans-serif", fontSize: '24px', fontWeight: 800, letterSpacing: '0.05em', color: '#111111' }}>
                 ERRUM
               </span>
             </Link>
-            <p style={{ fontSize: '13px', lineHeight: 1.7, color: '#555555', maxWidth: '300px', fontFamily: "'Jost', sans-serif", marginBottom: '24px' }}>
+            <p style={{ fontSize: '13px', lineHeight: 1.7, color: '#555555', maxWidth: '300px', fontFamily: "'Poppins', sans-serif", marginBottom: '24px' }}>
               A complete lifestyle brand — footwear, clothing, watches, and bags curated for everyday confidence across Bangladesh.
             </p>
 
@@ -171,8 +171,8 @@ export default function Footer() {
                 { title: 'Nationwide Delivery', sub: 'Smooth and reliable delivery across Bangladesh.' },
               ].map(({ title, sub }) => (
                 <div key={title} style={{ paddingBottom: '12px', borderBottom: '1px solid rgba(0,0,0,0.06)', marginBottom: '12px' }}>
-                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#111111', margin: '0 0 2px 0', fontFamily: "'Jost', sans-serif" }}>{title}</p>
-                  <p style={{ fontSize: '12px', color: '#555555', margin: 0, fontFamily: "'Jost', sans-serif" }}>{sub}</p>
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#111111', margin: '0 0 2px 0', fontFamily: "'Poppins', sans-serif" }}>{title}</p>
+                  <p style={{ fontSize: '12px', color: '#555555', margin: 0, fontFamily: "'Poppins', sans-serif" }}>{sub}</p>
                 </div>
               ))}
             </div>
@@ -182,8 +182,8 @@ export default function Footer() {
             >
               <MessageCircle style={{ width: '14px', height: '14px', color: '#25D366', flexShrink: 0 }} />
               <div>
-                <p style={{ fontSize: '10px', fontWeight: 700, color: '#999999', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 2px 0', fontFamily: "'Jost', sans-serif" }}>International Orders</p>
-                <p style={{ fontSize: '12px', color: '#111111', margin: 0, fontFamily: "'Jost', sans-serif" }}>WhatsApp: <strong>01942565664</strong></p>
+                <p style={{ fontSize: '10px', fontWeight: 700, color: '#999999', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 2px 0', fontFamily: "'Poppins', sans-serif" }}>International Orders</p>
+                <p style={{ fontSize: '12px', color: '#111111', margin: 0, fontFamily: "'Poppins', sans-serif" }}>WhatsApp: <strong>01942565664</strong></p>
               </div>
             </a>
           </div>
@@ -195,14 +195,14 @@ export default function Footer() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
             {stores.map(store => (
               <div key={store.name} style={{ padding: '16px', background: '#ffffff', borderRadius: '4px', border: '1px solid rgba(0,0,0,0.08)' }}>
-                <p style={{ fontSize: '14px', fontWeight: 700, color: '#111111', margin: '0 0 8px 0', fontFamily: "'Jost', sans-serif" }}>{store.name}</p>
+                <p style={{ fontSize: '14px', fontWeight: 700, color: '#111111', margin: '0 0 8px 0', fontFamily: "'Poppins', sans-serif" }}>{store.name}</p>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
                   <MapPin style={{ width: '14px', height: '14px', color: '#999999', marginTop: '2px', flexShrink: 0 }} />
-                  <span style={{ fontSize: '12px', color: '#555555', fontFamily: "'Jost', sans-serif", lineHeight: 1.5 }}>{store.address}</span>
+                  <span style={{ fontSize: '12px', color: '#555555', fontFamily: "'Poppins', sans-serif", lineHeight: 1.5 }}>{store.address}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Phone style={{ width: '14px', height: '14px', color: '#999999', flexShrink: 0 }} />
-                  <a href={`tel:${store.phone}`} style={{ fontSize: '12px', color: '#555555', fontFamily: "'Jost', sans-serif", textDecoration: 'none' }}>{store.phone}</a>
+                  <a href={`tel:${store.phone}`} style={{ fontSize: '12px', color: '#555555', fontFamily: "'Poppins', sans-serif", textDecoration: 'none' }}>{store.phone}</a>
                 </div>
               </div>
             ))}
@@ -211,7 +211,7 @@ export default function Footer() {
 
         {/* ── Bottom bar ── */}
         <div style={{ marginTop: '48px', paddingTop: '24px', borderTop: '1px solid rgba(0,0,0,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
-          <p style={{ fontSize: '12px', color: '#999999', fontFamily: "'Jost', sans-serif", margin: 0 }}>
+          <p style={{ fontSize: '12px', color: '#999999', fontFamily: "'Poppins', sans-serif", margin: 0 }}>
             © {year} Errum STORE — Handcrafted for Confidence.
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -222,7 +222,7 @@ export default function Footer() {
                 color: '#555555',
                 fontSize: '10px',
                 fontWeight: 700,
-                fontFamily: "'Jost', sans-serif",
+                fontFamily: "'Poppins', sans-serif",
                 borderRadius: '4px',
                 letterSpacing: '0.05em',
               }}>

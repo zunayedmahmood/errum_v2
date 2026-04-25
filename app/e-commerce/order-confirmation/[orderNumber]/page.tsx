@@ -77,7 +77,7 @@ export default function OrderConfirmationPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-32">
           <div className="text-center">
             <Loader2 className="animate-spin h-12 w-12 text-[var(--gold)] mx-auto mb-6" />
-            <h2 className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.25em] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>
+            <h2 className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.25em] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>
               Confirming Order
             </h2>
             <p className="text-[var(--text-secondary)] mt-4 font-light">Connecting to our secure server...</p>
@@ -96,12 +96,12 @@ export default function OrderConfirmationPage() {
             <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
               <ShoppingBag className="text-red-500" size={32} />
             </div>
-            <h1 className="text-3xl font-medium text-[var(--text-primary)] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Order Not Found</h1>
+            <h1 className="text-3xl font-medium text-[var(--text-primary)] mb-4" style={{ fontFamily: "'Poppins', sans-serif" }}>Order Not Found</h1>
             <p className="text-[var(--text-secondary)] mb-8 leading-relaxed font-light">{error}</p>
             <button
               onClick={() => router.push('/e-commerce')}
               className="w-full ec-btn-primary justify-center py-4 text-xs font-bold tracking-widest uppercase"
-              style={{ fontFamily: "'DM Mono', monospace" }}
+              style={{ fontFamily: "'Poppins', sans-serif" }}
             >
               Return to Shop
             </button>
@@ -128,7 +128,7 @@ export default function OrderConfirmationPage() {
             </div>
           </div>
           
-          <h1 className="text-4xl md:text-5xl font-medium text-[var(--text-primary)] mb-4 tracking-tight leading-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          <h1 className="text-4xl md:text-5xl font-medium text-[var(--text-primary)] mb-4 tracking-tight leading-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>
             Order Confirmed
           </h1>
           <p className="text-lg text-[var(--text-secondary)] max-w-lg mx-auto leading-relaxed font-light">
@@ -138,11 +138,11 @@ export default function OrderConfirmationPage() {
           
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-10 px-6 sm:px-10 py-6 sm:py-8 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-lg)] shadow-sm">
             <div className="text-center sm:text-left sm:border-r sm:border-[var(--border-default)] sm:pr-10 w-full sm:w-auto">
-              <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'DM Mono', monospace" }}>Order Reference</p>
+              <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Order Reference</p>
               <p className="text-2xl font-bold text-[var(--text-primary)] tracking-wider">#{order?.order_number}</p>
             </div>
             <div className="text-center sm:text-left w-full sm:w-auto mt-4 sm:mt-0 pt-4 sm:pt-0 border-t sm:border-t-0 border-[var(--border-default)]">
-              <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'DM Mono', monospace" }}>Order Date</p>
+              <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Order Date</p>
               <p className="text-xl font-medium text-[var(--text-secondary)]">
                 {order && new Date(order.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </p>
@@ -165,7 +165,7 @@ export default function OrderConfirmationPage() {
                   </div>
                   <div>
                     <h3 className="text-[var(--text-primary)] font-semibold">Track Delivery</h3>
-                    <p className="text-xs text-[var(--text-muted)] uppercase tracking-tight font-bold" style={{ fontFamily: "'DM Mono', monospace" }}>Real-time status updates</p>
+                    <p className="text-xs text-[var(--text-muted)] uppercase tracking-tight font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Real-time status updates</p>
                    </div>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
@@ -189,8 +189,8 @@ export default function OrderConfirmationPage() {
             {/* Order Items List */}
             <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-lg)] shadow-sm ec-anim-fade-up ec-delay-2">
               <div className="px-6 py-5 border-b border-[var(--border-default)] flex items-center justify-between">
-                <h3 className="text-lg font-medium text-[var(--text-primary)] tracking-wide" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Ordered Items</h3>
-                <span className="text-[10px] text-[var(--text-muted)] font-bold tracking-[0.2em] px-3 py-1 bg-[var(--bg-depth)] rounded-full border border-[var(--border-default)] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>
+                <h3 className="text-lg font-medium text-[var(--text-primary)] tracking-wide" style={{ fontFamily: "'Poppins', sans-serif" }}>Ordered Items</h3>
+                <span className="text-[10px] text-[var(--text-muted)] font-bold tracking-[0.2em] px-3 py-1 bg-[var(--bg-depth)] rounded-full border border-[var(--border-default)] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>
                   {order?.items.length} Product{order?.items.length !== 1 ? 's' : ''}
                 </span>
               </div>
@@ -231,7 +231,7 @@ export default function OrderConfirmationPage() {
                         </h4>
                         <div className="flex flex-wrap gap-y-1 gap-x-3 mt-2">
                           {(item.sku || item.product_sku) && (
-                            <p className="text-[10px] text-[var(--text-muted)] font-bold tracking-widest uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>
+                            <p className="text-[10px] text-[var(--text-muted)] font-bold tracking-widest uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>
                               SKU: <span className="text-[var(--text-secondary)]">{item.sku || item.product_sku}</span>
                             </p>
                           )}
@@ -274,13 +274,13 @@ export default function OrderConfirmationPage() {
                   <div className="p-2.5 rounded-lg bg-[var(--bg-depth)] border border-[var(--border-default)]">
                     <MapPin className="text-[var(--gold)]" size={20} />
                   </div>
-                  <h3 className="font-bold text-[var(--text-primary)] tracking-[0.1em] uppercase text-xs" style={{ fontFamily: "'DM Mono', monospace" }}>
+                  <h3 className="font-bold text-[var(--text-primary)] tracking-[0.1em] uppercase text-xs" style={{ fontFamily: "'Poppins', sans-serif" }}>
                     Shipping Destination
                   </h3>
                 </div>
                 <div className="text-[var(--text-secondary)] space-y-2.5 leading-relaxed">
                   <p className="font-bold text-[var(--text-primary)] text-lg">{order?.shipping_address.name}</p>
-                  <p className="flex items-center gap-2 text-[var(--text-muted)] font-bold uppercase text-[10px]" style={{ fontFamily: "'DM Mono', monospace" }}>
+                  <p className="flex items-center gap-2 text-[var(--text-muted)] font-bold uppercase text-[10px]" style={{ fontFamily: "'Poppins', sans-serif" }}>
                     <span>PHONE</span>
                     <span className="text-[var(--text-secondary)] font-medium text-xs">{order?.shipping_address.phone}</span>
                   </p>
@@ -300,13 +300,13 @@ export default function OrderConfirmationPage() {
                   <div className="p-2.5 rounded-lg bg-[var(--bg-depth)] border border-[var(--border-default)]">
                     <CreditCard className="text-[var(--gold)]" size={20} />
                   </div>
-                  <h3 className="font-bold text-[var(--text-primary)] tracking-[0.1em] uppercase text-xs" style={{ fontFamily: "'DM Mono', monospace" }}>
+                  <h3 className="font-bold text-[var(--text-primary)] tracking-[0.1em] uppercase text-xs" style={{ fontFamily: "'Poppins', sans-serif" }}>
                     Payment Summary
                   </h3>
                 </div>
                 <div className="space-y-6">
                    <div>
-                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'DM Mono', monospace" }}>Method</p>
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Method</p>
                         <div className="flex items-center gap-2">
                              <span className="text-[var(--text-primary)] font-bold tracking-wide capitalize bg-[var(--bg-depth)] px-3 py-1 rounded-lg border border-[var(--border-default)]">
                                 {order?.payment_method.replace(/_/g, ' ')}
@@ -314,7 +314,7 @@ export default function OrderConfirmationPage() {
                         </div>
                    </div>
                    <div>
-                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'DM Mono', monospace" }}>Gateway Status</p>
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Gateway Status</p>
                         <div className="flex items-center gap-2">
                             <span className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-bold tracking-[0.1em] uppercase border ${
                                 order?.payment_status === 'paid' 
@@ -337,7 +337,7 @@ export default function OrderConfirmationPage() {
             {/* Amount Summary Sidebar */}
             <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-lg)] sticky top-24 ec-anim-fade-up ec-delay-4 overflow-hidden shadow-xl border-t-[var(--gold)] border-t-[3px]">
               <div className="bg-[var(--bg-depth)] border-b border-[var(--border-default)] px-6 py-4">
-                 <h3 className="text-center font-bold text-[var(--text-primary)] tracking-[0.2em] uppercase text-[10px]" style={{ fontFamily: "'DM Mono', monospace" }}>
+                 <h3 className="text-center font-bold text-[var(--text-primary)] tracking-[0.2em] uppercase text-[10px]" style={{ fontFamily: "'Poppins', sans-serif" }}>
                     Billing Breakdown
                  </h3>
               </div>
@@ -352,14 +352,14 @@ export default function OrderConfirmationPage() {
                 </div>
                 {order && order.discount_amount > 0 && (
                   <div className="flex justify-between items-center text-green-600 bg-green-50 px-4 py-3 rounded-xl border border-green-100">
-                    <span className="text-[10px] font-bold tracking-[0.1em] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Voucher Savings</span>
-                    <span className="font-bold font-mono">-৳{order.discount_amount.toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-[10px] font-bold tracking-[0.1em] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>Voucher Savings</span>
+                    <span className="font-bold ">-৳{order.discount_amount.toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
                   </div>
                 )}
                 
                 <div className="pt-6 mt-4 border-t border-[var(--border-default)]">
                   <div className="flex flex-col gap-2">
-                    <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-[0.2em] font-bold text-center" style={{ fontFamily: "'DM Mono', monospace" }}>Total Amount Payable</p>
+                    <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-[0.2em] font-bold text-center" style={{ fontFamily: "'Poppins', sans-serif" }}>Total Amount Payable</p>
                     <div className="text-center">
                         <span className="text-4xl font-bold text-[var(--text-primary)] tracking-tight">
                             ৳{order?.total_amount.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
@@ -372,7 +372,7 @@ export default function OrderConfirmationPage() {
                      <Link 
                         href="/e-commerce"
                         className="w-full flex items-center justify-center gap-3 py-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-depth)] text-[var(--text-primary)] hover:bg-[var(--bg-surface-2)] transition-all font-bold tracking-[0.1em] text-[11px] uppercase"
-                        style={{ fontFamily: "'DM Mono', monospace" }}
+                        style={{ fontFamily: "'Poppins', sans-serif" }}
                      >
                         Continue Shopping <ArrowRight size={14} className="text-[var(--gold)]" />
                      </Link>
@@ -382,7 +382,7 @@ export default function OrderConfirmationPage() {
               {/* Receipt Visual Decor */}
               <div className="bg-[var(--bg-depth)] px-6 py-4 border-t border-[var(--border-default)] flex items-center justify-center gap-2">
                  <CheckCircle className="text-green-500" size={14} />
-                 <span className="text-[9px] text-[var(--text-muted)] font-bold tracking-[0.2em] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Verified Digital Receipt</span>
+                 <span className="text-[9px] text-[var(--text-muted)] font-bold tracking-[0.2em] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>Verified Digital Receipt</span>
               </div>
             </div>
 
@@ -392,7 +392,7 @@ export default function OrderConfirmationPage() {
         </div>
         
         {/* Footer Info */}
-        <div className="mt-16 text-center text-[var(--text-muted)] text-[9px] font-bold tracking-[0.4em] uppercase ec-anim-fade-up ec-delay-6" style={{ fontFamily: "'DM Mono', monospace" }}>
+        <div className="mt-16 text-center text-[var(--text-muted)] text-[9px] font-bold tracking-[0.4em] uppercase ec-anim-fade-up ec-delay-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
             Errum Store &copy; 2026 • Secure Order Fulfillment
         </div>
       </div>

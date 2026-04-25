@@ -554,7 +554,7 @@ export default function CategoryPage() {
       <div className="ec-root bg-[var(--bg-root)] min-h-screen">
         <div className="bg-[var(--bg-surface)] border-b border-[var(--border-default)] mb-8">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-            <h1 className="text-4xl font-light text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{activeCategory?.name || 'Products'}</h1>
+            <h1 className="text-4xl font-light text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Poppins', sans-serif" }}>{activeCategory?.name || 'Products'}</h1>
             <p className="text-[var(--text-muted)] font-medium tracking-wide ec-eyebrow uppercase text-xs">
               {totalResults} {totalResults === 1 ? 'item' : 'items'} found
             </p>
@@ -608,7 +608,7 @@ export default function CategoryPage() {
                   <div className="h-20 w-20 rounded-full bg-[var(--bg-root)] flex items-center justify-center mb-6">
                     <X className="h-8 w-8 text-[var(--text-muted)] opacity-40" />
                   </div>
-                  <h3 className="text-2xl font-light text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Nothing here yet</h3>
+                  <h3 className="text-2xl font-light text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Poppins', sans-serif" }}>Nothing here yet</h3>
                   <p className="text-[var(--text-secondary)] mb-8 max-w-xs mx-auto text-sm">We couldn't find any products matching your current filters. Try adjusting them or browse our full collection.</p>
                   <button 
                     onClick={() => {
@@ -694,7 +694,7 @@ export default function CategoryPage() {
             <div className="w-12 h-1.5 bg-[var(--border-strong)] rounded-full mx-auto my-3" />
             
             <div className="flex items-center justify-between p-6 pt-2 border-b border-[var(--border-default)]">
-              <h2 className="text-xl font-bold text-[var(--text-primary)] uppercase tracking-tight" style={{ fontFamily: "'Jost', sans-serif" }}>Filters & Sort</h2>
+              <h2 className="text-xl font-bold text-[var(--text-primary)] uppercase tracking-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>Filters & Sort</h2>
               <button 
                 onClick={closeFilters} 
                 className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)] transition-all"
@@ -739,7 +739,7 @@ export default function CategoryPage() {
         <button
           onClick={() => setIsFiltersOpen(true)}
           className="w-full py-4 bg-[var(--bg-lifted)] text-[var(--text-primary)] rounded-full font-bold shadow-[var(--shadow-lifted)] flex items-center justify-center gap-3 active:scale-95 transition-all text-sm uppercase tracking-widest border border-[var(--border-strong)]"
-          style={{ fontFamily: "'Jost', sans-serif" }}
+          style={{ fontFamily: "'Poppins', sans-serif" }}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg>
           Filter & Sort

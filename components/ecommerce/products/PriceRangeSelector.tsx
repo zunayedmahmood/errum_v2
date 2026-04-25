@@ -22,7 +22,7 @@ const PriceRangeSelector: React.FC<PriceRangeSelectorProps> = ({
 
   return (
     <div className="space-y-4">
-      <h3 className="text-[11px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>Price Range</h3>
+      <h3 className="text-[11px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>Price Range</h3>
       <div className="space-y-2.5">
         {priceRanges.map((range) => (
           <label key={range.value} className="flex items-center cursor-pointer group">
@@ -51,7 +51,7 @@ const PriceRangeSelector: React.FC<PriceRangeSelectorProps> = ({
               className={`ml-3 text-sm transition-colors ${
                 selectedPriceRange === range.value ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
               }`}
-              style={{ fontFamily: "'Jost', sans-serif" }}
+              style={{ fontFamily: "'Poppins', sans-serif" }}
             >
               {range.label}
             </span>

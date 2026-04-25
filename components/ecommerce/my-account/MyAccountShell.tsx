@@ -38,7 +38,7 @@ export default function MyAccountShell({
         </div>
 
         <div className="flex-1 lg:ml-12">
-          <h1 className="text-3xl font-medium mb-2 text-[var(--text-primary)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{title}</h1>
+          <h1 className="text-3xl font-medium mb-2 text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>{title}</h1>
           {subtitle ? <p className="text-[var(--text-secondary)] mb-10 text-[14px] leading-relaxed max-w-xl">{subtitle}</p> : null}
 
           {isLoading ? (
@@ -69,7 +69,7 @@ export default function MyAccountShell({
               }`}
             >
               <Icon size={18} className={isActive ? 'stroke-[2.5px]' : 'stroke-[1.5px]'} />
-              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ fontFamily: "'DM Mono', monospace" }}>{tab.label}</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ fontFamily: "'Poppins', sans-serif" }}>{tab.label}</span>
             </button>
           );
         })}

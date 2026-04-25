@@ -54,7 +54,7 @@ export default function NewArrivalsTicker() {
       <div className="flex justify-center mb-6">
         <div className="px-4 py-1.5 rounded-full bg-[var(--cyan-pale)] border border-[var(--cyan-border)] flex items-center gap-2">
           <div className="h-1.5 w-1.5 rounded-full bg-[var(--cyan)] animate-pulse" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--cyan)]" style={{ fontFamily: "'DM Mono', monospace" }}>New Arrival</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--cyan)]" style={{ fontFamily: "'Poppins', sans-serif" }}>New Arrival</span>
         </div>
       </div>
 
@@ -86,7 +86,7 @@ export default function NewArrivalsTicker() {
                   {/* Product Name */}
                   <p 
                     className="text-center text-[13px] font-medium text-[var(--text-primary)] uppercase tracking-tight group-hover:text-[var(--cyan)] transition-colors line-clamp-1" 
-                    style={{ fontFamily: "'Jost', sans-serif" }}
+                    style={{ fontFamily: "'Poppins', sans-serif" }}
                   >
                     {(product as any).base_name || product.name}
                   </p>

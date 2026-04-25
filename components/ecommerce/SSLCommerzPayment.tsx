@@ -193,8 +193,8 @@ export default function SSLCommerzPayment({
             </div>
             
             <div className="space-y-4">
-              <h2 className="text-3xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Taking you to secure payment...</h2>
-              <p className="text-[var(--text-secondary)] text-[12px] tracking-[0.2em] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>
+              <h2 className="text-3xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>Taking you to secure payment...</h2>
+              <p className="text-[var(--text-secondary)] text-[12px] tracking-[0.2em] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>
                 Encryption handshake active
               </p>
             </div>

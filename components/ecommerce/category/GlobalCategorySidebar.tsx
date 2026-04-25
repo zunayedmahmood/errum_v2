@@ -50,7 +50,7 @@ export default function GlobalCategorySidebar({ categories, isOpen, onClose }: G
           className={`flex items-center justify-between p-3 cursor-pointer transition-colors border-b border-[var(--border-default)] hover:bg-[var(--ivory-ghost)]`}
           style={{ paddingLeft: `${20 + level * 20}px`, paddingRight: '20px' }}
         >
-          <span className="flex-1 text-[13px] font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Jost', sans-serif" }}>
+          <span className="flex-1 text-[13px] font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>
             {category.name}
           </span>
           {hasChildren && (
@@ -119,7 +119,7 @@ export default function GlobalCategorySidebar({ categories, isOpen, onClose }: G
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Menu style={{ width: '18px', height: '18px', color: '#111111' }} />
             <h2 style={{
-              fontFamily: "'Jost', sans-serif",
+              fontFamily: "'Poppins', sans-serif",
               fontSize: '14px',
               fontWeight: 700,
               textTransform: 'uppercase',
@@ -159,7 +159,7 @@ export default function GlobalCategorySidebar({ categories, isOpen, onClose }: G
             className={`flex items-center justify-between p-3 cursor-pointer transition-colors border-b border-[var(--border-default)] hover:bg-[var(--ivory-ghost)]`}
             style={{ paddingLeft: '20px', paddingRight: '20px' }}
           >
-            <span className="flex-1 text-[13px] font-bold text-[var(--text-primary)]" style={{ fontFamily: "'Jost', sans-serif" }}>
+            <span className="flex-1 text-[13px] font-bold text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>
               All Products
             </span>
           </div>

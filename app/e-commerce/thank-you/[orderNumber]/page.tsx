@@ -55,7 +55,7 @@ export default function ThankYouPage() {
             Order Successful
           </div>
           
-          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 tracking-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>
             Thank You <br className="hidden md:block" /> for Your Order
           </h1>
           
@@ -114,7 +114,7 @@ export default function ThankYouPage() {
         {lastOrder && (
           <div className="ec-dark-card overflow-hidden ec-anim-fade-up ec-delay-3 border-dashed border-white/10">
             <div className="bg-white/5 px-6 py-4 flex items-center justify-between border-b border-white/10">
-               <span className="text-[10px] text-white/30 font-mono tracking-widest uppercase">Order Preview</span>
+               <span className="text-[10px] text-white/30  tracking-widest uppercase">Order Preview</span>
                <Link href={`/e-commerce/order-confirmation/${orderNumber}`} className="text-[10px] text-[var(--gold-light)] hover:text-[var(--gold)] flex items-center gap-1 font-bold tracking-widest uppercase">
                   Details <ChevronRight size={12} />
                </Link>
@@ -155,7 +155,7 @@ export default function ThankYouPage() {
         </div>
 
         {/* Back Link */}
-        <div className="mt-12 text-center text-white/20 text-[10px] font-mono tracking-[0.4em] uppercase">
+        <div className="mt-12 text-center text-white/20 text-[10px]  tracking-[0.4em] uppercase">
             Errum Collection &bull; Est. 2026
         </div>
       </div>

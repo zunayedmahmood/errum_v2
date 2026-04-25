@@ -1173,7 +1173,7 @@ export default function ProductDetailPage() {
               <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--text-muted)] mb-2 block">Pairs Well With</span>
               <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between mb-10 gap-4">
                 <h2 className="text-3xl sm:text-4xl font-light text-[var(--text-primary)] tracking-tight"
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                  style={{ fontFamily: "'Poppins', sans-serif" }}>
                   Related Essentials
                 </h2>
                 <button
@@ -1210,9 +1210,9 @@ export default function ProductDetailPage() {
         {recentlyViewed.length > 0 && (
           <div className="py-16 bg-[var(--bg-surface)] border-b border-[var(--border-default)] -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
             <div className="max-w-[1400px] mx-auto">
-              <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--text-muted)] mb-2 block" style={{ fontFamily: "'DM Mono', monospace" }}>Your History</span>
+              <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--text-muted)] mb-2 block" style={{ fontFamily: "'Poppins', sans-serif" }}>Your History</span>
               <h2 className="text-3xl sm:text-4xl font-light text-[var(--text-primary)] tracking-tight mb-10"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                style={{ fontFamily: "'Poppins', sans-serif" }}>
                 Recently Viewed
               </h2>
               <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide no-scrollbar">

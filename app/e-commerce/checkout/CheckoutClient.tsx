@@ -840,7 +840,7 @@ export default function CheckoutClient() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8">
           <div className="flex items-start justify-between gap-4 mb-6">
             <div>
-              <h1 className="text-3xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Quick Checkout</h1>
+              <h1 className="text-3xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>Quick Checkout</h1>
               <p className="text-[var(--text-secondary)] mt-1">Direct delivery without account creation.</p>
             </div>
             <Link
@@ -1030,7 +1030,7 @@ export default function CheckoutClient() {
             {/* Summary */}
             <div className="lg:col-span-5">
               <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] p-6 sticky top-24 shadow-sm">
-                <h2 className="text-xl font-medium text-[var(--text-primary)] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Order Summary</h2>
+                <h2 className="text-xl font-medium text-[var(--text-primary)] mb-6" style={{ fontFamily: "'Poppins', sans-serif" }}>Order Summary</h2>
 
                 <div className="space-y-4 max-h-[40vh] overflow-auto pr-1">
                   {selectedItems.map((item: any) => {
@@ -1051,7 +1051,7 @@ export default function CheckoutClient() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between gap-2">
-                            <p className="text-[13px] font-medium text-[var(--text-primary)] leading-tight" style={{ fontFamily: "'Jost', sans-serif" }}>{item.name}</p>
+                            <p className="text-[13px] font-medium text-[var(--text-primary)] leading-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>{item.name}</p>
                             <button
                               onClick={() => handleRemoveItem(item.id)}
                               className="text-[var(--text-muted)] hover:text-[var(--status-danger)] transition-colors p-1"
@@ -1059,7 +1059,7 @@ export default function CheckoutClient() {
                               <Trash2 size={12} />
                             </button>
                           </div>
-                          <p className="text-[11px] text-[var(--text-muted)] mt-1 uppercase tracking-tight flex gap-2 items-center" style={{ fontFamily: "'DM Mono', monospace" }}>
+                          <p className="text-[11px] text-[var(--text-muted)] mt-1 uppercase tracking-tight flex gap-2 items-center" style={{ fontFamily: "'Poppins', sans-serif" }}>
                             <span>৳{activeUnitPrice.toLocaleString()}</span>
                             {discountPercent > 0 && originalUnitPrice > 0 && (
                               <span className="line-through opacity-60">৳{originalUnitPrice.toLocaleString()}</span>
@@ -1074,7 +1074,7 @@ export default function CheckoutClient() {
                               >
                                 -
                               </button>
-                              <span className="w-6 text-center text-[11px] font-bold text-[var(--text-primary)]" style={{ fontFamily: "'DM Mono', monospace" }}>
+                              <span className="w-6 text-center text-[11px] font-bold text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>
                                 {item.quantity}
                               </span>
                               <button
@@ -1104,13 +1104,13 @@ export default function CheckoutClient() {
                       value={couponCode}
                       onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                       className="flex-1 px-4 py-3 rounded-xl bg-[var(--bg-surface-2)] border border-[var(--border-default)] text-[11px] font-bold tracking-widest text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--cyan)] transition-all"
-                      style={{ fontFamily: "'DM Mono', monospace" }}
+                      style={{ fontFamily: "'Poppins', sans-serif" }}
                     />
                     <button
                       onClick={handleApplyCoupon}
                       disabled={!couponCode || couponApplyLoading}
                       className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-root)] rounded-xl text-[10px] font-bold tracking-widest uppercase hover:opacity-90 disabled:opacity-50 transition-all whitespace-nowrap"
-                      style={{ fontFamily: "'DM Mono', monospace" }}
+                      style={{ fontFamily: "'Poppins', sans-serif" }}
                     >
                       {couponApplyLoading ? '...' : 'Apply'}
                     </button>
@@ -1136,7 +1136,7 @@ export default function CheckoutClient() {
                   )}
                   <div className="flex justify-between items-center border-t border-[var(--border-strong)] mt-4 pt-4">
                     <span className="text-base font-bold text-[var(--text-primary)]">Total</span>
-                    <span className="text-2xl font-bold text-[var(--text-primary)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>৳{summary.total_amount.toLocaleString()}</span>
+                    <span className="text-2xl font-bold text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>৳{summary.total_amount.toLocaleString()}</span>
                   </div>
                 </div>
 
@@ -1180,7 +1180,7 @@ export default function CheckoutClient() {
                   }`}>
                     {isCompleted ? <span className="text-sm font-bold">✓</span> : <Icon size={16} />}
                   </div>
-                  <span className={`mt-3 text-[10px] font-bold uppercase tracking-[0.2em] ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`} style={{ fontFamily: "'DM Mono', monospace" }}>
+                  <span className={`mt-3 text-[10px] font-bold uppercase tracking-[0.2em] ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`} style={{ fontFamily: "'Poppins', sans-serif" }}>
                     {labels[idx]}
                   </span>
                 </div>
@@ -1198,13 +1198,13 @@ export default function CheckoutClient() {
           <div className="sm:hidden flex flex-col gap-3">
             <div className="flex justify-between items-end">
               <div>
-                <span className="text-[10px] font-bold text-[var(--gold)] uppercase tracking-[0.2em]" style={{ fontFamily: "'DM Mono', monospace" }}>
+                <span className="text-[10px] font-bold text-[var(--gold)] uppercase tracking-[0.2em]" style={{ fontFamily: "'Poppins', sans-serif" }}>
                   Step {['shipping', 'payment', 'review'].indexOf(currentStep) + 1} of 3
                 </span>
-                <h2 className="text-xl font-medium text-[var(--text-primary)] mt-1 capitalize" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{currentStep} Details</h2>
+                <h2 className="text-xl font-medium text-[var(--text-primary)] mt-1 capitalize" style={{ fontFamily: "'Poppins', sans-serif" }}>{currentStep} Details</h2>
               </div>
               <div className="text-right">
-                <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-[0.2em]" style={{ fontFamily: "'DM Mono', monospace" }}>Next Up</span>
+                <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-[0.2em]" style={{ fontFamily: "'Poppins', sans-serif" }}>Next Up</span>
                 <p className="text-sm font-medium text-[var(--text-secondary)] capitalize">
                   {currentStep === 'shipping' ? 'Payment' : currentStep === 'payment' ? 'Review' : 'Order Done'}
                 </p>
@@ -1224,7 +1224,7 @@ export default function CheckoutClient() {
           <div className="mb-6 bg-red-600 rounded-xl p-6 flex items-start gap-4 ec-anim-fade-up shadow-lg shadow-red-500/20">
             <AlertCircle className="text-white flex-shrink-0 mt-0.5" size={20} />
             <div className="flex-1">
-              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/90 mb-1" style={{ fontFamily: "'DM Mono', monospace" }}>Action Required</h3>
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/90 mb-1" style={{ fontFamily: "'Poppins', sans-serif" }}>Action Required</h3>
               <p className="text-white text-sm font-medium leading-relaxed">{error}</p>
             </div>
             <button onClick={() => setError(null)} className="text-white/70 hover:text-white transition-colors">✕</button>
@@ -1237,7 +1237,7 @@ export default function CheckoutClient() {
             {currentStep === 'shipping' && (
               <div className="ec-anim-fade-up">
                 <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-3xl font-bold text-neutral-900 flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                  <h2 className="text-3xl font-bold text-neutral-900 flex items-center gap-2" style={{ fontFamily: "'Poppins', sans-serif" }}>
                     <MapPin className="text-neutral-900" size={28} />
                     Shipping Address
                   </h2>
@@ -1542,7 +1542,7 @@ export default function CheckoutClient() {
                               <div className="flex-1">
                                 <div className="flex items-start justify-between">
                                   <div>
-                                    <p className="font-bold text-neutral-900 text-lg leading-tight mb-1" style={{ fontFamily: "'Jost', sans-serif" }}>{address.name}</p>
+                                    <p className="font-bold text-neutral-900 text-lg leading-tight mb-1" style={{ fontFamily: "'Poppins', sans-serif" }}>{address.name}</p>
                                     <p className="text-sm font-medium text-neutral-500 mb-3">{address.phone}</p>
                                     <div className="space-y-0.5 text-[13px] text-neutral-600 leading-relaxed">
                                       <p>{address.address_line_1}</p>
@@ -1550,7 +1550,7 @@ export default function CheckoutClient() {
                                       <p>{address.city}, {address.state} {address.postal_code}</p>
                                     </div>
                                     {address.is_default_shipping && (
-                                      <span className="inline-block mt-4 px-3 py-1 bg-green-50 text-green-600 text-[10px] font-bold uppercase tracking-wider rounded-lg border border-green-100" style={{ fontFamily: "'DM Mono', monospace" }}>
+                                      <span className="inline-block mt-4 px-3 py-1 bg-green-50 text-green-600 text-[10px] font-bold uppercase tracking-wider rounded-lg border border-green-100" style={{ fontFamily: "'Poppins', sans-serif" }}>
                                         Default Shipping
                                       </span>
                                     )}
@@ -1716,7 +1716,7 @@ export default function CheckoutClient() {
 
                 {/* Order Notes */}
                 <div className="bg-white rounded-xl shadow-md p-6">
-                  <h3 className="text-lg font-medium text-[var(--text-primary)] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Order Notes (Optional)</h3>
+                  <h3 className="text-lg font-medium text-[var(--text-primary)] mb-4" style={{ fontFamily: "'Poppins', sans-serif" }}>Order Notes (Optional)</h3>
                   <textarea
                     value={orderNotes}
                     onChange={(e) => setOrderNotes(e.target.value)}
@@ -1759,7 +1759,7 @@ export default function CheckoutClient() {
                 >
                   <div className="flex items-center gap-2">
                     <ShoppingBag className="text-[var(--cyan)]" size={20} />
-                    <h2 className="text-xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Order Summary</h2>
+                    <h2 className="text-xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>Order Summary</h2>
                   </div>
                   <div className="flex items-center gap-3 sm:hidden">
                     <span className="text-lg font-bold text-[var(--text-primary)]">৳{summary.total_amount.toLocaleString()}</span>
@@ -1787,7 +1787,7 @@ export default function CheckoutClient() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex justify-between gap-2">
-                                <h4 className="text-[13px] font-medium text-[var(--text-primary)] leading-tight" style={{ fontFamily: "'Jost', sans-serif" }}>{item.name}</h4>
+                                <h4 className="text-[13px] font-medium text-[var(--text-primary)] leading-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>{item.name}</h4>
                                 <button
                                   onClick={() => handleRemoveItem(item.id)}
                                   className="text-[var(--text-muted)] hover:text-[var(--status-danger)] transition-colors p-1"
@@ -1795,7 +1795,7 @@ export default function CheckoutClient() {
                                   <Trash2 size={12} />
                                 </button>
                               </div>
-                              <p className="text-[11px] text-[var(--text-muted)] mt-1 uppercase tracking-tight flex gap-2 items-center" style={{ fontFamily: "'DM Mono', monospace" }}>
+                              <p className="text-[11px] text-[var(--text-muted)] mt-1 uppercase tracking-tight flex gap-2 items-center" style={{ fontFamily: "'Poppins', sans-serif" }}>
                                 <span>৳{unitPrice.toLocaleString()}</span>
                                 {discountPercent > 0 && originalUnitPrice > 0 && (
                                   <span className="line-through opacity-60">৳{originalUnitPrice.toLocaleString()}</span>
@@ -1810,7 +1810,7 @@ export default function CheckoutClient() {
                                   >
                                     -
                                   </button>
-                                  <span className="w-6 text-center text-[11px] font-bold text-[var(--text-primary)]" style={{ fontFamily: "'DM Mono', monospace" }}>
+                                  <span className="w-6 text-center text-[11px] font-bold text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>
                                     {item.quantity}
                                   </span>
                                   <button
@@ -1840,7 +1840,7 @@ export default function CheckoutClient() {
                           value={couponCode}
                           onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                           className="flex-1 px-4 py-3 rounded-xl bg-[var(--bg-surface-2)] border border-[var(--border-default)] text-[11px] font-bold tracking-widest text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--cyan)] transition-all"
-                          style={{ fontFamily: "'DM Mono', monospace" }}
+                          style={{ fontFamily: "'Poppins', sans-serif" }}
                         />
                         <button
                           onClick={handleApplyCoupon}
@@ -1879,7 +1879,7 @@ export default function CheckoutClient() {
                       {/* Total */}
                       <div className="flex justify-between pt-6 border-t border-[var(--border-strong)] items-center">
                         <span className="text-base font-bold text-[var(--text-primary)]">Total</span>
-                        <h3 className="text-2xl font-bold text-[var(--text-primary)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                        <h3 className="text-2xl font-bold text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>
                           ৳{summary.total_amount.toLocaleString()}
                         </h3>
                       </div>
@@ -1895,7 +1895,7 @@ export default function CheckoutClient() {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-tight">Secure Checkout</h4>
-                  <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest" style={{ fontFamily: "'DM Mono', monospace" }}>SSL Encrypted</p>
+                  <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest" style={{ fontFamily: "'Poppins', sans-serif" }}>SSL Encrypted</p>
                 </div>
               </div>
             </div>

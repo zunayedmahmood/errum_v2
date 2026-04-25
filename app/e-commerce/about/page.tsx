@@ -34,7 +34,7 @@ export default function AboutPage() {
           <div className="ec-dark-tag mb-6">About Errum</div>
           <h1 className="text-[var(--text-primary)]"
               style={{
-                fontFamily: "'Cormorant Garamond', serif",
+                fontFamily: "'Poppins', sans-serif",
                 fontSize: 'clamp(44px, 8vw, 96px)',
                 fontWeight: 300,
                 lineHeight: 0.9,
@@ -59,7 +59,7 @@ export default function AboutPage() {
           <p className="ec-eyebrow mb-6 text-[var(--cyan)]">Our Promise</p>
           <h2 className="mb-12 text-[var(--text-primary)]"
               style={{
-                fontFamily: "'Cormorant Garamond', serif",
+                fontFamily: "'Poppins', sans-serif",
                 fontSize: 'clamp(32px, 5vw, 56px)',
                 fontWeight: 500,
                 letterSpacing: '-0.01em',
@@ -73,7 +73,7 @@ export default function AboutPage() {
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--cyan-pale)] border border-[var(--cyan-border)] group-hover:bg-[var(--cyan)] transition-colors duration-500">
                   <Icon className="h-6 w-6 text-[var(--cyan)] group-hover:text-white transition-colors" />
                 </div>
-                <h3 className="mb-3 text-lg font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{title}</h3>
+                <h3 className="mb-3 text-lg font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>{title}</h3>
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{desc}</p>
               </div>
             ))}
@@ -89,7 +89,7 @@ export default function AboutPage() {
               <p className="ec-eyebrow mb-6">Our Story</p>
               <h2 className="mb-8 text-[var(--text-primary)]"
                   style={{
-                    fontFamily: "'Cormorant Garamond', serif",
+                    fontFamily: "'Poppins', sans-serif",
                     fontSize: 'clamp(32px, 5vw, 64px)',
                     fontWeight: 500,
                     letterSpacing: '-0.01em',
@@ -114,11 +114,11 @@ export default function AboutPage() {
                      className="ec-surface p-8 text-center bg-[var(--bg-root)] ec-anim-fade-up"
                      style={{ animationDelay: `${0.2 + i * 0.1}s` }}>
                   <div className="text-5xl font-bold mb-2 text-[var(--gold)]"
-                       style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                       style={{ fontFamily: "'Poppins', sans-serif" }}>
                     {val}
                   </div>
                   <div className="text-[10px] uppercase font-bold tracking-[0.2em] text-[var(--text-muted)]"
-                       style={{ fontFamily: "'DM Mono', monospace" }}>
+                       style={{ fontFamily: "'Poppins', sans-serif" }}>
                     {lbl}
                   </div>
                 </div>
@@ -134,7 +134,7 @@ export default function AboutPage() {
           <p className="ec-eyebrow mb-6">Visit Us</p>
           <h2 className="mb-10 text-[var(--text-primary)]"
               style={{
-                fontFamily: "'Cormorant Garamond', serif",
+                fontFamily: "'Poppins', sans-serif",
                 fontSize: 'clamp(32px, 5vw, 56px)',
                 fontWeight: 500,
                 letterSpacing: '-0.01em'
@@ -144,7 +144,7 @@ export default function AboutPage() {
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
             {STORES.map(store => (
               <div key={store.name} className="ec-surface p-8 group hover:border-[var(--border-strong)] transition-all">
-                <h3 className="text-xl font-medium text-[var(--text-primary)] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{store.name}</h3>
+                <h3 className="text-xl font-medium text-[var(--text-primary)] mb-6" style={{ fontFamily: "'Poppins', sans-serif" }}>{store.name}</h3>
                 <div className="space-y-4">
                   <div className="flex items-start gap-4 text-[14px] text-[var(--text-secondary)]">
                     <MapPin className="h-5 w-5 flex-shrink-0 mt-0.5 text-[var(--gold)]" />

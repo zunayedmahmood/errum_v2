@@ -76,7 +76,7 @@ const OurCategories: React.FC<OurCategoriesProps> = ({ categories: categoriesPro
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '32px' }}>
           <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
           <h2 style={{
-            fontFamily: "'Jost', sans-serif",
+            fontFamily: "'Poppins', sans-serif",
             fontSize: '18px',
             fontWeight: 800,
             textTransform: 'uppercase',
@@ -143,7 +143,7 @@ const OurCategories: React.FC<OurCategoriesProps> = ({ categories: categoriesPro
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}>
-                    <span style={{ fontFamily: "'Jost', sans-serif", fontSize: '48px', fontWeight: 700, color: 'rgba(0,0,0,0.15)' }}>{cat.name.charAt(0)}</span>
+                    <span style={{ fontFamily: "'Poppins', sans-serif", fontSize: '48px', fontWeight: 700, color: 'rgba(0,0,0,0.15)' }}>{cat.name.charAt(0)}</span>
                   </div>
                 )}
 
@@ -153,7 +153,7 @@ const OurCategories: React.FC<OurCategoriesProps> = ({ categories: categoriesPro
                 {/* Category label at bottom */}
                 <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 12px', textAlign: 'left' }}>
                   <h3 style={{
-                    fontFamily: "'Jost', sans-serif",
+                    fontFamily: "'Poppins', sans-serif",
                     fontSize: '14px',
                     fontWeight: 700,
                     textTransform: 'uppercase',

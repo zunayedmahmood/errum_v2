@@ -24,7 +24,7 @@ export default function ContactPage() {
           <div className="ec-dark-tag mb-6">Get in Touch</div>
           <h1 className="text-[var(--text-primary)]"
               style={{
-                fontFamily: "'Cormorant Garamond', serif",
+                fontFamily: "'Poppins', sans-serif",
                 fontSize: 'clamp(44px, 7vw, 88px)',
                 fontWeight: 300,
                 lineHeight: 0.9,
@@ -45,7 +45,7 @@ export default function ContactPage() {
           <p className="ec-eyebrow mb-6 text-[var(--cyan)]">Store Locations</p>
           <h2 className="mb-10 text-[var(--text-primary)]"
               style={{
-                fontFamily: "'Cormorant Garamond', serif",
+                fontFamily: "'Poppins', sans-serif",
                 fontSize: 'clamp(32px, 5vw, 52px)',
                 fontWeight: 500,
                 letterSpacing: '-0.01em'
@@ -58,9 +58,9 @@ export default function ContactPage() {
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--cyan-pale)] border border-[var(--cyan-border)] group-hover:bg-[var(--cyan)] transition-colors duration-500">
                   <MapPin className="h-6 w-6 text-[var(--cyan)] group-hover:text-white transition-colors" />
                 </div>
-                <h3 className="text-xl font-medium text-[var(--text-primary)] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{loc.title}</h3>
+                <h3 className="text-xl font-medium text-[var(--text-primary)] mb-4" style={{ fontFamily: "'Poppins', sans-serif" }}>{loc.title}</h3>
                 <p className="text-sm leading-relaxed mb-6 text-[var(--text-secondary)]">{loc.address}</p>
-                <a href={`tel:${loc.phone}`} className="inline-flex items-center gap-2 text-[13px] font-bold tracking-wider text-[var(--gold)] hover:text-[var(--gold-strong)] transition-colors" style={{ fontFamily: "'DM Mono', monospace" }}>
+                <a href={`tel:${loc.phone}`} className="inline-flex items-center gap-2 text-[13px] font-bold tracking-wider text-[var(--gold)] hover:text-[var(--gold-strong)] transition-colors" style={{ fontFamily: "'Poppins', sans-serif" }}>
                   <Phone className="h-3.5 w-3.5" />
                   {loc.phone}
                 </a>
@@ -86,13 +86,13 @@ export default function ContactPage() {
                   <Icon className={`h-6 w-6 ${gold ? 'text-[var(--gold)]' : 'text-[var(--text-muted)]'}`} />
                 </div>
                 <div>
-                  <h3 className="text-xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{title}</h3>
+                  <h3 className="text-xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>{title}</h3>
                   <p className="mt-3 text-sm text-[var(--text-secondary)] whitespace-pre-line leading-relaxed">{sub}</p>
                 </div>
                 {action && cta && (
                   <a href={action} target={action.startsWith('http') ? '_blank' : undefined} rel="noreferrer"
                      className="mt-auto inline-flex items-center gap-2 text-[12px] font-bold tracking-widest text-[var(--gold)] hover:translate-x-1 transition-all"
-                     style={{ fontFamily: "'DM Mono', monospace" }}>
+                     style={{ fontFamily: "'Poppins', sans-serif" }}>
                     {cta.toUpperCase()} <ChevronRight className="h-3.5 w-3.5" />
                   </a>
                 )}

@@ -259,7 +259,7 @@ export default function FindStockClient() {
                     {scannedData.category || 'General'}
                   </span>
                   <h2 className="text-lg font-bold leading-tight line-clamp-2">{scannedData.name}</h2>
-                  <p className="text-sm font-mono text-slate-500 mt-1 flex items-center gap-1">
+                  <p className="text-sm  text-slate-500 mt-1 flex items-center gap-1">
                     <Database className="w-3 h-3" /> {scannedData.sku}
                   </p>
                 </div>

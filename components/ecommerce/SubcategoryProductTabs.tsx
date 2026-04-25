@@ -315,7 +315,7 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '24px' }}>
           <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
           <h2 style={{
-            fontFamily: "'Jost', sans-serif",
+            fontFamily: "'Poppins', sans-serif",
             fontSize: '18px',
             fontWeight: 800,
             textTransform: 'uppercase',
@@ -340,7 +340,7 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
                 ref={el => { tabRefs.current[cat.id] = el; }}
                 onClick={() => setActiveId(cat.id)}
                 style={{
-                  fontFamily: "'Jost', sans-serif",
+                  fontFamily: "'Poppins', sans-serif",
                   fontSize: '12px',
                   fontWeight: 700,
                   textTransform: 'uppercase',
@@ -408,7 +408,7 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
                 borderRadius: '4px',
                 fontSize: '12px',
                 fontWeight: 700,
-                fontFamily: "'Jost', sans-serif",
+                fontFamily: "'Poppins', sans-serif",
                 textTransform: 'uppercase',
                 letterSpacing: '0.10em',
                 cursor: 'pointer',

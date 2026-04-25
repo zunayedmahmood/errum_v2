@@ -45,8 +45,8 @@ export default function AccountSidebar() {
         <div className="w-20 h-20 rounded-full mb-4 bg-gradient-to-br from-[var(--cyan-dim)] to-[var(--gold-dim)] border-2 border-[var(--border-default)] flex items-center justify-center text-[var(--text-primary)]">
           <User size={32} />
         </div>
-        <h2 className="text-2xl font-medium text-[var(--text-primary)] tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Member Space</h2>
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--cyan)] mt-2" style={{ fontFamily: "'DM Mono', monospace" }}>Exclusive Access</p>
+        <h2 className="text-2xl font-medium text-[var(--text-primary)] tracking-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>Member Space</h2>
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--cyan)] mt-2" style={{ fontFamily: "'Poppins', sans-serif" }}>Exclusive Access</p>
       </div>
 
       <nav className="p-3 space-y-1">
@@ -64,7 +64,7 @@ export default function AccountSidebar() {
             >
               <div className="flex items-center gap-4">
                 <Icon size={18} className={active ? 'text-[var(--cyan)]' : 'text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'} />
-                <span className="text-[14px] font-medium" style={{ fontFamily: "'Jost', sans-serif" }}>{item.label}</span>
+                <span className="text-[14px] font-medium" style={{ fontFamily: "'Poppins', sans-serif" }}>{item.label}</span>
               </div>
             </button>
           );
@@ -77,7 +77,7 @@ export default function AccountSidebar() {
           className="w-full flex items-center gap-4 px-5 py-4 text-[var(--status-danger)] hover:bg-[var(--status-danger-pale)] transition-all mt-4 border-l-[3px] border-transparent"
         >
           <LogOut size={18} />
-          <span className="text-[14px] font-medium" style={{ fontFamily: "'Jost', sans-serif" }}>Logout</span>
+          <span className="text-[14px] font-medium" style={{ fontFamily: "'Poppins', sans-serif" }}>Logout</span>
         </button>
       </nav>
     </div>

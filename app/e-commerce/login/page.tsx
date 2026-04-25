@@ -77,7 +77,7 @@ export default function LoginRegisterPage() {
 
           {/* Header */}
           <div className="mb-8 text-center">
-            <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '48px', fontWeight: 500, color: 'white', letterSpacing: '-0.02em', lineHeight: 1 }}>
+            <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: '48px', fontWeight: 500, color: 'white', letterSpacing: '-0.02em', lineHeight: 1 }}>
               {activeTab === 'login' ? 'Welcome Back' : 'Join Errum'}
             </h1>
             <p className="mt-2 text-[14px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
@@ -102,7 +102,7 @@ export default function LoginRegisterPage() {
                   background:    activeTab === tab ? 'rgba(255,255,255,0.1)' : 'transparent',
                   color:         activeTab === tab ? 'white' : 'rgba(255,255,255,0.4)',
                   letterSpacing: '0.06em',
-                  fontFamily:    "'Jost', sans-serif",
+                  fontFamily:    "'Poppins', sans-serif",
                 }}
               >
                 {tab === 'login' ? 'Sign In' : 'Register'}
@@ -115,11 +115,11 @@ export default function LoginRegisterPage() {
             {activeTab === 'login' ? (
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.45)', letterSpacing: '0.1em', fontFamily: "'DM Mono', monospace" }}>EMAIL</label>
+                  <label className="mb-1.5 block text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.45)', letterSpacing: '0.1em', fontFamily: "'Poppins', sans-serif" }}>EMAIL</label>
                   <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="you@example.com" className={inputClass} />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.45)', letterSpacing: '0.1em', fontFamily: "'DM Mono', monospace" }}>PASSWORD</label>
+                  <label className="mb-1.5 block text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.45)', letterSpacing: '0.1em', fontFamily: "'Poppins', sans-serif" }}>PASSWORD</label>
                   <div className="relative">
                     <input type={showPassword ? 'text' : 'password'} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="••••••••" className={inputClass + ' pr-11'} />
                     <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.35)' }}>
@@ -139,7 +139,7 @@ export default function LoginRegisterPage() {
                   { label: 'PHONE',        val: registerPhone,   set: setRegisterPhone,   type: 'tel',      ph: '01XXXXXXXXX' },
                 ].map(({ label, val, set, type, ph }) => (
                   <div key={label}>
-                    <label className="mb-1.5 block text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.45)', letterSpacing: '0.1em', fontFamily: "'DM Mono', monospace" }}>{label}</label>
+                    <label className="mb-1.5 block text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.45)', letterSpacing: '0.1em', fontFamily: "'Poppins', sans-serif" }}>{label}</label>
                     <input type={type} value={val} onChange={e => set(e.target.value)} placeholder={ph} className={inputClass} />
                   </div>
                 ))}
@@ -148,7 +148,7 @@ export default function LoginRegisterPage() {
                   { label: 'CONFIRM PASSWORD', val: registerConfirmPassword, set: setRegisterConfirmPassword, show: showConfirmPassword, toggle: () => setShowConfirmPassword(v=>!v) },
                 ].map(({ label, val, set, show, toggle }) => (
                   <div key={label}>
-                    <label className="mb-1.5 block text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.45)', letterSpacing: '0.1em', fontFamily: "'DM Mono', monospace" }}>{label}</label>
+                    <label className="mb-1.5 block text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.45)', letterSpacing: '0.1em', fontFamily: "'Poppins', sans-serif" }}>{label}</label>
                     <div className="relative">
                       <input type={show ? 'text' : 'password'} value={val} onChange={e => set(e.target.value)} placeholder="••••••••" className={inputClass + ' pr-11'} />
                       <button type="button" onClick={toggle} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.35)' }}>

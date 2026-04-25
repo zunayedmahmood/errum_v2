@@ -282,7 +282,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
       <header className="relative py-12 md:py-20 overflow-hidden border-b border-[var(--border-default)] bg-[var(--bg-depth)]">
         <div className="ec-container text-center relative z-10 ec-anim-fade-up">
           <span className="ec-eyebrow mb-3 text-[var(--cyan)]">Catalogue Search</span>
-          <h1 className="text-4xl md:text-6xl font-medium text-[var(--text-primary)] mb-8" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          <h1 className="text-4xl md:text-6xl font-medium text-[var(--text-primary)] mb-8" style={{ fontFamily: "'Poppins', sans-serif" }}>
             Finding <span style={{ color: 'var(--gold)', fontStyle: 'italic' }}>"{query || '...'}"</span>
           </h1>
 
@@ -346,7 +346,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
           <div className="lg:col-span-9">
             <div className="mb-12 flex items-center justify-between border-b border-[var(--border-default)] pb-6">
               {!isLoading && pagination && (
-                <p className="text-[11px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>
+                <p className="text-[11px] font-bold tracking-[0.25em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>
                   {pagination.total} items matched your search
                 </p>
               )}
@@ -363,7 +363,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
                 <div className="p-8 rounded-full bg-[var(--bg-depth)] mb-6">
                   <Search className="h-10 w-10 text-[var(--text-muted)] opacity-20" />
                 </div>
-                <h3 className="text-2xl font-medium text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Start searching</h3>
+                <h3 className="text-2xl font-medium text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Poppins', sans-serif" }}>Start searching</h3>
                 <p className="text-[var(--text-secondary)] max-w-xs text-sm font-light">
                   Enter a product name, SKU, or category to see our premium collection.
                 </p>
@@ -373,7 +373,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
                 <div className="p-8 rounded-full bg-[var(--bg-depth)] mb-6">
                   <ShoppingBag className="h-10 w-10 text-[var(--text-muted)] opacity-20" />
                 </div>
-                <h3 className="text-2xl font-medium text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>No matches found</h3>
+                <h3 className="text-2xl font-medium text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Poppins', sans-serif" }}>No matches found</h3>
                 <p className="text-[var(--text-secondary)] max-w-xs mb-8 text-sm font-light">
                   We couldn't find any results for "{query}". Try different keywords or adjust your filters.
                 </p>
@@ -383,7 +383,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
                     updateURL({ q: null, price: 'all', sort: 'newest' });
                   }}
                   className="px-10 py-4 rounded-2xl bg-[var(--gold)] text-[var(--text-on-accent)] font-bold hover:opacity-90 transition-all text-[12px] tracking-[0.2em] uppercase"
-                  style={{ fontFamily: "'DM Mono', monospace" }}
+                  style={{ fontFamily: "'Poppins', sans-serif" }}
                 >
                   Clear All Filters
                 </button>
@@ -415,7 +415,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
                         disabled={pagination.current_page === 1}
                         onClick={() => handlePageChange(pagination.current_page - 1)}
                         className="h-9 px-3 sm:h-10 sm:px-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)] hover:text-[var(--text-primary)] disabled:opacity-20 transition-all text-xs sm:text-sm font-bold tracking-widest uppercase"
-                        style={{ fontFamily: "'DM Mono', monospace" }}
+                        style={{ fontFamily: "'Poppins', sans-serif" }}
                       >
                         Prev
                       </button>
@@ -426,7 +426,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
                         disabled={pagination.current_page === pagination.last_page}
                         onClick={() => handlePageChange(pagination.current_page + 1)}
                         className="h-9 px-3 sm:h-10 sm:px-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--ivory-ghost)] hover:text-[var(--text-primary)] disabled:opacity-20 transition-all text-xs sm:text-sm font-bold tracking-widest uppercase"
-                        style={{ fontFamily: "'DM Mono', monospace" }}
+                        style={{ fontFamily: "'Poppins', sans-serif" }}
                       >
                         Next
                       </button>
@@ -448,7 +448,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
           />
           <div className={`fixed top-0 right-0 bottom-0 z-[101] w-[85%] max-w-[400px] bg-[var(--bg-root)] shadow-2xl flex flex-col ${isClosingFilters ? 'ec-anim-slide-out-right' : 'ec-anim-slide-in-right'}`}>
             <div className="flex items-center justify-between p-6 border-b border-[var(--border-default)]">
-              <h2 className="text-xl font-medium text-[var(--text-primary)] uppercase tracking-widest" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Filters</h2>
+              <h2 className="text-xl font-medium text-[var(--text-primary)] uppercase tracking-widest" style={{ fontFamily: "'Poppins', sans-serif" }}>Filters</h2>
               <button
                 onClick={closeFilters}
                 className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-depth)] border border-[var(--border-default)] transition-all"
@@ -479,7 +479,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
               <button
                 onClick={closeFilters}
                 className="w-full py-5 rounded-2xl bg-[var(--gold)] text-[var(--text-on-accent)] font-bold shadow-lg tracking-[0.2em] uppercase text-xs transition-transform active:scale-[0.98]"
-                style={{ fontFamily: "'DM Mono', monospace" }}
+                style={{ fontFamily: "'Poppins', sans-serif" }}
               >
                 Apply Filters
               </button>

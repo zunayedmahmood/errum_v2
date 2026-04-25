@@ -145,7 +145,7 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{ height: '1px', flex: 1, maxWidth: '40px', background: '#111111' }} />
             <h2 style={{
-              fontFamily: "'Jost', sans-serif",
+              fontFamily: "'Poppins', sans-serif",
               fontSize: '18px',
               fontWeight: 800,
               textTransform: 'uppercase',
@@ -160,7 +160,7 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8 }) => {
           <button
             onClick={() => router.push('/e-commerce/products')}
             style={{
-              fontFamily: "'Jost', sans-serif",
+              fontFamily: "'Poppins', sans-serif",
               fontSize: '12px',
               fontWeight: 700,
               textTransform: 'uppercase',

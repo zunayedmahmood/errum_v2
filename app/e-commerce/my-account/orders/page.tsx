@@ -141,20 +141,20 @@ export default function MyAccountOrdersPage() {
                 <div className="p-6">
                   <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)] mb-1" style={{ fontFamily: "'DM Mono', monospace" }}>Order #{o.order_number}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)] mb-1" style={{ fontFamily: "'Poppins', sans-serif" }}>Order #{o.order_number}</p>
                       <p className="text-[14px] font-medium text-[var(--text-primary)]">{new Date(o.created_at).toLocaleDateString(undefined, { dateStyle: 'long' })}</p>
                     </div>
                     <div className="flex items-center gap-4">
                       <span 
                         className="px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all"
-                        style={{ background: sStyles.bg, color: sStyles.text, border: sStyles.border, fontFamily: "'DM Mono', monospace" }}
+                        style={{ background: sStyles.bg, color: sStyles.text, border: sStyles.border, fontFamily: "'Poppins', sans-serif" }}
                       >
                         {o.status}
                       </span>
                       <Link
                         href={`/e-commerce/my-account/orders/${o.order_number}`}
                         className="text-[11px] font-bold uppercase tracking-widest text-[var(--cyan)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-2"
-                        style={{ fontFamily: "'DM Mono', monospace" }}
+                        style={{ fontFamily: "'Poppins', sans-serif" }}
                       >
                         Details <span>→</span>
                       </Link>
@@ -163,12 +163,12 @@ export default function MyAccountOrdersPage() {
 
                   <div className="flex items-center justify-between py-6 border-t border-[var(--border-default)]">
                     <div className="space-y-1">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)]" style={{ fontFamily: "'DM Mono', monospace" }}>Total Investment</p>
-                      <p className="text-2xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{Number(o.total_amount).toLocaleString()} ৳</p>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)]" style={{ fontFamily: "'Poppins', sans-serif" }}>Total Investment</p>
+                      <p className="text-2xl font-medium text-[var(--text-primary)]" style={{ fontFamily: "'Poppins', sans-serif" }}>{Number(o.total_amount).toLocaleString()} ৳</p>
                     </div>
                     {o.items_count && (
                       <div className="text-right">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)]" style={{ fontFamily: "'DM Mono', monospace" }}>Item Count</p>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)]" style={{ fontFamily: "'Poppins', sans-serif" }}>Item Count</p>
                         <p className="text-lg font-medium text-[var(--text-primary)]">{o.items_count}</p>
                       </div>
                     )}
@@ -199,7 +199,7 @@ export default function MyAccountOrdersPage() {
                                 className={`text-[9px] font-bold uppercase tracking-widest transition-colors duration-300 ${
                                   isActive ? 'text-[var(--cyan)]' : 'text-[var(--text-muted)]'
                                 }`}
-                                style={{ fontFamily: "'DM Mono', monospace" }}
+                                style={{ fontFamily: "'Poppins', sans-serif" }}
                               >
                                 {step}
                               </span>

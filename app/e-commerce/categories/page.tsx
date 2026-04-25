@@ -101,7 +101,7 @@ export default function CategoriesPage() {
           <div className="ec-dark-tag mb-6">All Collections</div>
           <h1 className="text-[var(--text-primary)]"
             style={{
-              fontFamily: "'Cormorant Garamond', serif",
+              fontFamily: "'Poppins', sans-serif",
               fontSize: 'clamp(44px, 8vw, 92px)',
               fontWeight: 300,
               lineHeight: 0.9,
@@ -138,24 +138,24 @@ export default function CategoriesPage() {
                     {/* Parent category header */}
                     <div className="flex items-center justify-between mb-8 pb-4 border-b border-[var(--border-default)]">
                       <Link href={href} className="group flex items-center gap-4">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-bold bg-[var(--cyan-pale)] border border-[var(--cyan-border)] text-[var(--cyan)]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-bold bg-[var(--cyan-pale)] border border-[var(--cyan-border)] text-[var(--cyan)]" style={{ fontFamily: "'Poppins', sans-serif" }}>
                           {cat.name.charAt(0)}
                         </div>
                         <div>
                           <h2 className="text-2xl sm:text-3xl font-medium text-[var(--text-primary)] group-hover:text-[var(--cyan)] transition-colors"
-                            style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '-0.01em' }}>
+                            style={{ fontFamily: "'Poppins', sans-serif", letterSpacing: '-0.01em' }}>
                             {cat.name}
                           </h2>
                           {Number(cat.product_count || 0) > 0 && (
                             <p className="text-[10px] uppercase font-bold tracking-[0.15em] text-[var(--text-muted)]"
-                              style={{ fontFamily: "'DM Mono', monospace" }}>
+                              style={{ fontFamily: "'Poppins', sans-serif" }}>
                               {cat.product_count} ITEMS
                             </p>
                           )}
                         </div>
                       </Link>
                       <Link href={href} className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-muted)] hover:text-[var(--cyan)] transition-all"
-                        style={{ fontFamily: "'DM Mono', monospace" }}>
+                        style={{ fontFamily: "'Poppins', sans-serif" }}>
                         VIEW ALL <ChevronRight className="h-3.5 w-3.5" />
                       </Link>
                     </div>
@@ -179,7 +179,7 @@ export default function CategoriesPage() {
                                 <div className="absolute inset-0 bg-gradient-to-t from-[rgba(28,24,18,0.7)] via-transparent to-transparent opacity-60 transition-opacity" />
                                 <div className="absolute inset-x-0 bottom-0 p-5">
                                   <p className="text-white font-medium text-[15px] leading-tight"
-                                    style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                                    style={{ fontFamily: "'Poppins', sans-serif" }}>
                                     {child.name}
                                   </p>
                                 </div>
@@ -201,7 +201,7 @@ export default function CategoriesPage() {
                           <div className="absolute inset-0 flex items-center px-10">
                             <div>
                               <h3 className="text-3xl font-medium text-white tracking-tight"
-                                style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                                style={{ fontFamily: "'Poppins', sans-serif" }}>
                                 {cat.name}
                               </h3>
                             </div>
