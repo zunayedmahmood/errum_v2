@@ -280,13 +280,24 @@ class ProductSearchController extends Controller
         // Step 4: Calculate relevance scores and sort
         $scoredResults = $this->scoreAndRankResults($results, $searchTerms);
 
+        // Step 5: Paginate results
+        $perPage = (int) ($validated['per_page'] ?? 15);
+        $page = (int) $request->input('page', 1);
+        
+        $totalResults = count($scoredResults);
+        $lastPage = (int) ceil($totalResults / $perPage);
+        $paginatedItems = $scoredResults->slice(($page - 1) * $perPage, $perPage)->values();
+
+        // Step 6: Load full relations only for the paginated results
+        $finalResults = $this->loadFullRelations($paginatedItems);
+
         // Step 4.5: Group by SKU if requested
         if ($validated['group_by_sku'] ?? false) {
-            $groupedResults = $scoredResults->groupBy('sku')->map(function($group) {
+            $finalResults = $finalResults->groupBy('sku')->map(function($group) {
                 // Pick the representative (highest score)
-                $representative = $group->sortByDesc('search_score')->first();
+                $representative = $group->sortByDesc('relevance_score')->first();
                 
-                // Attach others as variants (ensure variants have custom_fields formatted if needed by frontend)
+                // Attach others as variants
                 $representative->variants = $group->reject(function($p) use ($representative) {
                     return $p->id === $representative->id;
                 })->values();
@@ -298,21 +309,17 @@ class ProductSearchController extends Controller
             })->values();
             
             // Re-sort grouped results by the representative's score
-            $scoredResults = $groupedResults->sortByDesc('search_score')->values();
+            $finalResults = $finalResults->sortByDesc('relevance_score')->values();
+        } else {
+            // Ensure sequential keys for array serialization
+            $finalResults = $finalResults->values();
         }
-
-        // Step 5: Paginate results
-        $perPage = (int) ($validated['per_page'] ?? 15);
-        $page = (int) $request->input('page', 1);
-        $paginatedResults = $this->paginateResults($scoredResults, $perPage, $page);
-        
-        $totalResults = count($scoredResults);
-        $lastPage = (int) ceil($totalResults / $perPage);
 
         return response()->json([
             'success' => true,
             'data' => [
-                'data' => $paginatedResults,
+                'items' => $finalResults,
+                'data' => $finalResults,
                 'total' => $totalResults,
                 'current_page' => $page,
                 'last_page' => $lastPage,
@@ -503,37 +510,34 @@ class ProductSearchController extends Controller
      */
     private function executeMultiStageSearch($searchTerms, $searchFields, $filters)
     {
-        $results = collect();
+        if (empty($searchTerms)) return collect();
+
+        $primaryTerm = $searchTerms[0];
         
-        // Stage 1: Exact match
-        $exactMatches = $this->searchExact($searchTerms, $searchFields, $filters);
-        foreach ($exactMatches as $match) {
-            $match->search_stage = 'exact';
-            $match->base_score = 100;
-        }
-        $results = $results->concat($exactMatches);
-        
-        // Stage 2: Starts with
-        $startsWithMatches = $this->searchStartsWith($searchTerms, $searchFields, $filters);
-        foreach ($startsWithMatches as $match) {
-            if (!$results->contains('id', $match->id)) {
-                $match->search_stage = 'starts_with';
-                $match->base_score = 80;
-                $results->push($match);
+        $dbQuery = Product::select('id', 'name', 'sku', 'category_id');
+        $this->applyFilters($dbQuery, $filters);
+
+        // Search matches across all terms and fields
+        $dbQuery->where(function($q) use ($searchTerms, $searchFields) {
+            foreach ($searchTerms as $term) {
+                foreach ($searchFields as $field) {
+                    $q->orWhere($field, 'LIKE', '%' . $term . '%');
+                }
             }
-        }
-        
-        // Stage 3: Contains
-        $containsMatches = $this->searchContains($searchTerms, $searchFields, $filters);
-        foreach ($containsMatches as $match) {
-            if (!$results->contains('id', $match->id)) {
-                $match->search_stage = 'contains';
-                $match->base_score = 60;
-                $results->push($match);
-            }
-        }
-        
-        return $results;
+        });
+
+        // Optimized Stage Identification in SQL
+        $dbQuery->selectRaw("CASE 
+            WHEN name = ? OR sku = ? THEN 1
+            WHEN name LIKE ? OR sku LIKE ? THEN 2
+            ELSE 3
+        END as search_stage", [
+            $primaryTerm, $primaryTerm,
+            $primaryTerm . '%', $primaryTerm . '%'
+        ]);
+
+        // Limit results to prevent memory issues before ranking
+        return $dbQuery->limit(1000)->get();
     }
 
     /**
@@ -541,12 +545,8 @@ class ProductSearchController extends Controller
      */
     private function executeFuzzySearch($searchTerms, $searchFields, $filters, $threshold)
     {
-        $query = Product::select('products.*', 'reserved_products.available_inventory as global_available')
-            ->selectRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) as selling_price')
-            ->leftJoin('reserved_products', 'products.id', '=', 'reserved_products.product_id')
-            ->with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
-            $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
-        }])
+        // For performance, we fetch only IDs for fuzzy matching, then hydrate later
+        $query = Product::select('id', 'name', 'sku', 'category_id', 'vendor_id')
             ->where('is_archived', $filters['is_archived'] ?? false);
         
         if (isset($filters['category_id'])) {
@@ -557,26 +557,9 @@ class ProductSearchController extends Controller
             $query->where('vendor_id', $filters['vendor_id']);
         }
 
-        // Stock status filter (supports in_stock/not_in_stock and true/false)
-        if (isset($filters['stock_status']) && $filters['stock_status'] !== 'all') {
-            if ($filters['stock_status'] === 'in_stock' || $filters['stock_status'] === 'true' || $filters['stock_status'] === true) {
-                $query->whereHas('batches', function($q) {
-                    $q->where('is_active', true)
-                      ->where('availability', true)
-                      ->where('stock_qty', '>', 0);
-                });
-            } elseif ($filters['stock_status'] === 'not_in_stock' || $filters['stock_status'] === 'false' || $filters['stock_status'] === false) {
-                $query->whereDoesntHave('batches', function($q) {
-                    $q->where('is_active', true)
-                      ->where('availability', true)
-                      ->where('stock_qty', '>', 0);
-                });
-            }
-        }
-        
-        // Performance: Limit the number of products we run fuzzy matching on
-        // If there are thousands of products, this is too slow.
-        $allProducts = $query->limit(1000)->get();
+        // Only fetch a limited set for fuzzy processing to avoid OOM
+        $candidates = $query->limit(2000)->get();
+        $allProducts = $query->select('id', 'name', 'sku', 'category_id')->limit(2000)->get();
         $fuzzyMatches = collect();
         
         foreach ($allProducts as $product) {
@@ -697,12 +680,7 @@ class ProductSearchController extends Controller
      */
     private function searchExact($searchTerms, $searchFields, $filters)
     {
-        $query = Product::select('products.*', 'reserved_products.available_inventory as global_available')
-            ->selectRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) as selling_price')
-            ->leftJoin('reserved_products', 'products.id', '=', 'reserved_products.product_id')
-            ->with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
-            $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
-        }]);
+        $query = Product::select('id', 'name', 'sku', 'category_id');
 
         $this->applyFilters($query, $filters);
         
@@ -727,12 +705,7 @@ class ProductSearchController extends Controller
      */
     private function searchStartsWith($searchTerms, $searchFields, $filters)
     {
-        $query = Product::select('products.*', 'reserved_products.available_inventory as global_available')
-            ->selectRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) as selling_price')
-            ->leftJoin('reserved_products', 'products.id', '=', 'reserved_products.product_id')
-            ->with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
-            $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
-        }]);
+        $query = Product::select('id', 'name', 'sku', 'category_id');
 
         $this->applyFilters($query, $filters);
         
@@ -757,12 +730,7 @@ class ProductSearchController extends Controller
      */
     private function searchContains($searchTerms, $searchFields, $filters)
     {
-        $query = Product::select('products.*', 'reserved_products.available_inventory as global_available')
-            ->selectRaw('(SELECT MIN(sell_price) FROM product_batches WHERE product_batches.product_id = products.id AND availability = 1 AND is_active = 1) as selling_price')
-            ->leftJoin('reserved_products', 'products.id', '=', 'reserved_products.product_id')
-            ->with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
-            $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
-        }]);
+        $query = Product::select('id', 'name', 'sku', 'category_id');
 
         $this->applyFilters($query, $filters);
         
@@ -864,6 +832,50 @@ class ProductSearchController extends Controller
         
         // Sort by relevance score (descending)
         return $scored->sortByDesc('relevance_score')->values();
+    }
+
+    /**
+     * Load full relations and format custom fields for final results
+     */
+    private function loadFullRelations($items)
+    {
+        if ($items->isEmpty()) return collect();
+
+        $ids = $items->pluck('id')->toArray();
+        $fullProducts = Product::with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
+                $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
+            }])
+            ->whereIn('id', $ids)
+            ->get()
+            ->keyBy('id');
+
+        return $items->map(function($partial) use ($fullProducts) {
+            $full = $fullProducts->get($partial->id);
+            if ($full) {
+                // Preserve the relevance score and search stage calculated during search
+                $full->relevance_score = $partial->relevance_score;
+                $full->search_stage = $partial->search_stage;
+                $full->custom_fields = $this->formatCustomFields($full);
+                return $full;
+            }
+            return $partial;
+        })->filter();
+    }
+
+    /**
+     * Format custom fields for display
+     */
+    private function formatCustomFields($product)
+    {
+        return $product->productFields->map(function ($pf) {
+            return [
+                'field_id' => $pf->field_id,
+                'field_title' => $pf->field->title ?? 'Unknown',
+                'field_type' => $pf->field->type ?? 'text',
+                'value' => $pf->value,
+                'raw_value' => $pf->value,
+            ];
+        });
     }
 
     /**

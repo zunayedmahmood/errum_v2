@@ -401,6 +401,25 @@ export default function ProductDetailPage() {
     }
   }, [product, selectedVariant]);
 
+  // 3.9 — Preload variant images for instant switching
+  useEffect(() => {
+    if (productVariants.length > 0) {
+      const urls = new Set<string>();
+      productVariants.forEach(v => {
+        if (Array.isArray(v.images)) {
+          v.images.forEach(img => {
+            if (img.url && !urls.has(img.url)) {
+              urls.add(img.url);
+              // Background preloading
+              const i = new Image();
+              i.src = img.url;
+            }
+          });
+        }
+      });
+    }
+  }, [productVariants]);
+
   // Sticky Bar Observer
   useEffect(() => {
     if (!mainCtaRef.current) return;
@@ -688,7 +707,7 @@ export default function ProductDetailPage() {
     setQuantity(1);
 
     // 3.5 — No page reload
-    window.history.pushState(null, '', `/e-commerce/product/${variant.id}`);
+    window.history.replaceState(null, '', `/e-commerce/product/${variant.id}`);
 
     // Background fetch for FULL details (including all images)
     try {
@@ -702,6 +721,18 @@ export default function ProductDetailPage() {
       }
     } catch (err) {
       console.warn('Failed to fetch full variant details in background:', err);
+    }
+  };
+
+  // Helper for navigating to other products (Related / Recently Viewed)
+  const handleProductNavigation = (p: SimpleProduct | Product) => {
+    // Check if the target product is actually a variant of the current one
+    const variantMatch = productVariants.find(v => v.id === p.id);
+    if (variantMatch) {
+      handleVariantChange(variantMatch);
+      // Optional: scroll to top if needed, but variants usually want to stay in context
+    } else {
+      router.push(`/e-commerce/product/${p.id}`);
     }
   };
 
@@ -1197,7 +1228,7 @@ export default function ProductDetailPage() {
                     key={item.id}
                     product={item}
                     compact
-                    onOpen={(p) => router.push(`/e-commerce/product/${p.id}`)}
+                    onOpen={handleProductNavigation}
                     onAddToCart={(p, e) => handleQuickAddToCart(p, e)}
                   />
                 ))}
@@ -1221,7 +1252,7 @@ export default function ProductDetailPage() {
                     <PremiumProductCard
                       product={item}
                       compact
-                      onOpen={(p) => router.push(`/e-commerce/product/${p.id}`)}
+                      onOpen={handleProductNavigation}
                       onAddToCart={(p, e) => handleQuickAddToCart(p, e)}
                     />
                   </div>

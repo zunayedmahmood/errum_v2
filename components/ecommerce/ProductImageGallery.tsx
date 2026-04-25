@@ -18,6 +18,44 @@ interface ProductImageGalleryProps {
   inStock?: boolean;
 }
 
+
+const PixelScaffold = () => {
+  return (
+    <div className="absolute inset-0 bg-gray-50 flex flex-wrap overflow-hidden z-[5]">
+      {Array.from({ length: 64 }).map((_, i) => (
+        <div 
+          key={i} 
+          className="w-[12.5%] h-[12.5%] bg-gray-100 border-[0.5px] border-white/40 animate-pulse" 
+          style={{ animationDelay: `${(i % 8) * 40 + Math.floor(i / 8) * 40}ms` }}
+        />
+      ))}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-gray-200 border-t-gray-400 rounded-full animate-spin opacity-20" />
+      </div>
+    </div>
+  );
+};
+
+const ImageWithScaffold = ({ src, alt, fill, sizes, className, priority, objectFit = 'contain' }: any) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  return (
+    <div className="relative w-full h-full overflow-hidden">
+      {!isLoaded && <PixelScaffold />}
+      <Image
+        src={src}
+        alt={alt}
+        fill={fill}
+        sizes={sizes}
+        className={`${className} transition-opacity duration-700 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+        priority={priority}
+        onLoad={() => setIsLoaded(true)}
+        style={{ objectFit }}
+      />
+    </div>
+  );
+};
+
 const ProductImageGallery: React.FC<ProductImageGalleryProps> = memo(({
   images,
   productName,
@@ -27,7 +65,7 @@ const ProductImageGallery: React.FC<ProductImageGalleryProps> = memo(({
   const [activeIndex, setActiveIndex] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // 1. Reset gallery when images change (prevents blank screen when switching variants with fewer images)
+  // 1. Reset gallery when images change
   useEffect(() => {
     setActiveIndex(0);
     if (scrollContainerRef.current) {
@@ -51,13 +89,9 @@ const ProductImageGallery: React.FC<ProductImageGalleryProps> = memo(({
   };
 
   const scrollToImage = (index: number) => {
-    // Set index immediately for desktop opacity transition
     setActiveIndex(index);
-
     if (!scrollContainerRef.current) return;
     const { offsetWidth } = scrollContainerRef.current;
-
-    // Only use smooth behavior for mobile swipe experience
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
     scrollContainerRef.current.scrollTo({
@@ -91,12 +125,13 @@ const ProductImageGallery: React.FC<ProductImageGalleryProps> = memo(({
               }`}
               style={{ aspectRatio: '1/1' }}
             >
-              <Image 
+              <ImageWithScaffold 
                 src={img.url} 
                 alt={`${productName} thumbnail ${index + 1}`}
                 fill
                 sizes="80px"
                 className="object-cover" 
+                objectFit="cover"
               />
             </button>
           ))}
@@ -105,7 +140,6 @@ const ProductImageGallery: React.FC<ProductImageGalleryProps> = memo(({
 
       {/* Main Container */}
       <div className="flex-1 relative group">
-        {/* Mobile Swipe Carousel / Desktop Main Image */}
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}
@@ -120,13 +154,14 @@ const ProductImageGallery: React.FC<ProductImageGalleryProps> = memo(({
                   index === activeIndex ? 'md:opacity-100 z-10' : 'md:opacity-0 z-0'
                 }`}
               >
-                <Image
+                <ImageWithScaffold
                   src={img.url}
                   alt={`${productName} view ${index + 1}`}
                   fill
                   sizes="(max-width: 768px) 100vw, 50vw"
-                  className="object-contain transition-transform duration-500 bg-white"
+                  className="object-contain bg-white"
                   priority={index === 0}
+                  objectFit="contain"
                 />
               </div>
             ))}
@@ -146,8 +181,7 @@ const ProductImageGallery: React.FC<ProductImageGalleryProps> = memo(({
             )}
           </div>
 
-
-          {/* Navigation Arrows (Desktop - Minimalist) */}
+          {/* Navigation Arrows */}
           {safeImages.length > 1 && (
             <div className="absolute inset-y-0 left-0 right-0 hidden md:flex items-center justify-between px-4 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30">
               <button
@@ -166,24 +200,24 @@ const ProductImageGallery: React.FC<ProductImageGalleryProps> = memo(({
           )}
         </div>
 
-        {/* Mobile Thumbnail Strip (now below and wrapping) */}
+        {/* Mobile Thumbnail Strip */}
         {safeImages.length > 1 && (
           <div className="flex md:hidden flex-wrap gap-2 py-4 z-30 justify-start">
             {safeImages.map((img, index) => (
               <button
                 key={img.id || index}
                 onClick={() => scrollToImage(index)}
-                className={`w-14 h-14 sm:w-16 sm:h-16 flex-shrink-0 rounded-md overflow-hidden border-2 transition-all ${
+                className={`w-14 h-14 sm:w-16 sm:h-16 flex-shrink-0 relative rounded-md overflow-hidden border-2 transition-all ${
                   activeIndex === index ? 'border-gray-900' : 'border-gray-200'
                 }`}
               >
-                <Image src={img.url} fill sizes="64px" className="object-cover" alt="" />
+                <ImageWithScaffold src={img.url} fill sizes="64px" className="object-cover" alt="" objectFit="cover" />
               </button>
             ))}
           </div>
         )}
 
-        {/* Desktop Progress/Dots (Minimal) */}
+        {/* Desktop Progress Bars */}
         {safeImages.length > 1 && (
           <div className="hidden md:flex justify-center gap-2 mt-4">
             {safeImages.map((_, i) => (

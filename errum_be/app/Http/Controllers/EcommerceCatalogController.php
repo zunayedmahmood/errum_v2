@@ -525,11 +525,12 @@ class EcommerceCatalogController extends Controller
                             'available_inventory' => $variantAvailableInventory,
                             'reserved_inventory' => $variantReserved ? (int) $variantReserved->reserved_inventory : 0,
                             'in_stock' => $variantAvailableInventory > 0,
-                            'images' => $variant->images->where('is_active', true)->take(1)->map(function ($image) {
+                            'images' => $variant->images->where('is_active', true)->map(function ($image) {
                                 return [
                                     'id' => $image->id,
                                     'url' => $image->image_url,
                                     'is_primary' => $image->is_primary,
+                                    'alt_text' => $image->alt_text,
                                 ];
                             }),
                         ];
