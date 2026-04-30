@@ -8,7 +8,7 @@ import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import inventoryService, { GlobalInventoryItem, Store as StoreBreakdown } from '@/services/inventoryService';
 import productService from '@/services/productService';
-import categoryService from '@/services/groupInventory';
+import categoryService from '@/services/categoryService';
 import productImageService from '@/services/productImageService';
 import defectiveProductService, { type DefectiveProduct } from '@/services/defectiveProductService';
 import ExportInventoryButton from '@/components/inventory/ExportInventoryButton';
@@ -68,14 +68,43 @@ function ViewInventoryPageContent() {
   const [viewMode, setViewMode] = useState<'all' | 'category'>('all');
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
 
-  const getFlatCategories = (cats: Category[]) => {
-    const flat: Category[] = [];
-    cats.filter(c => !c.parent_id).forEach(parent => {
-      flat.push(parent);
-      cats.filter(c => c.parent_id === parent.id).forEach(child => {
-        flat.push(child);
+  const getFlatCategories = (cats: any[]) => {
+    const flat: any[] = [];
+    const flatten = (items: any[]) => {
+      items.forEach(item => {
+        if (!flat.some(f => f.id === item.id)) {
+          flat.push(item);
+        }
+        if (item.children && Array.isArray(item.children)) {
+          flatten(item.children);
+        }
       });
-    });
+    };
+    
+    // First flatten based on children arrays if they exist (Tree mode)
+    if (cats.some(c => c.children && c.children.length > 0)) {
+       flatten(cats);
+    } else {
+       // Fallback for flat list mode: manually build tree relationships
+       const roots = cats.filter(c => !c.parent_id);
+       roots.forEach(root => {
+         flat.push(root);
+         const addChildren = (parentId: number) => {
+           cats.filter(c => c.parent_id === parentId).forEach(child => {
+             if (!flat.some(f => f.id === child.id)) {
+               flat.push(child);
+               addChildren(child.id);
+             }
+           });
+         };
+         addChildren(root.id);
+       });
+       // Catch any orphans
+       cats.forEach(c => {
+         if (!flat.some(f => f.id === c.id)) flat.push(c);
+       });
+    }
+    
     return flat;
   };
 
@@ -169,12 +198,12 @@ function ViewInventoryPageContent() {
     return `${baseUrl}/storage/product-images/${url}`;
   };
 
-  const getCategoryName = (categoryId: number, cats: Category[]): string => {
-    const category = cats.find(c => c.id === categoryId);
+  const getCategoryName = (categoryId: number, catsToSearch: Category[]): string => {
+    const category = catsToSearch.find(c => c.id === categoryId);
     if (!category) return 'Uncategorized';
 
     if (category.parent_id) {
-      const parent = cats.find(c => c.id === category.parent_id);
+      const parent = catsToSearch.find(c => c.id === category.parent_id);
       return parent ? `${parent.title} / ${category.title}` : category.title;
     }
 
@@ -280,13 +309,13 @@ function ViewInventoryPageContent() {
     };
   };
 
-  const getCategoryPaths = (categoryId: number | undefined, cats: Category[]): { category: string; subcategory: string } => {
+  const getCategoryPaths = (categoryId: number | undefined, catsToSearch: Category[]): { category: string; subcategory: string } => {
     if (!categoryId) return { category: 'Uncategorized', subcategory: '-' };
-    const cat = cats.find(c => c.id === categoryId);
+    const cat = catsToSearch.find(c => c.id === categoryId);
     if (!cat) return { category: 'Uncategorized', subcategory: '-' };
 
     if (cat.parent_id) {
-      const parent = cats.find(c => c.id === cat.parent_id);
+      const parent = catsToSearch.find(c => c.id === cat.parent_id);
       return {
         category: parent ? parent.title : cat.title,
         subcategory: parent ? cat.title : '-',
@@ -319,7 +348,7 @@ function ViewInventoryPageContent() {
   const getCategoryForGroup = (g: GroupedProduct) => {
     for (const pid of g.productIds) {
       const meta = metaCacheRef.current[pid];
-      if (meta?.category_id) return getCategoryName(meta.category_id, categories);
+      if (meta?.category_id) return getCategoryName(meta.category_id, flatCategories);
     }
     return 'Uncategorized';
   };
@@ -494,16 +523,23 @@ function ViewInventoryPageContent() {
     try {
       setLoading(true);
 
-      const [categoriesResponse, inventoryResponse] = await Promise.all([
-        categoryService.getCategories(),
+      const [categoriesData, inventoryResponse] = await Promise.all([
+        categoryService.getTree(true),
         inventoryService.getGlobalInventory({ 
           skipStoreScope: true,
           category_id: viewMode === 'category' ? (selectedCategoryId || undefined) : undefined
         }),
       ]);
 
-      const categoriesData = (categoriesResponse as any)?.data?.data || (categoriesResponse as any)?.data || [];
-      setCategories(categoriesData);
+      // Handle tree response or fallback to flat list
+      let parsedCategories = [];
+      if (Array.isArray(categoriesData)) {
+        parsedCategories = categoriesData;
+      } else if ((categoriesData as any)?.data) {
+        parsedCategories = (categoriesData as any).data;
+      }
+      
+      setCategories(parsedCategories);
 
       const inventoryData = (inventoryResponse as any)?.data || [];
 
@@ -691,7 +727,7 @@ function ViewInventoryPageContent() {
                 </p>
               </div>
               <ExportInventoryButton 
-                categories={categories} 
+                categories={flatCategories} 
                 allStores={allStores} 
                 selectedCategoryId={viewMode === 'category' ? selectedCategoryId : null}
               />
@@ -794,7 +830,7 @@ function ViewInventoryPageContent() {
                         {visibleProducts.map((group) => (
                           group.variations.map((variation, vIdx) => {
                             const pid = variation.productId;
-                            const { category, subcategory } = getCategoryPaths(variation.category_id, categories);
+                            const { category, subcategory } = getCategoryPaths(variation.category_id, flatCategories);
                             const suffix = variation.variation_suffix || getVariationSuffix(pid);
                             const extra = extraMap?.get(pid);
                             const rowSpan = group.variations.length;
