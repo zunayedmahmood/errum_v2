@@ -253,6 +253,41 @@ class ProductImageService {
   }
 
   /**
+   * Sync images for an entire SKU group.
+   *
+   * Clears ALL images from ALL variants sharing the same SKU, then uploads
+   * the provided files (in order) and assigns each to every variant.
+   * `primaryIndex` (default 0) controls which uploaded image becomes the primary.
+   *
+   * This call wraps everything in a DB transaction on the backend —
+   * either all variants are updated or none are.
+   *
+   * POST /api/products/{productId}/sync-sku-images
+   */
+  async syncSkuImages(
+    productId: number,
+    files: File[],
+    primaryIndex = 0
+  ): Promise<{
+    success: boolean;
+    message: string;
+    sku: string;
+    variants_updated: number;
+    images_uploaded: number;
+  }> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('images[]', file));
+    formData.append('primary_index', String(primaryIndex));
+
+    const response = await axiosInstance.post(
+      `${this.baseUrl}/${productId}/sync-sku-images`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  }
+
+  /**
    * Get image statistics
    */
   async getStatistics(productId: number): Promise<ImageStatistics> {

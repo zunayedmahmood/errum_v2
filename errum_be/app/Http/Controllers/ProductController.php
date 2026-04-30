@@ -5,12 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Field;
 use App\Models\ProductField;
+use App\Models\ProductImage;
 use App\Models\Category;
 use App\Models\Vendor;
 use App\Traits\DatabaseAgnosticSearch;
 use App\Traits\ProductImageFallback;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class ProductController extends Controller
@@ -934,6 +937,110 @@ class ProductController extends Controller
             ->where('product_batches.quantity', '>', 0)
             ->selectRaw('SUM(product_batches.quantity * product_batches.cost_price) as total_value')
             ->value('total_value') ?? 0;
+    }
+
+    /**
+     * Sync images for an entire SKU group (all variants that share the same SKU).
+     *
+     * Behaviour (all-or-nothing via DB transaction):
+     *   1. Deletes ALL existing images (files + DB records) for every product in the group.
+     *   2. Uploads the provided images to every variant in serial order.
+     *   3. Sets `is_primary = true` on the image at `primary_index` (default: 0).
+     *
+     * POST /api/products/{id}/sync-sku-images
+     *
+     * Body (multipart/form-data):
+     *   - images[]:       file[]   (required, ≥1 image, max 10, mimes: jpeg,png,jpg,gif,webp, max 5 MB each)
+     *   - primary_index:  integer  (optional, default 0 — which image in the uploaded array becomes primary)
+     *
+     * @param Request $request
+     * @param int|string $id  Any product ID belonging to the target SKU group.
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function syncSkuImages(Request $request, $id)
+    {
+        $product = Product::findOrFail($id);
+
+        $request->validate([
+            'images'         => 'required|array|min:1|max:10',
+            'images.*'       => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'primary_index'  => 'nullable|integer|min:0',
+        ]);
+
+        $primaryIndex = (int) ($request->input('primary_index', 0));
+        $files        = $request->file('images'); // array of UploadedFile
+        $sku          = $product->sku;
+
+        // Collect all product IDs in this SKU group.
+        $skuProductIds = Product::where('sku', $sku)->pluck('id')->toArray();
+
+        if (empty($skuProductIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No products found for this SKU.',
+            ], 404);
+        }
+
+        // Store the uploaded temp paths before the transaction so we can roll back
+        // file storage independently if needed.
+        $uploadedPaths = []; // will be filled inside transaction
+
+        DB::beginTransaction();
+        try {
+            // ── Step 1: Delete all existing images for every variant ──────────────
+            foreach ($skuProductIds as $pid) {
+                $existingImages = ProductImage::where('product_id', $pid)->get();
+                foreach ($existingImages as $img) {
+                    if (Storage::disk('public')->exists($img->image_path)) {
+                        Storage::disk('public')->delete($img->image_path);
+                    }
+                    $img->delete();
+                }
+            }
+
+            // ── Step 2: Upload each image once and persist for every variant ──────
+            foreach ($files as $idx => $file) {
+                $isPrimary  = ($idx === $primaryIndex);
+                $imageName  = time() . '_' . Str::random(10) . '.' . $file->getClientOriginalExtension();
+                $imagePath  = $file->storeAs('products/sku-' . $sku, $imageName, 'public');
+                $uploadedPaths[] = $imagePath;
+
+                foreach ($skuProductIds as $sortPos => $pid) {
+                    ProductImage::create([
+                        'product_id'  => $pid,
+                        'image_path'  => $imagePath,
+                        'alt_text'    => Product::find($pid)?->name ?? '',
+                        'is_primary'  => $isPrimary,
+                        'sort_order'  => $idx,
+                        'is_active'   => true,
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success'           => true,
+                'message'           => 'Images synced to all ' . count($skuProductIds) . ' variant(s) successfully.',
+                'sku'               => $sku,
+                'variants_updated'  => count($skuProductIds),
+                'images_uploaded'   => count($files),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            // Clean up any files we already wrote to disk before the failure.
+            foreach ($uploadedPaths as $path) {
+                if (Storage::disk('public')->exists($path)) {
+                    Storage::disk('public')->delete($path);
+                }
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to sync SKU images: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**

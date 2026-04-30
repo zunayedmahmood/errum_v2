@@ -363,3 +363,14 @@ We do not want any change to the backend.
 Currently, for 5 variation of 1 sku, we get 5 entries in the SKU coloumn and product name coloumn. instead, for 1 sku, these rows should be merged to 1. the same for SKU total. (do this instead of hiding the value).
 
 
+
+### making image change affect sku.
+
+I want you to upgrade product/add page when editing product.
+i want you to add a toggle button there "update image for entire sku" (it will be above the images section).
+if on, when we make changes to images and set  primary and we're saving the image changes, we will:
+clear all images of all variants of that SKU,
+then save the images uploaded in the serial and set_as_primary to all of them. 
+
+to ensure consistency, make a new method in product controller that unifies these calls and wraps in a db:transaction to ensure all or nothing 
+add proper toast in frontend.

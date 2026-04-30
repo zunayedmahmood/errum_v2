@@ -129,6 +129,10 @@ export default function AddEditProductPage({
   const [savingRowIds, setSavingRowIds] = useState<Record<number, boolean>>({});
   const [savingAll, setSavingAll] = useState<boolean>(false);
 
+  // "Update image for entire SKU" toggle (edit mode only)
+  const [updateImageForEntireSku, setUpdateImageForEntireSku] = useState<boolean>(false);
+  const [skuImagesSaving, setSkuImagesSaving] = useState<boolean>(false);
+
   // Common Edit (SKU group) state
   const [commonBaseName, setCommonBaseName] = useState<string>('');
   const [commonBrand, setCommonBrand] = useState<string>('');
@@ -567,6 +571,67 @@ export default function AddEditProductPage({
       });
     } finally {
       setSkuGroupLoading(false);
+    }
+  };
+
+  /**
+   * Sync all images in the current ImageGalleryManager to every variant
+   * sharing the same SKU. Only new (non-uploaded) files are sent; existing
+   * server images are cleared on the backend inside a DB transaction.
+   */
+  const handleSyncSkuImages = async () => {
+    if (!productId) return;
+
+    // Collect files that have not yet been individually uploaded
+    // (i.e. newly selected files the user added via the gallery in edit mode).
+    // When the toggle is on we want ALL images in the gallery — new files that
+    // were just selected but not yet uploaded, because in normal edit mode
+    // they upload immediately. To allow this flow we need to detect pending files.
+    const pendingFiles = productImages
+      .filter((img: any) => img.file && !img.uploaded)
+      .map((img: any) => img.file as File);
+
+    if (pendingFiles.length === 0) {
+      setToast({
+        message:
+          'No new images to sync. Please upload new images first before using this feature.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    // Find which of the pending files is marked as primary.
+    const pendingImages = productImages.filter((img: any) => img.file && !img.uploaded);
+    const primaryIdx = pendingImages.findIndex((img: any) => img.is_primary);
+    const primaryIndex = primaryIdx >= 0 ? primaryIdx : 0;
+
+    try {
+      setSkuImagesSaving(true);
+      setToast({ message: 'Syncing images to all SKU variants…', type: 'success' });
+
+      const result = await productImageService.syncSkuImages(
+        parseInt(productId!),
+        pendingFiles,
+        primaryIndex
+      );
+
+      setToast({
+        message: result.message || `Images synced to ${result.variants_updated} variant(s) successfully!`,
+        type: 'success',
+      });
+
+      // Turn toggle off and refresh images
+      setUpdateImageForEntireSku(false);
+      // Refresh the SKU group to reflect new images
+      await fetchSkuGroupByProductId(productId);
+    } catch (error: any) {
+      console.error('Sync SKU images failed:', error);
+      setToast({
+        message: error?.response?.data?.message || error?.message || 'Failed to sync images across SKU variants.',
+        type: 'error',
+      });
+    } finally {
+      setSkuImagesSaving(false);
     }
   };
 
@@ -1586,8 +1651,75 @@ export default function AddEditProductPage({
                       <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                         Product Images
                       </h2>
+
+                      {/* ── Update image for entire SKU toggle (edit mode only) ── */}
+                      {isEditMode && (
+                        <div className="mb-5 rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-amber-900 dark:text-amber-300">
+                                Update image for entire SKU
+                              </p>
+                              <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                                When <strong>ON</strong>: saving images will{' '}
+                                <strong>clear all images from every variant</strong> sharing
+                                this SKU and replace them with the images you upload here,
+                                in the same order. The primary flag follows your selection.
+                                This operation is atomic — all variants update together or
+                                none do.
+                              </p>
+                            </div>
+                            {/* Toggle button */}
+                            <button
+                              id="toggle-update-sku-images"
+                              type="button"
+                              onClick={() => setUpdateImageForEntireSku((v) => !v)}
+                              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
+                                updateImageForEntireSku
+                                  ? 'bg-amber-500'
+                                  : 'bg-gray-200 dark:bg-gray-700'
+                              }`}
+                              aria-pressed={updateImageForEntireSku}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                  updateImageForEntireSku ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
+                          </div>
+
+                          {/* Save SKU images button — only visible when toggle is on */}
+                          {updateImageForEntireSku && (
+                            <div className="mt-4 flex items-center gap-3">
+                              <button
+                                id="save-sku-images-btn"
+                                type="button"
+                                onClick={handleSyncSkuImages}
+                                disabled={skuImagesSaving}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                              >
+                                {skuImagesSaving ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Syncing…
+                                  </>
+                                ) : (
+                                  'Save Images for Entire SKU'
+                                )}
+                              </button>
+                              <p className="text-xs text-amber-700 dark:text-amber-400">
+                                Upload new images below, then click this button to apply them
+                                to all variants.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <ImageGalleryManager
-                        productId={isEditMode ? parseInt(productId!) : undefined}
+                        key={`gallery-${productId}-${updateImageForEntireSku}`}
+                        productId={isEditMode && !updateImageForEntireSku ? parseInt(productId!) : undefined}
                         onImagesChange={(images) => {
                           setProductImages(images);
                         }}
