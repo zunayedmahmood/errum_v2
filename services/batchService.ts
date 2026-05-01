@@ -201,6 +201,19 @@ class BatchService {
   }
 
   /**
+   * ✅ Bulk update cost price for ALL batches of a product
+   */
+  async updateAllBatchCostPrices(
+    productId: number,
+    costPrice: number
+  ): Promise<ApiResponse<BulkBatchPriceUpdateData>> {
+    const response = await axios.post(`/products/${productId}/batches/update-cost`, {
+      cost_price: costPrice,
+    });
+    return response.data;
+  }
+
+  /**
    * Get low stock batches
    */
   async getLowStock(threshold: number = 10, storeId?: number): Promise<ApiResponse<{

@@ -815,7 +815,7 @@ export default function PurchaseHistoryPage() {
                               <div>
                                 <span className="text-gray-600 dark:text-gray-400">Date: </span>
                                 <span className="text-gray-900 dark:text-white">
-                                  {new Date(order.created_at).toLocaleDateString()}
+                                  {new Date(order.created_at).toLocaleDateString('en-GB')} {new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
                                 </span>
                               </div>
                             </div>

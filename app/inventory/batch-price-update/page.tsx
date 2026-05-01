@@ -45,6 +45,7 @@ export default function BatchPriceUpdatePage() {
 
   // Update price
   const [sellPrice, setSellPrice] = useState<string>('');
+  const [costPrice, setCostPrice] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
   // UI messages
@@ -86,13 +87,14 @@ export default function BatchPriceUpdatePage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Load batches when product selected
+  // Load batches when product selected (now loads ALL variants of the SKU)
   useEffect(() => {
     const load = async () => {
-      if (!selectedProduct?.id) {
+      if (!selectedProduct?.sku) {
         setBatches([]);
         setUpdates([]);
         setSellPrice('');
+        setCostPrice('');
         return;
       }
 
@@ -102,21 +104,36 @@ export default function BatchPriceUpdatePage() {
         setSuccessMsg(null);
         setUpdates([]);
 
-        const list = await batchService.getBatchesArray({
-          product_id: selectedProduct.id,
-          per_page: 200,
-        });
+        // 1. Get all variants for this SKU
+        const skuGroup = await productService.getSkuGroup(selectedProduct.id);
+        const variants = skuGroup.products || [];
+        setSkuGroupProducts(variants);
+        setSelectedVariationIds(variants.map(v => v.id));
 
-        setBatches(list);
+        // 2. Load batches for ALL variations
+        const allBatchesResults = await Promise.all(
+          variants.map(v => batchService.getBatchesArray({ product_id: v.id, per_page: 200 }))
+        );
+        
+        const flattenedBatches = allBatchesResults.flat();
+        setBatches(flattenedBatches);
 
-        // Prefill price if all batches have same sell_price
-        const prices = list
+        // Prefill sell price if all batches have same sell_price
+        const sellPrices = flattenedBatches
           .map((b) => (b.sell_price ?? '').toString().trim())
           .filter(Boolean);
-
-        const unique = Array.from(new Set(prices));
-        if (unique.length === 1) setSellPrice(unique[0]);
+        const uniqueSell = Array.from(new Set(sellPrices));
+        if (uniqueSell.length === 1) setSellPrice(uniqueSell[0]);
         else setSellPrice('');
+
+        // Prefill cost price if all batches have same cost_price
+        const costPrices = flattenedBatches
+          .map((b) => (b.cost_price ?? '').toString().trim())
+          .filter(Boolean);
+        const uniqueCost = Array.from(new Set(costPrices));
+        if (uniqueCost.length === 1) setCostPrice(uniqueCost[0]);
+        else setCostPrice('');
+
       } catch (e: any) {
         setError(e?.response?.data?.message || e?.message || 'Failed to load batches.');
         setBatches([]);
@@ -126,40 +143,6 @@ export default function BatchPriceUpdatePage() {
     };
 
     load();
-  }, [selectedProduct?.id]);
-
-
-  // Load SKU-group variations when product selected (for bulk price update across variations)
-  useEffect(() => {
-    const loadSkuGroup = async () => {
-      const sku = String(selectedProduct?.sku || '').trim();
-      if (!sku) {
-        setSkuGroupProducts([]);
-        setSelectedVariationIds([]);
-        return;
-      }
-
-      try {
-        const res = await productService.getAll({ 
-          search: sku, 
-          no_pagination: true,
-          is_archived: false
-        });
-        const list = (res?.data || []) as FullProduct[];
-        const exact = list
-          .filter((p) => String(p.sku || '').trim() === sku)
-          .map((p) => p as FullProduct);
-
-        setSkuGroupProducts(exact);
-        setSelectedVariationIds(exact.map((p) => p.id)); // default: select all, user can uncheck
-      } catch (e) {
-        console.error('Failed to load SKU group products', e);
-        setSkuGroupProducts([]);
-        setSelectedVariationIds([]);
-      }
-    };
-
-    loadSkuGroup();
   }, [selectedProduct?.id, selectedProduct?.sku]);
 
   const startCostEdit = (batch: Batch) => {
@@ -236,8 +219,8 @@ export default function BatchPriceUpdatePage() {
     setSuccessMsg(null);
     setUpdates([]);
 
-    if (!selectedProduct?.id) {
-      setError('Select a product first.');
+    if (!selectedProduct?.sku) {
+      setError('Select a product SKU first.');
       return;
     }
 
@@ -249,39 +232,73 @@ export default function BatchPriceUpdatePage() {
 
     try {
       setIsSaving(true);
-
-      const targetIdsRaw = selectedVariationIds.length ? selectedVariationIds : [selectedProduct.id];
-      const targetIds = Array.from(new Set(targetIdsRaw));
-
-      let firstSuccess: any = null;
+      const targetIds = Array.from(new Set(selectedVariationIds));
+      let totalUpdated = 0;
+      let allUpdates: UpdateRow[] = [];
 
       for (const pid of targetIds) {
         const res = await batchService.updateAllBatchPrices(pid, priceNum);
-        if (!res?.success) {
-          throw new Error(res?.message || `Failed to update batch prices for product ${pid}.`);
+        if (res?.success) {
+          totalUpdated += res.data.updated_batches;
+          allUpdates = [...allUpdates, ...res.data.updates];
         }
-        if (!firstSuccess) firstSuccess = res;
       }
 
-      setSuccessMsg(
-        targetIds.length > 1
-          ? `Updated selling price for all batches of ${targetIds.length} variations (same SKU).`
-          : (firstSuccess?.message || 'Updated selling price for all batches.')
+      setSuccessMsg(`Successfully updated selling price for ${totalUpdated} batches across variants.`);
+      setUpdates(allUpdates);
+
+      // Reload batches
+      const allBatchesResults = await Promise.all(
+        skuGroupProducts.map(v => batchService.getBatchesArray({ product_id: v.id, per_page: 200 }))
       );
-
-
-      sessionStorage.setItem('product_list_refresh_needed', '1');
-      // Show update rows from the first response (usually enough for verification)
-      setUpdates(((firstSuccess?.data?.updates || []) as UpdateRow[]) || []);
-
-      // Reload batches for the currently selected product (so table reflects new price)
-      const list = await batchService.getBatchesArray({
-        product_id: selectedProduct.id,
-        per_page: 200,
-      });
-      setBatches(list);
+      setBatches(allBatchesResults.flat());
     } catch (e: any) {
-      setError(e?.response?.data?.message || e?.message || 'Failed to update batch prices.');
+      setError(e?.response?.data?.message || e?.message || 'Failed to update selling prices.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const onApplyCost = async () => {
+    setError(null);
+    setSuccessMsg(null);
+    setUpdates([]);
+
+    if (!selectedProduct?.sku) {
+      setError('Select a product SKU first.');
+      return;
+    }
+
+    const costNum = Number(costPrice);
+    if (!costPrice || Number.isNaN(costNum) || costNum < 0) {
+      setError('Enter a valid cost price (0 or greater).');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const targetIds = Array.from(new Set(selectedVariationIds));
+      let totalUpdated = 0;
+      let allUpdates: UpdateRow[] = [];
+
+      for (const pid of targetIds) {
+        const res = await batchService.updateAllBatchCostPrices(pid, costNum);
+        if (res?.success) {
+          totalUpdated += res.data.updated_batches;
+          allUpdates = [...allUpdates, ...res.data.updates];
+        }
+      }
+
+      setSuccessMsg(`Successfully updated cost price for ${totalUpdated} batches across variants.`);
+      setUpdates(allUpdates);
+
+      // Reload batches
+      const allBatchesResults = await Promise.all(
+        skuGroupProducts.map(v => batchService.getBatchesArray({ product_id: v.id, per_page: 200 }))
+      );
+      setBatches(allBatchesResults.flat());
+    } catch (e: any) {
+      setError(e?.response?.data?.message || e?.message || 'Failed to update cost prices.');
     } finally {
       setIsSaving(false);
     }
@@ -356,50 +373,27 @@ export default function BatchPriceUpdatePage() {
                       {products.map((group) => (
                         <div key={group.sku} className="border-b last:border-b-0 border-gray-100 dark:border-gray-700">
                           {/* SKU Group Header */}
-                          <div className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-4 py-2.5 text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center justify-between border-b border-gray-100 dark:border-gray-700">
-                            <span className="uppercase tracking-wider">{group.base_name || group.name}</span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-[10px] bg-gray-200 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono opacity-80">SKU: {group.sku}</span>
-                                <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded">{group.variants_count} variatons</span>
+                          <button
+                            onClick={() => onSelectProduct(group)}
+                            className={`w-full text-left sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-4 py-3 text-sm transition-all flex items-center justify-between border-b border-gray-100 dark:border-gray-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 ${
+                              selectedProduct?.sku === group.sku ? 'bg-emerald-50 dark:bg-emerald-900/40 ring-1 ring-inset ring-emerald-500' : ''
+                            }`}
+                          >
+                            <div className="flex flex-col">
+                              <span className="uppercase tracking-wider font-bold text-gray-800 dark:text-gray-200">{group.base_name || group.name}</span>
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">SKU: {group.sku}</span>
                             </div>
-                          </div>
-                          
-                          {/* Variations List */}
-                          <div className="divide-y divide-gray-50 dark:divide-gray-800">
-                            {[group, ...(group.variants || [])].map((p) => (
-                              <button
-                                key={p.id}
-                                onClick={() => onSelectProduct(p)}
-                                className={`w-full text-left px-6 py-3 hover:bg-emerald-50 dark:hover:bg-emerald-900/10 transition-all flex items-center justify-between gap-4 group ${
-                                  selectedProduct?.id === p.id ? 'bg-emerald-50 dark:bg-emerald-900/20' : ''
-                                }`}
-                              >
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <div className={`font-medium transition-colors ${selectedProduct?.id === p.id ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-900 dark:text-gray-100'}`}>
-                                        {p.name}
-                                    </div>
-                                    {p.id === group.id && (
-                                        <span className="text-[10px] text-gray-400 border border-gray-200 dark:border-gray-700 px-1 rounded">Representative</span>
-                                    )}
-                                  </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-0.5">
-                                    <span>ID: {p.id}</span>
-                                    <span>•</span>
-                                    <span>Price: {p.selling_price || 'N/A'}</span>
-                                  </div>
-                                </div>
-                                
+                            <div className="flex items-center gap-3">
+                                <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded font-medium">{group.variants_count} variatons</span>
                                 <div className={`h-5 w-5 rounded-full border flex items-center justify-center transition-all ${
-                                    selectedProduct?.id === p.id 
+                                    selectedProduct?.sku === group.sku 
                                     ? 'bg-emerald-600 border-emerald-600 text-white' 
-                                    : 'border-gray-300 dark:border-gray-600 group-hover:border-emerald-500'
+                                    : 'border-gray-300 dark:border-gray-600'
                                 }`}>
-                                    {selectedProduct?.id === p.id && <Check className="h-3 w-3" />}
+                                    {selectedProduct?.sku === group.sku && <Check className="h-3 w-3" />}
                                 </div>
-                              </button>
-                            ))}
-                          </div>
+                            </div>
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -530,123 +524,202 @@ export default function BatchPriceUpdatePage() {
                     </div>
                   </div>
                 )}
+              </div>
 
-                <div className="mt-4 flex flex-wrap items-end gap-3">
-                  <div className="flex-1 min-w-[220px]">
-                    <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">
-                      Selling Price (BDT)
-                    </label>
-                    <input
-                      value={sellPrice}
-                      onChange={(e) => setSellPrice(e.target.value)}
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      placeholder="e.g. 1299.00"
-                      className="w-full rounded-lg bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 px-3 py-2 outline-none focus:border-gray-400 dark:focus:border-gray-500 text-gray-900 dark:text-gray-100"
-                      disabled={!selectedProduct || isSaving}
-                    />
+              <div className="mt-8 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 shadow-sm">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Bulk Price Management</h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Selling Price Section */}
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700/50">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                        <Tag className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Bulk Selling Price</h3>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">New Selling Price (BDT)</label>
+                      <div className="flex gap-2">
+                        <input
+                          value={sellPrice}
+                          onChange={(e) => setSellPrice(e.target.value)}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder="0.00"
+                          className="flex-1 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-900 dark:text-gray-100 transition-all"
+                          disabled={!selectedProduct || isSaving}
+                        />
+                        <button
+                          onClick={onApply}
+                          disabled={!selectedProduct || isSaving}
+                          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 font-semibold text-white shadow-sm transition-all"
+                        >
+                          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          Update
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 italic">This will update the selling price for all selected variations and their active batches.</p>
+                    </div>
                   </div>
 
-                  <button
-                    onClick={onApply}
-                    disabled={!selectedProduct || isSaving}
-                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 font-semibold text-white"
-                  >
-                    {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                    Apply to all batches
-                  </button>
+                  {/* Cost Price Section */}
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700/50">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                        <HandCoins className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                      </div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Bulk Cost Price</h3>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">New Cost Price (BDT)</label>
+                      <div className="flex gap-2">
+                        <input
+                          value={costPrice}
+                          onChange={(e) => setCostPrice(e.target.value)}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder="0.00"
+                          className="flex-1 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-gray-900 dark:text-gray-100 transition-all"
+                          disabled={!selectedProduct || isSaving}
+                        />
+                        <button
+                          onClick={onApplyCost}
+                          disabled={!selectedProduct || isSaving}
+                          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 font-semibold text-white shadow-sm transition-all"
+                        >
+                          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          Update
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 italic">This will update the cost price for all selected variations and their active batches.</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Per-batch cost price update */}
+              {/* Per-batch price update (Tabled) */}
               {selectedProduct && (
-                <div className="mt-6 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Update cost price (specific batch)
-                      </h2>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        Cost price changes only the selected batch. Selling price changes all batches using the button above.
-                      </p>
-                    </div>
-
-                    {isLoadingBatches && (
-                      <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Loading batches...
+                <div className="mt-8 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                          Inventory Batch List
+                        </h2>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Review and adjust individual batch cost prices. Selling prices are managed via bulk updates.
+                        </p>
                       </div>
-                    )}
+
+                      {isLoadingBatches && (
+                        <div className="inline-flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Syncing batches...
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {!isLoadingBatches && batches.length === 0 && (
-                    <div className="mt-4 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-600 dark:text-gray-400">
-                      No batches found for this product.
+                  {!isLoadingBatches && batches.length === 0 ? (
+                    <div className="p-12 text-center">
+                      <div className="mx-auto w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
+                        <Package className="h-6 w-6 text-gray-400" />
+                      </div>
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-white">No active batches</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">There are no batches currently recorded for the selected SKU/variations.</p>
                     </div>
-                  )}
-
-                  {!isLoadingBatches && batches.length > 0 && (
-                    <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-                      <table className="min-w-full text-sm">
-                        <thead className="bg-gray-50 dark:bg-gray-900/40">
-                          <tr className="text-left">
-                            <th className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">Batch No</th>
-                            <th className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">Store</th>
-                            <th className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">Qty</th>
-                            <th className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">Cost Price</th>
-                            <th className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">Sell Price</th>
-                            <th className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">Action</th>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900/60">
+                          <tr>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Product Variant</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Batch Info</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Store</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center">Stock</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Cost Price (Edit)</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Selling Price</th>
+                            <th scope="col" className="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Action</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700/50">
                           {batches.map((b) => {
                             const isEditing = costEditBatchId === b.id;
                             const isRowSaving = costSavingBatchId === b.id;
                             return (
-                              <tr key={b.id} className="border-b border-gray-200 dark:border-gray-700 last:border-b-0">
-                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{b.batch_number || `#${b.id}`}</td>
-                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{b.store?.name || '-'}</td>
-                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{b.quantity ?? '-'}</td>
-                                <td className="px-3 py-2">
+                              <tr key={b.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-900/20 transition-colors">
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <div className="text-sm font-medium text-gray-900 dark:text-white">{b.product?.name || '-'}</div>
+                                  <div className="text-[10px] text-gray-500 font-mono">SKU: {b.product?.sku}</div>
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                  <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-[11px] font-mono border border-gray-200 dark:border-gray-600">
+                                    {b.batch_number || `#${b.id}`}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                  {b.store?.name || '-'}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    (b.quantity || 0) > 10 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 
+                                    (b.quantity || 0) > 0 ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' : 
+                                    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                  }`}>
+                                    {b.quantity ?? 0}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
                                   {isEditing ? (
-                                    <input
-                                      value={costEditValue}
-                                      onChange={(e) => setCostEditValue(e.target.value)}
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      className="w-32 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-gray-900 dark:text-white"
-                                    />
+                                    <div className="relative">
+                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400">৳</span>
+                                      <input
+                                        value={costEditValue}
+                                        onChange={(e) => setCostEditValue(e.target.value)}
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        autoFocus
+                                        className="w-28 pl-6 pr-2 py-1 text-sm rounded-md border border-blue-500 dark:border-blue-400 bg-white dark:bg-gray-900 text-gray-900 dark:text-white outline-none ring-2 ring-blue-500/10"
+                                      />
+                                    </div>
                                   ) : (
-                                    <span className="text-gray-900 dark:text-gray-100">{b.cost_price ?? '-'}</span>
+                                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">৳{b.cost_price ?? '-'}</div>
                                   )}
                                 </td>
-                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{b.sell_price ?? '-'}</td>
-                                <td className="px-3 py-2">
+                                <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                  ৳{b.sell_price ?? '-'}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-right">
                                   {isEditing ? (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center justify-end gap-1">
                                       <button
                                         onClick={() => saveCostPrice(b)}
                                         disabled={isRowSaving}
-                                        className="inline-flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-2 py-1 font-semibold text-white"
+                                        className="p-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-colors"
+                                        title="Save changes"
                                       >
                                         {isRowSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                                        Save
                                       </button>
                                       <button
                                         onClick={cancelCostEdit}
                                         disabled={isRowSaving}
-                                        className="inline-flex items-center gap-1 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-gray-800 dark:text-gray-200"
+                                        className="p-1.5 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 transition-colors"
+                                        title="Cancel"
                                       >
-                                        <X className="h-4 w-4" /> Cancel
+                                        <X className="h-4 w-4" />
                                       </button>
                                     </div>
                                   ) : (
                                     <button
                                       onClick={() => startCostEdit(b)}
-                                      className="inline-flex items-center gap-1 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-gray-800 dark:text-gray-200"
+                                      className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors"
                                     >
-                                      <Pencil className="h-4 w-4" /> Edit
+                                      <Pencil className="h-3 w-3" /> Edit Cost
                                     </button>
                                   )}
                                 </td>

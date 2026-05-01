@@ -740,4 +740,84 @@ class ProductBatchController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Update cost price for all batches of a specific product
+     * 
+     * POST /api/products/{product_id}/batches/update-cost
+     */
+    public function updateAllBatchCostPrices(Request $request, $productId)
+    {
+        $validator = Validator::make($request->all(), [
+            'cost_price' => 'required|numeric|min:0',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $product = Product::find($productId);
+            if (!$product) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product not found',
+                ], 404);
+            }
+
+            $newCostPrice = $request->cost_price;
+            $batches = ProductBatch::where('product_id', $productId)->get();
+
+            if ($batches->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No batches found for this product',
+                ], 404);
+            }
+
+            $updates = [];
+            DB::beginTransaction();
+            try {
+                foreach ($batches as $batch) {
+                    $oldPrice = $batch->cost_price;
+                    $batch->cost_price = $newCostPrice;
+                    $batch->save();
+
+                    $updates[] = [
+                        'batch_id' => $batch->id,
+                        'batch_number' => $batch->batch_number,
+                        'store' => $batch->store->name ?? 'N/A',
+                        'old_price' => number_format((float)$oldPrice, 2),
+                        'new_price' => number_format((float)$newCostPrice, 2),
+                    ];
+                }
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Successfully updated cost price for all batches',
+                    'data' => [
+                        'product_id' => $product->id,
+                        'product_name' => $product->name,
+                        'product_sku' => $product->sku,
+                        'new_cost_price' => number_format((float)$newCostPrice, 2),
+                        'batches_updated' => count($updates),
+                        'updates' => $updates,
+                    ],
+                ], 200);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update cost prices: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 }

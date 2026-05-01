@@ -450,6 +450,7 @@ class PurchaseOrderController extends Controller
             'data' => $stats
         ]);
     }
+
     /**
      * Delete purchase order permanently
      * Deletes related barcodes, batches, and updates inventory.
@@ -488,10 +489,9 @@ class PurchaseOrderController extends Controller
         DB::beginTransaction();
         try {
             $productIdsToSync = [];
+            $batchIdsToDelete = [];
 
-            // 1. Delete barcodes
-            // 2. Delete batches
-            // Batches are linked to items via product_batch_id
+            // 1. Collect batch IDs from items
             foreach ($po->items as $item) {
                 if ($item->product_id) {
                     $productIdsToSync[] = $item->product_id;
@@ -500,33 +500,30 @@ class PurchaseOrderController extends Controller
                 if ($item->product_batch_id) {
                     $batchIdsToDelete[] = $item->product_batch_id;
                 }
-                    // Delete barcodes for this batch
-
-                    
-                    // Delete batch
-
-
             }
 
-            // Also delete any other items
             // 2. Delete the purchase order items first (to remove foreign keys to product_batches)
             \DB::table('purchase_order_items')->where('purchase_order_id', $po->id)->delete();
 
             // 3. Delete barcodes and batches safely
             if (!empty($batchIdsToDelete)) {
+                // Delete barcodes for these batches
                 \DB::table('product_barcodes')->whereIn('batch_id', $batchIdsToDelete)->delete();
+                // Delete the batches themselves
                 \DB::table('product_batches')->whereIn('id', $batchIdsToDelete)->delete();
             }
 
-            // Delete the purchase order
+            // 4. Delete the purchase order
             $po->delete();
 
             DB::commit();
 
-            // 3. Update quantity of all products in PO
+            // 5. Update quantity of all products affected by this PO
             $productIdsToSync = array_unique($productIdsToSync);
             foreach ($productIdsToSync as $productId) {
-                \App\Models\MasterInventory::syncProductInventory($productId);
+                if (method_exists(\App\Models\MasterInventory::class, 'syncProductInventory')) {
+                    \App\Models\MasterInventory::syncProductInventory($productId);
+                }
             }
 
             return response()->json([

@@ -404,3 +404,28 @@ we tried this, but no image was updated.
 we also didn't find eny errors thrown/toasts displayed.
 
 identify the underlying issue and fix it.
+
+
+### pos order ghost cash issue. 
+
+some pos sales saw this issue:
+
+->accross different orders, we selected different payment methods (1 was selected and we paid in whole in that method). 
+->when we checked in orders page, we saw some extra cash paid that exceeded total. but, that cash was never paid. typically in range of 100-475
+
+
+### price adjustment: 
+update the inventory batch-price-update page. 
+
+we want these features:
+-currently search results are shown grouped under sku where 1 variant can be selected and its batches are shown.
+-we can update selling price for all batches
+-cost price can be updated for individual batches 
+
+we want this page to behave like this:
+-search results will show SKUs only (no variant). and that can be selected. (there are some 1 product sku).
+-once an sku is selected, we will show all of its batches accross all of its variants (properly tabled).
+-the update selling price for all button stays as is. (selling price can't be individually updated)
+-there will be an update cost price for all button.
+-and cost price can be individually updated 
+
