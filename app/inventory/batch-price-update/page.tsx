@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useTheme } from "@/contexts/ThemeContext";
-import { Search, Loader2, Save, CheckCircle2, AlertCircle, Pencil, X, Check } from 'lucide-react';
+import { Search, Loader2, Save, CheckCircle2, AlertCircle, Pencil, X, Check, Tag, HandCoins, Package } from 'lucide-react';
 
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
