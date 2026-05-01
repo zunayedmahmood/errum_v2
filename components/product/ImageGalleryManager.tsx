@@ -172,11 +172,15 @@ export default function ImageGalleryManager({
     // If productId exists, upload immediately
     if (productId) {
       setUploading(true);
-      try {
-        const uploadedImages: ImageItem[] = [];
+      
+      // Add placeholders to the UI immediately so user sees progress
+      notifyChange([...images, ...newImages]);
 
-        for (const imageItem of newImages) {
-          if (imageItem.file) {
+      try {
+        const uploadPromises = newImages.map(async (imageItem) => {
+          if (!imageItem.file) return null;
+          
+          try {
             const uploadedImage = await productImageService.uploadImage(
               productId,
               imageItem.file,
@@ -202,18 +206,34 @@ export default function ImageGalleryManager({
               }
             }
 
-            uploadedImages.push({
+            return {
               id: uploadedImage.id,
               preview: fullUrl,
               alt_text: uploadedImage.alt_text || '',
               is_primary: uploadedImage.is_primary,
               sort_order: uploadedImage.sort_order,
               uploaded: true,
-            });
+            };
+          } catch (err) {
+            console.error(`Failed to upload ${imageItem.file.name}:`, err);
+            return null;
           }
-        }
+        });
 
-        notifyChange([...images, ...uploadedImages]);
+        const results = await Promise.all(uploadPromises);
+        const successfulUploads = results.filter((img): img is ImageItem => img !== null);
+
+        // Update with final results (replacing placeholders)
+        // Note: This logic is slightly simplified; in a production app we'd match 
+        // placeholders by preview URL to replace them accurately.
+        // For now, we'll just refresh the whole list by removing failed placeholders.
+        const currentImages = images; // Images that were already there
+        const finalImages = [...currentImages, ...successfulUploads];
+        notifyChange(finalImages);
+        
+        if (successfulUploads.length < newImages.length) {
+          setError(`Failed to upload ${newImages.length - successfulUploads.length} image(s)`);
+        }
       } catch (err: any) {
         setError(err.message || 'Failed to upload images');
       } finally {
@@ -475,7 +495,11 @@ export default function ImageGalleryManager({
                 )}
 
                 {/* Uploading Overlay */}
-                {!image.uploaded && (
+                {/* 
+                  Only show spinner if it's explicitly not uploaded AND we are currently 
+                  in an uploading state (to avoid spinners on local previews in Add mode)
+                */}
+                {!image.uploaded && uploading && (
                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                     <Loader2 className="w-6 h-6 text-white animate-spin" />
                   </div>

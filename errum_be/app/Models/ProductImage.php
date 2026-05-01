@@ -55,7 +55,7 @@ class ProductImage extends Model
 
     public function getImageUrlAttribute()
     {
-        return $this->image_path ? Storage::url($this->image_path) : null;
+        return $this->image_path ? Storage::disk('public')->url($this->image_path) : null;
     }
 
     public function makePrimary()
@@ -72,8 +72,8 @@ class ProductImage extends Model
 
     public function deleteImage()
     {
-        if ($this->image_path && Storage::exists($this->image_path)) {
-            Storage::delete($this->image_path);
+        if ($this->image_path && Storage::disk('public')->exists($this->image_path)) {
+            Storage::disk('public')->delete($this->image_path);
         }
 
         return $this->delete();

@@ -102,7 +102,8 @@ class ProductImageController extends Controller
         try {
             // Handle file upload
             $image = $request->file('image');
-            $imageName = time() . '_' . Str::random(10) . '.' . $image->getClientOriginalExtension();
+            $extension = Str::lower($image->getClientOriginalExtension());
+            $imageName = time() . '_' . Str::random(10) . '.' . $extension;
             $imagePath = $image->storeAs('products/' . $productId, $imageName, 'public');
 
             // Create image record
@@ -181,7 +182,8 @@ class ProductImageController extends Controller
             $maxSortOrder = ProductImage::byProduct($productId)->max('sort_order') ?? 0;
 
             foreach ($images as $index => $image) {
-                $imageName = time() . '_' . Str::random(10) . '.' . $image->getClientOriginalExtension();
+                $extension = Str::lower($image->getClientOriginalExtension());
+                $imageName = time() . '_' . Str::random(10) . '.' . $extension;
                 $imagePath = $image->storeAs('products/' . $productId, $imageName, 'public');
 
                 $productImage = ProductImage::create([

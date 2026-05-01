@@ -1001,7 +1001,8 @@ class ProductController extends Controller
             // ── Step 2: Upload each image once and persist for every variant ──────
             foreach ($files as $idx => $file) {
                 $isPrimary  = ($idx === $primaryIndex);
-                $imageName  = time() . '_' . Str::random(10) . '.' . $file->getClientOriginalExtension();
+                $extension  = Str::lower($file->getClientOriginalExtension());
+                $imageName  = time() . '_' . Str::random(10) . '.' . $extension;
                 $imagePath  = $file->storeAs('products/sku-' . $sku, $imageName, 'public');
                 $uploadedPaths[] = $imagePath;
 
