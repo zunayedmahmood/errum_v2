@@ -429,3 +429,15 @@ we want this page to behave like this:
 -there will be an update cost price for all button.
 -and cost price can be individually updated 
 
+
+### product update fix:
+
+we found this issue in product/add page when we were trying to add a new size:
+
+we added a variation with nothing but a new size.
+we saved it.
+size is added perfectly.
+but, the product's base_name got changed. everything in base_name after the first '-' was gone.
+we had to update base_name manually to fix it.
+
+identify what may have caused it and fix it.

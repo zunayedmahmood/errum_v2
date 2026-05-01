@@ -439,14 +439,16 @@ export default function AddEditProductPage({
   };
 
   const parseVariantFromName = (name: string): { base?: string; color?: string; size?: string } => {
-    const raw = (name || '').trim();
+    const raw = (name || "").trim();
     if (!raw) return {};
 
-    const parts = raw.split(/\s*-\s*/).map(p => p.trim()).filter(Boolean);
+    // Use a stricter split that requires spaces around hyphens to distinguish from hyphens in product names (e.g., "Premium-Quality")
+    const parts = raw.split(/\s+-\s+/).map(p => p.trim()).filter(Boolean);
+    
     if (parts.length >= 3) {
       const size = parts[parts.length - 1];
       const color = parts[parts.length - 2];
-      const base = parts.slice(0, parts.length - 2).join(' - ').trim();
+      const base = parts.slice(0, parts.length - 2).join(" - ").trim();
       return { base, color, size };
     }
 
@@ -480,32 +482,52 @@ export default function AddEditProductPage({
   };
 
   const getGroupBaseName = (items: Product[], fallback: string) => {
-    // Prefer backend-provided base_name
-    const bases = items
-      .map(v => String((v as any).base_name || '').trim())
-      .filter(Boolean)
-      .concat(
-        items
-          .map(v => (parseVariantFromName(v.name).base || '').trim())
-          .filter(Boolean)
-      );
-    if (bases.length === 0) return fallback;
+    // 1. First priority: Prefer explicit base_name stored in the database
+    const explicitBases = items
+      .map(v => String((v as any).base_name || "").trim())
+      .filter(Boolean);
+    
+    if (explicitBases.length > 0) {
+      // Find the most frequent explicit base_name
+      const counts = new Map<string, number>();
+      explicitBases.forEach(b => counts.set(b, (counts.get(b) || 0) + 1));
+      
+      let best = explicitBases[0];
+      let max = -1;
+      for (const [val, count] of counts.entries()) {
+        if (count > max) {
+          max = count;
+          best = val;
+        }
+      }
+      return best;
+    }
+
+    // 2. Second priority: Guessed bases from full product names
+    const guessedBases = items
+      .map(v => (parseVariantFromName(v.name).base || "").trim())
+      .filter(Boolean);
+    
+    if (guessedBases.length === 0) return fallback;
 
     const counts = new Map<string, number>();
     const originalMap = new Map<string, string>();
-    bases.forEach(b => {
+    guessedBases.forEach(b => {
       const key = b.toLowerCase();
       counts.set(key, (counts.get(key) || 0) + 1);
       if (!originalMap.has(key)) originalMap.set(key, b);
     });
 
-    let bestKey = '';
+    let bestKey = "";
     let bestCount = -1;
-    let bestLen = Infinity;
+    let bestLen = -1; // Changed from Infinity to -1 to prefer LONGER names when tied
+
     for (const [key, c] of counts.entries()) {
       const candidate = originalMap.get(key) || key;
       const len = candidate.length;
-      if (c > bestCount || (c === bestCount && len < bestLen)) {
+      
+      // Prefer higher count, OR longer name if counts are equal (avoids truncated guesses)
+      if (c > bestCount || (c === bestCount && len > bestLen)) {
         bestKey = key;
         bestCount = c;
         bestLen = len;
