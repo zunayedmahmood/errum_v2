@@ -639,7 +639,7 @@ export default function AddEditProductPage({
     } catch (error: any) {
       console.error('Sync SKU images failed:', error);
       setToast({
-        message: error?.response?.data?.message || error?.message || 'Failed to sync images across SKU variants.',
+        message: 'Error updating image for all sku',
         type: 'error',
       });
     } finally {

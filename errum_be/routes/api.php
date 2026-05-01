@@ -1270,6 +1270,7 @@ Route::middleware('auth:api')->group(function () {
 
     // Product Management Routes (with custom fields support)
     Route::prefix('products')->group(function () {
+        Route::post('/{id}/sync-sku-images', [ProductController::class, 'syncSkuImages']);
         Route::get('/', [ProductController::class, 'index']);
         Route::post('/', [ProductController::class, 'create']);
         Route::get('/stats', [ProductController::class, 'getStatistics']);
@@ -1291,9 +1292,6 @@ Route::middleware('auth:api')->group(function () {
             // Common Edit - Update base_name across all SKU group products
             Route::put('/common-info', [ProductController::class, 'updateCommonInfo']);
             Route::get('/sku-group', [ProductController::class, 'getSkuGroup']);
-
-            // Sync images for entire SKU group (clears all variants, then re-applies)
-            Route::post('/sync-sku-images', [ProductController::class, 'syncSkuImages']);
             
             Route::delete('/force-delete', [ProductController::class, 'forceDelete'])
                 ; // Admin-level permission (checked in controller)
