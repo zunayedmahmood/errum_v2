@@ -374,3 +374,26 @@ then save the images uploaded in the serial and set_as_primary to all of them.
 
 to ensure consistency, make a new method in product controller that unifies these calls and wraps in a db:transaction to ensure all or nothing 
 add proper toast in frontend.
+
+
+### purchase order delete
+
+we want this new feature:
+admins should be able to delete purchase orders as long they haven't been paid.
+add a delete button in the purchase order page. it will be available only to admins.
+
+verifciation:
+when delete is pressed
+1.show a pop-up showing: "Are you sure you want to delete this purchase order?"
+ user will have to type in "yes"
+2. when they typed yes, they'll be taken to next slide of the pop-up,
+here, the logged in user needs to type in their account's password.
+
+when matched, we delete in this order
+delete all barcodes of that PO 
+delete all the batches 
+update quantity of all products in PO 
+delete the purchase order 
+
+(we're trying to avoid dependency constraints).
+(make a method with db:transaction in backend to handle the deletion)

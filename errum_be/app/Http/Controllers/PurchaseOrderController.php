@@ -450,4 +450,96 @@ class PurchaseOrderController extends Controller
             'data' => $stats
         ]);
     }
+    /**
+     * Delete purchase order permanently
+     * Deletes related barcodes, batches, and updates inventory.
+     */
+    public function destroy(Request $request, $id)
+    {
+        $user = request()->user();
+        if (!$user || !in_array($user->role?->slug, ['super-admin', 'admin'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized. Admin access required.'
+            ], 403);
+        }
+
+        $po = PurchaseOrder::with(['items.product'])->findOrFail($id);
+
+        if ($po->payment_status !== 'unpaid' && $po->paid_amount > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot delete purchase order because it has been partially or fully paid.'
+            ], 422);
+        }
+
+        // Verify password
+        $validated = $request->validate([
+            'password' => 'required|string',
+        ]);
+
+        if (!\Illuminate\Support\Facades\Hash::check($validated['password'], $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Incorrect password.'
+            ], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            $productIdsToSync = [];
+
+            // 1. Delete barcodes
+            // 2. Delete batches
+            // Batches are linked to items via product_batch_id
+            foreach ($po->items as $item) {
+                if ($item->product_id) {
+                    $productIdsToSync[] = $item->product_id;
+                }
+
+                if ($item->product_batch_id) {
+                    $batchIdsToDelete[] = $item->product_batch_id;
+                }
+                    // Delete barcodes for this batch
+
+                    
+                    // Delete batch
+
+
+            }
+
+            // Also delete any other items
+            // 2. Delete the purchase order items first (to remove foreign keys to product_batches)
+            \DB::table('purchase_order_items')->where('purchase_order_id', $po->id)->delete();
+
+            // 3. Delete barcodes and batches safely
+            if (!empty($batchIdsToDelete)) {
+                \DB::table('product_barcodes')->whereIn('batch_id', $batchIdsToDelete)->delete();
+                \DB::table('product_batches')->whereIn('id', $batchIdsToDelete)->delete();
+            }
+
+            // Delete the purchase order
+            $po->delete();
+
+            DB::commit();
+
+            // 3. Update quantity of all products in PO
+            $productIdsToSync = array_unique($productIdsToSync);
+            foreach ($productIdsToSync as $productId) {
+                \App\Models\MasterInventory::syncProductInventory($productId);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Purchase order permanently deleted.'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete purchase order: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

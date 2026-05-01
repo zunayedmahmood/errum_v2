@@ -189,6 +189,13 @@ export default function PurchaseOrdersPage() {
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [expandedPO, setExpandedPO] = useState<number | null>(null);
 
+  // Delete PO State
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [poToDelete, setPoToDelete] = useState<PurchaseOrder | null>(null);
+  const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletePassword, setDeletePassword] = useState('');
+
   // ✅ Barcode Center (Print ALL unit-level barcodes for a PO)
   const poBarcodeSources: BatchBarcodeSource[] = useMemo(() => {
     const items = (selectedPO?.items ?? []) as any[];
@@ -530,6 +537,27 @@ export default function PurchaseOrdersPage() {
       loadPurchaseOrders();
     } catch (error: any) {
       showAlert('error', error.message || 'Failed to approve purchase order');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePO = async () => {
+    if (!poToDelete || !deletePassword) return;
+
+    try {
+      setLoading(true);
+      await purchaseOrderService.delete(poToDelete.id, deletePassword);
+      showAlert('success', 'Purchase order permanently deleted');
+      setShowDeleteConfirmModal(false);
+      setPoToDelete(null);
+      setDeleteStep(1);
+      setDeleteConfirmText('');
+      setDeletePassword('');
+      loadPurchaseOrders();
+    } catch (error: any) {
+      console.error('Failed to delete PO:', error);
+      showAlert('error', error?.response?.data?.message || 'Failed to delete purchase order');
     } finally {
       setLoading(false);
     }
@@ -1069,6 +1097,22 @@ export default function PurchaseOrdersPage() {
                             Cancel
                           </button>
                         )}
+
+                        {po.payment_status === 'unpaid' && (
+                          <AccessControl roles={['super-admin', 'admin']}>
+                            <button
+                              onClick={() => {
+                                setPoToDelete(po);
+                                setShowDeleteConfirmModal(true);
+                              }}
+                              className="flex items-center gap-1 px-3 py-2 text-sm border border-red-600 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                              title="Delete PO"
+                            >
+                              <X className="w-4 h-4" />
+                              Delete
+                            </button>
+                          </AccessControl>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1227,6 +1271,96 @@ export default function PurchaseOrdersPage() {
           )}
         </main>
       </div>
+
+      {/* Delete PO Modal */}
+      <Modal
+        isOpen={showDeleteConfirmModal}
+        onClose={() => {
+          setShowDeleteConfirmModal(false);
+          setPoToDelete(null);
+          setDeleteStep(1);
+          setDeleteConfirmText('');
+          setDeletePassword('');
+        }}
+        title="Delete Purchase Order"
+        size="md"
+      >
+        <div className="space-y-4">
+          {deleteStep === 1 ? (
+            <>
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Are you sure you want to delete this purchase order? This will permanently delete all associated batches and barcodes, and update inventory.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Type "yes" to confirm
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  placeholder="yes"
+                />
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setShowDeleteConfirmModal(false)}
+                  className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (deleteConfirmText.toLowerCase() === 'yes') {
+                      setDeleteStep(2);
+                    } else {
+                      showAlert('error', 'Please type "yes" to confirm');
+                    }
+                  }}
+                  disabled={deleteConfirmText.toLowerCase() !== 'yes'}
+                  className="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-md"
+                >
+                  Next
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Please enter your account password to authorize this deletion.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setDeleteStep(1)}
+                  className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 rounded-md"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleDeletePO}
+                  disabled={!deletePassword || loading}
+                  className="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-md flex items-center gap-2"
+                >
+                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Confirm Deletion
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
 
       {/* View Modal */}
       <Modal

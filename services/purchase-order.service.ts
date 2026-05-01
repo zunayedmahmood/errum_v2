@@ -292,6 +292,17 @@ class PurchaseOrderService {
   }
 
   /**
+   * Delete purchase order
+   */
+  async delete(id: number, password?: string): Promise<ApiResponse<void>> {
+    const response: AxiosResponse<ApiResponse<void>> = await axiosInstance.delete(
+      `${this.baseURL}/${id}`,
+      { data: { password } }
+    );
+    return response.data;
+  }
+
+  /**
    * Get purchase order statistics
    */
   async getStatistics(filters?: {
