@@ -1067,13 +1067,7 @@ export default function AddEditProductPage({
   };
 
   const slugify = (val: string): string => {
-    return String(val || '')
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
+    return String(val || '').trim();
   };
 
   const buildVariationSuffix = (color?: string, size?: string): string => {
