@@ -582,19 +582,30 @@ export default function AddEditProductPage({
   const handleSyncSkuImages = async () => {
     if (!productId) return;
 
-    // Collect files that have not yet been individually uploaded
-    // (i.e. newly selected files the user added via the gallery in edit mode).
-    // When the toggle is on we want ALL images in the gallery — new files that
-    // were just selected but not yet uploaded, because in normal edit mode
-    // they upload immediately. To allow this flow we need to detect pending files.
+    // 1. New files to upload
     const pendingFiles = productImages
       .filter((img: any) => img.file && !img.uploaded)
       .map((img: any) => img.file as File);
 
-    if (pendingFiles.length === 0) {
+    // 2. Existing image paths (already on server)
+    const existingPaths = productImages
+      .filter((img: any) => img.uploaded && !img.file)
+      .map((img: any) => {
+          // Extract the storage path from the URL
+          // The URL looks like: http://domain/storage/products/sku-XXX/image.jpg
+          // We need: products/sku-XXX/image.jpg
+          const preview = img.preview || '';
+          if (preview.includes('/storage/')) {
+            return preview.split('/storage/')[1];
+          }
+          return preview; // fallback
+      })
+      .filter(Boolean);
+
+    if (pendingFiles.length === 0 && existingPaths.length === 0) {
       setToast({
         message:
-          'No new images to sync. Please upload new images first before using this feature.',
+          'No images to sync. Please upload new images or ensure existing ones are visible.',
         type: 'warning',
       });
       return;
@@ -612,6 +623,7 @@ export default function AddEditProductPage({
       const result = await productImageService.syncSkuImages(
         parseInt(productId!),
         pendingFiles,
+        existingPaths,
         primaryIndex
       );
 
@@ -1718,13 +1730,14 @@ export default function AddEditProductPage({
                       )}
 
                       <ImageGalleryManager
-                        key={`gallery-${productId}-${updateImageForEntireSku}`}
-                        productId={isEditMode && !updateImageForEntireSku ? parseInt(productId!) : undefined}
+                        productId={isEditMode ? parseInt(productId!) : undefined}
+                        existingImages={editingProduct?.images || []}
                         onImagesChange={(images) => {
                           setProductImages(images);
                         }}
                         maxImages={10}
                         allowReorder={true}
+                        disableAutoUpload={updateImageForEntireSku}
                       />
                     </div>
                   )}

@@ -267,16 +267,17 @@ class ProductImageService {
   async syncSkuImages(
     productId: number,
     files: File[],
+    existingPaths: string[] = [],
     primaryIndex = 0
   ): Promise<{
     success: boolean;
     message: string;
-    sku: string;
     variants_updated: number;
-    images_uploaded: number;
+    images_synced: number;
   }> {
     const formData = new FormData();
     files.forEach((file) => formData.append('images[]', file));
+    existingPaths.forEach((path) => formData.append('existing_paths[]', path));
     formData.append('primary_index', String(primaryIndex));
 
     const response = await axiosInstance.post(

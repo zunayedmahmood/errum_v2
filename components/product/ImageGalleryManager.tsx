@@ -30,6 +30,7 @@ interface ImageGalleryManagerProps {
   onImagesChange?: (images: ImageItem[]) => void;
   maxImages?: number;
   allowReorder?: boolean;
+  disableAutoUpload?: boolean;
 }
 
 export default function ImageGalleryManager({
@@ -38,6 +39,7 @@ export default function ImageGalleryManager({
   onImagesChange,
   maxImages = 10,
   allowReorder = true,
+  disableAutoUpload = false,
 }: ImageGalleryManagerProps) {
   const [images, setImages] = useState<ImageItem[]>([]);
   
@@ -169,8 +171,8 @@ export default function ImageGalleryManager({
       uploaded: false,
     }));
 
-    // If productId exists, upload immediately
-    if (productId) {
+    // If productId exists and auto-upload is not disabled, upload immediately
+    if (productId && !disableAutoUpload) {
       setUploading(true);
       
       // Add placeholders to the UI immediately so user sees progress

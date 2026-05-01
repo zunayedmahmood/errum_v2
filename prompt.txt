@@ -397,3 +397,10 @@ delete the purchase order
 
 (we're trying to avoid dependency constraints).
 (make a method with db:transaction in backend to handle the deletion)
+
+### sku wise image update 
+see product_add page's editting mode. there's an option to update all images across the sku.
+we tried this, but no image was updated.
+we also didn't find eny errors thrown/toasts displayed.
+
+identify the underlying issue and fix it.
