@@ -190,6 +190,33 @@ class ShipmentService {
   }
 
   /**
+   * Bulk send orders directly to Pathao without pre-creating shipments locally
+   * @param orderIds - Array of order IDs
+   */
+  async bulkSendOrdersToPathao(
+    orderIds: number[],
+    options?: { delivery_type?: 'home_delivery' | 'express'; package_weight?: number }
+  ): Promise<BulkSendQueuedResult | BulkSendSyncResult> {
+    try {
+      const response = await axiosInstance.post('/shipments/bulk-send-orders-to-pathao', {
+        order_ids: orderIds,
+        delivery_type: options?.delivery_type || 'home_delivery',
+        package_weight: options?.package_weight || 1.0,
+      });
+      const result = response.data;
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to bulk send orders to Pathao');
+      }
+      
+      return result.data;
+    } catch (error: any) {
+      console.error('Start bulk send orders to Pathao error:', error);
+      throw new Error(error.response?.data?.message || 'Failed to bulk send orders to Pathao');
+    }
+  }
+
+  /**
    * Backward-compatible sync bulk send helper
    */
   async bulkSendToPathao(shipmentIds: number[]): Promise<BulkSendSyncResult> {

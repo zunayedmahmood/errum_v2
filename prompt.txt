@@ -441,3 +441,10 @@ but, the product's base_name got changed. everything in base_name after the firs
 we had to update base_name manually to fix it.
 
 identify what may have caused it and fix it.
+
+
+### bulk send to pathao
+
+- make the rate of orders send to pathao 19 per 60 seconds.
+- fully implement the frontend UI for this process (on orders page) (for both isngle and bulk mode) (add informative directions for this)
+- explain to me the backend flow of this process and how everything wokrs.
