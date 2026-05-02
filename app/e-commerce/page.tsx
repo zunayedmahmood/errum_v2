@@ -14,10 +14,6 @@ const NewArrivals = dynamic(() => import('@/components/ecommerce/NewArrivals'), 
 const SubcategoryProductTabs = dynamic(() => import('@/components/ecommerce/SubcategoryProductTabs'), {
   loading: () => <div style={{ minHeight: '800px', margin: '40px 0' }} className="w-full bg-[var(--bg-surface-2)] animate-pulse rounded-2xl" />
 });
-const InstagramReelViewer = dynamic(() => import('@/components/ecommerce/InstagramReelViewer'), {
-  ssr: false,
-  loading: () => <div style={{ minHeight: '760px', margin: '40px 0' }} className="w-full bg-[var(--bg-surface-2)] animate-pulse rounded-2xl" />
-});
 import SectionReveal from '@/components/ecommerce/SectionReveal';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
 
@@ -66,11 +62,6 @@ export default function HomePage() {
       {/* 2. Collection Tiles */}
       <SectionReveal>
         <CollectionTiles categories={categories} />
-      </SectionReveal>
-
-      {/* 3. Instagram Reels Feed */}
-      <SectionReveal threshold={0.05}>
-        <InstagramReelViewer />
       </SectionReveal>
 
       {/* 4. New Arrivals */}
