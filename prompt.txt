@@ -448,3 +448,29 @@ identify what may have caused it and fix it.
 - make the rate of orders send to pathao 19 per 60 seconds.
 - fully implement the frontend UI for this process (on orders page) (for both isngle and bulk mode) (add informative directions for this)
 - explain to me the backend flow of this process and how everything wokrs.
+
+
+### image sync issue in product edit.
+
+-> we have this feature in product/add page in edititing mode:
+a 'sync image accross SKU' toggle button and save button. this, when saved removes all images of all variants and uploads this set of images to all of them.
+
+we found this issues:
+->it only works only in specific sequence when we upload an image, put it in first place, make it primary and then toggle the button and then press save.
+->otherwise, in most case, the uploaded image fails to become primary (and sometimes, the position is also not updated).
+->"removing" (deleting) image was always working and synced across sku without issues.
+->sometimes, deleting image throwed a sql error but refreshing the page showed it worked, sometimes, the image was still there but this time remove worked.
+
+I want you to make this work flawlessly.
+
+
+### product size for variation 
+
+currently, in product/add page when we are adding product or in editting mode,
+the add size dropdown has hardcoded sizes (hardcoded in frontend).
+For example, we have L M etc, but our client wants to add sizes like L-50 L-52 (2 sizes for same large).
+currently, backend accepts any value for variation suffix (color + size) and it should be unaware of what sizes user has. it will accept variaiton_suffix as is.
+we want this new feature:
+instead of the hardcoded sizes, user can add a new size with "+add size" button. this will be saved in db.
+when they click the dropdown, they will see all the sizes from db and can select one or more. when pressed enter, all of those sizes will be added.
+the existing logic and functionality remanis, we add our manual size creation, backend size storing logic adds into it.

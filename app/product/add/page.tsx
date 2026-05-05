@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation'; 
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Plus, Loader2 } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -18,6 +18,7 @@ import { productService, Field, Product } from '@/services/productService';
 import productImageService from '@/services/productImageService';
 import categoryService, { Category, CategoryTree } from '@/services/categoryService';
 import { vendorService, Vendor } from '@/services/vendorService';
+import { sizeService, Size } from '@/services/sizeService';
 import {
   FieldValue,
   CategorySelectionState,
@@ -49,7 +50,7 @@ export default function AddEditProductPage({
   const { permissionsResolved, isRole } = useAuth();
   const canAccess = isRole(['super-admin', 'admin', 'online-moderator']);
   const [modeResolved, setModeResolved] = useState(false);
-  
+
   // Read from sessionStorage if props not provided
   const [productId, setProductId] = useState<string | undefined>(propProductId);
   const [mode, setMode] = useState<'create' | 'edit' | 'addVariation'>(propMode);
@@ -71,7 +72,7 @@ export default function AddEditProductPage({
         setProductId(storedProductId);
         sessionStorage.removeItem('editProductId');
       }
-      
+
       if (storedMode) {
         setMode(storedMode as 'create' | 'edit' | 'addVariation');
         sessionStorage.removeItem('productMode');
@@ -102,7 +103,7 @@ export default function AddEditProductPage({
 
   const isEditMode = mode === 'edit';
   const addVariationMode = mode === 'addVariation';
-  
+
   const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'general' | 'variations'>('general');
@@ -157,6 +158,19 @@ export default function AddEditProductPage({
   const [variations, setVariations] = useState<VariationData[]>([]);
   const [categories, setCategories] = useState<CategoryTree[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [allSizes, setAllSizes] = useState<Size[]>([]);
+
+  useEffect(() => {
+    const fetchSizes = async () => {
+      try {
+        const sizes = await sizeService.getSizes();
+        setAllSizes(sizes);
+      } catch (error) {
+        console.error('Failed to fetch sizes:', error);
+      }
+    };
+    fetchSizes();
+  }, []);
 
 
   // --- Size presets (Errum): quickly select full size chart for a category ---
@@ -229,18 +243,23 @@ export default function AddEditProductPage({
     const isFootwear = footwearKeywords.some((k) => name.includes(k));
     const isApparel = apparelKeywords.some((k) => name.includes(k));
 
-    if (isFootwear) return { options: SIZE_PRESETS.sneakers as readonly string[] };
-    if (isApparel) return { options: SIZE_PRESETS.dresses as readonly string[] };
-    return { options: null as readonly string[] | null };
+    // Combine hardcoded presets with DB sizes if they match
+    const dbSizes = allSizes.map(s => s.name);
+
+    if (isFootwear) return { options: [...new Set([...(SIZE_PRESETS.sneakers as any), ...dbSizes])] };
+    if (isApparel) return { options: [...new Set([...(SIZE_PRESETS.dresses as any), ...dbSizes])] };
+    return { options: dbSizes };
   })();
 
   const getSizeOptionsForVariation = (sizes: string[]): string[] | undefined => {
-    if (!sizeContext.options) return undefined;
+    const dbSizes = allSizes.map(s => s.name);
+    const contextOptions = sizeContext.options || [];
+    
     const existing = (Array.isArray(sizes) ? sizes : [])
       .map((s) => String(s || '').trim())
       .filter(Boolean);
 
-    return Array.from(new Set([...(sizeContext.options || []), ...existing]));
+    return Array.from(new Set([...contextOptions, ...dbSizes, ...existing]));
   };
 
   const sizePresetButtons = [
@@ -270,73 +289,73 @@ export default function AddEditProductPage({
 
   useEffect(() => {
     if (isEditMode && productId && availableFields.length > 0) {
-        fetchProduct();
-      } else if (addVariationMode) {
-        setFormData({
-          name: storedBaseName,
-          sku: storedBaseSku,
-          description: '',
-        });
-        setCategorySelection({ level0: storedCategoryId });
-        if (storedVendorId) {
-          setSelectedVendorId(String(storedVendorId));
-        }
-        setHasVariations(true);
-        setActiveTab('general');
+      fetchProduct();
+    } else if (addVariationMode) {
+      setFormData({
+        name: storedBaseName,
+        sku: storedBaseSku,
+        description: '',
+      });
+      setCategorySelection({ level0: storedCategoryId });
+      if (storedVendorId) {
+        setSelectedVendorId(String(storedVendorId));
       }
+      setHasVariations(true);
+      setActiveTab('general');
+    }
   }, [isEditMode, productId, availableFields, addVariationMode, storedBaseName, storedBaseSku, storedCategoryId, storedVendorId]);
 
   useEffect(() => {
-      if (hasVariations && !isEditMode) {
-        setActiveTab('variations');
-      }
-    }, [hasVariations, isEditMode]);
+    if (hasVariations && !isEditMode) {
+      setActiveTab('variations');
+    }
+  }, [hasVariations, isEditMode]);
 
-    // In edit mode, fetch SKU group by product id (backend provides /sku-group)
-    useEffect(() => {
-      if (!isEditMode) return;
-      if (!productId) return;
-      fetchSkuGroupByProductId(productId);
-    }, [isEditMode, productId]);
+  // In edit mode, fetch SKU group by product id (backend provides /sku-group)
+  useEffect(() => {
+    if (!isEditMode) return;
+    if (!productId) return;
+    fetchSkuGroupByProductId(productId);
+  }, [isEditMode, productId]);
 
-    /**
-     * Normalize category tree so sub-categories always render.
-     *
-     * Some API responses return nested nodes in `all_children` (and may omit `children`).
-     * Our UI (CategoryTreeSelector) prefers `children`, so we unify both into `children`.
-     */
-    const filterActiveCategories = (cats: CategoryTree[]): CategoryTree[] => {
-      const getChildren = (cat: CategoryTree): CategoryTree[] => {
-        const rawChildren = (cat as any)?.children;
-        const rawAllChildren = (cat as any)?.all_children;
+  /**
+   * Normalize category tree so sub-categories always render.
+   *
+   * Some API responses return nested nodes in `all_children` (and may omit `children`).
+   * Our UI (CategoryTreeSelector) prefers `children`, so we unify both into `children`.
+   */
+  const filterActiveCategories = (cats: CategoryTree[]): CategoryTree[] => {
+    const getChildren = (cat: CategoryTree): CategoryTree[] => {
+      const rawChildren = (cat as any)?.children;
+      const rawAllChildren = (cat as any)?.all_children;
 
-        if (Array.isArray(rawChildren) && rawChildren.length > 0) return rawChildren;
-        if (Array.isArray(rawAllChildren) && rawAllChildren.length > 0) return rawAllChildren;
-        return [];
-      };
-
-      return (Array.isArray(cats) ? cats : [])
-        .filter((cat) => Boolean(cat) && Boolean((cat as any).is_active))
-        .map((cat) => {
-          const nested = filterActiveCategories(getChildren(cat));
-          return {
-            ...cat,
-            children: nested,
-            // keep for backward-compatibility, but ensure it doesn't shadow children
-            all_children: nested,
-          } as CategoryTree;
-        });
+      if (Array.isArray(rawChildren) && rawChildren.length > 0) return rawChildren;
+      if (Array.isArray(rawAllChildren) && rawAllChildren.length > 0) return rawAllChildren;
+      return [];
     };
+
+    return (Array.isArray(cats) ? cats : [])
+      .filter((cat) => Boolean(cat) && Boolean((cat as any).is_active))
+      .map((cat) => {
+        const nested = filterActiveCategories(getChildren(cat));
+        return {
+          ...cat,
+          children: nested,
+          // keep for backward-compatibility, but ensure it doesn't shadow children
+          all_children: nested,
+        } as CategoryTree;
+      });
+  };
 
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      
+
       const fieldsData = await productService.getAvailableFields();
       setAvailableFields(Array.isArray(fieldsData) ? fieldsData : []);
 
       const categoriesData = await categoryService.getTree(true);
-      
+
       const filteredCategories = filterActiveCategories(
         Array.isArray(categoriesData) ? categoriesData : []
       );
@@ -444,7 +463,7 @@ export default function AddEditProductPage({
 
     // Use a stricter split that requires spaces around hyphens to distinguish from hyphens in product names (e.g., "Premium-Quality")
     const parts = raw.split(/\s+-\s+/).map(p => p.trim()).filter(Boolean);
-    
+
     if (parts.length >= 3) {
       const size = parts[parts.length - 1];
       const color = parts[parts.length - 2];
@@ -486,12 +505,12 @@ export default function AddEditProductPage({
     const explicitBases = items
       .map(v => String((v as any).base_name || "").trim())
       .filter(Boolean);
-    
+
     if (explicitBases.length > 0) {
       // Find the most frequent explicit base_name
       const counts = new Map<string, number>();
       explicitBases.forEach(b => counts.set(b, (counts.get(b) || 0) + 1));
-      
+
       let best = explicitBases[0];
       let max = -1;
       for (const [val, count] of counts.entries()) {
@@ -507,7 +526,7 @@ export default function AddEditProductPage({
     const guessedBases = items
       .map(v => (parseVariantFromName(v.name).base || "").trim())
       .filter(Boolean);
-    
+
     if (guessedBases.length === 0) return fallback;
 
     const counts = new Map<string, number>();
@@ -525,7 +544,7 @@ export default function AddEditProductPage({
     for (const [key, c] of counts.entries()) {
       const candidate = originalMap.get(key) || key;
       const len = candidate.length;
-      
+
       // Prefer higher count, OR longer name if counts are equal (avoids truncated guesses)
       if (c > bestCount || (c === bestCount && len > bestLen)) {
         bestKey = key;
@@ -602,41 +621,45 @@ export default function AddEditProductPage({
    * server images are cleared on the backend inside a DB transaction.
    */
   const handleSyncSkuImages = async () => {
-    if (!productId) return;
-
-    // 1. New files to upload
-    const pendingFiles = productImages
-      .filter((img: any) => img.file && !img.uploaded)
-      .map((img: any) => img.file as File);
-
-    // 2. Existing image paths (already on server)
-    const existingPaths = productImages
-      .filter((img: any) => img.uploaded && !img.file)
-      .map((img: any) => {
-          // Extract the storage path from the URL
-          // The URL looks like: http://domain/storage/products/sku-XXX/image.jpg
-          // We need: products/sku-XXX/image.jpg
-          const preview = img.preview || '';
-          if (preview.includes('/storage/')) {
-            return preview.split('/storage/')[1];
-          }
-          return preview; // fallback
-      })
-      .filter(Boolean);
-
-    if (pendingFiles.length === 0 && existingPaths.length === 0) {
-      setToast({
-        message:
-          'No images to sync. Please upload new images or ensure existing ones are visible.',
-        type: 'warning',
-      });
+    if (!productId || productImages.length === 0) {
+      setToast({ message: 'No images to sync.', type: 'warning' });
       return;
     }
 
-    // Find which of the pending files is marked as primary.
-    const pendingImages = productImages.filter((img: any) => img.file && !img.uploaded);
-    const primaryIdx = pendingImages.findIndex((img: any) => img.is_primary);
-    const primaryIndex = primaryIdx >= 0 ? primaryIdx : 0;
+    const files: File[] = [];
+    const existingPaths: string[] = [];
+    const imageSequence: Array<{ type: 'existing' | 'new'; value: string | number }> = [];
+    const altTexts: string[] = [];
+    let primaryIndex = 0;
+
+    productImages.forEach((img, idx) => {
+      if (img.is_primary) primaryIndex = idx;
+      altTexts.push(img.alt_text || '');
+
+      if (img.file && !img.uploaded) {
+        // This is a new file
+        const fileIdx = files.length;
+        files.push(img.file);
+        imageSequence.push({ type: 'new', value: fileIdx });
+      } else {
+        // This is an existing image (already on server)
+        // Extract the path from preview/url
+        const preview = img.preview || '';
+        let path = preview;
+        if (preview.includes('/storage/')) {
+          path = preview.split('/storage/')[1];
+        } else if (preview.startsWith('http')) {
+          // If it's a full URL but doesn't have /storage/, try to extract path after domain
+          try {
+            const url = new URL(preview);
+            path = url.pathname.replace(/^\/storage\//, '').replace(/^\//, '');
+          } catch (e) {}
+        }
+        
+        existingPaths.push(path);
+        imageSequence.push({ type: 'existing', value: path });
+      }
+    });
 
     try {
       setSkuImagesSaving(true);
@@ -644,9 +667,11 @@ export default function AddEditProductPage({
 
       const result = await productImageService.syncSkuImages(
         parseInt(productId!),
-        pendingFiles,
+        files,
         existingPaths,
-        primaryIndex
+        primaryIndex,
+        imageSequence,
+        altTexts
       );
 
       setToast({
@@ -654,14 +679,12 @@ export default function AddEditProductPage({
         type: 'success',
       });
 
-      // Turn toggle off and refresh images
       setUpdateImageForEntireSku(false);
-      // Refresh the SKU group to reflect new images
       await fetchSkuGroupByProductId(productId);
     } catch (error: any) {
       console.error('Sync SKU images failed:', error);
       setToast({
-        message: 'Error updating image for all sku',
+        message: 'Error updating images for SKU group',
         type: 'error',
       });
     } finally {
@@ -1014,9 +1037,28 @@ export default function AddEditProductPage({
     ));
   };
 
+  const updateSizes = (variationId: string, sizes: string[]) => {
+    setVariations(variations.map(v =>
+      v.id === variationId ? { ...v, sizes } : v
+    ));
+  };
+
+  const handleCreateSize = async (name: string) => {
+    try {
+      const newSize = await sizeService.createSize(name);
+      setAllSizes(prev => [...prev, newSize]);
+      setToast({ message: `Size "${name}" created and added to list.`, type: 'success' });
+    } catch (error: any) {
+      console.error('Failed to create size:', error);
+      const msg = error.response?.data?.errors?.name?.[0] || 'Failed to create size';
+      setToast({ message: msg, type: 'error' });
+      throw error; // Re-throw so the component can handle UI state
+    }
+  };
+
   const handleVariationImageChange = (variationId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    
+
     if (files.length === 0) return;
 
     const invalidFiles = files.filter(f => !f.type.startsWith('image/'));
@@ -1058,10 +1100,10 @@ export default function AddEditProductPage({
     setVariations(variations.map(v =>
       v.id === variationId
         ? {
-            ...v,
-            images: v.images.filter((_, idx) => idx !== imageIndex),
-            imagePreviews: v.imagePreviews.filter((_, idx) => idx !== imageIndex),
-          }
+          ...v,
+          images: v.images.filter((_, idx) => idx !== imageIndex),
+          imagePreviews: v.imagePreviews.filter((_, idx) => idx !== imageIndex),
+        }
         : v
     ));
   };
@@ -1178,7 +1220,7 @@ export default function AddEditProductPage({
 
             for (const size of sizesToCreate) {
               const variationSuffix = buildVariationSuffix(variation.color, size);
-              
+
               const varCustomFields = [...baseCustomFields];
 
               // Color / Size are optional (only attach the field if both exist and value is non-empty)
@@ -1328,14 +1370,14 @@ export default function AddEditProductPage({
 
           const failedCount = variationsToCreate.length - createdProducts.length;
           if (failedCount > 0) {
-            setToast({ 
-              message: `Created ${createdProducts.length} variations. ${failedCount} failed - please check console for details.`, 
-              type: 'warning' 
+            setToast({
+              message: `Created ${createdProducts.length} variations. ${failedCount} failed - please check console for details.`,
+              type: 'warning'
             });
           } else {
-            setToast({ 
-              message: `Successfully created all ${createdProducts.length} product variations!`, 
-              type: 'success' 
+            setToast({
+              message: `Successfully created all ${createdProducts.length} product variations!`,
+              type: 'success'
             });
           }
         } else {
@@ -1349,16 +1391,16 @@ export default function AddEditProductPage({
 
           if (productImages.length > 0 && createdProduct.id) {
             console.log(`Step 2: Uploading ${productImages.length} images...`);
-            
+
             let successCount = 0;
-            
+
             for (let i = 0; i < productImages.length; i++) {
               const imageItem = productImages[i];
-              
+
               if (imageItem.file && !imageItem.uploaded) {
                 try {
                   console.log(`Uploading image ${i + 1}: ${imageItem.file.name}`);
-                  
+
                   await productImageService.uploadImage(
                     createdProduct.id,
                     imageItem.file,
@@ -1368,7 +1410,7 @@ export default function AddEditProductPage({
                       sort_order: imageItem.sort_order || i,
                     }
                   );
-                  
+
                   successCount++;
                   console.log(`Image ${i + 1} uploaded and attached successfully`);
                 } catch (error) {
@@ -1376,7 +1418,7 @@ export default function AddEditProductPage({
                 }
               }
             }
-            
+
             console.log(`Successfully uploaded ${successCount}/${productImages.length} images`);
           }
 
@@ -1472,11 +1514,11 @@ export default function AddEditProductPage({
                   {isEditMode ? 'Edit Product' : addVariationMode ? 'Add Product Variation' : 'Add New Product'}
                 </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  {isEditMode 
-                    ? 'Update product information' 
-                    : addVariationMode 
-                    ? 'Create a new variation for existing product'
-                    : 'Create a new product in your catalog'}
+                  {isEditMode
+                    ? 'Update product information'
+                    : addVariationMode
+                      ? 'Create a new variation for existing product'
+                      : 'Create a new product in your catalog'}
                 </p>
               </div>
             </div>
@@ -1484,22 +1526,20 @@ export default function AddEditProductPage({
             <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700 mb-6">
               <button
                 onClick={() => setActiveTab('general')}
-                className={`px-6 py-3 font-medium border-b-2 transition-all ${
-                  activeTab === 'general'
+                className={`px-6 py-3 font-medium border-b-2 transition-all ${activeTab === 'general'
                     ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white'
                     : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                }`}
+                  }`}
               >
                 General Information
               </button>
               {showVariationsTab && (
                 <button
                   onClick={() => setActiveTab('variations')}
-                  className={`px-6 py-3 font-medium border-b-2 transition-all ${
-                    activeTab === 'variations'
+                  className={`px-6 py-3 font-medium border-b-2 transition-all ${activeTab === 'variations'
                       ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white'
                       : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                  }`}
+                    }`}
                 >
                   Product Variations
                   {variations.length > 0 && (
@@ -1658,14 +1698,12 @@ export default function AddEditProductPage({
                                   setVariations([]);
                                 }
                               }}
-                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 focus:ring-offset-2 ${
-                                hasVariations ? 'bg-gray-900 dark:bg-white' : 'bg-gray-200 dark:bg-gray-700'
-                              }`}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 focus:ring-offset-2 ${hasVariations ? 'bg-gray-900 dark:bg-white' : 'bg-gray-200 dark:bg-gray-700'
+                                }`}
                             >
                               <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white dark:bg-gray-900 transition-transform ${
-                                  hasVariations ? 'translate-x-6' : 'translate-x-1'
-                                }`}
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white dark:bg-gray-900 transition-transform ${hasVariations ? 'translate-x-6' : 'translate-x-1'
+                                  }`}
                               />
                             </button>
                           </div>
@@ -1702,17 +1740,15 @@ export default function AddEditProductPage({
                               id="toggle-update-sku-images"
                               type="button"
                               onClick={() => setUpdateImageForEntireSku((v) => !v)}
-                              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
-                                updateImageForEntireSku
+                              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${updateImageForEntireSku
                                   ? 'bg-amber-500'
                                   : 'bg-gray-200 dark:bg-gray-700'
-                              }`}
+                                }`}
                               aria-pressed={updateImageForEntireSku}
                             >
                               <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                  updateImageForEntireSku ? 'translate-x-6' : 'translate-x-1'
-                                }`}
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${updateImageForEntireSku ? 'translate-x-6' : 'translate-x-1'
+                                  }`}
                               />
                             </button>
                           </div>
@@ -2226,6 +2262,8 @@ export default function AddEditProductPage({
                             onSizeAdd={() => addSize(variation.id)}
                             onSizeUpdate={(sizeIdx, value) => updateSizeValue(variation.id, sizeIdx, value)}
                             onSizeRemove={(sizeIdx) => removeSize(variation.id, sizeIdx)}
+                            onSizesUpdate={(sizes) => updateSizes(variation.id, sizes)}
+                            onCreateSize={handleCreateSize}
                             sizeOptions={getSizeOptionsForVariation(variation.sizes)}
                             sizePresetButtons={sizePresetButtons}
                             onApplySizePreset={(key) => applySizePreset(variation.id, key as SizePresetKey)}

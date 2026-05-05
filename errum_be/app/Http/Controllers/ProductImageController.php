@@ -352,9 +352,15 @@ class ProductImageController extends Controller
 
         DB::beginTransaction();
         try {
-            // Delete file from storage
-            if (Storage::disk('public')->exists($image->image_path)) {
-                Storage::disk('public')->delete($image->image_path);
+            // Delete file from storage ONLY if no other product image records use it
+            if ($image->image_path && Storage::disk('public')->exists($image->image_path)) {
+                $otherUsage = ProductImage::where('image_path', $image->image_path)
+                    ->where('id', '!=', $image->id)
+                    ->exists();
+                
+                if (!$otherUsage) {
+                    Storage::disk('public')->delete($image->image_path);
+                }
             }
 
             // Delete database record
@@ -402,8 +408,14 @@ class ProductImageController extends Controller
             $images = ProductImage::byProduct($productId)->get();
 
             foreach ($images as $image) {
-                if (Storage::disk('public')->exists($image->image_path)) {
-                    Storage::disk('public')->delete($image->image_path);
+                if ($image->image_path && Storage::disk('public')->exists($image->image_path)) {
+                    $otherUsage = ProductImage::where('image_path', $image->image_path)
+                        ->where('product_id', '!=', $productId)
+                        ->exists();
+                        
+                    if (!$otherUsage) {
+                        Storage::disk('public')->delete($image->image_path);
+                    }
                 }
                 $image->delete();
             }

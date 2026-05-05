@@ -1,15 +1,5 @@
 import { Trash2, Plus, X } from 'lucide-react';
-
-// Clothing + Footwear sizes (EU 38–43 with US mapping in label)
-const SIZE_OPTIONS = [
-  // Apparel (letter sizes)
-  'XXS','XS','S','M','L','XL','XXL','XXXL','XXXXL','XXXXL',
-  '22','24','26','28','30','32','34','36','38',
-
-  // Numeric sizes (dress/footwear etc.)
-  '36 ','37','38','39 (US 6.5)','40 (US 7)','41 (US 8)','42 (US 8.5)','43 (US 9.5)','44 (US 10)','45 (US 11)','46 (US 12)',
-];
-
+import SizeMultiSelect from './SizeMultiSelect';
 
 interface VariationData {
   id: string;
@@ -29,6 +19,8 @@ interface VariationCardProps {
   onSizeAdd: () => void;
   onSizeUpdate: (sizeIndex: number, value: string) => void;
   onSizeRemove: (sizeIndex: number) => void;
+  onSizesUpdate: (sizes: string[]) => void;
+  onCreateSize: (name: string) => Promise<void>;
 
   // When true, shows color as required (enforced by parent when >1 variation)
   colorRequired?: boolean;
@@ -51,12 +43,14 @@ export default function VariationCard({
   onSizeAdd,
   onSizeUpdate,
   onSizeRemove,
+  onSizesUpdate,
+  onCreateSize,
   colorRequired = false,
-  sizeOptions,
+  sizeOptions = [],
   sizePresetButtons,
   onApplySizePreset
 }: VariationCardProps) {
-  const options = Array.isArray(sizeOptions) && sizeOptions.length > 0 ? sizeOptions : SIZE_OPTIONS;
+  const options = Array.isArray(sizeOptions) ? sizeOptions : [];
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
@@ -163,47 +157,30 @@ export default function VariationCard({
                     {b.label}
                   </button>
                 ))}
-
-              <button
-                type="button"
-                onClick={onSizeAdd}
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-              >
-                <Plus className="w-4 h-4" />
-                Add Size
-              </button>
             </div>
           </div>
 
-          {variation.sizes.length === 0 ? (
-            <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 p-3 rounded-lg text-center">
-              No sizes added yet
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-              {variation.sizes.map((size, sizeIdx) => (
+          <SizeMultiSelect
+            allOptions={options}
+            selectedOptions={variation.sizes.filter(Boolean)}
+            onSelect={onSizesUpdate}
+            onCreateSize={onCreateSize}
+          />
+
+          {variation.sizes.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {variation.sizes.filter(Boolean).map((size, sizeIdx) => (
                 <div
                   key={sizeIdx}
-                  className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700 p-2 rounded-lg border border-gray-200 dark:border-gray-600"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg border border-gray-200 dark:border-gray-600 text-sm"
                 >
-                  <select
-                    value={size}
-                    onChange={(e) => onSizeUpdate(sizeIdx, e.target.value)}
-                    className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-white"
-                  >
-                    <option value="">Select</option>
-                    {options.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
+                  {size}
                   <button
                     type="button"
                     onClick={() => onSizeRemove(sizeIdx)}
-                    className="text-red-500 hover:text-red-600 p-1"
+                    className="text-red-500 hover:text-red-600 p-0.5"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-3 h-3" />
                   </button>
                 </div>
               ))}

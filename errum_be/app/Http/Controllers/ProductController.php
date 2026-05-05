@@ -967,21 +967,28 @@ class ProductController extends Controller
             'existing_paths'   => 'nullable|array',
             'existing_paths.*' => 'required|string',
             'primary_index'    => 'nullable|integer|min:0',
+            'image_sequence'   => 'nullable|array', // Array of {type: 'existing'|'new', value: string|number}
+            'alt_texts'        => 'nullable|array',
+            'alt_texts.*'      => 'nullable|string|max:255',
         ]);
 
-        $primaryIndex  = (int) ($request->input('primary_index', 0));
-        $newFiles      = $request->file('images') ?? [];
-        $existingPaths = $request->input('existing_paths') ?? [];
-        $sku           = $product->sku;
+        $primaryIndex   = (int) ($request->input('primary_index', 0));
+        $newFiles       = $request->file('images') ?? [];
+        $existingPaths  = $request->input('existing_paths') ?? [];
+        $imageSequence  = $request->input('image_sequence') ?? [];
+        $altTexts       = $request->input('alt_texts') ?? [];
+        $sku            = $product->sku;
 
         if (empty($newFiles) && empty($existingPaths)) {
             return response()->json([
                 'success' => false,
-                'message' => 'No images provided to sync. Please add or select images first.',
+                'message' => 'No images provided to sync.',
             ], 422);
         }
 
-        $skuProductIds = Product::where('sku', $sku)->pluck('id')->toArray();
+        // Get all products in SKU group once
+        $skuProducts = Product::where('sku', $sku)->get();
+        $skuProductIds = $skuProducts->pluck('id')->toArray();
 
         if (empty($skuProductIds)) {
             return response()->json([
@@ -994,13 +1001,44 @@ class ProductController extends Controller
 
         DB::beginTransaction();
         try {
-            // 1. Delete all existing images for every variant
-            foreach ($skuProductIds as $pid) {
-                $existingImages = ProductImage::where('product_id', $pid)->get();
+            // 1. Process and upload new files first so we have all paths
+            $uploadedNewPaths = [];
+            foreach ($newFiles as $idx => $file) {
+                $extension = Str::lower($file->getClientOriginalExtension());
+                $imageName = time() . '_' . $idx . '_' . Str::random(5) . '.' . $extension;
+                $imagePath = $file->storeAs('products/sku-' . $sku, $imageName, 'public');
+                $uploadedPaths[] = $imagePath;
+                $uploadedNewPaths[$idx] = $imagePath;
+            }
+
+            // 2. Build the final ordered list of paths
+            $allImagePaths = [];
+            if (!empty($imageSequence)) {
+                foreach ($imageSequence as $item) {
+                    $type = $item['type'] ?? '';
+                    $val  = $item['value'] ?? '';
+                    if ($type === 'existing') {
+                        $allImagePaths[] = $val;
+                    } elseif ($type === 'new' && isset($uploadedNewPaths[(int)$val])) {
+                        $allImagePaths[] = $uploadedNewPaths[(int)$val];
+                    }
+                }
+            } else {
+                // Fallback to existing first, then new
+                $allImagePaths = array_merge($existingPaths, array_values($uploadedNewPaths));
+            }
+
+            // 3. Delete old image records and files (if not in use)
+            foreach ($skuProducts as $skuProduct) {
+                $existingImages = ProductImage::where('product_id', $skuProduct->id)->get();
                 foreach ($existingImages as $img) {
-                    // Only delete the physical file if it's NOT in the existing_paths we want to keep
-                    if (!in_array($img->image_path, $existingPaths)) {
-                        if (Storage::disk('public')->exists($img->image_path)) {
+                    // Only delete file if it's NOT in our new set AND not used by ANY other product
+                    if (!in_array($img->image_path, $allImagePaths)) {
+                        $otherUsage = ProductImage::where('image_path', $img->image_path)
+                            ->whereNotIn('product_id', $skuProductIds)
+                            ->exists();
+                        
+                        if (!$otherUsage && Storage::disk('public')->exists($img->image_path)) {
                             Storage::disk('public')->delete($img->image_path);
                         }
                     }
@@ -1008,33 +1046,16 @@ class ProductController extends Controller
                 }
             }
 
-            // 2. Process combined list of images (existing then new)
-            // We'll treat existing_paths as appearing first in the order
-            $allImagePaths = [];
-            
-            // Add existing ones
-            foreach ($existingPaths as $path) {
-                $allImagePaths[] = $path;
-            }
-
-            // Upload and add new ones
-            foreach ($newFiles as $file) {
-                $extension = Str::lower($file->getClientOriginalExtension());
-                $imageName = time() . '_' . Str::random(10) . '.' . $extension;
-                $imagePath = $file->storeAs('products/sku-' . $sku, $imageName, 'public');
-                $uploadedPaths[] = $imagePath;
-                $allImagePaths[] = $imagePath;
-            }
-
-            // 3. Persist all images for every variant
+            // 4. Persist the new sequence for every variant
             foreach ($allImagePaths as $idx => $path) {
                 $isPrimary = ($idx === $primaryIndex);
+                $altText   = $altTexts[$idx] ?? null;
                 
-                foreach ($skuProductIds as $pid) {
+                foreach ($skuProducts as $skuProduct) {
                     ProductImage::create([
-                        'product_id' => $pid,
+                        'product_id' => $skuProduct->id,
                         'image_path' => $path,
-                        'alt_text'   => Product::find($pid)?->name ?? '',
+                        'alt_text'   => $altText ?? $skuProduct->name,
                         'is_primary' => $isPrimary,
                         'sort_order' => $idx,
                         'is_active'  => true,

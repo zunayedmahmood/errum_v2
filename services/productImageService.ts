@@ -86,16 +86,16 @@ class ProductImageService {
     try {
       const formData = new FormData();
       formData.append('image', file);
-      
+
       if (options?.alt_text) {
         formData.append('alt_text', options.alt_text);
       }
-      
+
       // Convert boolean to '1' or '0' for Laravel validation
       if (options?.is_primary !== undefined) {
         formData.append('is_primary', options.is_primary ? '1' : '0');
       }
-      
+
       if (options?.sort_order !== undefined) {
         formData.append('sort_order', String(options.sort_order));
       }
@@ -128,11 +128,11 @@ class ProductImageService {
   ): Promise<ProductImage[]> {
     try {
       const formData = new FormData();
-      
+
       files.forEach((file) => {
         formData.append('images[]', file);
       });
-      
+
       if (altTexts && altTexts.length > 0) {
         altTexts.forEach((text) => {
           formData.append('alt_texts[]', text);
@@ -268,7 +268,9 @@ class ProductImageService {
     productId: number,
     files: File[],
     existingPaths: string[] = [],
-    primaryIndex = 0
+    primaryIndex = 0,
+    imageSequence: Array<{ type: 'existing' | 'new'; value: string | number }> = [],
+    altTexts: string[] = []
   ): Promise<{
     success: boolean;
     message: string;
@@ -279,6 +281,17 @@ class ProductImageService {
     files.forEach((file) => formData.append('images[]', file));
     existingPaths.forEach((path) => formData.append('existing_paths[]', path));
     formData.append('primary_index', String(primaryIndex));
+    
+    if (imageSequence && imageSequence.length > 0) {
+      imageSequence.forEach((item, index) => {
+        formData.append(`image_sequence[${index}][type]`, item.type);
+        formData.append(`image_sequence[${index}][value]`, String(item.value));
+      });
+    }
+
+    if (altTexts && altTexts.length > 0) {
+      altTexts.forEach((text) => formData.append('alt_texts[]', text || ''));
+    }
 
     const response = await axiosInstance.post(
       `${this.baseUrl}/${productId}/sync-sku-images`,
@@ -341,11 +354,11 @@ class ProductImageService {
    */
   formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 Bytes';
-    
+
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
+
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
   }
 

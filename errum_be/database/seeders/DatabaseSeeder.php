@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
             AccountsSeeder::class,
             ExpenseCategoriesSeeder::class,
             ExpensesSeeder::class,
+            SizeSeeder::class,
         ]);
     }
 }
