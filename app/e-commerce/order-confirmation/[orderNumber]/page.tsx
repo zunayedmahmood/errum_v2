@@ -2,15 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { 
-  CheckCircle2, 
-  Package, 
-  MapPin, 
-  CreditCard, 
-  Printer, 
-  Home, 
-  Loader2, 
-  ChevronRight, 
+import {
+  CheckCircle2,
+  Package,
+  MapPin,
+  CreditCard,
+  Printer,
+  Home,
+  Loader2,
+  ChevronRight,
   ShoppingBag,
   ArrowRight,
   Clock,
@@ -114,9 +114,9 @@ export default function OrderConfirmationPage() {
   return (
     <div className="ec-root bg-[var(--bg-root)] min-h-screen pb-20">
       <Navigation />
-      
+
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-16">
-        
+
         {/* Success Header Section */}
         <div className="text-center mb-12 ec-anim-fade-up">
           <div className="flex justify-center mb-8">
@@ -127,15 +127,15 @@ export default function OrderConfirmationPage() {
               </div>
             </div>
           </div>
-          
+
           <h1 className="text-4xl md:text-5xl font-medium text-[var(--text-primary)] mb-4 tracking-tight leading-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>
             Order Confirmed
           </h1>
           <p className="text-lg text-[var(--text-secondary)] max-w-lg mx-auto leading-relaxed font-light">
-            Thank you for shopping with <span className="text-[var(--gold)] font-medium">Errum</span>. 
+            Thank you for shopping with <span className="text-[var(--gold)] font-medium">Errum</span>.
             We&apos;ve received your order and started the fulfillment process.
           </p>
-          
+
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-10 px-6 sm:px-10 py-6 sm:py-8 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-lg)] shadow-sm">
             <div className="text-center sm:text-left sm:border-r sm:border-[var(--border-default)] sm:pr-10 w-full sm:w-auto">
               <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Order Reference</p>
@@ -152,10 +152,10 @@ export default function OrderConfirmationPage() {
 
         {/* Main Grid Content */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
+
           {/* Order Content */}
           <div className="lg:col-span-8 space-y-6">
-            
+
             {/* Action Card */}
             <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-lg)] overflow-hidden ec-anim-fade-up ec-delay-1 shadow-sm">
               <div className="p-6 md:p-8 flex flex-col md:flex-row gap-4 items-center justify-between bg-[var(--bg-surface-2)]/50">
@@ -166,22 +166,22 @@ export default function OrderConfirmationPage() {
                   <div>
                     <h3 className="text-[var(--text-primary)] font-semibold">Track Delivery</h3>
                     <p className="text-xs text-[var(--text-muted)] uppercase tracking-tight font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Real-time status updates</p>
-                   </div>
+                  </div>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
-                    <button
-                        onClick={() => router.push(`/e-commerce/order-tracking/${order?.order_number}`)}
-                        className="flex-1 md:flex-none ec-btn-primary px-8 py-3.5 rounded-xl text-[10px] font-bold tracking-widest uppercase shadow-lg shadow-black/10 transition-all hover:-translate-y-0.5"
-                    >
-                        Track Status
-                    </button>
-                    <button
-                        onClick={handlePrint}
-                        className="p-3.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-depth)] transition-all print:hidden"
-                        title="Print Receipt"
-                    >
-                        <Printer size={20} />
-                    </button>
+                  <button
+                    onClick={() => router.push(`/e-commerce/order-tracking/${order?.order_number}`)}
+                    className="flex-1 md:flex-none ec-btn-primary px-8 py-3.5 rounded-xl text-[10px] font-bold tracking-widest uppercase shadow-lg shadow-black/10 transition-all hover:-translate-y-0.5"
+                  >
+                    Track Status
+                  </button>
+                  <button
+                    onClick={handlePrint}
+                    className="p-3.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-depth)] transition-all print:hidden"
+                    title="Print Receipt"
+                  >
+                    <Printer size={20} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -201,13 +201,13 @@ export default function OrderConfirmationPage() {
                       <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 bg-[var(--bg-surface-2)] rounded-xl overflow-hidden border border-[var(--border-default)] group-hover:border-[var(--gold)]/30 transition-colors">
                         {(() => {
                           const imgUrl = toAbsoluteAssetUrl(
-                                       item.product_image || item.image_url || 
-                                       (item.product?.images?.find((img: any) => img.is_primary)?.image_url || 
-                                        item.product?.images?.find((img: any) => img.is_primary)?.url || 
-                                        item.product?.images?.[0]?.image_url || 
-                                        item.product?.images?.[0]?.url)
+                            item.product_image || item.image_url ||
+                            (item.product?.images?.find((img: any) => img.is_primary)?.image_url ||
+                              item.product?.images?.find((img: any) => img.is_primary)?.url ||
+                              item.product?.images?.[0]?.image_url ||
+                              item.product?.images?.[0]?.url)
                           );
-                          
+
                           return imgUrl ? (
                             <img
                               src={imgUrl}
@@ -224,7 +224,7 @@ export default function OrderConfirmationPage() {
                           ×{item.quantity}
                         </div>
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <h4 className="text-[var(--text-primary)] font-medium text-base sm:text-lg leading-tight mb-1 line-clamp-2 hover:text-[var(--gold)] transition-colors cursor-pointer">
                           {item.product_name}
@@ -238,21 +238,21 @@ export default function OrderConfirmationPage() {
                         </div>
                         {(item.color || item.size) && (
                           <div className="flex flex-wrap items-center gap-2 mt-2">
-                             {item.color && (
-                                <span className="text-[10px] px-2 py-0.5 rounded bg-[var(--bg-depth)] border border-[var(--border-default)] text-[var(--text-secondary)]">
-                                    {item.color}
-                                </span>
-                             )}
-                             {item.size && (
-                                <span className="text-[10px] px-2 py-0.5 rounded bg-[var(--bg-depth)] border border-[var(--border-default)] text-[var(--text-secondary)]">
-                                    {item.size}
-                                </span>
-                             )}
+                            {item.color && (
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-[var(--bg-depth)] border border-[var(--border-default)] text-[var(--text-secondary)]">
+                                {item.color}
+                              </span>
+                            )}
+                            {item.size && (
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-[var(--bg-depth)] border border-[var(--border-default)] text-[var(--text-secondary)]">
+                                {item.size}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="flex sm:flex-col justify-between items-center sm:items-end mt-2 sm:mt-0 border-t border-[var(--border-default)] pt-3 sm:border-0 sm:pt-0">
                       <p className="text-lg font-bold text-[var(--text-primary)] tracking-wide">
                         ৳{(item.total_amount ?? item.total ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
@@ -305,27 +305,26 @@ export default function OrderConfirmationPage() {
                   </h3>
                 </div>
                 <div className="space-y-6">
-                   <div>
-                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Method</p>
-                        <div className="flex items-center gap-2">
-                             <span className="text-[var(--text-primary)] font-bold tracking-wide capitalize bg-[var(--bg-depth)] px-3 py-1 rounded-lg border border-[var(--border-default)]">
-                                {order?.payment_method.replace(/_/g, ' ')}
-                             </span>
-                        </div>
-                   </div>
-                   <div>
-                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Gateway Status</p>
-                        <div className="flex items-center gap-2">
-                            <span className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-bold tracking-[0.1em] uppercase border ${
-                                order?.payment_status === 'paid' 
-                                ? 'bg-green-50 text-green-700 border-green-100' 
-                                : 'bg-amber-50 text-amber-700 border-amber-100'
-                            }`}>
-                                <div className={`w-2 h-2 rounded-full ${order?.payment_status === 'paid' ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`}></div>
-                                {order?.payment_status}
-                            </span>
-                        </div>
-                   </div>
+                  <div>
+                    <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Method</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[var(--text-primary)] font-bold tracking-wide capitalize bg-[var(--bg-depth)] px-3 py-1 rounded-lg border border-[var(--border-default)]">
+                        {order?.payment_method.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-bold" style={{ fontFamily: "'Poppins', sans-serif" }}>Gateway Status</p>
+                    <div className="flex items-center gap-2">
+                      <span className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-bold tracking-[0.1em] uppercase border ${order?.payment_status === 'paid'
+                        ? 'bg-green-50 text-green-700 border-green-100'
+                        : 'bg-amber-50 text-amber-700 border-amber-100'
+                        }`}>
+                        <div className={`w-2 h-2 rounded-full ${order?.payment_status === 'paid' ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`}></div>
+                        {order?.payment_status}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -333,13 +332,13 @@ export default function OrderConfirmationPage() {
 
           {/* Sidebar Area - Order Total & Support */}
           <div className="lg:col-span-4 space-y-6">
-            
+
             {/* Amount Summary Sidebar */}
             <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-lg)] sticky top-24 ec-anim-fade-up ec-delay-4 overflow-hidden shadow-xl border-t-[var(--gold)] border-t-[3px]">
               <div className="bg-[var(--bg-depth)] border-b border-[var(--border-default)] px-6 py-4">
-                 <h3 className="text-center font-bold text-[var(--text-primary)] tracking-[0.2em] uppercase text-[10px]" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                    Billing Breakdown
-                 </h3>
+                <h3 className="text-center font-bold text-[var(--text-primary)] tracking-[0.2em] uppercase text-[10px]" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                  Billing Breakdown
+                </h3>
               </div>
               <div className="p-6 md:p-8 space-y-5">
                 <div className="flex justify-between items-center">
@@ -356,33 +355,32 @@ export default function OrderConfirmationPage() {
                     <span className="font-bold ">-৳{order.discount_amount.toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
                   </div>
                 )}
-                
+
                 <div className="pt-6 mt-4 border-t border-[var(--border-default)]">
                   <div className="flex flex-col gap-2">
                     <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-[0.2em] font-bold text-center" style={{ fontFamily: "'Poppins', sans-serif" }}>Total Amount Payable</p>
                     <div className="text-center">
-                        <span className="text-4xl font-bold text-[var(--text-primary)] tracking-tight">
-                            ৳{order?.total_amount.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
-                        </span>
+                      <span className="text-4xl font-bold text-[var(--text-primary)] tracking-tight">
+                        ৳{order?.total_amount.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                      </span>
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-8">
-                     <Link 
-                        href="/e-commerce"
-                        className="w-full flex items-center justify-center gap-3 py-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-depth)] text-[var(--text-primary)] hover:bg-[var(--bg-surface-2)] transition-all font-bold tracking-[0.1em] text-[11px] uppercase"
-                        style={{ fontFamily: "'Poppins', sans-serif" }}
-                     >
-                        Continue Shopping <ArrowRight size={14} className="text-[var(--gold)]" />
-                     </Link>
+                  <Link
+                    href="/e-commerce"
+                    className="w-full flex items-center justify-center gap-3 py-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-depth)] text-[var(--text-primary)] hover:bg-[var(--bg-surface-2)] transition-all font-bold tracking-[0.1em] text-[11px] uppercase"
+                    style={{ fontFamily: "'Poppins', sans-serif" }}
+                  >
+                    Continue Shopping <ArrowRight size={14} className="text-[var(--gold)]" />
+                  </Link>
                 </div>
               </div>
-              
+
               {/* Receipt Visual Decor */}
               <div className="bg-[var(--bg-depth)] px-6 py-4 border-t border-[var(--border-default)] flex items-center justify-center gap-2">
-                 <CheckCircle className="text-green-500" size={14} />
-                 <span className="text-[9px] text-[var(--text-muted)] font-bold tracking-[0.2em] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>Verified Digital Receipt</span>
+                <span className="text-[9px] text-[var(--text-muted)] font-bold tracking-[0.2em] uppercase" style={{ fontFamily: "'Poppins', sans-serif" }}>Digital Receipt</span>
               </div>
             </div>
 
@@ -390,10 +388,10 @@ export default function OrderConfirmationPage() {
 
           </div>
         </div>
-        
+
         {/* Footer Info */}
         <div className="mt-16 text-center text-[var(--text-muted)] text-[9px] font-bold tracking-[0.4em] uppercase ec-anim-fade-up ec-delay-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
-            Errum Store &copy; 2026 • Secure Order Fulfillment
+          Errum Store &copy; 2026 • Order Confirmation Page
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import ProductCard from './ProductCard';
-import CartSidebar from '@/components/ecommerce/cart/CartSidebar';
+import { useCart } from '@/app/e-commerce/CartContext';
 
 interface ProductsGridProps {
   products: any[];
@@ -8,7 +8,7 @@ interface ProductsGridProps {
 }
 
 export default function ProductsGrid({ products, viewMode }: ProductsGridProps) {
-  const [cartSidebarOpen, setCartSidebarOpen] = useState(false);
+  const { setIsCartOpen } = useCart();
 
   const gridColsMap: { [key: string]: string } = {
     'grid-3': 'lg:grid-cols-3',
@@ -19,7 +19,7 @@ export default function ProductsGrid({ products, viewMode }: ProductsGridProps) 
   const gridCols = gridColsMap[viewMode] || 'lg:grid-cols-4';
 
   const handleCartOpen = () => {
-    setCartSidebarOpen(true);
+    setIsCartOpen(true);
   };
 
   if (products.length === 0) {
@@ -43,11 +43,7 @@ export default function ProductsGrid({ products, viewMode }: ProductsGridProps) 
         ))}
       </div>
 
-      {/* 🔥 RIGHT-SIDE CART SIDEBAR - SLIDES OVER PRODUCTS */}
-      <CartSidebar 
-        isOpen={cartSidebarOpen} 
-        onClose={() => setCartSidebarOpen(false)} 
-      />
+      {/* 🔥 RIGHT-SIDE CART SIDEBAR - HANDLED GLOBALLY */}
     </div>
   );
 }

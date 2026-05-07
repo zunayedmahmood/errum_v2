@@ -13,6 +13,7 @@ export interface PurchaseOrderItem {
   notes?: string;
   product_name?: string;
   product_sku?: string;
+  total_cost?: number;
   quantity_received?: number;
   product?: any;
   productBatch?: any;
@@ -52,7 +53,7 @@ export interface PurchaseOrder {
   expected_delivery_date?: string;
   status: 'draft' | 'approved' | 'partially_received' | 'received' | 'cancelled';
   payment_status: 'unpaid' | 'partially_paid' | 'paid';
-  subtotal_amount: number;
+  subtotal: number;
   tax_amount: number;
   discount_amount: number;
   shipping_cost: number;
@@ -218,6 +219,17 @@ class PurchaseOrderService {
   async update(id: number, data: UpdatePurchaseOrderData): Promise<ApiResponse<PurchaseOrder>> {
     const response: AxiosResponse<ApiResponse<PurchaseOrder>> = await axiosInstance.put(
       `${this.baseURL}/${id}`,
+      data
+    );
+    return response.data;
+  }
+
+  /**
+   * Bulk update purchase order fields and items
+   */
+  async bulkUpdate(id: number, data: any): Promise<ApiResponse<PurchaseOrder>> {
+    const response: AxiosResponse<ApiResponse<PurchaseOrder>> = await axiosInstance.put(
+      `${this.baseURL}/${id}/bulk-update`,
       data
     );
     return response.data;

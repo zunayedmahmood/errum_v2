@@ -6,14 +6,12 @@ import { useRouter } from 'next/navigation';
 import { wishlistUtils, WishlistItem } from '@/lib/wishlistUtils';
 import { useCart } from '@/app/e-commerce/CartContext';
 import Navigation from '@/components/ecommerce/Navigation';
-import CartSidebar from '@/components/ecommerce/cart/CartSidebar';
 
 export default function WishlistPage() {
   const router = useRouter();
-  const { addToCart } = useCart();
+  const { addToCart, setIsCartOpen } = useCart();
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([]);
   const [addingToCartId, setAddingToCartId] = useState<string | number | null>(null);
-  const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Load wishlist items
   useEffect(() => {
@@ -184,7 +182,7 @@ export default function WishlistPage() {
             ))}
           </div>
         </div>
-      </div><CartSidebar isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
+      </div>
     </>
   );
 }

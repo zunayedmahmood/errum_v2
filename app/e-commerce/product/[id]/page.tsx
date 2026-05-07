@@ -27,7 +27,6 @@ import { useCart } from '@/app/e-commerce/CartContext';
 import Navigation from '@/components/ecommerce/Navigation';
 import { getBaseProductName, getColorLabel, getSizeLabel } from '@/lib/productNameUtils';
 import { adaptCatalogGroupedProducts, groupProductsByMother } from '@/lib/ecommerceProductGrouping';
-import CartSidebar from '@/components/ecommerce/cart/CartSidebar';
 import catalogService, {
   Product,
   ProductCategory,
@@ -350,7 +349,7 @@ export default function ProductDetailPage() {
   const router = useRouter();
   const productId = params?.id ? parseInt(params.id as string) : null;
 
-  const { refreshCart } = useCart();
+  const { refreshCart, addToCart, setIsCartOpen } = useCart();
   const { getApplicablePromotion } = usePromotion();
 
   // State
@@ -363,7 +362,6 @@ export default function ProductDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [cartSidebarOpen, setCartSidebarOpen] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [isAdding, setIsAdding] = useState(false);
@@ -789,7 +787,7 @@ export default function ProductDetailPage() {
       setTimeout(() => {
         setIsAdding(false);
         setCartStatus('idle');
-        setCartSidebarOpen(true);
+        setIsCartOpen(true);
       }, 2000);
 
     } catch (error: any) {
@@ -863,7 +861,7 @@ export default function ProductDetailPage() {
       });
 
       await refreshCart();
-      setCartSidebarOpen(true);
+      setIsCartOpen(true);
 
     } catch (error: any) {
       console.error('Error adding to cart:', error);
@@ -1002,7 +1000,6 @@ export default function ProductDetailPage() {
   return (
     <div className="bg-[var(--bg-root)] min-h-screen text-[var(--text-primary)]">
       <Navigation />
-      <CartSidebar isOpen={cartSidebarOpen} onClose={() => setCartSidebarOpen(false)} />
 
       {/* Breadcrumb & Navigation */}
       <div className="border-b border-gray-100">

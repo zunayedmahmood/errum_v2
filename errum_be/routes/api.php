@@ -538,6 +538,7 @@ Route::middleware('auth:api')->group(function () {
             Route::post('/approve', [PurchaseOrderController::class, 'approve']);
             Route::post('/receive', [PurchaseOrderController::class, 'receive']);
             Route::post('/cancel', [PurchaseOrderController::class, 'cancel']);
+            Route::put('/bulk-update', [PurchaseOrderController::class, 'bulkUpdate']);
             
             // PO Items management
             Route::post('/items', [PurchaseOrderController::class, 'addItem']);

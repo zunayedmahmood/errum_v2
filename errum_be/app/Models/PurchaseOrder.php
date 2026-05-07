@@ -155,9 +155,25 @@ class PurchaseOrder extends Model
      */
     public function calculateTotals(): void
     {
-        $this->subtotal = $this->items->sum('total_cost');
-        $this->total_amount = $this->subtotal + $this->tax_amount + $this->shipping_cost - $this->discount_amount;
-        $this->outstanding_amount = $this->total_amount - $this->paid_amount;
+        // 1. Subtotal is the GROSS sum of all items (quantity * unit_cost)
+        $this->subtotal = $this->items->sum(function($item) {
+            return ($item->unit_cost ?? 0) * ($item->quantity_ordered ?? 0);
+        });
+
+        // 2. Sum up all item-level taxes and discounts
+        $itemTaxTotal = $this->items->sum('tax_amount');
+        $itemDiscountTotal = $this->items->sum('discount_amount');
+
+        // 3. Grand total = Gross Subtotal + PO Tax + Item Tax + Shipping + Other Charges - PO Discount - Item Discount
+        $this->total_amount = $this->subtotal 
+            + ($this->tax_amount ?? 0) 
+            + ($itemTaxTotal ?? 0)
+            + ($this->shipping_cost ?? 0) 
+            + ($this->other_charges ?? 0) 
+            - ($this->discount_amount ?? 0)
+            - ($itemDiscountTotal ?? 0);
+        
+        $this->outstanding_amount = $this->total_amount - ($this->paid_amount ?? 0);
         
         // Update payment status
         $this->updatePaymentStatus();

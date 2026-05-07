@@ -474,3 +474,6 @@ we want this new feature:
 instead of the hardcoded sizes, user can add a new size with "+add size" button. this will be saved in db.
 when they click the dropdown, they will see all the sizes from db and can select one or more. when pressed enter, all of those sizes will be added.
 the existing logic and functionality remanis, we add our manual size creation, backend size storing logic adds into it.
+
+
+### checkout button 

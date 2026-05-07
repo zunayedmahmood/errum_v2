@@ -207,6 +207,128 @@ class PurchaseOrderController extends Controller
     }
 
     /**
+     * Bulk update purchase order fields and items (including adding/removing items)
+     */
+    public function bulkUpdate(Request $request, $id)
+    {
+        $po = PurchaseOrder::findOrFail($id);
+
+        if ($po->status !== 'draft') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Can only update draft purchase orders'
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            // PO Fields
+            'tax_amount' => 'nullable|numeric|min:0',
+            'discount_amount' => 'nullable|numeric|min:0',
+            'shipping_cost' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string',
+            'terms_and_conditions' => 'nullable|string',
+            
+            // Items to Update
+            'items' => 'nullable|array',
+            'items.*.id' => 'required|exists:purchase_order_items,id',
+            'items.*.quantity_ordered' => 'required|integer|min:1',
+            'items.*.unit_cost' => 'required|numeric|min:0',
+            'items.*.unit_sell_price' => 'nullable|numeric|min:0',
+            'items.*.tax_amount' => 'nullable|numeric|min:0',
+            'items.*.discount_amount' => 'nullable|numeric|min:0',
+            'items.*.notes' => 'nullable|string',
+            
+            // Items to Add
+            'new_items' => 'nullable|array',
+            'new_items.*.product_id' => 'required|exists:products,id',
+            'new_items.*.quantity_ordered' => 'required|integer|min:1',
+            'new_items.*.unit_cost' => 'required|numeric|min:0',
+            'new_items.*.unit_sell_price' => 'nullable|numeric|min:0',
+            'new_items.*.tax_amount' => 'nullable|numeric|min:0',
+            'new_items.*.discount_amount' => 'nullable|numeric|min:0',
+            'new_items.*.notes' => 'nullable|string',
+            
+            // Items to Remove
+            'remove_item_ids' => 'nullable|array',
+            'remove_item_ids.*' => 'exists:purchase_order_items,id',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // 1. Update PO fields
+            $poFields = collect($validated)->only([
+                'tax_amount', 'discount_amount', 'shipping_cost', 'notes', 'terms_and_conditions'
+            ])->filter(fn($v) => !is_null($v))->toArray();
+            
+            if (!empty($poFields)) {
+                $po->update($poFields);
+            }
+
+            // 2. Remove items
+            if (!empty($validated['remove_item_ids'])) {
+                PurchaseOrderItem::whereIn('id', $validated['remove_item_ids'])
+                    ->where('purchase_order_id', $po->id)
+                    ->delete();
+            }
+
+            // 3. Update existing items
+            if (!empty($validated['items'])) {
+                foreach ($validated['items'] as $itemData) {
+                    $item = PurchaseOrderItem::where('id', $itemData['id'])
+                        ->where('purchase_order_id', $po->id)
+                        ->first();
+                    
+                    if ($item) {
+                        $updateData = collect($itemData)->only([
+                            'quantity_ordered', 'unit_cost', 'unit_sell_price', 'tax_amount', 'discount_amount', 'notes'
+                        ])->filter(fn($v) => !is_null($v))->toArray();
+                        
+                        $item->update($updateData);
+                    }
+                }
+            }
+
+            // 4. Add new items
+            if (!empty($validated['new_items'])) {
+                foreach ($validated['new_items'] as $itemData) {
+                    $product = Product::findOrFail($itemData['product_id']);
+                    PurchaseOrderItem::create([
+                        'purchase_order_id' => $po->id,
+                        'product_id' => $product->id,
+                        'product_name' => $product->name,
+                        'product_sku' => $product->sku,
+                        'quantity_ordered' => $itemData['quantity_ordered'],
+                        'unit_cost' => $itemData['unit_cost'],
+                        'unit_sell_price' => $itemData['unit_sell_price'] ?? $product->price,
+                        'tax_amount' => $itemData['tax_amount'] ?? 0,
+                        'discount_amount' => $itemData['discount_amount'] ?? 0,
+                        'notes' => $itemData['notes'] ?? null,
+                    ]);
+                }
+            }
+
+            // 5. Final recalculation
+            $po->refresh(); 
+            $po->calculateTotals();
+            $po->save();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Purchase order updated successfully',
+                'data' => $po->load('items', 'vendor', 'store')
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update purchase order: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Add item to purchase order
      */
     public function addItem(Request $request, $id)

@@ -5,7 +5,6 @@ import Image from 'next/image';
 import { ShoppingCart, Heart, Eye } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/app/e-commerce/CartContext';
-import CartSidebar from './cart/CartSidebar';
 import { wishlistUtils } from '@/lib/wishlistUtils';
 import { fireToast } from '@/lib/globalToast';
 
@@ -41,12 +40,11 @@ interface ProductWithStats {
 
 const BestSellerProducts = memo(function BestSellerProducts() {
   const router = useRouter();
-  const { addToCart } = useCart();
+  const { addToCart, setIsCartOpen } = useCart();
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
   const [bestSellers, setBestSellers] = useState<ProductWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingProductId, setAddingProductId] = useState<string | number | null>(null);
-  const [isCartOpen, setIsCartOpen] = useState(false);
   const [wishlistIds, setWishlistIds] = useState<Set<string | number>>(new Set());
 
   // Listen for wishlist updates
@@ -192,9 +190,7 @@ const BestSellerProducts = memo(function BestSellerProducts() {
     }
   };
 
-  const handleCloseCart = () => {
-    setIsCartOpen(false);
-  };
+
 
   if (loading) {
     return (
@@ -324,7 +320,6 @@ const BestSellerProducts = memo(function BestSellerProducts() {
           </div>
         </div>
       </section>
-      <CartSidebar isOpen={isCartOpen} onClose={handleCloseCart} />
     </>
   );
 });
