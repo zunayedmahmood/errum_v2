@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Search as SearchIcon, X } from 'lucide-react';
 
 const HERO_IMAGE_PATH = '/e-commerce-hero.jpg';

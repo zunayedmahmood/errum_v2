@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import settingsService, { HomepageSettings } from "@/services/settingsService";
 import categoryService, { Category } from "@/services/categoryService";
 import { Save, Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
-import { useToast } from "@/contexts/ToastContext";
+import { toast } from "react-hot-toast";
 
 export default function HomepageSettingsPage() {
   const [settings, setSettings] = useState<HomepageSettings | null>(null);
@@ -14,7 +14,6 @@ export default function HomepageSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [heroImageFile, setHeroImageFile] = useState<File | null>(null);
   const [heroPreview, setHeroPreview] = useState("");
-  const { showToast } = useToast();
 
   useEffect(() => {
     loadData();
@@ -43,7 +42,7 @@ export default function HomepageSettingsPage() {
       setFlatCategories(flatten(categoryTree));
     } catch (error) {
       console.error("Failed to load settings:", error);
-      showToast("error", "Failed to load settings");
+      toast.error("Failed to load settings");
     } finally {
       setLoading(false);
     }
@@ -76,12 +75,12 @@ export default function HomepageSettingsPage() {
       }
       
       await settingsService.updateHomepageSettings(formData);
-      showToast("success", "Homepage settings updated successfully");
+      toast.success("Homepage settings updated successfully");
       loadData(); // reload to get new image URL
       setHeroImageFile(null);
     } catch (error) {
       console.error("Failed to save settings:", error);
-      showToast("error", "Failed to save settings");
+      toast.error("Failed to save settings");
     } finally {
       setSaving(false);
     }
