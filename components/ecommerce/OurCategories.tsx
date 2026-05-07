@@ -46,20 +46,59 @@ const OurCategories: React.FC<OurCategoriesProps> = memo(({ categories: categori
     return () => { active = false; };
   }, [categoriesProp]);
 
-  const allDisplay = getTopLevelCategories(categories || []);
+  // Helper to flatten categories for selection
+  const flatten = (items: CatalogCategory[]): CatalogCategory[] => {
+    let result: CatalogCategory[] = [];
+    items.forEach(cat => {
+      result.push(cat);
+      if (cat.children && cat.children.length > 0) {
+        result = [...result, ...flatten(cat.children)];
+      }
+    });
+    return result;
+  };
+
+  // Hardcoded IDs for the 8 featured categories/subcategories
+  // This can be updated to include specific subcategory IDs
+  const FEATURED_IDS = [1, 2, 3, 4, 5, 6, 7, 8]; 
+
+  const allCategories = flatten(categories || []);
+  
+  // Try to find the specific featured IDs, or fallback to first 8 with images
+  let allDisplay = allCategories.filter(c => FEATURED_IDS.includes(c.id));
+  
+  if (allDisplay.length < 8) {
+    const others = allCategories.filter(c => !FEATURED_IDS.includes(c.id) && (c.image_url || c.image));
+    allDisplay = [...allDisplay, ...others].slice(0, 8);
+  }
+
+  // Final fallback if still less than 8
+  if (allDisplay.length < 8) {
+    const anyOthers = allCategories.filter(c => !allDisplay.find(d => d.id === c.id));
+    allDisplay = [...allDisplay, ...anyOthers].slice(0, 8);
+  }
 
   if (loading || isFetching) {
     return (
       <section style={{ background: '#ffffff', padding: '48px 0' }}>
         <div className="ec-container">
-          {/* Header skeleton */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '32px' }}>
-            <div style={{ height: '1px', width: '48px', background: '#e0e0e0' }} />
-            <div style={{ height: '24px', width: '180px', background: '#f0f0f0', borderRadius: '4px' }} />
-            <div style={{ height: '1px', width: '48px', background: '#e0e0e0' }} />
+            <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
+            <h2 style={{
+              fontFamily: "'Poppins', sans-serif",
+              fontSize: '18px',
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              letterSpacing: '0.15em',
+              color: '#111111',
+              margin: 0,
+            }}>
+              FEATURED CATEGORIES
+            </h2>
+            <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 md:gap-3">
+            {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} style={{ aspectRatio: '3/4', background: '#f5f5f5', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite' }} />
             ))}
           </div>
@@ -73,7 +112,6 @@ const OurCategories: React.FC<OurCategoriesProps> = memo(({ categories: categori
   return (
     <section style={{ background: '#ffffff', padding: '48px 0' }}>
       <div className="ec-container">
-        {/* Section header — reference style */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '32px' }}>
           <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
           <h2 style={{
@@ -90,7 +128,6 @@ const OurCategories: React.FC<OurCategoriesProps> = memo(({ categories: categori
           <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
         </div>
 
-        {/* 4-col grid matching reference */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 md:gap-3">
           {allDisplay.map((cat, i) => {
             const imgSrc = toAbsoluteAssetUrl(cat.image || cat.image_url || '');
@@ -146,10 +183,8 @@ const OurCategories: React.FC<OurCategoriesProps> = memo(({ categories: categori
                   </div>
                 )}
 
-                {/* Dark gradient overlay */}
                 <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.10) 50%, transparent 100%)' }} />
 
-                {/* Category label at bottom */}
                 <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 12px', textAlign: 'left' }}>
                   <h3 style={{
                     fontFamily: "'Poppins', sans-serif",

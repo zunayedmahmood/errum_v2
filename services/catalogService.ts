@@ -915,6 +915,20 @@ const normalizeCatalogCategoryTree = (raw: any): CatalogCategory | null => {
       (raw.media && (raw.media.url || raw.media.path)) ||
       undefined
     ) || undefined,
+    banner: toAbsoluteAssetUrl(
+      raw.banner ||
+      raw.banner_url ||
+      raw.banner_path ||
+      raw.category_banner ||
+      undefined
+    ) || undefined,
+    banner_url: toAbsoluteAssetUrl(
+      raw.banner_url ||
+      raw.banner ||
+      raw.banner_path ||
+      raw.category_banner ||
+      undefined
+    ) || undefined,
     color: normalizeString(raw.color || '') || undefined,
     icon: normalizeString(raw.icon || '') || undefined,
     parent_id: raw.parent_id ?? null,

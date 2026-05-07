@@ -567,3 +567,23 @@ make the shop now and collections buttton 75%of current size and place below the
 
 the Text in the Hero section "refining the Art of Lifestyle" should be customisable from settings page (and toggle on or off)
 put it in bottom center left with 2 broken lines, a bit larger to medium size front (to look stylish).
+
+### bug fix 
+the home page hero banner was updated. but, no changes were seen, the new banner was missing and the old one was also not loaded.
+the categories featured were also not loaded with image, name and other details.
+check for dependency issues. idenitfy them and solve it.
+
+the setting homepage doesn't support the admin sidebar and the admin side dark vs light themes.
+
+the category banner is also not being shown i slug page.
+the category banner thumbnail can't be seen from the category page.
+
+### i want you to act as a professional software engineer and codebase debugger.
+i want you to look at the codebase for settings/homepage page and its backend code.
+look for any potential bug or dependency issue or validation problem. ideintify the issue and solve it.
+
+### categories ordering
+currently, we are showing all the categories in the home page (in the expanded section where we showcase the products) along with subcatgories scrollbar 
+
+we want a section in the settings homepage where we can select which categories will be show here and which subcategories will be shown in the scrollbar.
+we also want to change the relative order of categories (main) and subcategories (within their parent cat). from the settings page.

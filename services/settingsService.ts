@@ -1,9 +1,14 @@
 import axiosInstance from '@/lib/axios';
 
+export interface ShowcaseCategory {
+  category_id: number;
+  subcategories: number[];
+}
+
 export interface HomepageSettings {
   ticker: {
     enabled: boolean;
-    text: string;
+    phrases: string[];
   };
   hero: {
     image_url: string;
@@ -17,6 +22,7 @@ export interface HomepageSettings {
     image?: string;
     href?: string;
   }[];
+  showcase?: ShowcaseCategory[];
 }
 
 class SettingsService {

@@ -64,11 +64,22 @@ export default function CategoryListItem({
           <div className="w-6" />
         )}
 
-        <ImageWithFallback
-          src={category.image_url || " "}
-          alt={category.title}
-          className="w-16 h-16 rounded object-cover flex-shrink-0"
-        />
+        <div className="flex -space-x-4">
+          <ImageWithFallback
+            src={category.image_url || " "}
+            alt={category.title}
+            className="w-16 h-16 rounded object-cover flex-shrink-0 border-2 border-white dark:border-gray-800 z-10"
+            title="Thumbnail Image"
+          />
+          {category.banner_url && (
+            <ImageWithFallback
+              src={category.banner_url}
+              alt={`${category.title} banner`}
+              className="w-16 h-16 rounded object-cover flex-shrink-0 border-2 border-white dark:border-gray-800 opacity-60 hover:opacity-100 transition-opacity"
+              title="Banner Image"
+            />
+          )}
+        </div>
 
         <div className="flex-1 min-w-0">
           <h3 className="text-gray-900 dark:text-white mb-1">{category.title}</h3>

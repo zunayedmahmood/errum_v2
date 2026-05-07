@@ -219,10 +219,10 @@ export default function HeroSection({
               whiteSpace: 'pre-line',
               textTransform: 'capitalize'
             }}>
-              {initialTitle?.split('\n').map((line, i) => (
+              {initialTitle && initialTitle.split('\n').map((line, i, arr) => (
                 <React.Fragment key={i}>
                   {i === 1 ? <span style={{ fontStyle: 'italic', marginLeft: '40px', display: 'inline-block' }}>{line}</span> : line}
-                  {i < initialTitle.split('\n').length - 1 && '\n'}
+                  {i < arr.length - 1 && '\n'}
                 </React.Fragment>
               ))}
               {!initialTitle && (

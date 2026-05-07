@@ -62,7 +62,7 @@ export default function HomePage() {
   return (
     <div className="ec-root min-h-screen" style={{ background: '#ffffff' }}>
       {(!settings || settings.ticker.enabled) && (
-        <AnnouncementTicker phrases={settings?.ticker?.text ? [settings.ticker.text] : undefined} />
+        <AnnouncementTicker phrases={settings?.ticker?.phrases?.length ? settings.ticker.phrases : undefined} />
       )}
       <Navigation />
 
@@ -86,17 +86,33 @@ export default function HomePage() {
       </SectionReveal>
 
       {/* 5. Dynamic Shop by Subcategory sections (categories wise) */}
-      {categories.map((cat) => {
-        const slug = (cat.slug || cat.name).toLowerCase();
+      {(settings?.showcase || categories).map((item: any, idx: number) => {
+        const isShowcase = 'category_id' in item;
+        const catId = isShowcase ? item.category_id : item.id;
+        const subIds = isShowcase ? item.subcategories : undefined;
+
+        if (isShowcase) {
+          return (
+            <SectionReveal key={`showcase-${catId}-${idx}`} threshold={0.1}>
+              <SubcategoryProductTabs
+                categoryId={catId}
+                subcategoryIds={subIds}
+              />
+            </SectionReveal>
+          );
+        }
+
+        // Legacy / fallback behavior when showcase is not yet configured
+        const slug = (item.slug || item.name).toLowerCase();
         const custom = CUSTOM_SECTIONS[slug] ||
           Object.values(CUSTOM_SECTIONS).find(s => s.queries.includes(slug));
 
         return (
-          <SectionReveal key={cat.id} threshold={0.1}>
+          <SectionReveal key={`cat-${item.id}`} threshold={0.1}>
             <SubcategoryProductTabs
               parentQueries={custom ? custom.queries : [slug]}
-              eyebrow={custom ? custom.eyebrow : cat.name}
-              subtitle={custom ? custom.subtitle : `Explore our curated selection of quality ${cat.name} essentials.`}
+              eyebrow={custom ? custom.eyebrow : item.name}
+              subtitle={custom ? custom.subtitle : `Explore our curated selection of quality ${item.name} essentials.`}
             />
           </SectionReveal>
         );

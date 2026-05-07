@@ -17,13 +17,21 @@ class SettingController extends Controller
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
         
         $response = [
-            'ticker' => $settings->get('homepage_ticker', ['enabled' => true, 'text' => 'FREE SHIPPING ON ORDERS OVER ৳2000']),
+            'ticker' => $settings->get('homepage_ticker', [
+                'enabled' => true,
+                'phrases' => [
+                    'FREE SHIPPING ON ORDERS OVER ৳2000',
+                    'NEW SEASON ARRIVALS NOW LIVE',
+                    'SAME DAY DELIVERY IN DHAKA CITY',
+                ],
+            ]),
             'hero' => $settings->get('homepage_hero', [
                 'image_url' => '/e-commerce-hero.jpg',
                 'title' => 'Refining the Art of Lifestyle',
                 'show_title' => true
             ]),
-            'collections' => []
+            'collections' => [],
+            'showcase' => $settings->get('homepage_showcase') // default will be null if missing, so storefront knows to fallback to "all categories"
         ];
 
         $collectionsSetting = $settings->get('homepage_collections', []);
@@ -36,14 +44,12 @@ class SettingController extends Controller
                 foreach ($collectionsSetting as $item) {
                     if (isset($categories[$item['id']])) {
                         $cat = $categories[$item['id']];
-                        // Construct absolute URL for the image
-                        $imageUrl = $cat->banner_image 
-                            ? asset('storage/' . $cat->banner_image) 
-                            : ($cat->image ? asset('storage/' . $cat->image) : '/images/placeholder-product.jpg');
+                        // Use accessors for absolute URLs
+                        $imageUrl = $cat->banner_url ?: ($cat->image_url ?: '/images/placeholder-product.jpg');
                         
                         $response['collections'][] = [
                             'id' => $cat->id,
-                            'title' => $cat->name,
+                            'title' => $cat->title,
                             'subtitle' => $item['subtitle'] ?? 'Explore Collection',
                             'image' => $imageUrl,
                             'href' => '/e-commerce/categories/' . $cat->slug
@@ -63,13 +69,21 @@ class SettingController extends Controller
     {
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
         return response()->json([
-            'ticker' => $settings->get('homepage_ticker', ['enabled' => true, 'text' => 'FREE SHIPPING ON ORDERS OVER ৳2000']),
+            'ticker' => $settings->get('homepage_ticker', [
+                'enabled' => true,
+                'phrases' => [
+                    'FREE SHIPPING ON ORDERS OVER ৳2000',
+                    'NEW SEASON ARRIVALS NOW LIVE',
+                    'SAME DAY DELIVERY IN DHAKA CITY',
+                ],
+            ]),
             'hero' => $settings->get('homepage_hero', [
                 'image_url' => '/e-commerce-hero.jpg',
                 'title' => 'Refining the Art of Lifestyle',
                 'show_title' => true
             ]),
-            'collections' => $settings->get('homepage_collections', [])
+            'collections' => $settings->get('homepage_collections', []),
+            'showcase' => $settings->get('homepage_showcase', [])
         ]);
     }
 
@@ -80,12 +94,18 @@ class SettingController extends Controller
     {
         $validated = $request->validate([
             'ticker' => 'nullable|array',
-            'ticker.enabled' => 'boolean',
-            'ticker.text' => 'nullable|string|max:255',
+            'ticker.enabled' => 'nullable|string', // arrives as "1" or "0" from FormData; cast below
+            'ticker.phrases' => 'nullable|array',
+            'ticker.phrases.*' => 'nullable|string|max:255',
             
             'collections' => 'nullable|array',
             'collections.*.id' => 'required|exists:categories,id',
             'collections.*.subtitle' => 'nullable|string|max:255',
+            
+            'showcase' => 'nullable|array',
+            'showcase.*.category_id' => 'required|integer',
+            'showcase.*.subcategories' => 'nullable|array',
+            'showcase.*.subcategories.*' => 'integer',
             
             'hero_image' => 'nullable|image|max:5120',
             'hero_title' => 'nullable|string|max:255',
@@ -93,9 +113,14 @@ class SettingController extends Controller
         ]);
 
         if ($request->has('ticker')) {
+            $tickerData = $validated['ticker'];
+            // FormData sends "1"/"0" as strings — normalize to boolean
+            if (isset($tickerData['enabled'])) {
+                $tickerData['enabled'] = filter_var($tickerData['enabled'], FILTER_VALIDATE_BOOLEAN);
+            }
             Setting::updateOrCreate(
                 ['key' => 'homepage_ticker'],
-                ['value' => $validated['ticker'], 'group' => 'homepage']
+                ['value' => $tickerData, 'group' => 'homepage']
             );
         }
 
@@ -106,20 +131,34 @@ class SettingController extends Controller
             );
         }
 
+        if ($request->has('showcase')) {
+            Setting::updateOrCreate(
+                ['key' => 'homepage_showcase'],
+                ['value' => $validated['showcase'], 'group' => 'homepage']
+            );
+        }
+
         if ($request->hasFile('hero_image') || $request->has('hero_title') || $request->has('hero_show_title')) {
             $currentHero = Setting::where('key', 'homepage_hero')->first()?->value ?? [];
             
             if ($request->hasFile('hero_image')) {
+                // Delete old hero image from storage before replacing
+                $oldPath = $currentHero['image_path'] ?? null;
+                if ($oldPath) {
+                    Storage::disk('public')->delete($oldPath);
+                }
                 $path = $request->file('hero_image')->store('homepage', 'public');
                 $currentHero['image_url'] = asset('storage/' . $path);
+                $currentHero['image_path'] = $path; // store relative path for future deletion
             }
             
-            if ($request->has('hero_title')) {
+            // Only overwrite title if it's non-empty (guards against empty-string overwrite)
+            if ($request->has('hero_title') && !empty($validated['hero_title'])) {
                 $currentHero['title'] = $validated['hero_title'];
             }
             
             if ($request->has('hero_show_title')) {
-                $currentHero['show_title'] = $validated['hero_show_title'] === "1";
+                $currentHero['show_title'] = $validated['hero_show_title'] === '1';
             }
 
             Setting::updateOrCreate(
