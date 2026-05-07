@@ -39,7 +39,7 @@ class GuestCheckoutController extends Controller
                 'delivery_address.address_line_2' => 'nullable|string|max:255',
                 'delivery_address.city' => 'required|string|max:100',
                 'delivery_address.state' => 'nullable|string|max:100',
-                'delivery_address.postal_code' => 'required|string|max:20',
+                'delivery_address.postal_code' => 'nullable|string|max:20',
                 'delivery_address.country' => 'nullable|string|max:100',
                 
                 // Optional customer info
@@ -174,15 +174,14 @@ class GuestCheckoutController extends Controller
                     'state' => $request->input('delivery_address.state'),
                     'postal_code' => $request->input('delivery_address.postal_code'),
                     'country' => $request->input('delivery_address.country', 'Bangladesh'),
-                    'full_address' => sprintf(
-                        '%s, %s, %s, %s - %s, %s',
+                    'full_address' => collect([
                         $request->input('delivery_address.address_line_1'),
-                        $request->input('delivery_address.address_line_2') ?? '',
+                        $request->input('delivery_address.address_line_2'),
                         $request->input('delivery_address.city'),
-                        $request->input('delivery_address.state') ?? '',
+                        $request->input('delivery_address.state'),
                         $request->input('delivery_address.postal_code'),
                         $request->input('delivery_address.country', 'Bangladesh')
-                    ),
+                    ])->filter()->implode(', '),
                 ];
 
                 // Step 5: Create order

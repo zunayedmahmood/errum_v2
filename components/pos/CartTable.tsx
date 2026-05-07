@@ -47,7 +47,7 @@ function DiscountInput({
 
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // Synchronize local state with item state (e.g. when item is removed/added or quantity changes might affect it)
+  // Synchronize local state with item state
   useEffect(() => {
     if (item.discountType === 'percentage') {
       setLocalPercent(item.discountValue > 0 ? item.discountValue.toString() : '');
@@ -77,30 +77,30 @@ function DiscountInput({
           onChange={(e) => {
             const val = e.target.value;
             setLocalPercent(val);
-            setLocalAmount(''); // Clear the other field
-            const numVal = parseFloat(val) || 0;
+            setLocalAmount(''); // Mutually exclusive: clear other local state
+            const numVal = Math.max(0, parseFloat(val) || 0);
             handleUpdate(numVal, 'percentage');
           }}
-          className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
+          className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center focus:ring-1 focus:ring-blue-500"
         />
-        <span className="text-xs text-gray-500 dark:text-gray-400">%</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">%</span>
       </div>
 
       {/* Discount Amount */}
       <div className="flex items-center gap-1">
-        <span className="text-xs text-gray-500 dark:text-gray-400">৳</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">৳</span>
         <input
           type="number"
-          placeholder="0"
+          placeholder="Amount"
           value={localAmount}
           onChange={(e) => {
             const val = e.target.value;
             setLocalAmount(val);
-            setLocalPercent(''); // Clear the other field
-            const numVal = parseFloat(val) || 0;
+            setLocalPercent(''); // Mutually exclusive: clear other local state
+            const numVal = Math.max(0, parseFloat(val) || 0);
             handleUpdate(numVal, 'fixed');
           }}
-          className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
+          className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center focus:ring-1 focus:ring-blue-500"
         />
       </div>
     </div>

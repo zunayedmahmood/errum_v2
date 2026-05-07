@@ -14,13 +14,15 @@ interface ExportInventoryButtonProps {
 export default function ExportInventoryButton({ categories, allStores, selectedCategoryId }: ExportInventoryButtonProps) {
   const [exporting, setExporting] = useState(false);
 
-  const getCategoryPaths = (categoryId: number | undefined, cats: any[]) => {
+  const getCategoryPaths = (categoryId: any, cats: any[]) => {
     if (!categoryId) return { category: 'Uncategorized', subcategory: '-' };
-    const cat = cats.find(c => c.id === categoryId);
+    
+    // Find category with loose equality to handle string/number mismatches
+    const cat = cats.find(c => String(c.id) === String(categoryId));
     if (!cat) return { category: 'Uncategorized', subcategory: '-' };
 
     if (cat.parent_id) {
-      const parent = cats.find(c => c.id === cat.parent_id);
+      const parent = cats.find(c => String(c.id) === String(cat.parent_id));
       return {
         category: parent ? parent.title : cat.title,
         subcategory: parent ? cat.title : '-',
@@ -84,7 +86,9 @@ export default function ExportInventoryButton({ categories, allStores, selectedC
         const variationsCount = group.variations.length;
         
         group.variations.forEach((v, vIdx) => {
-          const { category, subcategory } = getCategoryPaths(v.category_id, categories);
+          const paths = getCategoryPaths(v.category_id, categories);
+          const category = v.category_name || paths.category;
+          const subcategory = v.subcategory_name || paths.subcategory;
           
           // Enhanced Variation Suffix Logic (Fallback to name diff)
           const suffix = v.variation_suffix || 

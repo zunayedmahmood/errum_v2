@@ -12,6 +12,7 @@ import categoryService from '@/services/categoryService';
 import productImageService from '@/services/productImageService';
 import defectiveProductService, { type DefectiveProduct } from '@/services/defectiveProductService';
 import ExportInventoryButton from '@/components/inventory/ExportInventoryButton';
+import CategoryTreeSelector from '@/components/product/CategoryTreeSelector';
 
 interface Category {
   id: number;
@@ -24,6 +25,8 @@ interface Category {
 interface ProductVariation {
   productId: number;
   category_id?: number;
+  category_name?: string;
+  subcategory_name?: string;
   variation_suffix?: string;
   quantity: number;
   availableQuantity: number;
@@ -490,6 +493,8 @@ function ViewInventoryPageContent() {
         g.variations.push({
           productId: item.product_id,
           category_id: item.category_id,
+          category_name: item.category_name,
+          subcategory_name: item.subcategory_name,
           variation_suffix: item.variation_suffix,
           quantity: qty,
           availableQuantity: avail,
@@ -750,20 +755,18 @@ function ViewInventoryPageContent() {
               </div>
 
               {viewMode === 'category' && (
-                <div className="flex flex-col gap-1.5 flex-1 min-w-[250px]">
-                  <label className="text-xs font-bold text-gray-500 uppercase px-1">Select Category</label>
-                  <select
-                    value={selectedCategoryId || ''}
-                    onChange={(e) => setSelectedCategoryId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full p-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
-                  >
-                    <option value="">-- All Categories --</option>
-                    {flatCategories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.parent_id ? '　' : ''}{cat.title}
-                      </option>
-                    ))}
-                  </select>
+                <div className="flex-1 min-w-[300px]">
+                  <CategoryTreeSelector
+                    categories={categories as any}
+                    selectedCategoryId={selectedCategoryId ? String(selectedCategoryId) : ''}
+                    onSelect={(id) => setSelectedCategoryId(id ? Number(id) : null)}
+                    label="Filter by Category"
+                    required={false}
+                    placeholder="-- All Categories --"
+                    showSelectedInfo={false}
+                    allowClear={true}
+                    clearText="-- All Categories --"
+                  />
                 </div>
               )}
             </div>
@@ -830,7 +833,9 @@ function ViewInventoryPageContent() {
                         {visibleProducts.map((group) => (
                           group.variations.map((variation, vIdx) => {
                             const pid = variation.productId;
-                            const { category, subcategory } = getCategoryPaths(variation.category_id, flatCategories);
+                            const paths = getCategoryPaths(variation.category_id, flatCategories);
+                            const category = variation.category_name || paths.category;
+                            const subcategory = variation.subcategory_name || paths.subcategory;
                             const suffix = variation.variation_suffix || getVariationSuffix(pid);
                             const extra = extraMap?.get(pid);
                             const rowSpan = group.variations.length;

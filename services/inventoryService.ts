@@ -15,6 +15,8 @@ export interface Store {
 export interface GlobalInventoryItem {
   product_id: number;
   category_id?: number;
+  category_name?: string;
+  subcategory_name?: string;
   product_name: string;
   base_name: string;
   variation_suffix?: string;

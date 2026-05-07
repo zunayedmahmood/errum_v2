@@ -74,7 +74,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
   
   // ✅ NEW: Store selection for where return is received
   const [stores, setStores] = useState<Store[]>([]);
-  const [receivedAtStoreId, setReceivedAtStoreId] = useState<number>(order.store.id);
+  const [receivedAtStoreId, setReceivedAtStoreId] = useState<number>(order.store?.id || 0);
 
   // Refund payment states
   const [refundCash, setRefundCash] = useState(0);
@@ -128,6 +128,9 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       // If no stores found, show warning
       if (storesData.length === 0) {
         console.warn('⚠️ No stores available');
+      } else if (receivedAtStoreId === 0) {
+        // ✅ NEW: Auto-select first store if none assigned
+        setReceivedAtStoreId(storesData[0].id);
       }
     } catch (error) {
       console.error('❌ Failed to fetch stores:', error);

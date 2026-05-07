@@ -92,7 +92,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   const [soldAtPrices, setSoldAtPrices] = useState<{ [key: number]: string }>({});
   // ✅ NEW: Store selection
   const [stores, setStores] = useState<Store[]>([]);
-  const [exchangeAtStoreId, setExchangeAtStoreId] = useState<number>(order.store.id);
+  const [exchangeAtStoreId, setExchangeAtStoreId] = useState<number>(order.store?.id || 0);
   const [inventoryWarnings, setInventoryWarnings] = useState<{ [key: number]: string }>({});
   const [isCheckingInventory, setIsCheckingInventory] = useState(false);
 
@@ -152,6 +152,9 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       
       if (storesData.length === 0) {
         console.warn('⚠️ No stores available');
+      } else if (exchangeAtStoreId === 0) {
+        // ✅ NEW: Auto-select first store if none assigned
+        setExchangeAtStoreId(storesData[0].id);
       }
     } catch (error) {
       console.error('❌ Failed to fetch stores:', error);
@@ -184,7 +187,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
         // });
 
         // Placeholder: If exchange is at a different store, show warning
-        if (exchangeAtStoreId !== order.store.id) {
+        if (order.store && exchangeAtStoreId !== order.store.id) {
           warnings[itemId] = `⚠️ Please verify inventory at ${stores.find(s => s.id === exchangeAtStoreId)?.name || 'selected store'}`;
         }
       }
@@ -517,14 +520,14 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                         {stores.map(store => (
                           <option key={store.id} value={store.id}>
                             {store.name} {store.is_warehouse ? '(Warehouse)' : '(Store)'}
-                            {store.id === order.store.id ? ' - Original Order Location' : ''}
+                            {order.store && store.id === order.store.id ? ' - Original Order Location' : ''}
                           </option>
                         ))}
                       </select>
                     )}
                     
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                      {stores.length} store(s) available • Original order location: {order.store.name}
+                      {stores.length} store(s) available • Original order location: {order.store?.name || 'Unknown'}
                     </p>
                     
                     {isCheckingInventory && (

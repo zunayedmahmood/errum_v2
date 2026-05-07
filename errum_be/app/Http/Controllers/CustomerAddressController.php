@@ -96,7 +96,7 @@ class CustomerAddressController extends Controller
                 'address_line_2' => 'nullable|string|max:255',
                 'city' => 'required|string|max:100',
                 'state' => 'required|string|max:100',
-                'postal_code' => 'required|string|max:20',
+                'postal_code' => 'nullable|string|max:20',
                 'country' => 'nullable|string|max:100',
                 'landmark' => 'nullable|string|max:255',
                 'type' => 'required|in:shipping,billing,both',
@@ -160,7 +160,7 @@ class CustomerAddressController extends Controller
                 'address_line_2' => 'nullable|string|max:255',
                 'city' => 'sometimes|required|string|max:100',
                 'state' => 'sometimes|required|string|max:100',
-                'postal_code' => 'sometimes|required|string|max:20',
+                'postal_code' => 'sometimes|nullable|string|max:20',
                 'country' => 'nullable|string|max:100',
                 'landmark' => 'nullable|string|max:255',
                 'type' => 'sometimes|required|in:shipping,billing,both',
@@ -342,7 +342,7 @@ class CustomerAddressController extends Controller
             $validator = Validator::make($request->all(), [
                 'city' => 'required|string',
                 'state' => 'required|string',
-                'postal_code' => 'required|string',
+                'postal_code' => 'nullable|string',
             ]);
 
             if ($validator->fails()) {
@@ -373,7 +373,17 @@ class CustomerAddressController extends Controller
             foreach ($deliveryAreas as $area => $codes) {
                 if (str_contains(strtolower($city), strtolower($area)) || 
                     str_contains(strtolower($state), strtolower($area))) {
-                    if (in_array($postalCode, $codes)) {
+                    
+                    // If postal code is provided, try to match it
+                    if ($postalCode) {
+                        if (in_array($postalCode, $codes)) {
+                            $isDeliveryAvailable = true;
+                            $estimatedDays = $area === 'Dhaka' ? '1-2' : '2-4';
+                            $deliveryCharge = $area === 'Dhaka' ? 60 : 120;
+                            break;
+                        }
+                    } else {
+                        // If no postal code, match based on city/state only
                         $isDeliveryAvailable = true;
                         $estimatedDays = $area === 'Dhaka' ? '1-2' : '2-4';
                         $deliveryCharge = $area === 'Dhaka' ? 60 : 120;

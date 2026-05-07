@@ -504,3 +504,21 @@ the staff can manually input the price for sold_at in the return/exchange modal 
 then, the refund, extra payment parts etc will be counted on that.
 accounting pages (observers should track this accordingly) (most likely obervers are already tracking it, simply need to change the sold at price source of truth)
 the modals need to be aware of these changes. 
+
+### ecommerce checkout Post code 
+
+there's  a input field for Post code in checkout page.
+frontend says its optional.
+but, backend still throws a  422 validation error when post code is not provided.
+
+we can change the validation logic, but  we also need to ensure database schema permits that.
+
+### pos e discount incosistency.
+we Implemented these changes in pos page.
+however, the discount per product level is still not responsing to quantity update properly. it most likely still follows unit price, instead of qty*unitprice.
+
+
+### inv cat
+ in the inventory view page,
+ there's an option for  choosing category.it should also show subcategories like most other dropdowns across the pages.
+ the excel exported is not showing the category field (all are filled with uncategorised). this needs to be solved.
