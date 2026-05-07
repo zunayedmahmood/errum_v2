@@ -8,16 +8,28 @@ import { Search as SearchIcon, X } from 'lucide-react';
 
 const HERO_IMAGE_PATH = '/e-commerce-hero.jpg';
 
-export default function HeroSection() {
+export default function HeroSection({ 
+  bgUrl: initialBgUrl, 
+  title: initialTitle,
+  showTitle = true 
+}: { 
+  bgUrl?: string;
+  title?: string;
+  showTitle?: boolean;
+}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [query, setQuery] = useState('');
-  const [bgUrl, setBgUrl] = useState<string>(HERO_IMAGE_PATH);
+  const [bgUrl, setBgUrl] = useState<string>(initialBgUrl || HERO_IMAGE_PATH);
 
   useEffect(() => {
-    setBgUrl(HERO_IMAGE_PATH);
-  }, []);
+    if (initialBgUrl) {
+      setBgUrl(initialBgUrl);
+    } else {
+      setBgUrl(HERO_IMAGE_PATH);
+    }
+  }, [initialBgUrl]);
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -50,20 +62,30 @@ export default function HeroSection() {
       </div>
 
       {/* Content */}
-      <div className="ec-container" style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '80px 20px 60px' }}>
-        <div style={{ maxWidth: '700px', width: '100%', margin: '0 auto', textAlign: 'center' }}>
-
-          {/* Search bar — moved to top of hero section (15% from top / 85% from bottom) */}
+      <div className="ec-container" style={{ 
+        position: 'relative', 
+        zIndex: 10, 
+        height: '100vh',
+        display: 'flex', 
+        flexDirection: 'column', 
+        justifyContent: 'space-between',
+        padding: '40px 20px 80px' 
+      }}>
+        {/* Top Controls: Search + Buttons */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '20px',
+          width: '100%',
+          marginTop: '20px'
+        }}>
+          {/* Search bar */}
           <form 
             onSubmit={onSubmit} 
             style={{ 
-              position: 'absolute',
-              top: '15%',
-              left: '50%',
-              transform: 'translateX(-50%)',
               width: '90%',
               maxWidth: '700px',
-              zIndex: 30,
               opacity: 0.85,
               transition: 'opacity 0.3s ease',
             }}
@@ -89,7 +111,7 @@ export default function HeroSection() {
                 style={{
                   width: '100%',
                   background: 'transparent',
-                  padding: '18px 130px 18px 56px',
+                  padding: '13.5px 130px 13.5px 56px',
                   fontSize: '16px',
                   color: '#111111',
                   fontFamily: "'Poppins', sans-serif",
@@ -132,33 +154,14 @@ export default function HeroSection() {
             </div>
           </form>
 
-
-
-          {/* Hero text */}
-          <h1 style={{
-            fontFamily: "'Poppins', sans-serif",
-            fontSize: 'clamp(32px, 6vw, 64px)',
-            fontWeight: 800,
-            color: '#ffffff',
-            lineHeight: 1.1,
-            letterSpacing: '-0.02em',
-            marginBottom: '16px',
-            textShadow: '0 2px 16px rgba(0,0,0,0.3)',
-          }}>
-            Refining the Art of <em style={{ fontStyle: 'italic', fontWeight: 400 }}>Lifestyle</em>
-          </h1>
-          <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '15px', lineHeight: 1.6, maxWidth: '520px', margin: '0 auto 36px', fontFamily: "'Poppins', sans-serif" }}>
-
-          </p>
-
-          {/* CTAs */}
+          {/* CTAs - 75% size (padding: 10.5px 24px) */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
             <Link href="/e-commerce/products" style={{
-              padding: '14px 32px',
-              background: 'rgba(17,17,17,0.85)', // Slightly opaque
+              padding: '10.5px 24px',
+              background: 'rgba(17,17,17,0.85)',
               color: '#ffffff',
               borderRadius: '4px',
-              fontSize: '12px',
+              fontSize: '11px',
               fontWeight: 700,
               fontFamily: "'Poppins', sans-serif",
               textTransform: 'uppercase',
@@ -180,12 +183,12 @@ export default function HeroSection() {
             <Link
               href="/e-commerce/categories"
               style={{
-                padding: '14px 32px',
+                padding: '10.5px 24px',
                 background: 'rgba(255,255,255,0.15)',
                 color: '#ffffff',
                 border: '1px solid rgba(255,255,255,0.6)',
                 borderRadius: '4px',
-                fontSize: '12px',
+                fontSize: '11px',
                 fontWeight: 700,
                 fontFamily: "'Poppins', sans-serif",
                 textTransform: 'uppercase',
@@ -201,6 +204,36 @@ export default function HeroSection() {
             </Link>
           </div>
         </div>
+
+        {/* Bottom Left stylish title */}
+        {showTitle && (
+          <div style={{ textAlign: 'left', maxWidth: '600px', marginLeft: '20px' }}>
+            <h1 style={{
+              fontFamily: "'Poppins', sans-serif",
+              fontSize: 'clamp(28px, 5vw, 48px)',
+              fontWeight: 200,
+              color: '#ffffff',
+              lineHeight: 1.2,
+              letterSpacing: '0.02em',
+              textShadow: '0 2px 20px rgba(0,0,0,0.4)',
+              whiteSpace: 'pre-line',
+              textTransform: 'capitalize'
+            }}>
+              {initialTitle?.split('\n').map((line, i) => (
+                <React.Fragment key={i}>
+                  {i === 1 ? <span style={{ fontStyle: 'italic', marginLeft: '40px', display: 'inline-block' }}>{line}</span> : line}
+                  {i < initialTitle.split('\n').length - 1 && '\n'}
+                </React.Fragment>
+              ))}
+              {!initialTitle && (
+                <>
+                  Refining the Art of<br />
+                  <span style={{ fontStyle: 'italic', marginLeft: '40px' }}>Lifestyle</span>
+                </>
+              )}
+            </h1>
+          </div>
+        )}
       </div>
     </section>
   );

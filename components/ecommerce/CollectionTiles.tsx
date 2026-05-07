@@ -12,6 +12,10 @@ interface Collection {
   href: string;
 }
 
+interface CollectionTilesProps {
+  collections?: Collection[];
+}
+
 const FEATURED_COLLECTIONS: Collection[] = [
   {
     id: 'sneakers',
@@ -71,15 +75,13 @@ const FEATURED_COLLECTIONS: Collection[] = [
   },
 ];
 
-interface CollectionTilesProps {
-  categories?: CatalogCategory[];
-}
-
-export default function CollectionTiles({ categories }: CollectionTilesProps) {
+export default function CollectionTiles({ collections }: CollectionTilesProps) {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   // Use the pre-selected featured collections
-  const displayCollections = FEATURED_COLLECTIONS;
+  const displayCollections = collections && collections.length > 0 ? collections : FEATURED_COLLECTIONS;
+
+  if (!displayCollections || displayCollections.length === 0) return null;
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const x = (e.clientX / window.innerWidth - 0.5) * 20;

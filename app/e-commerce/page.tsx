@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Navigation from '@/components/ecommerce/Navigation';
 import HeroSection from '@/components/ecommerce/HeroSection';
 import dynamic from 'next/dynamic';
+import AnnouncementTicker from '@/components/ecommerce/AnnouncementTicker';
 
 const CollectionTiles = dynamic(() => import('@/components/ecommerce/CollectionTiles'), {
   loading: () => <div style={{ minHeight: '400px', margin: '40px 0' }} className="w-full bg-[var(--bg-surface-2)] animate-pulse rounded-2xl" />
@@ -16,6 +17,7 @@ const SubcategoryProductTabs = dynamic(() => import('@/components/ecommerce/Subc
 });
 import SectionReveal from '@/components/ecommerce/SectionReveal';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
+import settingsService, { HomepageSettings } from '@/services/settingsService';
 
 const CUSTOM_SECTIONS: Record<string, { eyebrow: string; subtitle: string; queries: string[] }> = {
   'sneakers': {
@@ -42,6 +44,7 @@ const CUSTOM_SECTIONS: Record<string, { eyebrow: string; subtitle: string; queri
 
 export default function HomePage() {
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
+  const [settings, setSettings] = useState<HomepageSettings | null>(null);
 
   useEffect(() => {
     catalogService.getCategories()
@@ -50,19 +53,32 @@ export default function HomePage() {
         setCategories(top.sort((a, b) => (b.product_count || 0) - (a.product_count || 0)));
       })
       .catch(console.error);
+      
+    settingsService.getHomepageSettings()
+      .then(setSettings)
+      .catch(console.error);
   }, []);
 
   return (
     <div className="ec-root min-h-screen" style={{ background: '#ffffff' }}>
+      {(!settings || settings.ticker.enabled) && (
+        <AnnouncementTicker phrases={settings?.ticker?.text ? [settings.ticker.text] : undefined} />
+      )}
       <Navigation />
 
       {/* 1. Hero section */}
-      <HeroSection />
+      <HeroSection 
+        bgUrl={settings?.hero?.image_url} 
+        title={settings?.hero?.title}
+        showTitle={settings?.hero?.show_title}
+      />
 
       {/* 2. Collection Tiles */}
-      <SectionReveal>
-        <CollectionTiles categories={categories} />
-      </SectionReveal>
+      {(!settings || (settings.collections && settings.collections.length > 0)) && (
+        <SectionReveal>
+          <CollectionTiles collections={settings?.collections as any} />
+        </SectionReveal>
+      )}
 
       {/* 4. New Arrivals */}
       <SectionReveal>

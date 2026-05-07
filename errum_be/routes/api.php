@@ -39,6 +39,7 @@ use App\Http\Controllers\PriceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\BusinessAnalyticsController;
 use App\Http\Controllers\StockIntelligenceController;
+use App\Http\Controllers\SettingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -155,6 +156,7 @@ Route::prefix('promotions')->group(function () {
 // ============================================
 
 Route::prefix('catalog')->group(function () {
+    Route::get('/homepage-settings', [\App\Http\Controllers\SettingController::class, 'getHomepageSettings']);
     Route::get('/products', [\App\Http\Controllers\EcommerceCatalogController::class, 'getProducts']);
     Route::get('/products/{identifier}', [\App\Http\Controllers\EcommerceCatalogController::class, 'getProduct']);
     Route::get('/categories', [\App\Http\Controllers\EcommerceCatalogController::class, 'getCategories']);
@@ -285,6 +287,11 @@ Route::middleware('auth:api')->group(function () {
 
 // Protected routes
 Route::middleware('auth:api')->group(function () {
+    Route::prefix('settings')->group(function () {
+        Route::get('/homepage', [\App\Http\Controllers\SettingController::class, 'getAdminHomepageSettings']);
+        Route::post('/homepage', [\App\Http\Controllers\SettingController::class, 'updateHomepageSettings']);
+    });
+
     // ============================================
     // PRE-ORDER MANAGEMENT ROUTES (ERP)
     // Manage orders with out-of-stock items

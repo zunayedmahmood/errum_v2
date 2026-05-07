@@ -22,6 +22,7 @@ import {
   Tag,
   Users,
   FileText,
+  Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -158,6 +159,13 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
       ],
     },
     { icon: CreditCard, label: 'Employee Management', href: '/employees' },
+    {
+      icon: Settings,
+      label: 'Settings',
+      subMenu: [
+        { label: 'Homepage Configuration', href: '/settings/homepage' },
+      ],
+    },
 
 
   ];

@@ -546,3 +546,24 @@ add a ticker/moving thin banner on top (matching theme of frontend) (it will scr
  when we open e-commerce/slug page, the top white space will show the catgory banner.
  the catgeory  (subcategory) name will be in middle of that (not on top) (white text).
  this will be controlled from the categories page in admin side.
+
+the new arrivals ticker will only be visible in e-commerce home page. it will not be visible anywhere else.
+
+ ### e-commerce control panel (admin side)
+we want a page in the admin side e-commerce-update page.
+
+here we can toggle on/off the new arrival ticker.
+we can change the string.
+
+in this page, we can choose the array of categoreies/subcategories and their serial for the categoreies block between home page hero section and new arrivals.
+we can have a simply selection dropdown or something like that for the categories/subcategories
+
+from this page, we can update the home page hero section image.
+this will require new backend and frontend code, endpoints etc.
+make sure api.php, frontend service files are properly implemented.
+
+### ecom hom update
+make the shop now and collections buttton 75%of current size and place below the search bar. put them all on top of the page with some padding after the ticker
+
+the Text in the Hero section "refining the Art of Lifestyle" should be customisable from settings page (and toggle on or off)
+put it in bottom center left with 2 broken lines, a bit larger to medium size front (to look stylish).
