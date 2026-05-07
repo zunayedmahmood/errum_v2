@@ -24,6 +24,7 @@ interface CategorySidebarProps {
   onSortChange?: (sort: any) => void;
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
+  searchInputRef?: React.RefObject<HTMLInputElement | null>;
   useIdForRouting?: boolean;
 }
 
@@ -47,6 +48,7 @@ export default function CategorySidebar({
   onSortChange,
   searchQuery,
   onSearchChange,
+  searchInputRef,
   useIdForRouting = false,
 }: CategorySidebarProps) {
   const router = useRouter();
@@ -124,6 +126,7 @@ export default function CategorySidebar({
           <h3 className="font-semibold text-[var(--text-primary)] mb-3" style={{ fontFamily: "'Poppins', sans-serif" }}>Search</h3>
           <div className="relative">
             <input 
+              ref={searchInputRef}
               type="text" 
               placeholder="Size, color, fabric..."
               value={searchQuery || ''}

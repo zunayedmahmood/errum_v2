@@ -217,6 +217,7 @@ export default function CategoryPage() {
 
   const [selectedSort, setSelectedSort] = useState<GetProductsParams['sort_by']>('newest');
   const [searchQuery, setSearchQuery] = useState('');
+  const [localSearchInput, setLocalSearchInput] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
@@ -234,6 +235,24 @@ export default function CategoryPage() {
   const [selectedPriceRange, setSelectedPriceRange] = useState<string>('all');
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
   const fetchProductsIdRef = useRef(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localSearchInput !== searchQuery) {
+        setSearchQuery(localSearchInput);
+      }
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [localSearchInput, searchQuery]);
+
+  // Restore focus if it was lost during navigation
+  useEffect(() => {
+    if (document.activeElement !== searchInputRef.current && localSearchInput === searchQuery && localSearchInput !== '') {
+      searchInputRef.current?.focus();
+    }
+  }, [searchQuery]);
 
   type CacheEntry = {
     key: string;
@@ -575,8 +594,9 @@ export default function CategoryPage() {
                 onStockChange={() => { }}
                 selectedSort={selectedSort}
                 onSortChange={setSelectedSort}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
+                searchQuery={localSearchInput}
+                onSearchChange={setLocalSearchInput}
+                searchInputRef={searchInputRef}
               />
             </aside>
 
@@ -717,8 +737,9 @@ export default function CategoryPage() {
                 onStockChange={() => { }}
                 selectedSort={selectedSort}
                 onSortChange={setSelectedSort}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
+                searchQuery={localSearchInput}
+                onSearchChange={setLocalSearchInput}
+                searchInputRef={searchInputRef}
               />
             </div>
 

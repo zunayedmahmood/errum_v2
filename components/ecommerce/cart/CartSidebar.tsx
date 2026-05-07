@@ -66,7 +66,7 @@ export default function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 100,
+            zIndex: 100000,
             background: 'rgba(0,0,0,0.35)',
             backdropFilter: 'blur(2px)',
           }}
@@ -82,7 +82,7 @@ export default function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
           right: 0,
           top: 0,
           bottom: 0,
-          zIndex: 101,
+          zIndex: 100001,
           width: '100%',
           maxWidth: '380px',
           background: '#ffffff',

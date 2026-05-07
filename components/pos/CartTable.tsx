@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
 import { Trash2, Plus, Minus } from 'lucide-react';
 
 export interface CartItem {
@@ -10,8 +11,10 @@ export interface CartItem {
   batchNumber: string;
   qty: number;
   price: number;
-  discount: number;
-  amount: number;
+  discount: number; // Computed absolute discount amount for the line
+  discountType: 'fixed' | 'percentage'; // Type of discount applied
+  discountValue: number; // The raw input value (e.g., 10 for 10% or 50 for ৳50)
+  amount: number; // Final amount after discount
   availableQty: number;
   barcode?: string;
 }
@@ -20,9 +23,88 @@ interface CartTableProps {
   items: CartItem[];
   onRemoveItem: (id: number) => void;
   onUpdateQuantity: (id: number, newQty: number) => void;
-  onUpdateDiscount: (id: number, discountValue: number) => void;
+  onUpdateDiscount: (id: number, discountValue: number, discountType: 'fixed' | 'percentage') => void;
   darkMode: boolean;
   vatRate?: number; // VAT percentage to calculate per-product tax
+}
+
+/**
+ * Sub-component for handling product-level discount inputs with debounce.
+ */
+function DiscountInput({
+  item,
+  onUpdateDiscount
+}: {
+  item: CartItem;
+  onUpdateDiscount: CartTableProps['onUpdateDiscount'];
+}) {
+  const [localPercent, setLocalPercent] = useState<string>(
+    item.discountType === 'percentage' && item.discountValue > 0 ? item.discountValue.toString() : ''
+  );
+  const [localAmount, setLocalAmount] = useState<string>(
+    item.discountType === 'fixed' && item.discountValue > 0 ? item.discountValue.toString() : ''
+  );
+
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Synchronize local state with item state (e.g. when item is removed/added or quantity changes might affect it)
+  useEffect(() => {
+    if (item.discountType === 'percentage') {
+      setLocalPercent(item.discountValue > 0 ? item.discountValue.toString() : '');
+      setLocalAmount('');
+    } else {
+      setLocalAmount(item.discountValue > 0 ? item.discountValue.toString() : '');
+      setLocalPercent('');
+    }
+  }, [item.id, item.discountType, item.discountValue]);
+
+  const handleUpdate = (value: number, type: 'fixed' | 'percentage') => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+
+    debounceTimer.current = setTimeout(() => {
+      onUpdateDiscount(item.id, value, type);
+    }, 300);
+  };
+
+  return (
+    <div className="flex flex-col gap-1 items-center">
+      {/* Discount Percentage */}
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          placeholder="%"
+          value={localPercent}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLocalPercent(val);
+            setLocalAmount(''); // Clear the other field
+            const numVal = parseFloat(val) || 0;
+            handleUpdate(numVal, 'percentage');
+          }}
+          className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
+        />
+        <span className="text-xs text-gray-500 dark:text-gray-400">%</span>
+      </div>
+
+      {/* Discount Amount */}
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-gray-500 dark:text-gray-400">৳</span>
+        <input
+          type="number"
+          placeholder="0"
+          value={localAmount}
+          onChange={(e) => {
+            const val = e.target.value;
+            setLocalAmount(val);
+            setLocalPercent(''); // Clear the other field
+            const numVal = parseFloat(val) || 0;
+            handleUpdate(numVal, 'fixed');
+          }}
+          className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
+        />
+      </div>
+    </div>
+  );
 }
 
 export default function CartTable({
@@ -55,33 +137,6 @@ export default function CartTable({
    */
   const getItemTotalWithVAT = (item: CartItem): number => {
     return item.amount + calculateItemVAT(item);
-  };
-
-  /**
-   * Handle discount percentage input
-   */
-  const handleDiscountPercentChange = (item: CartItem, percent: number) => {
-    const baseAmount = item.price * item.qty;
-    const discountValue = (baseAmount * percent) / 100;
-    onUpdateDiscount(item.id, discountValue);
-  };
-
-  /**
-   * Handle discount amount input
-   */
-  const handleDiscountAmountChange = (item: CartItem, amount: number) => {
-    const baseAmount = item.price * item.qty;
-    const discountValue = Math.min(amount, baseAmount); // Can't discount more than total
-    onUpdateDiscount(item.id, discountValue);
-  };
-
-  /**
-   * Calculate discount percentage for display
-   */
-  const getDiscountPercent = (item: CartItem): number => {
-    if (item.discount === 0) return 0;
-    const baseAmount = item.price * item.qty;
-    return (item.discount / baseAmount) * 100;
   };
 
   if (items.length === 0) {
@@ -216,57 +271,10 @@ export default function CartTable({
 
                 {/* Discount Inputs */}
                 <td className="px-4 py-3">
-                  <div className="flex flex-col gap-1 items-center">
-                    {/* Discount Percentage */}
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="number"
-                        placeholder="%"
-                        defaultValue={getDiscountPercent(item) > 0 ? getDiscountPercent(item).toFixed(1) : ''}
-                        onBlur={(e) => {
-                          const percent = parseFloat(e.target.value) || 0;
-                          if (percent >= 0) {
-                            handleDiscountPercentChange(item, percent);
-                          }
-                        }}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter') {
-                            const percent = parseFloat((e.target as HTMLInputElement).value) || 0;
-                            if (percent >= 0) {
-                              handleDiscountPercentChange(item, percent);
-                            }
-                          }
-                        }}
-                        className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
-                      />
-                      <span className="text-xs text-gray-500 dark:text-gray-400">%</span>
-                    </div>
-
-                    {/* Discount Amount */}
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-gray-500 dark:text-gray-400">৳</span>
-                      <input
-                        type="number"
-                        placeholder="0"
-                        defaultValue={item.discount > 0 ? item.discount.toFixed(2) : ''}
-                        onBlur={(e) => {
-                          const amount = parseFloat(e.target.value) || 0;
-                          if (amount >= 0) {
-                            handleDiscountAmountChange(item, amount);
-                          }
-                        }}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter') {
-                            const amount = parseFloat((e.target as HTMLInputElement).value) || 0;
-                            if (amount >= 0) {
-                              handleDiscountAmountChange(item, amount);
-                            }
-                          }
-                        }}
-                        className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
-                      />
-                    </div>
-                  </div>
+                  <DiscountInput
+                    item={item}
+                    onUpdateDiscount={onUpdateDiscount}
+                  />
                 </td>
 
                 {/* Total Amount (Before VAT) */}
@@ -321,23 +329,32 @@ export default function CartTable({
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Subtotal ({items.length} {items.length === 1 ? 'item' : 'items'})
+              Gross Subtotal
             </span>
-            <span className="text-base font-semibold text-gray-900 dark:text-white">
-              ৳{items.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}
+            <span className="text-sm text-gray-900 dark:text-white">
+              ৳{items.reduce((sum, item) => sum + (item.price * item.qty), 0).toFixed(2)}
             </span>
           </div>
 
           {items.some(item => item.discount > 0) && (
             <div className="flex justify-between items-center">
               <span className="text-xs text-green-600 dark:text-green-400">
-                Total Savings
+                Total Line Discounts
               </span>
               <span className="text-sm font-medium text-green-600 dark:text-green-400">
                 -৳{items.reduce((sum, item) => sum + item.discount, 0).toFixed(2)}
               </span>
             </div>
           )}
+
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Net Subtotal
+            </span>
+            <span className="text-base font-semibold text-gray-900 dark:text-white">
+              ৳{items.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}
+            </span>
+          </div>
 
           {vatRate > 0 && (
             <div className="flex justify-between items-center">

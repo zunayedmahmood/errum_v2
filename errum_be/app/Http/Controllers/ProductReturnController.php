@@ -132,6 +132,8 @@ class ProductReturnController extends Controller
             'items' => 'required|array|min:1',
             'items.*.order_item_id' => 'required|exists:order_items,id',
             'items.*.quantity' => 'required|integer|min:1',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
+            'items.*.total_price' => 'nullable|numeric|min:0',
             'items.*.reason' => 'nullable|string',
             'customer_notes' => 'nullable|string',
         ]);
@@ -169,7 +171,8 @@ class ProductReturnController extends Controller
                     throw new \Exception("Unable to identify sold barcode units for {$orderItem->product_name}.");
                 }
 
-                $itemReturnValue = $item['quantity'] * $orderItem->unit_price;
+                $unitPrice = isset($item['unit_price']) ? (float) $item['unit_price'] : $orderItem->unit_price;
+                $itemReturnValue = isset($item['total_price']) ? (float) $item['total_price'] : ($item['quantity'] * $unitPrice);
                 $totalReturnValue += $itemReturnValue;
 
                 $returnItems[] = [
@@ -178,7 +181,7 @@ class ProductReturnController extends Controller
                     'product_batch_id' => $orderItem->product_batch_id,
                     'product_name' => $orderItem->product_name,
                     'quantity' => $item['quantity'],
-                    'unit_price' => $orderItem->unit_price,
+                    'unit_price' => $unitPrice,
                     'total_price' => $itemReturnValue,
                     'reason' => $item['reason'] ?? null,
                     'returned_barcode_ids' => $returnableBarcodes->pluck('id')->values()->all(),
@@ -254,6 +257,8 @@ class ProductReturnController extends Controller
             'items' => 'required|array|min:1',
             'items.*.order_item_id' => 'required|exists:order_items,id',
             'items.*.quantity' => 'required|integer|min:1',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
+            'items.*.total_price' => 'nullable|numeric|min:0',
             'items.*.reason' => 'nullable|string',
             'customer_notes' => 'nullable|string',
             'attachments' => 'nullable|array',
@@ -302,7 +307,8 @@ class ProductReturnController extends Controller
                     throw new \Exception("Unable to identify {$item['quantity']} sold barcode unit(s) for {$orderItem->product_name}. Return requires sold barcode tracking.");
                 }
 
-                $itemReturnValue = $item['quantity'] * $orderItem->unit_price;
+                $unitPrice = isset($item['unit_price']) ? (float) $item['unit_price'] : $orderItem->unit_price;
+                $itemReturnValue = isset($item['total_price']) ? (float) $item['total_price'] : ($item['quantity'] * $unitPrice);
                 $totalReturnValue += $itemReturnValue;
 
                 $returnItems[] = [
@@ -311,7 +317,7 @@ class ProductReturnController extends Controller
                     'product_batch_id' => $orderItem->product_batch_id,
                     'product_name' => $orderItem->product_name,
                     'quantity' => $item['quantity'],
-                    'unit_price' => $orderItem->unit_price,
+                    'unit_price' => $unitPrice,
                     'total_price' => $itemReturnValue,
                     'reason' => $item['reason'] ?? null,
                     'returned_barcode_ids' => $returnableBarcodes->pluck('id')->values()->all(),

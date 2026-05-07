@@ -26,7 +26,6 @@ const Navbar = () => {
   const router = useRouter();
   const pathname = usePathname();
   const { customer, isAuthenticated, logout } = useCustomerAuth();
-  const { setIsCartOpen } = useCart();
 
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [cartCount, setCartCount] = useState(0);
@@ -39,7 +38,7 @@ const Navbar = () => {
 
   const userRef = useRef<HTMLDivElement>(null);
   const catsRef = useRef<HTMLDivElement>(null);
-  const { isCartOpen } = useCart();
+  const { isCartOpen, setIsCartOpen } = useCart();
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isCategorySidebarOpen, setIsCategorySidebarOpen] = useState(false);
 

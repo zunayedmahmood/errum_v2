@@ -43,6 +43,8 @@ interface ReturnProductModalProps {
     selectedProducts: Array<{ 
       order_item_id: number; 
       quantity: number;
+      unit_price: number;
+      total_price: number;
       product_barcode_id?: number;
     }>;
     refundMethods: {
@@ -63,6 +65,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [returnedQuantities, setReturnedQuantities] = useState<{ [key: number]: number }>({});
   const [isProcessing, setIsProcessing] = useState(false);
+  const [soldAtPrices, setSoldAtPrices] = useState<{ [key: number]: string }>({});
   
   // Return info
   const [returnReason, setReturnReason] = useState<ReturnReason>('other');
@@ -171,6 +174,10 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     setReturnedQuantities(prev => ({ ...prev, [productId]: qty }));
   };
 
+  const handleSoldAtChange = (productId: number, price: string) => {
+    setSoldAtPrices(prev => ({ ...prev, [productId]: price }));
+  };
+
   const parseFloatValue = (value: any) => {
     if (value == null) return 0;
     const n = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
@@ -191,7 +198,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       const product = order.items.find(p => p.id === productId);
       if (!product) return sum;
       const qty = returnedQuantities[productId] || 0;
-      const price = parseFloatValue(product.unit_price);
+      const price = parseFloatValue(soldAtPrices[productId] || 0);
       return sum + (price * qty);
     }, 0);
 
@@ -233,6 +240,16 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       return;
     }
 
+    const hasMissingPrices = selectedProducts.some(id => {
+      const price = soldAtPrices[id];
+      return !price || parseFloat(price) < 0;
+    });
+
+    if (hasMissingPrices) {
+      alert('Please enter the manual "Sold At" price for all selected items as per the physical invoice or historical record.');
+      return;
+    }
+
     let confirmMessage = `Process return?\n\n`;
     confirmMessage += `Return Reason: ${returnReasonOptions.find(r => r.value === returnReason)?.label}\n`;
     confirmMessage += `Return Type: ${returnTypeOptions.find(t => t.value === returnType)?.label}\n`;
@@ -254,9 +271,13 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     try {
       const selectedProductsWithBarcodes = selectedProducts.map(id => {
         const product = order.items.find(p => p.id === id);
+        const unitPrice = parseFloatValue(soldAtPrices[id]);
+        const quantity = returnedQuantities[id];
         return {
           order_item_id: id,
-          quantity: returnedQuantities[id],
+          quantity: quantity,
+          unit_price: unitPrice,
+          total_price: unitPrice * quantity,
           product_barcode_id: product?.barcode_id,
         };
       });
@@ -462,6 +483,22 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                       className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 outline-none"
                                       placeholder="Enter qty"
                                     />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Manual Sold At Price (REQUIRED) *</label>
+                                    <div className="relative">
+                                      <span className="absolute left-3 top-2 text-gray-400 text-sm">৳</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={soldAtPrices[product.id] || ''}
+                                        onChange={(e) => handleSoldAtChange(product.id, e.target.value)}
+                                        className="w-full pl-7 pr-3 py-2 text-sm border-2 border-orange-200 dark:border-orange-900/50 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none font-bold"
+                                        placeholder="0.00"
+                                      />
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 mt-1 italic">Check the original paper invoice or purchase history</p>
                                   </div>
                                 </div>
                               </div>

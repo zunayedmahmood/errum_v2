@@ -80,6 +80,31 @@ export interface ExtendedCartItem extends CartItem {
   serviceCategory?: string; // NEW: Service category
 }
 
+// ✅ Helper to calculate item totals consistently
+const calculateItemLineTotals = (
+  price: number,
+  qty: number,
+  discountValue: number,
+  discountType: 'fixed' | 'percentage'
+) => {
+  const baseAmount = price * qty;
+  let computedDiscount = 0;
+
+  if (discountType === 'percentage') {
+    computedDiscount = (baseAmount * discountValue) / 100;
+  } else {
+    computedDiscount = discountValue;
+  }
+
+  // Ensure discount doesn't exceed base amount
+  computedDiscount = Math.min(computedDiscount, baseAmount);
+
+  return {
+    discount: computedDiscount,
+    amount: baseAmount - computedDiscount,
+  };
+};
+
 export default function POSPage() {
   const { user, role, scopedStoreId, canSelectStore, canAccessDailyCashReport } = useAuth();
   // UI State
@@ -382,6 +407,8 @@ export default function POSPage() {
       qty: 1,
       price: scannedProduct.price,
       discount: 0,
+      discountType: 'fixed',
+      discountValue: 0,
       amount: scannedProduct.price,
       availableQty: scannedProduct.availableQty,
       barcode: scannedProduct.barcode,
@@ -410,9 +437,15 @@ export default function POSPage() {
       return;
     }
 
-    const baseAmount = sellingPrice * quantity;
-    const discountValue =
-      discountPercent > 0 ? (baseAmount * discountPercent) / 100 : discountAmount;
+    const discountType = discountPercent > 0 ? 'percentage' : 'fixed';
+    const discountVal = discountPercent > 0 ? discountPercent : discountAmount;
+
+    const { discount, amount } = calculateItemLineTotals(
+      sellingPrice,
+      quantity,
+      discountVal,
+      discountType
+    );
 
     const newItem: ExtendedCartItem = {
       id: Date.now() + Math.random(),
@@ -422,8 +455,10 @@ export default function POSPage() {
       batchNumber: selectedBatch.batch_number,
       qty: quantity,
       price: sellingPrice,
-      discount: discountValue,
-      amount: baseAmount - discountValue,
+      discount: discount,
+      discountType: discountType,
+      discountValue: discountVal,
+      amount: amount,
       availableQty: selectedBatch.quantity,
       barcode: undefined,
     };
@@ -466,16 +501,18 @@ export default function POSPage() {
           }
 
           if (newQty <= item.availableQty) {
-            const baseAmount = item.price * newQty;
-            const discountValue =
-              item.discount > 0
-                ? baseAmount * (item.discount / (item.price * item.qty))
-                : 0;
+            const { discount, amount } = calculateItemLineTotals(
+              item.price,
+              newQty,
+              item.discountValue || 0,
+              item.discountType || 'fixed'
+            );
 
             return {
               ...item,
               qty: newQty,
-              amount: baseAmount - discountValue,
+              discount: discount,
+              amount: amount,
             };
           }
         }
@@ -487,17 +524,23 @@ export default function POSPage() {
   /**
    * ✅ NEW: Update item discount in cart
    */
-  const updateCartItemDiscount = (id: number, discountValue: number) => {
+  const updateCartItemDiscount = (id: number, discountValue: number, discountType: 'fixed' | 'percentage') => {
     setCart((prev) =>
       prev.map((item) => {
         if (item.id === id) {
-          const baseAmount = item.price * item.qty;
-          const newDiscount = Math.min(discountValue, baseAmount); // Can't discount more than total
+          const { discount, amount } = calculateItemLineTotals(
+            item.price,
+            item.qty,
+            discountValue,
+            discountType
+          );
 
           return {
             ...item,
-            discount: newDiscount,
-            amount: baseAmount - newDiscount,
+            discount: discount,
+            discountType: discountType,
+            discountValue: discountValue,
+            amount: amount,
           };
         }
         return item;

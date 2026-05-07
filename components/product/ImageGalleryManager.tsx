@@ -45,6 +45,7 @@ export default function ImageGalleryManager({
   
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [reordering, setReordering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingImages, setIsLoadingImages] = useState(false);
 
@@ -358,6 +359,7 @@ export default function ImageGalleryManager({
     // If uploaded, sync with server
     if (productId && reorderedImages.some((img) => img.uploaded)) {
       try {
+        setReordering(true);
         const imageOrders = reorderedImages
           .filter((img) => img.id)
           .map((img) => ({
@@ -368,6 +370,8 @@ export default function ImageGalleryManager({
         await productImageService.reorderImages(productId, imageOrders);
       } catch (err: any) {
         setError(err.message || 'Failed to reorder images');
+      } finally {
+        setReordering(false);
       }
     }
 
@@ -496,14 +500,12 @@ export default function ImageGalleryManager({
                   </div>
                 )}
 
-                {/* Uploading Overlay */}
-                {/* 
-                  Only show spinner if it's explicitly not uploaded AND we are currently 
-                  in an uploading state (to avoid spinners on local previews in Add mode)
-                */}
-                {!image.uploaded && uploading && (
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 text-white animate-spin" />
+                {/* Uploading/Reordering Overlay */}
+                {((!image.uploaded && uploading) || reordering) && (
+                  <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center z-20">
+                    <div className="bg-white/20 p-2 rounded-full backdrop-blur-md">
+                      <Loader2 className="w-6 h-6 text-white animate-spin" />
+                    </div>
                   </div>
                 )}
 

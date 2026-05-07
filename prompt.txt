@@ -483,3 +483,24 @@ this issue was never reproducible on request.
 i want you to act as a professional software engineer and codebase debugger.
 identify any edge case that you find. if you find some issue you are confident that may have caused this, fix it.
 otherwise, if you find no evident issue, simply say no issues found and this may have been some net problem or something.
+
+### pos pg product unit level discount 
+
+in the POS page, there's product discount option that allows discount on that product.
+it can be given a fixed amount or a percentage. make it behave as such:
+if an input is given in one of them, after a debounce of 300ms, clear the other.
+if percentage is given, it should apply to the subtotal of that product, (we are seeing a stale state where a 10% discount was applied when 1 qty was selected, and discount was let's say 230tk. then we increased the qty and it shouldbe let's say460. but, it stays at 230) 
+the subtotal, discount and total price calculation in the whole order  from POS page should be calculated properly.
+
+
+### return exchange price.
+
+in lookup page, when we find a order and try to return/exchange it,
+->the product price is used (most likely as the current price).
+->for orders were the product was sold at a discount, we are still shown the full price.
+->we want a simple fix to this:
+in lookup for order, we should be shown product level subtotal, discount etc (most likely stored since purchase history page and orders page aptly show discounts given).
+the staff can manually input the price for sold_at in the return/exchange modal and that will be taken as the source of truth.  
+then, the refund, extra payment parts etc will be counted on that.
+accounting pages (observers should track this accordingly) (most likely obervers are already tracking it, simply need to change the sold at price source of truth)
+the modals need to be aware of these changes. 

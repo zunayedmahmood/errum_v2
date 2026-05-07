@@ -46,6 +46,8 @@ interface ExchangeProductModalProps {
     removedProducts: Array<{
       order_item_id: number;
       quantity: number;
+      unit_price: number;
+      total_price: number;
       product_barcode_id?: number;
     }>;
     replacementProducts: Array<{
@@ -87,7 +89,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   const [exchangeQuantities, setExchangeQuantities] = useState<{ [key: number]: number }>({});
   const [replacementProducts, setReplacementProducts] = useState<ReplacementProduct[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-
+  const [soldAtPrices, setSoldAtPrices] = useState<{ [key: number]: string }>({});
   // ✅ NEW: Store selection
   const [stores, setStores] = useState<Store[]>([]);
   const [exchangeAtStoreId, setExchangeAtStoreId] = useState<number>(order.store.id);
@@ -233,6 +235,10 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     setExchangeQuantities(prev => ({ ...prev, [itemId]: qty }));
   };
 
+  const handleSoldAtChange = (itemId: number, price: string) => {
+    setSoldAtPrices(prev => ({ ...prev, [itemId]: price }));
+  };
+
   const handleRemoveReplacement = (id: number | string) => {
     setReplacementProducts(prev => prev.filter(p => p.id !== id));
   };
@@ -273,7 +279,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       const item = order.items.find(i => i.id === itemId);
       if (!item) return sum;
       const qty = exchangeQuantities[itemId] || 0;
-      const price = parsePrice(item.unit_price);
+      const price = parsePrice(soldAtPrices[itemId] || 0);
       return sum + (price * qty);
     }, 0);
 
@@ -335,6 +341,16 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       return;
     }
 
+    const hasMissingPrices = selectedProducts.some(id => {
+      const price = soldAtPrices[id];
+      return !price || parseFloat(price) < 0;
+    });
+
+    if (hasMissingPrices) {
+      alert('Please enter the manual "Sold At" price for all items being exchanged as per the historical record.');
+      return;
+    }
+
     // ✅ NEW: Check for inventory warnings
     const hasWarnings = Object.keys(inventoryWarnings).length > 0;
     if (hasWarnings) {
@@ -377,9 +393,13 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       const exchangeData = {
         removedProducts: selectedProducts.map(itemId => {
           const item = order.items.find(i => i.id === itemId);
+          const unitPrice = parsePrice(soldAtPrices[itemId]);
+          const quantity = exchangeQuantities[itemId];
           return {
             order_item_id: itemId,
-            quantity: exchangeQuantities[itemId],
+            quantity: quantity,
+            unit_price: unitPrice,
+            total_price: unitPrice * quantity,
             product_barcode_id: item?.barcode_id,
           };
         }),
@@ -615,6 +635,24 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                         className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                                         placeholder="Enter qty"
                                       />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">
+                                        Manual Sold At Price (REQUIRED) *
+                                      </label>
+                                      <div className="relative">
+                                        <span className="absolute left-3 top-2 text-gray-400 text-sm">৳</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={soldAtPrices[item.id] || ''}
+                                          onChange={(e) => handleSoldAtChange(item.id, e.target.value)}
+                                          className="w-full pl-7 pr-3 py-2 text-sm border-2 border-orange-200 dark:border-orange-900/50 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none font-bold"
+                                          placeholder="0.00"
+                                        />
+                                      </div>
+                                      <p className="text-[10px] text-gray-500 mt-1 italic">Verify with original invoice/history</p>
                                     </div>
                                   </div>
                                 </div>

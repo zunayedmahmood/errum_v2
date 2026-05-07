@@ -51,6 +51,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
   const [categories, setCategories] = useState<any[]>([]);
   const fetchIdRef = useRef(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [openCategoryId, setOpenCategoryId] = useState<number | string | null>(null);
   
   // Notify navigation about sidebar state
@@ -113,18 +114,25 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
       params.delete('page');
     }
 
-    router.push(`/e-commerce/search?${params.toString()}`);
+    router.push(`/e-commerce/search?${params.toString()}`, { scroll: false });
   }, [searchParams, router]);
 
-  // Debounced search effect (500ms)
+  // Debounced search effect (1200ms)
   useEffect(() => {
     const timer = setTimeout(() => {
       if (searchInput !== query) {
         updateURL({ q: searchInput || null });
       }
-    }, 500);
+    }, 1200);
     return () => clearTimeout(timer);
   }, [searchInput, updateURL, query]);
+
+  // Restore focus if it was lost during navigation
+  useEffect(() => {
+    if (document.activeElement !== searchInputRef.current && searchInput === query && searchInput !== '') {
+      searchInputRef.current?.focus();
+    }
+  }, [query]);
 
   // Synchronize local search input if URL query changes (e.g., back button or initial load)
   useEffect(() => {
@@ -289,6 +297,7 @@ export default function SearchClient({ initialQuery = '' }: { initialQuery?: str
           <div className="max-w-2xl mx-auto relative group">
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[var(--text-muted)] group-focus-within:text-[var(--cyan)] transition-colors" />
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Search by name, SKU, or category..."
               value={searchInput}

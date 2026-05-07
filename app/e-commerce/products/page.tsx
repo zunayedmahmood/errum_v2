@@ -69,6 +69,7 @@ function ProductsPageContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [isClosingFilters, setIsClosingFilters] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Notify navigation about mobile sidebar state
   useEffect(() => {
@@ -94,7 +95,7 @@ function ProductsPageContent() {
       params.delete('page');
     }
 
-    router.push(`/e-commerce/products?${params.toString()}`);
+    router.push(`/e-commerce/products?${params.toString()}`, { scroll: false });
   }, [searchParams, router]);
 
   // Debounce search input
@@ -103,9 +104,18 @@ function ProductsPageContent() {
       if (searchInput !== query) {
         updateURL({ search: searchInput || null });
       }
-    }, 500);
+    }, 1200);
     return () => clearTimeout(timer);
   }, [searchInput, updateURL, query]);
+
+  // Restore focus if it was lost during navigation
+  useEffect(() => {
+    if (document.activeElement !== searchInputRef.current && searchInput === query && searchInput !== '') {
+      // Only restore if we are not typing and the input matches the query
+      // This is a bit tricky, but usually focus is lost during the Suspense/Loading transition
+      searchInputRef.current?.focus();
+    }
+  }, [query]);
 
   // --- Effects ---
   useEffect(() => {
@@ -290,6 +300,7 @@ function ProductsPageContent() {
               <form onSubmit={handleSearchSubmit} className="relative group">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)] group-focus-within:text-[var(--cyan)] transition-colors" />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   placeholder="Find anything..."
                   value={searchInput}

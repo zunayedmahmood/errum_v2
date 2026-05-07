@@ -1828,6 +1828,8 @@ export default function LookupPage() {
         items: returnData.selectedProducts.map((item: any) => ({
           order_item_id: item.order_item_id,
           quantity: item.quantity,
+          unit_price: item.unit_price,
+          total_price: item.total_price,
           product_barcode_id: item.product_barcode_id,
         })),
         customer_notes: returnData.customerNotes || 'Initiated from lookup page',
@@ -1886,14 +1888,13 @@ export default function LookupPage() {
         customer_id: selectedOrderForAction.customer?.id,
         removedProducts: exchangeData.removedProducts.map((item: any) => {
           const originalItem = selectedOrderForAction.items.find((i: any) => i.id === item.order_item_id);
-          const unitPrice = parseFloat(originalItem?.unit_price || '0');
           return {
             order_item_id: item.order_item_id,
             product_id: originalItem?.product_id,
             product_batch_id: originalItem?.product_batch_id || originalItem?.batch_id,
             quantity: item.quantity,
-            unit_price: unitPrice,
-            total_price: unitPrice * item.quantity,
+            unit_price: item.unit_price,
+            total_price: item.total_price,
             product_barcode_id: item.product_barcode_id,
             return_reason: 'other', // Default reason
             quality_check_passed: true, // Defaulting for quick exchange
