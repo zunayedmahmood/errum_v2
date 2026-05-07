@@ -24,6 +24,9 @@ export default function AddCategoryDialog({
   const [description, setDescription] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState("");
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState("");
+  const [removeBanner, setRemoveBanner] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [parentId, setParentId] = useState<number | null>(initialParentId ?? null);
   const [showParentSelector, setShowParentSelector] = useState(false);
@@ -36,12 +39,18 @@ export default function AddCategoryDialog({
       setDescription(editCategory.description || "");
       setImageFile(null);
       setImagePreview("");
+      setBannerFile(null);
+      setBannerPreview("");
+      setRemoveBanner(false);
       setParentId(initialParentId ?? null);
     } else {
       setTitle("");
       setDescription("");
       setImageFile(null);
       setImagePreview("");
+      setBannerFile(null);
+      setBannerPreview("");
+      setRemoveBanner(false);
       setParentId(initialParentId ?? null);
     }
   }, [editCategory, open, initialParentId]);
@@ -57,8 +66,11 @@ export default function AddCategoryDialog({
       if (imagePreview && imagePreview.startsWith('blob:')) {
         URL.revokeObjectURL(imagePreview);
       }
+      if (bannerPreview && bannerPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(bannerPreview);
+      }
     };
-  }, [imagePreview]);
+  }, [imagePreview, bannerPreview]);
 
   const loadCategories = async () => {
     try {
@@ -185,6 +197,16 @@ export default function AddCategoryDialog({
     setImagePreview(previewUrl);
   };
 
+  const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setBannerFile(file);
+    const previewUrl = URL.createObjectURL(file);
+    setBannerPreview(previewUrl);
+    setRemoveBanner(false);
+  };
+
   const handleSaveClick = () => {
     if (!title) {
       alert('Please fill in title');
@@ -202,6 +224,12 @@ export default function AddCategoryDialog({
     if (imageFile) {
       formData.append('image', imageFile);
     }
+    if (bannerFile) {
+      formData.append('banner', bannerFile);
+    }
+    if (removeBanner) {
+      formData.append('remove_banner', '1');
+    }
 
     onSave(formData);
 
@@ -210,6 +238,9 @@ export default function AddCategoryDialog({
     setDescription("");
     setImageFile(null);
     setImagePreview("");
+    setBannerFile(null);
+    setBannerPreview("");
+    setRemoveBanner(false);
     setParentId(null);
     setExpandedCategories(new Set());
   };
@@ -315,6 +346,48 @@ export default function AddCategoryDialog({
                 alt="Current image" 
                 className="w-full h-32 object-cover rounded border border-gray-200 dark:border-gray-700 mt-2" 
               />
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-900 dark:text-white">Category Banner</label>
+            <input 
+              type="file" 
+              accept="image/*" 
+              onChange={handleBannerUpload}
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-gray-200 dark:file:bg-gray-700 file:text-gray-700 dark:file:text-gray-300" 
+            />
+
+            {bannerPreview && bannerPreview.trim() !== '' && (
+              <div className="relative mt-2">
+                <img 
+                  src={bannerPreview} 
+                  alt="Banner Preview" 
+                  className="w-full h-32 object-cover rounded border border-gray-200 dark:border-gray-700" 
+                />
+                <button 
+                  onClick={() => { setBannerFile(null); setBannerPreview(""); }}
+                  className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {!bannerPreview && editCategory?.banner_url && !removeBanner && (
+              <div className="relative mt-2">
+                <img 
+                  src={editCategory.banner_url} 
+                  alt="Current banner" 
+                  className="w-full h-32 object-cover rounded border border-gray-200 dark:border-gray-700" 
+                />
+                <button 
+                  onClick={() => setRemoveBanner(true)}
+                  className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             )}
           </div>
         </div>

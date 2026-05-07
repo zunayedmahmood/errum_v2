@@ -66,7 +66,7 @@ export default function HomePage() {
 
       {/* 4. New Arrivals */}
       <SectionReveal>
-        <NewArrivals limit={40} />
+        <NewArrivals limit={12} />
       </SectionReveal>
 
       {/* 5. Dynamic Shop by Subcategory sections (categories wise) */}

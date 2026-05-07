@@ -522,3 +522,27 @@ however, the discount per product level is still not responsing to quantity upda
  in the inventory view page,
  there's an option for  choosing category.it should also show subcategories like most other dropdowns across the pages.
  the excel exported is not showing the category field (all are filled with uncategorised). this needs to be solved.
+
+
+### ecom home page updates.
+update the search bar. it should be on top of the hero section . like 85% height from bottom and in the center. make it initially slightly opaque.
+remove the category buttons from the hero section.
+the shop now and collections button stay where they are. 
+the shop now button will be slightly opaque.
+
+add a ticker/moving thin banner on top (matching theme of frontend) (it will scroll from right to left) 
+(it will display an array of string. make it like this so that we can update the array of string to display 1-n phrases) 
+
+ ### new arrivals 
+ reduce the new arrivals down to 12 products. (currently it shows a large number of products).
+ update the categories section in home page (between hero and new arrivals) to also show subcats. it will have a array of pre-selected ones). we can change the harcoded array to change which cat/subcat will be displayed.
+ we'll select 8 cat/subcat in total (exact 8). 4x2 in desktop and 2x4 in mobile.
+
+ ### 
+ we want this feature in categories (and subcatergories).
+ currently, they only have thumbnail images. from now on, they'll have 2 images.
+ one for thumbnail, one of for "Category banner".
+ thumbnail will be shown where they are now .
+ when we open e-commerce/slug page, the top white space will show the catgory banner.
+ the catgeory  (subcategory) name will be in middle of that (not on top) (white text).
+ this will be controlled from the categories page in admin side.

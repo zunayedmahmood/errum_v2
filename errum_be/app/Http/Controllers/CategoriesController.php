@@ -18,6 +18,7 @@ class CategoriesController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048', // max 2MB
+            'banner' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // max 5MB
             'color' => 'nullable|string|max:7', // hex color
             'icon' => 'nullable|string|max:100',
             'order' => 'nullable|integer|min:0',
@@ -41,6 +42,14 @@ class CategoriesController extends Controller
             $imageName = time() . '_' . Str::slug($validated['title']) . '.' . $image->getClientOriginalExtension();
             $imagePath = $image->storeAs('categories', $imageName, 'public');
             $validated['image'] = $imagePath;
+        }
+
+        // Handle banner upload
+        if ($request->hasFile('banner')) {
+            $banner = $request->file('banner');
+            $bannerName = time() . '_banner_' . Str::slug($validated['title']) . '.' . $banner->getClientOriginalExtension();
+            $bannerPath = $banner->storeAs('categories/banners', $bannerName, 'public');
+            $validated['banner'] = $bannerPath;
         }
 
         // Generate slug from title if not provided
@@ -76,7 +85,9 @@ class CategoriesController extends Controller
             'title' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048', // max 2MB
+            'banner' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // max 5MB
             'remove_image' => 'nullable|boolean', // flag to remove existing image
+            'remove_banner' => 'nullable|boolean', // flag to remove existing banner
             'color' => 'nullable|string|max:7',
             'icon' => 'nullable|string|max:100',
             'order' => 'nullable|integer|min:0',
@@ -110,6 +121,14 @@ class CategoriesController extends Controller
             }
         }
 
+        // Handle banner removal
+        if ($request->has('remove_banner') && $request->remove_banner == true) {
+            if ($category->banner) {
+                \Storage::disk('public')->delete($category->banner);
+                $validated['banner'] = null;
+            }
+        }
+
         // Handle new image upload
         if ($request->hasFile('image')) {
             // Delete old image if exists
@@ -121,6 +140,19 @@ class CategoriesController extends Controller
             $imageName = time() . '_' . Str::slug($validated['title'] ?? $category->title) . '.' . $image->getClientOriginalExtension();
             $imagePath = $image->storeAs('categories', $imageName, 'public');
             $validated['image'] = $imagePath;
+        }
+
+        // Handle new banner upload
+        if ($request->hasFile('banner')) {
+            // Delete old banner if exists
+            if ($category->banner) {
+                \Storage::disk('public')->delete($category->banner);
+            }
+            
+            $banner = $request->file('banner');
+            $bannerName = time() . '_banner_' . Str::slug($validated['title'] ?? $category->title) . '.' . $banner->getClientOriginalExtension();
+            $bannerPath = $banner->storeAs('categories/banners', $bannerName, 'public');
+            $validated['banner'] = $bannerPath;
         }
 
         // Update slug if title changed

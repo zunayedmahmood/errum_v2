@@ -15,6 +15,7 @@ class Category extends Model
         'title',
         'description',
         'image',
+        'banner',
         'color',
         'icon',
         'slug',
@@ -33,6 +34,7 @@ class Category extends Model
 
     protected $appends = [
         'image_url',
+        'banner_url',
     ];
 
     // Boot method to auto-update level and path
@@ -191,6 +193,17 @@ class Category extends Model
     {
         if ($this->image) {
             return asset('storage/' . $this->image);
+        }
+        return null;
+    }
+
+    /**
+     * Get the full URL for the category banner image
+     */
+    public function getBannerUrlAttribute()
+    {
+        if ($this->banner) {
+            return asset('storage/' . $this->banner);
         }
         return null;
     }

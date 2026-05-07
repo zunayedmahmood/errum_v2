@@ -7,6 +7,7 @@ import { PromotionProvider } from '@/contexts/PromotionContext';
 import Footer from '@/components/ecommerce/Footer';
 import ScrollToTopOnRouteChange from '@/components/ecommerce/ScrollToTopOnRouteChange';
 import GlobalCartSidebar from '@/components/ecommerce/cart/GlobalCartSidebar';
+import AnnouncementTicker from '@/components/ecommerce/AnnouncementTicker';
 
 
 export default function EcommerceLayout({ children }: { children: React.ReactNode }) {
@@ -28,6 +29,9 @@ export default function EcommerceLayout({ children }: { children: React.ReactNod
             position: 'relative',
           }}
         >
+          {/* 0. Top Announcement Banner */}
+          <AnnouncementTicker />
+
           {/* All page content */}
           <div style={{ position: 'relative', zIndex: 10 }}>
             {children}

@@ -6,8 +6,6 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Search as SearchIcon, X } from 'lucide-react';
 
-import catalogService, { type CatalogCategory } from '@/services/catalogService';
-
 const HERO_IMAGE_PATH = '/e-commerce-hero.jpg';
 
 export default function HeroSection() {
@@ -16,32 +14,9 @@ export default function HeroSection() {
 
   const [query, setQuery] = useState('');
   const [bgUrl, setBgUrl] = useState<string>(HERO_IMAGE_PATH);
-  const [topCategories, setTopCategories] = useState<CatalogCategory[]>([]);
 
   useEffect(() => {
     setBgUrl(HERO_IMAGE_PATH);
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    catalogService.getCategories().then((tree) => {
-      const flat: CatalogCategory[] = [];
-      const walk = (list: CatalogCategory[]) =>
-        list.forEach((c) => {
-          flat.push(c);
-          if (c.children?.length) walk(c.children);
-        });
-      walk(tree);
-
-      const parents = flat
-        .filter((c) => (c.parent_id === null || c.parent_id === undefined) && c.name)
-        .sort((a, b) => Number(b.product_count || 0) - Number(a.product_count || 0))
-        .slice(0, 8);
-
-      if (!alive) return;
-      setTopCategories(parents);
-    }).catch(() => { });
-    return () => { alive = false; };
   }, []);
 
   const onSubmit = (e: FormEvent) => {
@@ -78,18 +53,34 @@ export default function HeroSection() {
       <div className="ec-container" style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '80px 20px 60px' }}>
         <div style={{ maxWidth: '700px', width: '100%', margin: '0 auto', textAlign: 'center' }}>
 
-          {/* Search bar — prominent at top like reference */}
-          <form onSubmit={onSubmit} style={{ marginBottom: '32px' }}>
+          {/* Search bar — moved to top of hero section (15% from top / 85% from bottom) */}
+          <form 
+            onSubmit={onSubmit} 
+            style={{ 
+              position: 'absolute',
+              top: '15%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '90%',
+              maxWidth: '700px',
+              zIndex: 30,
+              opacity: 0.85,
+              transition: 'opacity 0.3s ease',
+            }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
+          >
             <div style={{
               position: 'relative',
-              background: 'rgba(255,255,255,0.95)',
-              borderRadius: '4px',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.20)',
+              background: 'rgba(255,255,255,1)',
+              borderRadius: '8px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
               display: 'flex',
               alignItems: 'center',
               overflow: 'hidden',
+              padding: '2px',
             }}>
-              <SearchIcon style={{ position: 'absolute', left: '16px', width: '18px', height: '18px', color: '#999999', pointerEvents: 'none', flexShrink: 0 }} />
+              <SearchIcon style={{ position: 'absolute', left: '20px', width: '20px', height: '20px', color: '#999999', pointerEvents: 'none', flexShrink: 0 }} />
               <input
                 ref={inputRef}
                 value={query}
@@ -98,8 +89,8 @@ export default function HeroSection() {
                 style={{
                   width: '100%',
                   background: 'transparent',
-                  padding: '16px 120px 16px 48px',
-                  fontSize: '15px',
+                  padding: '18px 130px 18px 56px',
+                  fontSize: '16px',
                   color: '#111111',
                   fontFamily: "'Poppins', sans-serif",
                   outline: 'none',
@@ -110,9 +101,9 @@ export default function HeroSection() {
                 <button
                   type="button"
                   onClick={clear}
-                  style={{ position: 'absolute', right: '100px', padding: '8px', color: '#999999', background: 'none', border: 'none', cursor: 'pointer' }}
+                  style={{ position: 'absolute', right: '110px', padding: '8px', color: '#999999', background: 'none', border: 'none', cursor: 'pointer' }}
                 >
-                  <X style={{ width: '16px', height: '16px' }} />
+                  <X style={{ width: '18px', height: '18px' }} />
                 </button>
               )}
               <button
@@ -120,20 +111,20 @@ export default function HeroSection() {
                 disabled={!query.trim()}
                 style={{
                   position: 'absolute',
-                  right: '8px',
-                  padding: '8px 20px',
+                  right: '10px',
+                  padding: '10px 24px',
                   background: '#111111',
                   color: '#ffffff',
                   border: 'none',
-                  borderRadius: '4px',
+                  borderRadius: '6px',
                   fontSize: '12px',
                   fontWeight: 700,
                   fontFamily: "'Poppins', sans-serif",
                   textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
+                  letterSpacing: '0.1em',
                   cursor: query.trim() ? 'pointer' : 'not-allowed',
                   opacity: query.trim() ? 1 : 0.5,
-                  transition: 'opacity 0.2s',
+                  transition: 'background 0.2s',
                 }}
               >
                 Search
@@ -141,36 +132,7 @@ export default function HeroSection() {
             </div>
           </form>
 
-          {/* Quick category chips */}
-          {topCategories.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px', marginBottom: '40px' }}>
-              {topCategories.map((c) => (
-                <Link
-                  key={c.id}
-                  href={`/e-commerce/${encodeURIComponent(c.slug || c.name)}`}
-                  style={{
-                    borderRadius: '4px',
-                    padding: '6px 16px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    border: '1px solid rgba(255,255,255,0.6)',
-                    color: '#ffffff',
-                    background: 'rgba(255,255,255,0.12)',
-                    backdropFilter: 'blur(4px)',
-                    textDecoration: 'none',
-                    transition: 'background 0.15s, border-color 0.15s',
-                    fontFamily: "'Poppins', sans-serif",
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.25)'; (e.currentTarget as HTMLElement).style.borderColor = '#ffffff'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.12)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.6)'; }}
-                >
-                  {c.name}
-                </Link>
-              ))}
-            </div>
-          )}
+
 
           {/* Hero text */}
           <h1 style={{
@@ -193,7 +155,7 @@ export default function HeroSection() {
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
             <Link href="/e-commerce/products" style={{
               padding: '14px 32px',
-              background: '#111111',
+              background: 'rgba(17,17,17,0.85)', // Slightly opaque
               color: '#ffffff',
               borderRadius: '4px',
               fontSize: '12px',
@@ -202,10 +164,16 @@ export default function HeroSection() {
               textTransform: 'uppercase',
               letterSpacing: '0.12em',
               textDecoration: 'none',
-              transition: 'opacity 0.2s',
+              transition: 'all 0.3s ease',
             }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.background = '#000000';
+                (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.background = 'rgba(17,17,17,0.85)';
+                (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+              }}
             >
               Shop Now
             </Link>

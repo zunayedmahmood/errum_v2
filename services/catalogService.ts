@@ -21,6 +21,7 @@ export interface ProductCategory {
   name: string;
   description?: string;
   image_url?: string;
+  banner_url?: string;
   product_count?: number;
   parent_id?: number | null;
   slug?: string;
@@ -212,6 +213,8 @@ export interface Category {
   description?: string;
   image?: string;
   image_url?: string;
+  banner?: string;
+  banner_url?: string;
   color?: string;
   icon?: string;
   product_count?: number;
@@ -235,6 +238,8 @@ export interface CatalogCategory {
   description?: string;
   image?: string;
   image_url?: string;
+  banner?: string;
+  banner_url?: string;
   color?: string;
   icon?: string;
   parent_id?: number | null;
@@ -477,6 +482,7 @@ const normalizeCategory = (category: any): ProductCategory | null => {
     name,
     description: normalizeString(category.description || ''),
     image_url: toAbsoluteAssetUrl(category.image_url || category.image || undefined),
+    banner_url: toAbsoluteAssetUrl(category.banner_url || category.banner || undefined),
     product_count: toNumber(category.product_count, 0),
     parent_id: category.parent_id ?? null,
     slug: category.slug || name.toLowerCase().replace(/\s+/g, '-'),

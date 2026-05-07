@@ -7,7 +7,9 @@ export interface Category {
   slug: string;
   description?: string;
   image?: string;
-  image_url?: string; // ADD THIS - the full URL from backend
+  image_url?: string;
+  banner?: string;
+  banner_url?: string;
   color?: string;
   icon?: string;
   order: number;
@@ -115,6 +117,13 @@ private normalizeCategory<T extends Category | CategoryTree>(category: T): T {
     }
     // Simply prepend base URL - no need to replace anything
     category.image_url = baseUrl + category.image_url;
+  }
+  
+  if (category.banner_url && !category.banner_url.startsWith('http')) {
+    if (/^\/?category\/banners\//i.test(category.banner_url) && !/\/storage\/category\/banners\//i.test(category.banner_url)) {
+      category.banner_url = category.banner_url.replace(/^\/?category\/banners\//i, '/storage/category/banners/');
+    }
+    category.banner_url = baseUrl + category.banner_url;
   }
 
   // Recursively normalize nested categories

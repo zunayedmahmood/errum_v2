@@ -12,28 +12,63 @@ interface Collection {
   href: string;
 }
 
-const DEFAULT_COLLECTIONS: Collection[] = [
+const FEATURED_COLLECTIONS: Collection[] = [
   {
-    id: '1',
-    title: 'Sneaker Head',
-    subtitle: 'Limited editions and rare finds',
+    id: 'sneakers',
+    title: 'Premium Sneakers',
+    subtitle: 'Step into the future',
     image: 'https://images.unsplash.com/photo-1552346154-21d32810aba3?q=80&w=2070&auto=format&fit=crop',
     href: '/e-commerce/sneakers',
   },
   {
-    id: '2',
-    title: 'Streetwear Essentials',
-    subtitle: 'Daily drops for the urban explorer',
-    image: 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?q=80&w=2070&auto=format&fit=crop',
-    href: '/e-commerce/clothing',
+    id: 't-shirts',
+    title: 'Graphic Tees',
+    subtitle: 'Wear your story',
+    image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=2080&auto=format&fit=crop',
+    href: '/e-commerce/t-shirts',
   },
   {
-    id: '3',
-    title: 'Accessories',
-    subtitle: 'The finishing touches to your fit',
-    image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=1999&auto=format&fit=crop',
-    href: '/e-commerce/accessories',
-  }
+    id: 'hoodies',
+    title: 'Cozy Hoodies',
+    subtitle: 'Comfort meets style',
+    image: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=1974&auto=format&fit=crop',
+    href: '/e-commerce/hoodies',
+  },
+  {
+    id: 'backpacks',
+    title: 'Urban Backpacks',
+    subtitle: 'Carry your world',
+    image: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?q=80&w=1974&auto=format&fit=crop',
+    href: '/e-commerce/backpacks',
+  },
+  {
+    id: 'caps',
+    title: 'Street Caps',
+    subtitle: 'Top off your look',
+    image: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?q=80&w=2070&auto=format&fit=crop',
+    href: '/e-commerce/caps',
+  },
+  {
+    id: 'jackets',
+    title: 'Outerwear',
+    subtitle: 'Stay warm, stay sharp',
+    image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?q=80&w=1935&auto=format&fit=crop',
+    href: '/e-commerce/jackets',
+  },
+  {
+    id: 'socks',
+    title: 'Premium Socks',
+    subtitle: 'Details that matter',
+    image: 'https://images.unsplash.com/photo-1582966298431-99c6a1e8d44c?q=80&w=2070&auto=format&fit=crop',
+    href: '/e-commerce/socks',
+  },
+  {
+    id: 'sunglasses',
+    title: 'Fashion Shades',
+    subtitle: 'Shadow your style',
+    image: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?q=80&w=2080&auto=format&fit=crop',
+    href: '/e-commerce/sunglasses',
+  },
 ];
 
 interface CollectionTilesProps {
@@ -43,15 +78,8 @@ interface CollectionTilesProps {
 export default function CollectionTiles({ categories }: CollectionTilesProps) {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-  const displayCollections: Collection[] = categories && categories.length > 0
-    ? categories.slice(0, 8).map(cat => ({
-        id: cat.id,
-        title: cat.name,
-        subtitle: cat.description || `Explore our ${cat.name} collection`,
-        image: cat.image_url || 'https://images.unsplash.com/photo-1552346154-21d32810aba3?q=80&w=2070&auto=format&fit=crop',
-        href: `/e-commerce/${cat.slug || cat.name.toLowerCase().replace(/\s+/g, '-')}`
-      }))
-    : DEFAULT_COLLECTIONS;
+  // Use the pre-selected featured collections
+  const displayCollections = FEATURED_COLLECTIONS;
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const x = (e.clientX / window.innerWidth - 0.5) * 20;
