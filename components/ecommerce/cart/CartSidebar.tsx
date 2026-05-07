@@ -26,16 +26,34 @@ export default function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
 
   const isAnyOverStock = cart.some(item => typeof item.maxQuantity === 'number' && item.quantity > item.maxQuantity);
 
-  const handleCheckout = () => {
+  const handleCheckout = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
     if (isAnyOverStock) return;
     
     // Set all cart items as selected for checkout
     if (cart.length > 0) {
-      localStorage.setItem('checkout-selected-items', JSON.stringify(cart.map(i => i.id)));
+      try {
+        localStorage.setItem('checkout-selected-items', JSON.stringify(cart.map(i => i.id)));
+      } catch (err) {
+        console.error('LocalStorage error during checkout:', err);
+      }
+    } else {
+      onClose();
+      return;
     }
     
+    // Navigate first
     router.push('/e-commerce/checkout');
-    onClose();
+    
+    // Close sidebar after a tiny delay to ensure navigation starts
+    // and provide immediate feedback that something happened.
+    setTimeout(() => {
+      onClose();
+    }, 50);
   };
 
 

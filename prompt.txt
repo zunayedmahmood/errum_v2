@@ -477,3 +477,9 @@ the existing logic and functionality remanis, we add our manual size creation, b
 
 
 ### checkout button 
+we found a rare instance where, pressing checkout button from the cart (with items) simply closed the sidebar instead of navigating to checkout page.
+this issue was never reproducible on request. 
+
+i want you to act as a professional software engineer and codebase debugger.
+identify any edge case that you find. if you find some issue you are confident that may have caused this, fix it.
+otherwise, if you find no evident issue, simply say no issues found and this may have been some net problem or something.

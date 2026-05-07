@@ -1967,6 +1967,8 @@ export default function PurchaseOrdersPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+
                 <div className="p-4 bg-gray-50 dark:bg-gray-700/30 border-t border-gray-200 dark:border-gray-700">
                   <div className="flex flex-col items-end gap-2 pr-12">
                     <div className="flex gap-10 text-sm">
