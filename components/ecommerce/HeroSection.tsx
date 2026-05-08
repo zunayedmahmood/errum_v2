@@ -172,44 +172,20 @@ export default function HeroSection({
         height: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'center',
         alignItems: 'center',
         textAlign: 'center',
-        padding: '40px 20px'
+        padding: '0 20px'
       }}>
         
-        {/* Stylish title - Now at the top of the centered group */}
-        {showTitle && (
-          <div style={{ maxWidth: '900px', marginBottom: '48px' }}>
-            <h1 style={{
-              fontFamily: "var(--font-poppins), sans-serif",
-              fontSize: 'clamp(40px, 8vw, 84px)',
-              fontWeight: 200,
-              color: '#ffffff',
-              lineHeight: 1.1,
-              letterSpacing: '-0.02em',
-              textShadow: '0 4px 32px rgba(0,0,0,0.5)',
-              whiteSpace: 'pre-line',
-              textTransform: 'capitalize',
-              margin: 0
-            }}>
-              {initialTitle && initialTitle.split('\n').map((line, i, arr) => (
-                <React.Fragment key={i}>
-                  {i === 1 ? <span style={{ fontStyle: 'italic', display: 'block', fontWeight: 300 }}>{line}</span> : line}
-                  {i < arr.length - 1 && '\n'}
-                </React.Fragment>
-              ))}
-            </h1>
-          </div>
-        )}
-
-        {/* Controls: Search + Buttons */}
+        {/* TOP SECTION: Search + Buttons */}
         <div style={{
+          marginTop: '120px', // A little below the top
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           gap: '32px',
           width: '100%',
+          zIndex: 20,
         }}>
           {/* Search bar - Adaptive width, centered, focus-based opacity */}
           <form
@@ -225,12 +201,12 @@ export default function HeroSection({
               position: 'relative',
               background: 'rgba(255,255,255,0.95)',
               backdropFilter: 'blur(16px)',
-              borderRadius: '16px',
+              borderRadius: '12px',
               boxShadow: '0 12px 48px rgba(0,0,0,0.3)',
               display: 'flex',
               alignItems: 'center',
               overflow: 'hidden',
-              padding: '2px',
+              padding: '1px',
               border: `1px solid ${isFocused ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)'}`,
               transition: 'all 0.3s ease'
             }}>
@@ -239,8 +215,8 @@ export default function HeroSection({
                 style={{
                   position: 'absolute',
                   left: '12px',
-                  width: '44px',
-                  height: '44px',
+                  width: '36px',
+                  height: '36px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -252,7 +228,7 @@ export default function HeroSection({
                 }}
                 aria-label="Search"
               >
-                <SearchIcon style={{ width: '20px', height: '20px' }} />
+                <SearchIcon style={{ width: '18px', height: '18px' }} />
               </button>
               <input
                 ref={inputRef}
@@ -261,10 +237,10 @@ export default function HeroSection({
                 onBlur={() => setIsFocused(false)}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search premium lifestyle essentials..."
-                className="w-full bg-transparent py-3.5 md:py-4 text-base text-[#111111] outline-none border-none placeholder:text-neutral-400 font-poppins"
+                className="w-full bg-transparent py-2.5 text-sm text-[#111111] outline-none border-none placeholder:text-neutral-400 font-poppins"
                 style={{
-                  paddingLeft: '60px',
-                  paddingRight: query ? '50px' : '20px',
+                  paddingLeft: '52px',
+                  paddingRight: query ? '44px' : '16px',
                 }}
               />
               {query && (
@@ -273,8 +249,8 @@ export default function HeroSection({
                   onClick={clear}
                   style={{
                     position: 'absolute',
-                    right: '12px',
-                    padding: '8px',
+                    right: '8px',
+                    padding: '6px',
                     color: '#666666',
                     background: 'none',
                     border: 'none',
@@ -282,7 +258,7 @@ export default function HeroSection({
                     zIndex: 20
                   }}
                 >
-                  <X style={{ width: '18px', height: '18px' }} />
+                  <X style={{ width: '16px', height: '16px' }} />
                 </button>
               )}
             </div>
@@ -326,31 +302,27 @@ export default function HeroSection({
             >
               Shop Now
             </Link>
-            <Link
-              href="/e-commerce/categories"
-              style={{
-                padding: '12px 36px',
-                background: 'rgba(255,255,255,0.1)',
-                color: '#ffffff',
-                border: '1.5px solid rgba(255,255,255,0.5)',
-                borderRadius: '8px',
-                fontSize: '12px',
-                fontWeight: 800,
-                fontFamily: "var(--font-poppins), sans-serif",
-                textTransform: 'uppercase',
-                letterSpacing: '0.15em',
-                textDecoration: 'none',
-                backdropFilter: 'blur(12px)',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
+            <Link href="/e-commerce/products?category=all" style={{
+              padding: '12px 36px',
+              background: 'rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(12px)',
+              color: '#ffffff',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: 800,
+              fontFamily: "var(--font-poppins), sans-serif",
+              textTransform: 'uppercase',
+              letterSpacing: '0.15em',
+              textDecoration: 'none',
+              border: '1px solid rgba(255,255,255,0.3)',
+              transition: 'all 0.3s ease'
+            }}
               onMouseEnter={e => {
                 (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.2)';
-                (e.currentTarget as HTMLElement).style.border = '1.5px solid rgba(255,255,255,1)';
                 (e.currentTarget as HTMLElement).style.transform = 'translateY(-4px)';
               }}
               onMouseLeave={e => {
                 (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)';
-                (e.currentTarget as HTMLElement).style.border = '1.5px solid rgba(255,255,255,0.5)';
                 (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
               }}
             >
@@ -358,9 +330,39 @@ export default function HeroSection({
             </Link>
           </div>
         </div>
+
+        {/* CENTER SECTION: Hero Text */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          marginTop: '-120px', // Compensate for top margin to achieve true vertical center
+          zIndex: 10,
+          pointerEvents: 'none'
+        }}>
+          {showTitle && (
+            <div style={{ maxWidth: '900px', pointerEvents: 'auto' }}>
+              <h1 style={{
+                fontFamily: "var(--font-poppins), sans-serif",
+                fontSize: 'clamp(48px, 10vw, 110px)',
+                fontWeight: 700,
+                color: '#ffffff',
+                lineHeight: 1.0,
+                letterSpacing: '-0.04em',
+                textShadow: '0 8px 48px rgba(0,0,0,0.5)',
+                whiteSpace: 'pre-line',
+                textTransform: 'capitalize',
+                margin: 0
+              }}>
+                {initialTitle}
+              </h1>
+            </div>
+          )}
+        </div>
       </div>
 
     </section>
   );
 }
-
