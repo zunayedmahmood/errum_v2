@@ -630,3 +630,17 @@ this will only replace the manual qty input field (no longer manually edittable)
 add a setting in home page setting for announcement ticker.
 we should be able to change the bg and font colour of the ticker from there.
 we should also be able to change the speed (when scroll enabled) of the ticker from there.
+
+
+### new arrivals chooser.
+currently the new arrivals section chooses the products as the latest 12.
+we want to make it deterministic. there will be an option in the homepage settings
+if enabled, we can search for specific products with id, name, sku etc (they are returned grped by sku and no individual variant info will be shown).
+we can select 1-12 products from there.
+
+the new arrivals sections in the frontend should drop the logic for getting the newest products.
+backend api call for hompage settings should hydrate it.
+
+the hero text should be center of width center of page. 
+update the cateogry name in featured categories in the home page.
+the categories name should be broken to 2-3 lines instead of truncating it.

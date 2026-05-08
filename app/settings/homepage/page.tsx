@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from "react";
 import settingsService, { HomepageSettings } from "@/services/settingsService";
 import categoryService from "@/services/categoryService";
-import { Save, Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import { Save, Plus, Trash2, ArrowUp, ArrowDown, Search, X } from "lucide-react";
 import { toast } from "react-hot-toast";
+import catalogService from "@/services/catalogService";
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -24,6 +25,12 @@ export default function HomepageSettingsPage() {
   const [heroChanged, setHeroChanged] = useState(false);
   const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  
+  // New Arrivals Search State
+  const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedProductsData, setSelectedProductsData] = useState<any[]>([]);
 
   useEffect(() => {
     loadData();
@@ -59,7 +66,11 @@ export default function HomepageSettingsPage() {
         showcase: (settingsData.showcase || []).map((item: any) => ({
           ...item,
           subcategories: item.subcategories || []
-        }))
+        })),
+        new_arrivals: {
+          enabled: settingsData.new_arrivals?.enabled ?? false,
+          product_ids: settingsData.new_arrivals?.product_ids || []
+        }
       };
 
       setSettings(normalized);
@@ -131,6 +142,7 @@ export default function HomepageSettingsPage() {
       } else {
         settings.collections.forEach((col, index) => {
           formData.append(`collections[${index}][id]`, String(col.id));
+          formData.append(`collections[${index}][title]`, col.title || "");
           formData.append(`collections[${index}][subtitle]`, col.subtitle || "");
         });
       }
@@ -145,6 +157,18 @@ export default function HomepageSettingsPage() {
             (showcase.subcategories || []).forEach((subId, subIndex) => {
               formData.append(`showcase[${index}][subcategories][${subIndex}]`, String(subId));
             });
+          });
+        }
+      }
+
+      // New Arrivals
+      if (settings.new_arrivals) {
+        formData.append("new_arrivals[enabled]", settings.new_arrivals.enabled ? "1" : "0");
+        if (settings.new_arrivals.product_ids.length === 0) {
+          formData.append("new_arrivals[product_ids]", "");
+        } else {
+          settings.new_arrivals.product_ids.forEach((id, index) => {
+            formData.append(`new_arrivals[product_ids][${index}]`, String(id));
           });
         }
       }
@@ -279,7 +303,7 @@ export default function HomepageSettingsPage() {
     if (!settings) return;
     setSettings({
       ...settings,
-      collections: [...settings.collections, { id: flatCategories[0]?.id || 0, subtitle: "" }]
+      collections: [...settings.collections, { id: flatCategories[0]?.id || 0, title: "", subtitle: "" }]
     });
   };
 
@@ -299,6 +323,64 @@ export default function HomepageSettingsPage() {
       [newCollections[index + 1], newCollections[index]] = [newCollections[index], newCollections[index + 1]];
     }
     setSettings({ ...settings, collections: newCollections });
+  };
+
+  // Helpers for New Arrivals
+  const searchProducts = async (q: string) => {
+    if (!q || q.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const response = await catalogService.advancedSearch({
+        query: q,
+        group_by_sku: true,
+        per_page: 10
+      });
+      setSearchResults(response.products || []);
+    } catch (error) {
+      console.error("Search failed:", error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const toggleProductSelection = (product: any) => {
+    if (!settings || !settings.new_arrivals) return;
+    
+    const currentIds = [...settings.new_arrivals.product_ids];
+    const exists = currentIds.indexOf(product.id);
+    
+    if (exists !== -1) {
+      currentIds.splice(exists, 1);
+    } else {
+      if (currentIds.length >= 12) {
+        toast.error("You can select up to 12 products for New Arrivals");
+        return;
+      }
+      currentIds.push(product.id);
+    }
+    
+    setSettings({
+      ...settings,
+      new_arrivals: {
+        ...settings.new_arrivals,
+        product_ids: currentIds
+      }
+    });
+  };
+
+  const removeSelectedProduct = (id: number) => {
+    if (!settings || !settings.new_arrivals) return;
+    const currentIds = settings.new_arrivals.product_ids.filter(pid => pid !== id);
+    setSettings({
+      ...settings,
+      new_arrivals: {
+        ...settings.new_arrivals,
+        product_ids: currentIds
+      }
+    });
   };
 
   if (loading) return (
@@ -369,53 +451,55 @@ export default function HomepageSettingsPage() {
                       </div>
 
                       {settings.ticker.enabled && (
-                        <div className="flex items-center gap-3">
-                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Ticker Mode:</label>
-                          <select
-                            value={settings.ticker.mode || 'moving'}
-                            onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, mode: e.target.value as 'static' | 'moving' } })}
-                            className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="moving">Moving / Scrolling</option>
-                            <option value="static">Static / Centered</option>
-                          </select>
-                        </div>
+                        <>
+                          <div className="flex items-center gap-3">
+                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Ticker Mode:</label>
+                            <select
+                              value={settings.ticker.mode || 'moving'}
+                              onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, mode: e.target.value as 'static' | 'moving' } })}
+                              className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="moving">Moving / Scrolling</option>
+                              <option value="static">Static / Centered</option>
+                            </select>
+                          </div>
 
-                        <div className="flex items-center gap-6">
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">BG Color:</label>
-                            <input
-                              type="color"
-                              value={settings.ticker.background_color}
-                              onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, background_color: e.target.value } })}
-                              className="w-8 h-8 rounded cursor-pointer border-none bg-transparent"
-                            />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Text Color:</label>
-                            <input
-                              type="color"
-                              value={settings.ticker.text_color}
-                              onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, text_color: e.target.value } })}
-                              className="w-8 h-8 rounded cursor-pointer border-none bg-transparent"
-                            />
-                          </div>
-                          {settings.ticker.mode === 'moving' && (
+                          <div className="flex items-center gap-6">
                             <div className="flex items-center gap-2">
-                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Speed:</label>
+                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">BG Color:</label>
                               <input
-                                type="range"
-                                min="5"
-                                max="150"
-                                step="5"
-                                value={settings.ticker.speed}
-                                onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, speed: parseInt(e.target.value) } })}
-                                className="w-32 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                type="color"
+                                value={settings.ticker.background_color}
+                                onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, background_color: e.target.value } })}
+                                className="w-8 h-8 rounded cursor-pointer border-none bg-transparent"
                               />
-                              <span className="text-xs text-gray-500 dark:text-gray-400 w-8">{settings.ticker.speed}s</span>
                             </div>
-                          )}
-                        </div>
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Text Color:</label>
+                              <input
+                                type="color"
+                                value={settings.ticker.text_color}
+                                onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, text_color: e.target.value } })}
+                                className="w-8 h-8 rounded cursor-pointer border-none bg-transparent"
+                              />
+                            </div>
+                            {settings.ticker.mode === 'moving' && (
+                              <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Speed:</label>
+                                <input
+                                  type="range"
+                                  min="5"
+                                  max="150"
+                                  step="5"
+                                  value={settings.ticker.speed}
+                                  onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, speed: parseInt(e.target.value) } })}
+                                  className="w-32 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                />
+                                <span className="text-xs text-gray-500 dark:text-gray-400 w-8">{settings.ticker.speed}s</span>
+                              </div>
+                            )}
+                          </div>
+                        </>
                       )}
                     </div>
                     {settings.ticker.enabled && (
@@ -638,6 +722,21 @@ export default function HomepageSettingsPage() {
                             </select>
                           </div>
                           <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Override Title (Optional)</label>
+                            <input
+                              type="text"
+                              value={col.title}
+                              onChange={(e) => {
+                                const newCols = settings.collections.map((c, i) =>
+                                  i === idx ? { ...c, title: e.target.value } : c
+                                );
+                                setSettings({ ...settings, collections: newCols });
+                              }}
+                              placeholder="Leave blank to use category name"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+                          <div>
                             <label className="block text-xs font-medium text-gray-500 mb-1">Subtitle</label>
                             <input
                               type="text"
@@ -749,12 +848,140 @@ export default function HomepageSettingsPage() {
                             </div>
                           </div>
                         </div>
-                        <button onClick={() => removeShowcase(idx)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+                    </div>
                   </div>
+                </section>
+
+                {/* New Arrivals Section */}
+                <section className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mt-8">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New Arrivals Section</h2>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">If enabled, you can manually select up to 12 products. Otherwise, it will show the latest products.</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        id="newArrivalsEnabled"
+                        checked={settings.new_arrivals?.enabled}
+                        onChange={(e) => setSettings({ 
+                          ...settings, 
+                          new_arrivals: { 
+                            enabled: e.target.checked, 
+                            product_ids: settings.new_arrivals?.product_ids || [] 
+                          } 
+                        })}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="newArrivalsEnabled" className="text-sm font-medium text-gray-900 dark:text-white">
+                        Use Custom Selection
+                      </label>
+                    </div>
+                  </div>
+
+                  {settings.new_arrivals?.enabled && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                      {/* Search Input */}
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Search className="h-4 w-4 text-gray-400" />
+                        </div>
+                        <input
+                          type="text"
+                          value={productSearchQuery}
+                          onChange={(e) => {
+                            setProductSearchQuery(e.target.value);
+                            searchProducts(e.target.value);
+                          }}
+                          placeholder="Search products by name, SKU or ID..."
+                          className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg leading-5 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm transition-all"
+                        />
+                        {isSearching && (
+                          <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                            <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Search Results Dropdown-like */}
+                      {searchResults.length > 0 && (
+                        <div className="mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-10 max-h-60 overflow-y-auto">
+                          {searchResults.map((product) => {
+                            const isSelected = settings.new_arrivals?.product_ids.includes(product.id);
+                            return (
+                              <div
+                                key={product.id}
+                                onClick={() => toggleProductSelection(product)}
+                                className={`flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  {product.images?.[0] ? (
+                                    <img src={product.images[0].url} alt="" className="w-10 h-10 object-cover rounded border border-gray-200 dark:border-gray-600" />
+                                  ) : (
+                                    <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded flex items-center justify-center text-[10px] text-gray-400">No Image</div>
+                                  )}
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-900 dark:text-white">{product.name}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">SKU: {product.sku} • Price: ৳{product.selling_price}</p>
+                                  </div>
+                                </div>
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300 dark:border-gray-600'}`}>
+                                  {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Selected Products Grid */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Selected Products ({settings.new_arrivals.product_ids.length}/12)
+                          </label>
+                          {settings.new_arrivals.product_ids.length > 0 && (
+                            <button 
+                              onClick={() => setSettings({...settings, new_arrivals: { ...settings.new_arrivals!, product_ids: [] }})}
+                              className="text-xs text-red-500 hover:underline"
+                            >
+                              Clear All
+                            </button>
+                          )}
+                        </div>
+                        
+                        {settings.new_arrivals.product_ids.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900/20">
+                            <p className="text-sm text-gray-400">No products selected. Search and select products above.</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {settings.new_arrivals.product_ids.map((productId, idx) => {
+                              // We don't have the full product data here easily if it's not in search results
+                              // For simplicity, we'll just show the ID or try to find it in search results
+                              const product = searchResults.find(p => p.id === productId);
+                              return (
+                                <div key={productId} className="flex items-center justify-between p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
+                                  <div className="flex items-center gap-2 overflow-hidden">
+                                    <span className="text-[10px] font-bold text-gray-400 w-4">{idx + 1}</span>
+                                    <p className="text-xs font-medium text-gray-900 dark:text-white truncate">
+                                      {product ? product.name : `Product ID: ${productId}`}
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => removeSelectedProduct(productId)}
+                                    className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </section>
               </div>
             </div>

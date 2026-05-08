@@ -39,8 +39,84 @@ class SettingController extends Controller
                 'autoplay_speed' => 5000,
             ], $settings->get('homepage_hero', [])),
             'collections' => [],
-            'showcase' => $settings->get('homepage_showcase') // default will be null if missing, so storefront knows to fallback to "all categories"
+            'showcase' => $settings->get('homepage_showcase'), // default will be null if missing, so storefront knows to fallback to "all categories"
+            'new_arrivals' => array_merge([
+                'enabled' => false,
+                'product_ids' => [],
+            ], $settings->get('homepage_new_arrivals', []))
         ];
+
+        $newArrivalsSetting = $response['new_arrivals'];
+        if ($newArrivalsSetting['enabled'] && !empty($newArrivalsSetting['product_ids'])) {
+            $productIds = $newArrivalsSetting['product_ids'];
+            $products = Product::with(['images', 'category', 'batches' => function ($q) {
+                    $q->where('is_active', true)->where('availability', true);
+                }])
+                ->whereIn('id', $productIds)
+                ->get()
+                ->sortBy(function($product) use ($productIds) {
+                    return array_search($product->id, $productIds);
+                });
+
+            $response['new_arrivals']['products'] = $products->map(function ($product) {
+                $activeBatches = $product->batches;
+                $cheapestBatch = $activeBatches->where('quantity', '>', 0)->sortBy('sell_price')->first() 
+                                ?? $activeBatches->sortBy('sell_price')->first();
+                
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'sku' => $product->sku,
+                    'selling_price' => $cheapestBatch ? (float) $cheapestBatch->sell_price : 0,
+                    'images' => $product->images->where('is_active', true)->take(2)->map(function ($image) {
+                        return [
+                            'id' => $image->id,
+                            'url' => $image->image_url,
+                            'alt_text' => $image->alt_text,
+                            'is_primary' => $image->is_primary,
+                        ];
+                    }),
+                    'category' => $product->category ? ['title' => $product->category->title] : null,
+                    'in_stock' => $activeBatches->sum('quantity') > 0,
+                    'has_variants' => Product::where('sku', $product->sku)->count() > 1
+                ];
+            })->values();
+        } else {
+            // Fallback to latest products if not enabled or empty
+            $products = Product::with(['images', 'category', 'batches' => function ($q) {
+                    $q->where('is_active', true)->where('availability', true);
+                }])
+                ->where('is_archived', false)
+                ->whereHas('batches', function ($q) {
+                    $q->where('quantity', '>', 0);
+                })
+                ->orderBy('created_at', 'desc')
+                ->take(12)
+                ->get();
+
+            $response['new_arrivals']['products'] = $products->map(function ($product) {
+                $activeBatches = $product->batches;
+                $cheapestBatch = $activeBatches->sortBy('sell_price')->first();
+                
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'sku' => $product->sku,
+                    'selling_price' => $cheapestBatch ? (float) $cheapestBatch->sell_price : 0,
+                    'images' => $product->images->where('is_active', true)->take(2)->map(function ($image) {
+                        return [
+                            'id' => $image->id,
+                            'url' => $image->image_url,
+                            'alt_text' => $image->alt_text,
+                            'is_primary' => $image->is_primary,
+                        ];
+                    }),
+                    'category' => $product->category ? ['title' => $product->category->title] : null,
+                    'in_stock' => true,
+                    'has_variants' => Product::where('sku', $product->sku)->count() > 1
+                ];
+            })->values();
+        }
 
         $collectionsSetting = $settings->get('homepage_collections', []);
         
@@ -57,10 +133,10 @@ class SettingController extends Controller
                         
                         $response['collections'][] = [
                             'id' => $cat->id,
-                            'title' => $cat->title,
+                            'title' => !empty($item['title']) ? $item['title'] : $cat->title,
                             'subtitle' => $item['subtitle'] ?? 'Explore Collection',
                             'image' => $imageUrl,
-                            'href' => '/e-commerce/' . $cat->slug
+                            'href' => '/e-commerce/' . ($cat->slug ?? $cat->id)
                         ];
                     }
                 }
@@ -99,7 +175,11 @@ class SettingController extends Controller
                 'autoplay_speed' => 5000,
             ], $settings->get('homepage_hero', [])),
             'collections' => $settings->get('homepage_collections', []),
-            'showcase' => $settings->get('homepage_showcase', [])
+            'showcase' => $settings->get('homepage_showcase', []),
+            'new_arrivals' => array_merge([
+                'enabled' => false,
+                'product_ids' => [],
+            ], $settings->get('homepage_new_arrivals', []))
         ]);
     }
 
@@ -134,6 +214,11 @@ class SettingController extends Controller
             'hero_show_title' => 'nullable|string',
             'hero_slideshow_enabled' => 'nullable|string',
             'hero_autoplay_speed' => 'nullable|integer|min:1000|max:30000',
+
+            'new_arrivals' => 'nullable|array',
+            'new_arrivals.enabled' => 'nullable|string',
+            'new_arrivals.product_ids' => 'nullable|array',
+            'new_arrivals.product_ids.*' => 'integer|exists:products,id',
         ]);
 
         if ($request->has('ticker')) {
@@ -159,6 +244,17 @@ class SettingController extends Controller
             Setting::updateOrCreate(
                 ['key' => 'homepage_showcase'],
                 ['value' => $validated['showcase'], 'group' => 'homepage']
+            );
+        }
+
+        if ($request->has('new_arrivals')) {
+            $newArrivalsData = $validated['new_arrivals'];
+            if (isset($newArrivalsData['enabled'])) {
+                $newArrivalsData['enabled'] = filter_var($newArrivalsData['enabled'], FILTER_VALIDATE_BOOLEAN);
+            }
+            Setting::updateOrCreate(
+                ['key' => 'homepage_new_arrivals'],
+                ['value' => $newArrivalsData, 'group' => 'homepage']
             );
         }
 

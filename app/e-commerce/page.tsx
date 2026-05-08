@@ -88,7 +88,7 @@ export default function HomePage() {
 
       {/* 4. New Arrivals */}
       <SectionReveal>
-        <NewArrivals limit={12} />
+        <NewArrivals limit={12} customProducts={settings?.new_arrivals?.products} />
       </SectionReveal>
 
       {/* 5. Showcase Categories (Configured via Settings) */}

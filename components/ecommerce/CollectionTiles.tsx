@@ -58,7 +58,7 @@ export default function CollectionTiles({ collections }: CollectionTilesProps) {
               {/* Content */}
               <div className="absolute inset-0 p-8 flex flex-col justify-end">
                 <p className="text-white/60 text-[10px]  tracking-widest uppercase mb-1 line-clamp-2">{item.subtitle}</p>
-                <h3 className="text-white text-2xl  mb-2 line-clamp-1">{item.title}</h3>
+                <h3 className="text-white text-2xl  mb-2 line-clamp-3">{item.title}</h3>
 
                 <div className="overflow-hidden h-6">
                   <div className="transition-transform duration-500 transform translate-y-6 group-hover:translate-y-0 flex items-center gap-2 text-white text-[10px] font-semibold uppercase tracking-wider">

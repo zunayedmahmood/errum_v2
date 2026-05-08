@@ -172,17 +172,44 @@ export default function HeroSection({
         height: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
-        padding: '40px 20px 80px'
+        justifyContent: 'center',
+        alignItems: 'center',
+        textAlign: 'center',
+        padding: '40px 20px'
       }}>
-        {/* Top Controls: Search + Buttons */}
+        
+        {/* Stylish title - Now at the top of the centered group */}
+        {showTitle && (
+          <div style={{ maxWidth: '900px', marginBottom: '48px' }}>
+            <h1 style={{
+              fontFamily: "var(--font-poppins), sans-serif",
+              fontSize: 'clamp(40px, 8vw, 84px)',
+              fontWeight: 200,
+              color: '#ffffff',
+              lineHeight: 1.1,
+              letterSpacing: '-0.02em',
+              textShadow: '0 4px 32px rgba(0,0,0,0.5)',
+              whiteSpace: 'pre-line',
+              textTransform: 'capitalize',
+              margin: 0
+            }}>
+              {initialTitle && initialTitle.split('\n').map((line, i, arr) => (
+                <React.Fragment key={i}>
+                  {i === 1 ? <span style={{ fontStyle: 'italic', display: 'block', fontWeight: 300 }}>{line}</span> : line}
+                  {i < arr.length - 1 && '\n'}
+                </React.Fragment>
+              ))}
+            </h1>
+          </div>
+        )}
+
+        {/* Controls: Search + Buttons */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: '24px',
+          gap: '32px',
           width: '100%',
-          marginTop: '80px' // Positioning it slightly higher
         }}>
           {/* Search bar - Adaptive width, centered, focus-based opacity */}
           <form
@@ -190,7 +217,7 @@ export default function HeroSection({
             style={{
               minWidth: '300px',
               transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              opacity: isFocused ? 0.95 : 0.3, // Slightly higher opacity for better visibility
+              opacity: isFocused ? 0.95 : 0.4,
             }}
             className="w-[90vw] md:w-[60vw] max-w-[1200px]"
           >
@@ -331,31 +358,6 @@ export default function HeroSection({
             </Link>
           </div>
         </div>
-
-        {/* Bottom Left stylish title */}
-        {showTitle && (
-          <div style={{ textAlign: 'left', maxWidth: '700px', marginLeft: '20px' }}>
-            <h1 style={{
-              fontFamily: "var(--font-poppins), sans-serif",
-              fontSize: 'clamp(32px, 6vw, 64px)',
-              fontWeight: 200,
-              color: '#ffffff',
-              lineHeight: 1.1,
-              letterSpacing: '-0.02em',
-              textShadow: '0 4px 32px rgba(0,0,0,0.5)',
-              whiteSpace: 'pre-line',
-              textTransform: 'capitalize',
-              margin: 0
-            }}>
-              {initialTitle && initialTitle.split('\n').map((line, i, arr) => (
-                <React.Fragment key={i}>
-                  {i === 1 ? <span style={{ fontStyle: 'italic', marginLeft: '60px', display: 'inline-block', fontWeight: 300 }}>{line}</span> : line}
-                  {i < arr.length - 1 && '\n'}
-                </React.Fragment>
-              ))}
-            </h1>
-          </div>
-        )}
       </div>
 
     </section>

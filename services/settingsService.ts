@@ -29,6 +29,11 @@ export interface HomepageSettings {
     href?: string;
   }[];
   showcase?: ShowcaseCategory[];
+  new_arrivals?: {
+    enabled: boolean;
+    product_ids: number[];
+    products?: any[]; // For storefront display
+  };
 }
 
 class SettingsService {
