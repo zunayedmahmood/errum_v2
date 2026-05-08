@@ -645,7 +645,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                         Checking inventory availability...
                       </div>
                     )}
-                         {/* Select Items to Exchange */}
+                  </div>
+                </div>
+              </div>
+
+              {/* Select Items to Exchange */}
               <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
                 <h3 className="font-semibold text-gray-900 dark:text-white text-lg mb-4">
                   Select Items to Exchange
