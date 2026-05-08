@@ -73,6 +73,10 @@ export default function HomepageSettingsPage() {
         }
       };
 
+      if (settingsData.new_arrivals?.products) {
+        setSelectedProductsData(settingsData.new_arrivals.products);
+      }
+
       setSettings(normalized);
       setHeroImages((normalized.hero.images || []).map(img => ({ type: 'existing', url: img.url, path: img.path })));
       setHeroChanged(false); // reset dirty flag on fresh load
@@ -119,6 +123,7 @@ export default function HomepageSettingsPage() {
         formData.append("hero_show_title", settings.hero.show_title ? "1" : "0");
         formData.append("hero_slideshow_enabled", settings.hero.slideshow_enabled ? "1" : "0");
         formData.append("hero_autoplay_speed", String(settings.hero.autoplay_speed || 5000));
+        formData.append("hero_text_position", settings.hero.text_position || "center");
         
         const meta: any[] = [];
         let fileIndex = 0;
@@ -336,7 +341,7 @@ export default function HomepageSettingsPage() {
       const response = await catalogService.getProducts({
         search: q,
         group_by_sku: true,
-        per_page: 20 // increased for better selection
+        per_page: 30 // increased for better selection
       });
       
       const displayProducts = response.grouped_products?.length
@@ -355,18 +360,23 @@ export default function HomepageSettingsPage() {
     if (!settings || !settings.new_arrivals) return;
     
     const currentIds = [...settings.new_arrivals.product_ids];
+    const currentData = [...selectedProductsData];
     const exists = currentIds.indexOf(product.id);
     
     if (exists !== -1) {
       currentIds.splice(exists, 1);
+      const dataIdx = currentData.findIndex(p => p.id === product.id);
+      if (dataIdx !== -1) currentData.splice(dataIdx, 1);
     } else {
       if (currentIds.length >= 12) {
         toast.error("You can select up to 12 products for New Arrivals");
         return;
       }
       currentIds.push(product.id);
+      currentData.push(product);
     }
     
+    setSelectedProductsData(currentData);
     setSettings({
       ...settings,
       new_arrivals: {
@@ -379,6 +389,7 @@ export default function HomepageSettingsPage() {
   const removeSelectedProduct = (id: number) => {
     if (!settings || !settings.new_arrivals) return;
     const currentIds = settings.new_arrivals.product_ids.filter(pid => pid !== id);
+    setSelectedProductsData(prev => prev.filter(p => p.id !== id));
     setSettings({
       ...settings,
       new_arrivals: {
@@ -603,19 +614,40 @@ export default function HomepageSettingsPage() {
 
                       <div className="space-y-4">
                         {settings.hero.show_title && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hero Title</label>
-                            <textarea
-                              rows={3}
-                              value={settings.hero.title}
-                              onChange={(e) => {
-                                setSettings({ ...settings, hero: { ...settings.hero, title: e.target.value } });
-                                setHeroChanged(true);
-                              }}
-                              placeholder="e.g. Refining the Art of Lifestyle"
-                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                            <p className="mt-1 text-[10px] text-gray-400">Use new lines to control line breaks on the home page.</p>
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hero Title</label>
+                              <textarea
+                                rows={3}
+                                value={settings.hero.title}
+                                onChange={(e) => {
+                                  setSettings({ ...settings, hero: { ...settings.hero, title: e.target.value } });
+                                  setHeroChanged(true);
+                                }}
+                                placeholder="e.g. Refining the Art of Lifestyle"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                              />
+                              <p className="mt-1 text-[10px] text-gray-400">Use new lines to control line breaks on the home page.</p>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Text Position (Desktop)</label>
+                              <select
+                                value={settings.hero.text_position || 'center'}
+                                onChange={(e) => {
+                                  setSettings({ ...settings, hero: { ...settings.hero, text_position: e.target.value } });
+                                  setHeroChanged(true);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                              >
+                                <option value="center">Center (Default)</option>
+                                <option value="top-left">Top Left</option>
+                                <option value="top-right">Top Right</option>
+                                <option value="bottom-left">Bottom Left</option>
+                                <option value="bottom-right">Bottom Right</option>
+                              </select>
+                              <p className="mt-1 text-[10px] text-gray-400">Position applies to desktop view only. Mobile always uses center center.</p>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -934,7 +966,7 @@ export default function HomepageSettingsPage() {
                                     <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded flex items-center justify-center text-[10px] text-gray-400">No Image</div>
                                   )}
                                   <div>
-                                    <p className="text-sm font-medium text-gray-900 dark:text-white">{product.name}</p>
+                                    <p className="text-sm font-medium text-gray-900 dark:text-white">{product.base_name || product.name}</p>
                                     <p className="text-xs text-gray-500 dark:text-gray-400">SKU: {product.sku} • Price: ৳{product.selling_price}</p>
                                   </div>
                                 </div>
@@ -968,24 +1000,25 @@ export default function HomepageSettingsPage() {
                             <p className="text-sm text-gray-400">No products selected. Search and select products above.</p>
                           </div>
                         ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          <div className="flex flex-col gap-3">
                             {settings.new_arrivals.product_ids.map((productId, idx) => {
-                              // We don't have the full product data here easily if it's not in search results
-                              // For simplicity, we'll just show the ID or try to find it in search results
-                              const product = searchResults.find(p => p.id === productId);
+                              const product = selectedProductsData.find(p => p.id === productId) || searchResults.find(p => p.id === productId);
                               return (
-                                <div key={productId} className="flex items-center justify-between p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
-                                  <div className="flex items-center gap-2 overflow-hidden">
-                                    <span className="text-[10px] font-bold text-gray-400 w-4">{idx + 1}</span>
-                                    <p className="text-xs font-medium text-gray-900 dark:text-white truncate">
-                                      {product ? product.name : `Product ID: ${productId}`}
+                                <div key={productId} className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
+                                  <div className="flex items-center gap-3 overflow-hidden">
+                                    <span className="text-xs font-bold text-gray-400 w-4">{idx + 1}</span>
+                                    {product?.images?.[0] && (
+                                      <img src={product.images[0].url} alt="" className="w-8 h-8 object-cover rounded border border-gray-100 dark:border-gray-700" />
+                                    )}
+                                    <p className="text-xs font-medium text-gray-900 dark:text-white line-clamp-2 leading-relaxed">
+                                      {product ? (product.base_name || product.name) : "Loading..."}
                                     </p>
                                   </div>
                                   <button
                                     onClick={() => removeSelectedProduct(productId)}
-                                    className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                                   >
-                                    <X className="w-3.5 h-3.5" />
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
                                 </div>
                               );

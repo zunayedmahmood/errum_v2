@@ -20,6 +20,7 @@ export interface HomepageSettings {
     show_title: boolean;
     slideshow_enabled?: boolean;
     autoplay_speed?: number;
+    text_position?: string;
   };
   collections: {
     id: number;

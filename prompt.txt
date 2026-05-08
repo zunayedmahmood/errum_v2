@@ -644,3 +644,14 @@ backend api call for hompage settings should hydrate it.
 the hero text should be center of width center of page. 
 update the cateogry name in featured categories in the home page.
 the categories name should be broken to 2-3 lines instead of truncating it.
+
+
+### moving hero text around 
+we want this feature in the homepage settings:
+we should be able to change the position of the hero text from the homepage settings.
+we'll  only change between the space below the CTA buttons and above the featured collections.
+we'll define 5 places, top right (still below the buttons), top left, bottom right, bottom left and center (center center of width and height, default).
+this can be choosen from the homepage settings when hero text is enabled.
+the corner positions need a good amount of padding to avoid getting cut off from edges. 
+these positions of the hero text will not be responsive to mobile viewport (but responsive to different screen width of desktop).
+on mobile, the hero text (when on) will always be in center center. (after cta buttons) 

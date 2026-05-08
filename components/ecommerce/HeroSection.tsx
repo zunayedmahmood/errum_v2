@@ -16,13 +16,15 @@ export default function HeroSection({
   title: initialTitle,
   showTitle = true,
   slideshowEnabled = true,
-  autoplaySpeed = 5000
+  autoplaySpeed = 5000,
+  textPosition = 'center'
 }: {
   images?: HeroImage[];
   title?: string;
   showTitle?: boolean;
   slideshowEnabled?: boolean;
   autoplaySpeed?: number;
+  textPosition?: string;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,6 +34,14 @@ export default function HeroSection({
   const [isFocused, setIsFocused] = useState(false);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Slideshow Autoplay Logic
   useEffect(() => {
@@ -176,7 +186,7 @@ export default function HeroSection({
         textAlign: 'center',
         padding: '0 20px'
       }}>
-        
+
         {/* TOP SECTION: Search + Buttons */}
         <div style={{
           marginTop: '120px', // A little below the top
@@ -335,10 +345,16 @@ export default function HeroSection({
         <div style={{
           flex: 1,
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          flexDirection: 'column',
+          alignItems: (!isMobile && textPosition.includes('left')) ? 'flex-start' : 
+                      (!isMobile && textPosition.includes('right')) ? 'flex-end' : 'center',
+          justifyContent: (!isMobile && textPosition.includes('top')) ? 'flex-start' : 
+                          (!isMobile && textPosition.includes('bottom')) ? 'flex-end' : 'center',
+          textAlign: (!isMobile && textPosition.includes('left')) ? 'left' : 
+                     (!isMobile && textPosition.includes('right')) ? 'right' : 'center',
           width: '100%',
-          marginTop: '-120px', // Compensate for top margin to achieve true vertical center
+          marginTop: '-120px', // Compensate for top margin
+          padding: !isMobile && textPosition !== 'center' ? '80px 100px' : '0',
           zIndex: 10,
           pointerEvents: 'none'
         }}>
@@ -347,13 +363,13 @@ export default function HeroSection({
               <h1 style={{
                 fontFamily: "var(--font-poppins), sans-serif",
                 fontSize: 'clamp(48px, 10vw, 110px)',
-                fontWeight: 700,
+                fontWeight: 500,
                 color: '#ffffff',
                 lineHeight: 1.0,
                 letterSpacing: '-0.04em',
                 textShadow: '0 8px 48px rgba(0,0,0,0.5)',
                 whiteSpace: 'pre-line',
-                textTransform: 'capitalize',
+                textTransform: 'none',
                 margin: 0
               }}>
                 {initialTitle}

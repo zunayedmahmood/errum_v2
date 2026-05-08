@@ -38,6 +38,7 @@ class SettingController extends Controller
                 'show_title' => true,
                 'slideshow_enabled' => true,
                 'autoplay_speed' => 5000,
+                'text_position' => 'center',
             ], $settings->get('homepage_hero', [])),
             'collections' => [],
             'showcase' => $settings->get('homepage_showcase'), // default will be null if missing, so storefront knows to fallback to "all categories"
@@ -153,6 +154,23 @@ class SettingController extends Controller
     public function getAdminHomepageSettings()
     {
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
+        
+        $newArrivals = array_merge([
+            'enabled' => false,
+            'product_ids' => [],
+        ], $settings->get('homepage_new_arrivals', []));
+
+        if (!empty($newArrivals['product_ids'])) {
+            $ids = $newArrivals['product_ids'];
+            $newArrivals['products'] = Product::whereIn('id', $ids)
+                ->with(['images', 'variants'])
+                ->get()
+                ->sortBy(function($model) use ($ids) {
+                    return array_search($model->id, $ids);
+                })
+                ->values();
+        }
+
         return response()->json([
             'ticker' => array_merge([
                 'enabled' => true,
@@ -174,13 +192,11 @@ class SettingController extends Controller
                 'show_title' => true,
                 'slideshow_enabled' => true,
                 'autoplay_speed' => 5000,
+                'text_position' => 'center',
             ], $settings->get('homepage_hero', [])),
             'collections' => $settings->get('homepage_collections', []),
             'showcase' => $settings->get('homepage_showcase', []),
-            'new_arrivals' => array_merge([
-                'enabled' => false,
-                'product_ids' => [],
-            ], $settings->get('homepage_new_arrivals', []))
+            'new_arrivals' => $newArrivals
         ]);
     }
 
@@ -215,6 +231,7 @@ class SettingController extends Controller
             'hero_show_title' => 'nullable|string',
             'hero_slideshow_enabled' => 'nullable|string',
             'hero_autoplay_speed' => 'nullable|integer|min:1000|max:30000',
+            'hero_text_position' => 'nullable|string|in:top-left,top-right,bottom-left,bottom-right,center',
 
             'new_arrivals' => 'nullable|array',
             'new_arrivals.enabled' => 'nullable|string',
@@ -259,7 +276,7 @@ class SettingController extends Controller
             );
         }
 
-        if ($request->has('hero_images') || $request->has('hero_images_meta') || $request->has('hero_title') || $request->has('hero_show_title')) {
+        if ($request->has('hero_images') || $request->has('hero_images_meta') || $request->has('hero_title') || $request->has('hero_show_title') || $request->has('hero_text_position')) {
             $currentHero = Setting::where('key', 'homepage_hero')->first()?->value ?? [];
             
             // Handle multiple hero images
@@ -323,6 +340,10 @@ class SettingController extends Controller
 
             if ($request->has('hero_autoplay_speed')) {
                 $currentHero['autoplay_speed'] = (int) $request->input('hero_autoplay_speed');
+            }
+            
+            if ($request->has('hero_text_position')) {
+                $currentHero['text_position'] = $request->input('hero_text_position');
             }
 
             Setting::updateOrCreate(
