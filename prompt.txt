@@ -655,3 +655,20 @@ this can be choosen from the homepage settings when hero text is enabled.
 the corner positions need a good amount of padding to avoid getting cut off from edges. 
 these positions of the hero text will not be responsive to mobile viewport (but responsive to different screen width of desktop).
 on mobile, the hero text (when on) will always be in center center. (after cta buttons) 
+
+### going abroad 
+
+we want this new feature in our codebase:
+a "collection" grouping which will be somewhat simillar to the categories.
+they will not have any sub-collections.
+product creation or anything else will not take them into consideration, for the most part. 
+they will have a panel in admin side and connected to the sidebar.
+we can CRUD colelctions from there. they have thumnail, banner.
+
+from that panel, we can browse products (we'll add sku here. for name, use base_name) (across different categories, subcategories) and add them to the collection. 
+this will act as a temporary category like container.
+their use will be:
+we can add them to the featured collections section in the homepage, the homepage settings will handle this addition (mixed together combo of cateogries and collections)
+then, pressing on the colelction in the homepage featured collections will take the user to a e-commerce/collections/slug page (a new page but exact replica of slug page). the category sidebar will not show collections.
+
+

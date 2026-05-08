@@ -61,6 +61,9 @@ export default function HomepageSettingsPage() {
           show_title: settingsData.hero?.show_title ?? true,
           slideshow_enabled: settingsData.hero?.slideshow_enabled ?? true,
           autoplay_speed: settingsData.hero?.autoplay_speed ?? 5000,
+          text_position: settingsData.hero?.text_position || 'center',
+          text_color: settingsData.hero?.text_color || '#ffffff',
+          font_size: settingsData.hero?.font_size || 84,
         },
         collections: settingsData.collections || [],
         showcase: (settingsData.showcase || []).map((item: any) => ({
@@ -69,7 +72,7 @@ export default function HomepageSettingsPage() {
         })),
         new_arrivals: {
           enabled: settingsData.new_arrivals?.enabled ?? false,
-          product_ids: settingsData.new_arrivals?.product_ids || []
+          product_ids: (settingsData.new_arrivals?.product_ids || []).map((id: any) => Number(id))
         }
       };
 
@@ -124,6 +127,8 @@ export default function HomepageSettingsPage() {
         formData.append("hero_slideshow_enabled", settings.hero.slideshow_enabled ? "1" : "0");
         formData.append("hero_autoplay_speed", String(settings.hero.autoplay_speed || 5000));
         formData.append("hero_text_position", settings.hero.text_position || "center");
+        formData.append("hero_text_color", settings.hero.text_color || "#ffffff");
+        formData.append("hero_font_size", String(settings.hero.font_size || 84));
         
         const meta: any[] = [];
         let fileIndex = 0;
@@ -361,11 +366,11 @@ export default function HomepageSettingsPage() {
     
     const currentIds = [...settings.new_arrivals.product_ids];
     const currentData = [...selectedProductsData];
-    const exists = currentIds.indexOf(product.id);
+    const exists = currentIds.findIndex(id => Number(id) === Number(product.id));
     
     if (exists !== -1) {
       currentIds.splice(exists, 1);
-      const dataIdx = currentData.findIndex(p => p.id === product.id);
+      const dataIdx = currentData.findIndex(p => Number(p.id) === Number(product.id));
       if (dataIdx !== -1) currentData.splice(dataIdx, 1);
     } else {
       if (currentIds.length >= 12) {
@@ -388,8 +393,8 @@ export default function HomepageSettingsPage() {
 
   const removeSelectedProduct = (id: number) => {
     if (!settings || !settings.new_arrivals) return;
-    const currentIds = settings.new_arrivals.product_ids.filter(pid => pid !== id);
-    setSelectedProductsData(prev => prev.filter(p => p.id !== id));
+    const currentIds = settings.new_arrivals.product_ids.filter(pid => Number(pid) !== Number(id));
+    setSelectedProductsData(prev => prev.filter(p => Number(p.id) !== Number(id)));
     setSettings({
       ...settings,
       new_arrivals: {
@@ -647,6 +652,47 @@ export default function HomepageSettingsPage() {
                                 <option value="bottom-right">Bottom Right</option>
                               </select>
                               <p className="mt-1 text-[10px] text-gray-400">Position applies to desktop view only. Mobile always uses center center.</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Text Color</label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    value={settings.hero.text_color || '#ffffff'}
+                                    onChange={(e) => {
+                                      setSettings({ ...settings, hero: { ...settings.hero, text_color: e.target.value } });
+                                      setHeroChanged(true);
+                                    }}
+                                    className="w-10 h-10 p-1 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-white dark:bg-gray-900"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={settings.hero.text_color || '#ffffff'}
+                                    onChange={(e) => {
+                                      setSettings({ ...settings, hero: { ...settings.hero, text_color: e.target.value } });
+                                      setHeroChanged(true);
+                                    }}
+                                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-xs"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Font Size (Max)</label>
+                                <input
+                                  type="number"
+                                  min={20}
+                                  max={200}
+                                  value={settings.hero.font_size || 84}
+                                  onChange={(e) => {
+                                    setSettings({ ...settings, hero: { ...settings.hero, font_size: parseInt(e.target.value) || 84 } });
+                                    setHeroChanged(true);
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                                <p className="mt-1 text-[10px] text-gray-400">Desktop font size. Scaled responsively.</p>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -1002,7 +1048,7 @@ export default function HomepageSettingsPage() {
                         ) : (
                           <div className="flex flex-col gap-3">
                             {settings.new_arrivals.product_ids.map((productId, idx) => {
-                              const product = selectedProductsData.find(p => p.id === productId) || searchResults.find(p => p.id === productId);
+                              const product = selectedProductsData.find(p => Number(p.id) === Number(productId)) || searchResults.find(p => Number(p.id) === Number(productId));
                               return (
                                 <div key={productId} className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
                                   <div className="flex items-center gap-3 overflow-hidden">

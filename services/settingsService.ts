@@ -21,6 +21,8 @@ export interface HomepageSettings {
     slideshow_enabled?: boolean;
     autoplay_speed?: number;
     text_position?: string;
+    text_color?: string;
+    font_size?: number;
   };
   collections: {
     id: number;

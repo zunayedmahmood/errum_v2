@@ -39,6 +39,8 @@ class SettingController extends Controller
                 'slideshow_enabled' => true,
                 'autoplay_speed' => 5000,
                 'text_position' => 'center',
+                'text_color' => '#ffffff',
+                'font_size' => 84,
             ], $settings->get('homepage_hero', [])),
             'collections' => [],
             'showcase' => $settings->get('homepage_showcase'), // default will be null if missing, so storefront knows to fallback to "all categories"
@@ -61,62 +63,36 @@ class SettingController extends Controller
                 });
 
             $response['new_arrivals']['products'] = $products->map(function ($product) {
-                $activeBatches = $product->batches;
-                $cheapestBatch = $activeBatches->where('quantity', '>', 0)->sortBy('sell_price')->first() 
-                                ?? $activeBatches->sortBy('sell_price')->first();
-                
-                return [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'sku' => $product->sku,
-                    'selling_price' => $cheapestBatch ? (float) $cheapestBatch->sell_price : 0,
-                    'images' => $product->images->where('is_active', true)->take(2)->map(function ($image) {
-                        return [
-                            'id' => $image->id,
-                            'url' => $image->image_url,
-                            'alt_text' => $image->alt_text,
-                            'is_primary' => $image->is_primary,
-                        ];
-                    }),
-                    'category' => $product->category ? ['title' => $product->category->title] : null,
-                    'in_stock' => $activeBatches->sum('quantity') > 0,
-                    'has_variants' => Product::where('sku', $product->sku)->count() > 1
-                ];
+                return $this->formatProductForHome($product);
             })->values();
         } else {
-            // Fallback to latest products if not enabled or empty
+            // Fallback to latest products if not enabled or empty — GROUPED BY SKU (base_name)
+            $latestIds = \Illuminate\Support\Facades\DB::table('products')
+                ->whereNull('deleted_at')
+                ->where('is_archived', false)
+                ->whereExists(function ($query) {
+                    $query->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('product_batches')
+                        ->whereColumn('product_batches.product_id', 'products.id')
+                        ->where('product_batches.quantity', '>', 0)
+                        ->where('product_batches.is_active', true)
+                        ->where('product_batches.availability', true);
+                })
+                ->select(\Illuminate\Support\Facades\DB::raw('MAX(id) as id'))
+                ->groupBy('base_name')
+                ->orderBy(\Illuminate\Support\Facades\DB::raw('MAX(created_at)'), 'desc')
+                ->take(12)
+                ->pluck('id');
+
             $products = Product::with(['images', 'category', 'batches' => function ($q) {
                     $q->where('is_active', true)->where('availability', true);
                 }])
-                ->where('is_archived', false)
-                ->whereHas('batches', function ($q) {
-                    $q->where('quantity', '>', 0);
-                })
-                ->orderBy('created_at', 'desc')
-                ->take(12)
-                ->get();
+                ->whereIn('id', $latestIds)
+                ->get()
+                ->sortByDesc('created_at');
 
             $response['new_arrivals']['products'] = $products->map(function ($product) {
-                $activeBatches = $product->batches;
-                $cheapestBatch = $activeBatches->sortBy('sell_price')->first();
-                
-                return [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'sku' => $product->sku,
-                    'selling_price' => $cheapestBatch ? (float) $cheapestBatch->sell_price : 0,
-                    'images' => $product->images->where('is_active', true)->take(2)->map(function ($image) {
-                        return [
-                            'id' => $image->id,
-                            'url' => $image->image_url,
-                            'alt_text' => $image->alt_text,
-                            'is_primary' => $image->is_primary,
-                        ];
-                    }),
-                    'category' => $product->category ? ['title' => $product->category->title] : null,
-                    'in_stock' => true,
-                    'has_variants' => Product::where('sku', $product->sku)->count() > 1
-                ];
+                return $this->formatProductForHome($product);
             })->values();
         }
 
@@ -163,10 +139,15 @@ class SettingController extends Controller
         if (!empty($newArrivals['product_ids'])) {
             $ids = $newArrivals['product_ids'];
             $newArrivals['products'] = Product::whereIn('id', $ids)
-                ->with(['images', 'variants'])
+                ->with(['images', 'category', 'batches' => function ($q) {
+                    $q->where('is_active', true)->where('availability', true);
+                }])
                 ->get()
                 ->sortBy(function($model) use ($ids) {
                     return array_search($model->id, $ids);
+                })
+                ->map(function ($product) {
+                    return $this->formatProductForHome($product);
                 })
                 ->values();
         }
@@ -193,6 +174,8 @@ class SettingController extends Controller
                 'slideshow_enabled' => true,
                 'autoplay_speed' => 5000,
                 'text_position' => 'center',
+                'text_color' => '#ffffff',
+                'font_size' => 84,
             ], $settings->get('homepage_hero', [])),
             'collections' => $settings->get('homepage_collections', []),
             'showcase' => $settings->get('homepage_showcase', []),
@@ -232,6 +215,8 @@ class SettingController extends Controller
             'hero_slideshow_enabled' => 'nullable|string',
             'hero_autoplay_speed' => 'nullable|integer|min:1000|max:30000',
             'hero_text_position' => 'nullable|string|in:top-left,top-right,bottom-left,bottom-right,center',
+            'hero_text_color' => 'nullable|string|max:20',
+            'hero_font_size' => 'nullable|integer|min:20|max:200',
 
             'new_arrivals' => 'nullable|array',
             'new_arrivals.enabled' => 'nullable|string',
@@ -346,6 +331,14 @@ class SettingController extends Controller
                 $currentHero['text_position'] = $request->input('hero_text_position');
             }
 
+            if ($request->has('hero_text_color')) {
+                $currentHero['text_color'] = $request->input('hero_text_color');
+            }
+
+            if ($request->has('hero_font_size')) {
+                $currentHero['font_size'] = (int) $request->input('hero_font_size');
+            }
+
             Setting::updateOrCreate(
                 ['key' => 'homepage_hero'],
                 ['value' => $currentHero, 'group' => 'homepage']
@@ -353,5 +346,34 @@ class SettingController extends Controller
         }
 
         return response()->json(['message' => 'Homepage settings updated successfully']);
+    }
+
+    /**
+     * Helper to format products consistently for the home page sections.
+     */
+    private function formatProductForHome(Product $product): array
+    {
+        $activeBatches = $product->batches;
+        $cheapestBatch = $activeBatches->where('quantity', '>', 0)->sortBy('sell_price')->first() 
+                        ?? $activeBatches->sortBy('sell_price')->first();
+        
+        return [
+            'id' => $product->id,
+            'name' => $product->name,
+            'base_name' => $product->base_name,
+            'sku' => $product->sku,
+            'selling_price' => $cheapestBatch ? (float) $cheapestBatch->sell_price : 0,
+            'images' => $product->images->where('is_active', true)->take(2)->map(function ($image) {
+                return [
+                    'id' => $image->id,
+                    'url' => $image->image_url,
+                    'alt_text' => $image->alt_text,
+                    'is_primary' => $image->is_primary,
+                ];
+            }),
+            'category' => $product->category ? ['id' => $product->category->id, 'title' => $product->category->title] : null,
+            'in_stock' => $activeBatches->sum('quantity') > 0,
+            'has_variants' => Product::where('base_name', $product->base_name)->count() > 1
+        ];
     }
 }

@@ -78,6 +78,8 @@ export default function HomePage() {
         slideshowEnabled={settings?.hero?.slideshow_enabled}
         autoplaySpeed={settings?.hero?.autoplay_speed}
         textPosition={settings?.hero?.text_position}
+        textColor={settings?.hero?.text_color}
+        fontSize={settings?.hero?.font_size}
       />
 
       {/* 2. Collection Tiles */}

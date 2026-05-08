@@ -855,44 +855,52 @@ class EcommerceCatalogController extends Controller
     public function getNewArrivals(Request $request)
     {
         try {
-            $limit = min($request->get('limit', 8), 20);
-            $days = $request->get('days', 30); // Products added in last 30 days
+            $limit = min($request->get('limit', 12), 30);
+            $days = (int) $request->get('days', 30);
+
+            // Group by base_name to avoid showing multiple variants of the same product
+            $latestIds = DB::table('products')
+                ->whereNull('deleted_at')
+                ->where('is_archived', false)
+                ->where('created_at', '>=', now()->subDays($days))
+                ->whereExists(function ($query) {
+                    $query->select(DB::raw(1))
+                        ->from('product_batches')
+                        ->whereColumn('product_batches.product_id', 'products.id')
+                        ->where('product_batches.quantity', '>', 0)
+                        ->where('product_batches.is_active', true)
+                        ->where('product_batches.availability', true);
+                })
+                ->select(DB::raw('MAX(id) as id'))
+                ->groupBy('base_name')
+                ->orderBy(DB::raw('MAX(created_at)'), 'desc')
+                ->take($limit)
+                ->pluck('id');
+
+            if ($latestIds->isEmpty()) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'new_arrivals' => [],
+                        'total_new_arrivals' => 0,
+                        'days_range' => $days,
+                    ],
+                ]);
+            }
 
             $products = Product::with(['images', 'category', 'batches' => function ($q) {
                     $q->orderBy('sell_price', 'asc');
                 }])
-                ->where('is_archived', false)
-                ->whereHas('batches', function ($q) {
-                    $q->where('quantity', '>', 0);
-                })
-                ->where('created_at', '>=', now()->subDays($days))
-                ->orderBy('created_at', 'desc')
-                ->take($limit)
-                ->get();
+                ->whereIn('id', $latestIds)
+                ->get()
+                ->sortByDesc('created_at')
+                ->values();
 
             return response()->json([
                 'success' => true,
                 'data' => [
                     'new_arrivals' => $products->map(function ($product) {
-                        $lowestBatch = $product->batches->sortBy('sell_price')->first();
-                        
-                        return [
-                            'id' => $product->id,
-                            'name' => $product->name,
-                            'brand' => $product->brand,
-                            'sku' => $product->sku,
-                            'selling_price' => $lowestBatch ? $lowestBatch->sell_price : 0,
-                            'images' => $product->images->where('is_active', true)->take(2)->map(function ($image) {
-                                return [
-                                    'id' => $image->id,
-                                    'url' => $image->image_url,
-                                    'alt_text' => $image->alt_text,
-                                    'is_primary' => $image->is_primary,
-                                ];
-                            }),
-                            'category' => $product->category->title ?? null,
-                            'added_days_ago' => $product->created_at->diffInDays(now()),
-                        ];
+                        return $this->formatProductForApi($product);
                     }),
                     'total_new_arrivals' => $products->count(),
                     'days_range' => $days,

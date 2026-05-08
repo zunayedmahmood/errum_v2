@@ -17,7 +17,9 @@ export default function HeroSection({
   showTitle = true,
   slideshowEnabled = true,
   autoplaySpeed = 5000,
-  textPosition = 'center'
+  textPosition = 'center',
+  textColor = '#ffffff',
+  fontSize = 84
 }: {
   images?: HeroImage[];
   title?: string;
@@ -25,6 +27,8 @@ export default function HeroSection({
   slideshowEnabled?: boolean;
   autoplaySpeed?: number;
   textPosition?: string;
+  textColor?: string;
+  fontSize?: number;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -353,8 +357,11 @@ export default function HeroSection({
           textAlign: (!isMobile && textPosition.includes('left')) ? 'left' : 
                      (!isMobile && textPosition.includes('right')) ? 'right' : 'center',
           width: '100%',
-          marginTop: '-120px', // Compensate for top margin
-          padding: !isMobile && textPosition !== 'center' ? '80px 100px' : '0',
+          marginTop: 0, // Remove negative margin to prevent overlap with buttons
+          paddingTop: !isMobile && textPosition.includes('top') ? '80px' : '0',
+          paddingBottom: !isMobile && textPosition.includes('bottom') ? '80px' : '0',
+          paddingLeft: !isMobile && textPosition.includes('left') ? '80px' : '0',
+          paddingRight: !isMobile && textPosition.includes('right') ? '80px' : '0',
           zIndex: 10,
           pointerEvents: 'none'
         }}>
@@ -362,9 +369,9 @@ export default function HeroSection({
             <div style={{ maxWidth: '900px', pointerEvents: 'auto' }}>
               <h1 style={{
                 fontFamily: "var(--font-poppins), sans-serif",
-                fontSize: 'clamp(48px, 10vw, 110px)',
+                fontSize: `clamp(48px, 10vw, ${fontSize}px)`,
                 fontWeight: 500,
-                color: '#ffffff',
+                color: textColor || '#ffffff',
                 lineHeight: 1.0,
                 letterSpacing: '-0.04em',
                 textShadow: '0 8px 48px rgba(0,0,0,0.5)',
