@@ -747,10 +747,10 @@ function ViewInventoryPageContent() {
                     setViewMode(e.target.value as 'all' | 'category');
                     if (e.target.value === 'all') setSelectedCategoryId(null);
                   }}
-                  className="w-full p-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
+                  className="w-full p-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
                 >
-                  <option value="all">Current Stock (All Products)</option>
-                  <option value="category">Category-wise Stock</option>
+                  <option value="all" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">Current Stock (All Products)</option>
+                  <option value="category" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">Category-wise Stock</option>
                 </select>
               </div>
 

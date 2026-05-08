@@ -13,7 +13,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 
 export default function CollectionsPage() {
   const { isRole, isLoading: authLoading } = useAuth();
-  const isPowerUser = isRole(['super-admin', 'admin']);
+  const isPowerUser = isRole(['super-admin', 'admin', 'online-moderator']);
   
   const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);

@@ -672,3 +672,10 @@ we can add them to the featured collections section in the homepage, the homepag
 then, pressing on the colelction in the homepage featured collections will take the user to a e-commerce/collections/slug page (a new page but exact replica of slug page). the category sidebar will not show collections.
 
 
+### home page settings breakdown for optimisation:
+currently the homepage loads the entire homepage settings in one go and then loads the page.
+
+we want to upgrade this and now, homepage settings should be saved in groups that make sense, like ticker, hero text, image all in one group, new arrivals are group, featured and showcase are one group, etc.
+then, homepage loads as soon as the hero group is loaded. it then behind the scenes, loads the rest of the page.
+however, to avoid a shaking effect, there should be a rough skeleton first imported (like,  ticker is on or off before ticker phrase is being tried to load. this prevents ticker bacground to appear and disapear).
+the homepage skeleton should be loaded at first, before anything else.
