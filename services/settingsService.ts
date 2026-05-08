@@ -26,6 +26,7 @@ export interface HomepageSettings {
   };
   collections: {
     id: number;
+    type?: 'category' | 'collection';
     title?: string;
     subtitle: string;
     image?: string;

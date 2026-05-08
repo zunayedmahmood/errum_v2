@@ -99,24 +99,44 @@ class SettingController extends Controller
         $collectionsSetting = $settings->get('homepage_collections', []);
         
         if (!empty($collectionsSetting)) {
-            $categoryIds = collect($collectionsSetting)->pluck('id')->toArray();
-            if (!empty($categoryIds)) {
+            $idsByType = collect($collectionsSetting)->groupBy('type');
+            
+            $categories = collect();
+            if ($idsByType->has('category')) {
+                $categoryIds = $idsByType->get('category')->pluck('id')->toArray();
                 $categories = Category::whereIn('id', $categoryIds)->get()->keyBy('id');
+            }
+            
+            $collections = collect();
+            if ($idsByType->has('collection')) {
+                $collectionIds = $idsByType->get('collection')->pluck('id')->toArray();
+                $collections = \App\Models\Collection::whereIn('id', $collectionIds)->get()->keyBy('id');
+            }
+            
+            foreach ($collectionsSetting as $item) {
+                $type = $item['type'] ?? 'category';
+                $id = $item['id'];
                 
-                foreach ($collectionsSetting as $item) {
-                    if (isset($categories[$item['id']])) {
-                        $cat = $categories[$item['id']];
-                        // Use accessors for absolute URLs
-                        $imageUrl = $cat->image_url ?: '/images/placeholder-product.jpg';
-                        
-                        $response['collections'][] = [
-                            'id' => $cat->id,
-                            'title' => !empty($item['title']) ? $item['title'] : $cat->title,
-                            'subtitle' => $item['subtitle'] ?? 'Explore Collection',
-                            'image' => $imageUrl,
-                            'href' => '/e-commerce/' . ($cat->slug ?? $cat->id)
-                        ];
-                    }
+                if ($type === 'category' && isset($categories[$id])) {
+                    $cat = $categories[$id];
+                    $response['collections'][] = [
+                        'id' => $cat->id,
+                        'type' => 'category',
+                        'title' => !empty($item['title']) ? $item['title'] : $cat->title,
+                        'subtitle' => $item['subtitle'] ?? 'Explore Category',
+                        'image' => $cat->image_url ?: '/images/placeholder-product.jpg',
+                        'href' => '/e-commerce/' . ($cat->slug ?? $cat->id)
+                    ];
+                } elseif ($type === 'collection' && isset($collections[$id])) {
+                    $col = $collections[$id];
+                    $response['collections'][] = [
+                        'id' => $col->id,
+                        'type' => 'collection',
+                        'title' => !empty($item['title']) ? $item['title'] : $col->name,
+                        'subtitle' => $item['subtitle'] ?? 'View Collection',
+                        'image' => $col->thumbnail_url ?: $col->banner_url ?: '/images/placeholder-product.jpg',
+                        'href' => '/e-commerce/collections/' . ($col->slug ?? $col->id)
+                    ];
                 }
             }
         }
@@ -199,7 +219,9 @@ class SettingController extends Controller
             'ticker.phrases.*' => 'nullable|string|max:255',
             
             'collections' => 'nullable|array',
-            'collections.*.id' => 'required|exists:categories,id',
+            'collections.*.id' => 'required|integer',
+            'collections.*.type' => 'required|string|in:category,collection',
+            'collections.*.title' => 'nullable|string|max:255',
             'collections.*.subtitle' => 'nullable|string|max:255',
             
             'showcase' => 'nullable|array',

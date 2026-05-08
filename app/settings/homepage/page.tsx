@@ -6,6 +6,7 @@ import categoryService from "@/services/categoryService";
 import { Save, Plus, Trash2, ArrowUp, ArrowDown, Search, X } from "lucide-react";
 import { toast } from "react-hot-toast";
 import catalogService from "@/services/catalogService";
+import collectionService from "@/services/collectionService";
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -13,6 +14,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 export default function HomepageSettingsPage() {
   const [settings, setSettings] = useState<HomepageSettings | null>(null);
   const [flatCategories, setFlatCategories] = useState<{ id: number; title: string }[]>([]);
+  const [availableCollections, setAvailableCollections] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [heroImages, setHeroImages] = useState<{
@@ -39,9 +41,10 @@ export default function HomepageSettingsPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [settingsData, categoryTree] = await Promise.all([
+      const [settingsData, categoryTree, collectionsData] = await Promise.all([
         settingsService.getAdminHomepageSettings(),
-        categoryService.getTree(true)
+        categoryService.getTree(true),
+        collectionService.getAll({ per_page: 100 })
       ]);
 
       // Normalize settings to prevent "length of undefined" errors
@@ -78,6 +81,13 @@ export default function HomepageSettingsPage() {
 
       if (settingsData.new_arrivals?.products) {
         setSelectedProductsData(settingsData.new_arrivals.products);
+      } else if (normalized.new_arrivals?.product_ids.length > 0) {
+        // Fallback: fetch products if backend didn't hydrate them
+        catalogService.getProducts({ 
+          product_ids: normalized.new_arrivals.product_ids 
+        } as any).then(res => {
+          if (res.products) setSelectedProductsData(res.products);
+        });
       }
 
       setSettings(normalized);
@@ -96,6 +106,7 @@ export default function HomepageSettingsPage() {
         return result;
       };
       setFlatCategories(flatten(categoryTree));
+      setAvailableCollections(Array.isArray(collectionsData.data) ? collectionsData.data : []);
     } catch (error) {
       console.error("Failed to load settings:", error);
       toast.error("Failed to load settings");
@@ -152,6 +163,7 @@ export default function HomepageSettingsPage() {
       } else {
         settings.collections.forEach((col, index) => {
           formData.append(`collections[${index}][id]`, String(col.id));
+          formData.append(`collections[${index}][type]`, col.type || "category");
           formData.append(`collections[${index}][title]`, col.title || "");
           formData.append(`collections[${index}][subtitle]`, col.subtitle || "");
         });
@@ -313,7 +325,7 @@ export default function HomepageSettingsPage() {
     if (!settings) return;
     setSettings({
       ...settings,
-      collections: [...settings.collections, { id: flatCategories[0]?.id || 0, title: "", subtitle: "" }]
+      collections: [...settings.collections, { id: flatCategories[0]?.id || 0, type: "category", title: "", subtitle: "" }]
     });
   };
 
@@ -787,7 +799,24 @@ export default function HomepageSettingsPage() {
                         </div>
                         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Category / Subcategory</label>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Entity Type</label>
+                            <select
+                              value={col.type || 'category'}
+                              onChange={(e) => {
+                                const type = e.target.value as 'category' | 'collection';
+                                const newCols = settings.collections.map((c, i) =>
+                                  i === idx ? { ...c, type, id: type === 'category' ? (flatCategories[0]?.id || 0) : (availableCollections[0]?.id || 0) } : c
+                                );
+                                setSettings({ ...settings, collections: newCols });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                            >
+                              <option value="category">Category</option>
+                              <option value="collection">Collection</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Target Item</label>
                             <select
                               value={col.id}
                               onChange={(e) => {
@@ -798,10 +827,21 @@ export default function HomepageSettingsPage() {
                               }}
                               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
                             >
-                              <option value={0} disabled>Select a category</option>
-                              {flatCategories.map(c => (
-                                <option key={c.id} value={c.id}>{c.title}</option>
-                              ))}
+                              {col.type === 'collection' ? (
+                                <>
+                                  <option value={0} disabled>Select a collection</option>
+                                  {availableCollections.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                  ))}
+                                </>
+                              ) : (
+                                <>
+                                  <option value={0} disabled>Select a category</option>
+                                  {flatCategories.map(c => (
+                                    <option key={c.id} value={c.id}>{c.title}</option>
+                                  ))}
+                                </>
+                              )}
                             </select>
                           </div>
                           <div>
@@ -815,7 +855,7 @@ export default function HomepageSettingsPage() {
                                 );
                                 setSettings({ ...settings, collections: newCols });
                               }}
-                              placeholder="Leave blank to use category name"
+                              placeholder="Leave blank to use item name"
                               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
                             />
                           </div>
@@ -830,7 +870,7 @@ export default function HomepageSettingsPage() {
                                 );
                                 setSettings({ ...settings, collections: newCols });
                               }}
-                              placeholder="e.g. Step into the future"
+                              placeholder="e.g. View Collection"
                               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
                             />
                           </div>

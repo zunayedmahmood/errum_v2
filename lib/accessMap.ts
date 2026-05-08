@@ -23,6 +23,8 @@ export const PAGE_ACCESS: Record<string, RoleSlug[]> = {
   '/store': ['super-admin', 'admin'],
   '/store-assingment': ['super-admin', 'admin', 'online-moderator'],
   '/category': ['super-admin', 'admin', 'online-moderator'],
+  '/collections': ['super-admin', 'admin', 'online-moderator'],
+  '/collections/create': ['super-admin', 'admin', 'online-moderator'],
   '/gallery': ['super-admin', 'admin'],
 
   // Products

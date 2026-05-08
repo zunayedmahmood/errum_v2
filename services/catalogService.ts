@@ -1274,6 +1274,18 @@ const catalogService = {
       return [];
     }
   },
+
+  async getCollection(slug: string, params: { page?: number } = {}): Promise<any> {
+    const response = await api.get(`/catalog/collections/${slug}`, { params });
+    const data = response.data;
+    
+    if (data.success && data.products) {
+      // Normalize products in the collection
+      data.products.data = data.products.data.map((p: any) => normalizeProduct(p));
+    }
+    
+    return data;
+  },
 };
 
 export default catalogService;
