@@ -13,12 +13,16 @@ class SettingController extends Controller
     /**
      * Get homepage settings for the public storefront.
      */
-    public function getHomepageSettings()
+    public function getHomepageSettings(Request $request)
     {
+        $group = $request->query('group');
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
         
-        $response = [
-            'ticker' => array_merge([
+        $response = [];
+
+        // 1. Ticker & Hero (The "Immediate" group)
+        if (!$group || $group === 'hero') {
+            $response['ticker'] = array_merge([
                 'enabled' => true,
                 'mode' => 'moving',
                 'background_color' => '#111111',
@@ -29,8 +33,9 @@ class SettingController extends Controller
                     'NEW SEASON ARRIVALS NOW LIVE',
                     'SAME DAY DELIVERY IN DHAKA CITY',
                 ],
-            ], $settings->get('homepage_ticker', [])),
-            'hero' => array_merge([
+            ], $settings->get('homepage_ticker', []));
+
+            $response['hero'] = array_merge([
                 'images' => [
                     ['url' => '/e-commerce-hero.jpg', 'path' => null]
                 ],
@@ -41,106 +46,117 @@ class SettingController extends Controller
                 'text_position' => 'center',
                 'text_color' => '#ffffff',
                 'font_size' => 84,
-            ], $settings->get('homepage_hero', [])),
-            'collections' => [],
-            'showcase' => $settings->get('homepage_showcase'), // default will be null if missing, so storefront knows to fallback to "all categories"
-            'new_arrivals' => array_merge([
+            ], $settings->get('homepage_hero', []));
+        }
+
+        // 2. New Arrivals
+        if (!$group || $group === 'new_arrivals') {
+            $newArrivalsSetting = array_merge([
                 'enabled' => false,
                 'product_ids' => [],
-            ], $settings->get('homepage_new_arrivals', []))
-        ];
+            ], $settings->get('homepage_new_arrivals', []));
 
-        $newArrivalsSetting = $response['new_arrivals'];
-        if ($newArrivalsSetting['enabled'] && !empty($newArrivalsSetting['product_ids'])) {
-            $productIds = $newArrivalsSetting['product_ids'];
-            $products = Product::with(['images', 'category', 'batches' => function ($q) {
-                    $q->where('is_active', true)->where('availability', true);
-                }])
-                ->whereIn('id', $productIds)
-                ->get()
-                ->sortBy(function($product) use ($productIds) {
-                    return array_search($product->id, $productIds);
-                });
+            if ($newArrivalsSetting['enabled'] && !empty($newArrivalsSetting['product_ids'])) {
+                $productIds = $newArrivalsSetting['product_ids'];
+                $products = Product::with(['images', 'category', 'batches' => function ($q) {
+                        $q->where('is_active', true)->where('availability', true);
+                    }])
+                    ->whereIn('id', $productIds)
+                    ->get()
+                    ->sortBy(function($product) use ($productIds) {
+                        return array_search($product->id, $productIds);
+                    });
 
-            $response['new_arrivals']['products'] = $products->map(function ($product) {
-                return $this->formatProductForHome($product);
-            })->values();
-        } else {
-            // Fallback to latest products if not enabled or empty — GROUPED BY SKU (base_name)
-            $latestIds = \Illuminate\Support\Facades\DB::table('products')
-                ->whereNull('deleted_at')
-                ->where('is_archived', false)
-                ->whereExists(function ($query) {
-                    $query->select(\Illuminate\Support\Facades\DB::raw(1))
-                        ->from('product_batches')
-                        ->whereColumn('product_batches.product_id', 'products.id')
-                        ->where('product_batches.quantity', '>', 0)
-                        ->where('product_batches.is_active', true)
-                        ->where('product_batches.availability', true);
-                })
-                ->select(\Illuminate\Support\Facades\DB::raw('MAX(id) as id'))
-                ->groupBy('base_name')
-                ->orderBy(\Illuminate\Support\Facades\DB::raw('MAX(created_at)'), 'desc')
-                ->take(12)
-                ->pluck('id');
+                $newArrivalsSetting['products'] = $products->map(function ($product) {
+                    return $this->formatProductForHome($product);
+                })->values();
+            } else {
+                $latestIds = \Illuminate\Support\Facades\DB::table('products')
+                    ->whereNull('deleted_at')
+                    ->where('is_archived', false)
+                    ->whereExists(function ($query) {
+                        $query->select(\Illuminate\Support\Facades\DB::raw(1))
+                            ->from('product_batches')
+                            ->whereColumn('product_batches.product_id', 'products.id')
+                            ->where('product_batches.quantity', '>', 0)
+                            ->where('product_batches.is_active', true)
+                            ->where('product_batches.availability', true);
+                    })
+                    ->select(\Illuminate\Support\Facades\DB::raw('MAX(id) as id'))
+                    ->groupBy('base_name')
+                    ->orderBy(\Illuminate\Support\Facades\DB::raw('MAX(created_at)'), 'desc')
+                    ->take(12)
+                    ->pluck('id');
 
-            $products = Product::with(['images', 'category', 'batches' => function ($q) {
-                    $q->where('is_active', true)->where('availability', true);
-                }])
-                ->whereIn('id', $latestIds)
-                ->get()
-                ->sortByDesc('created_at');
+                $products = Product::with(['images', 'category', 'batches' => function ($q) {
+                        $q->where('is_active', true)->where('availability', true);
+                    }])
+                    ->whereIn('id', $latestIds)
+                    ->get()
+                    ->sortByDesc('created_at');
 
-            $response['new_arrivals']['products'] = $products->map(function ($product) {
-                return $this->formatProductForHome($product);
-            })->values();
+                $newArrivalsSetting['products'] = $products->map(function ($product) {
+                    return $this->formatProductForHome($product);
+                })->values();
+            }
+            $response['new_arrivals'] = $newArrivalsSetting;
         }
 
-        $collectionsSetting = $settings->get('homepage_collections', []);
-        
-        if (!empty($collectionsSetting)) {
-            $idsByType = collect($collectionsSetting)->groupBy('type');
+        // 3. Collections
+        if (!$group || $group === 'collections') {
+            $collectionsSetting = $settings->get('homepage_collections', []);
+            $collectionsResponse = [];
             
-            $categories = collect();
-            if ($idsByType->has('category')) {
-                $categoryIds = $idsByType->get('category')->pluck('id')->toArray();
-                $categories = Category::whereIn('id', $categoryIds)->get()->keyBy('id');
-            }
-            
-            $collections = collect();
-            if ($idsByType->has('collection')) {
-                $collectionIds = $idsByType->get('collection')->pluck('id')->toArray();
-                $collections = \App\Models\Collection::whereIn('id', $collectionIds)->get()->keyBy('id');
-            }
-            
-            foreach ($collectionsSetting as $item) {
-                $type = $item['type'] ?? 'category';
-                $id = $item['id'];
+            if (!empty($collectionsSetting)) {
+                $idsByType = collect($collectionsSetting)->groupBy('type');
                 
-                if ($type === 'category' && isset($categories[$id])) {
-                    $cat = $categories[$id];
-                    $response['collections'][] = [
-                        'id' => $cat->id,
-                        'type' => 'category',
-                        'title' => !empty($item['title']) ? $item['title'] : $cat->title,
-                        'subtitle' => $item['subtitle'] ?? 'Explore Category',
-                        'image' => $cat->image_url ?: '/images/placeholder-product.jpg',
-                        'href' => '/e-commerce/' . ($cat->slug ?? $cat->id)
-                    ];
-                } elseif ($type === 'collection' && isset($collections[$id])) {
-                    $col = $collections[$id];
-                    $response['collections'][] = [
-                        'id' => $col->id,
-                        'type' => 'collection',
-                        'title' => !empty($item['title']) ? $item['title'] : $col->name,
-                        'subtitle' => $item['subtitle'] ?? 'View Collection',
-                        'image' => $col->thumbnail_url ?: $col->banner_url ?: '/images/placeholder-product.jpg',
-                        'href' => '/e-commerce/collections/' . ($col->slug ?? $col->id)
-                    ];
+                $categories = collect();
+                if ($idsByType->has('category')) {
+                    $categoryIds = $idsByType->get('category')->pluck('id')->toArray();
+                    $categories = Category::whereIn('id', $categoryIds)->get()->keyBy('id');
+                }
+                
+                $collections = collect();
+                if ($idsByType->has('collection')) {
+                    $collectionIds = $idsByType->get('collection')->pluck('id')->toArray();
+                    $collections = \App\Models\Collection::whereIn('id', $collectionIds)->get()->keyBy('id');
+                }
+                
+                foreach ($collectionsSetting as $item) {
+                    $type = $item['type'] ?? 'category';
+                    $id = $item['id'];
+                    
+                    if ($type === 'category' && isset($categories[$id])) {
+                        $cat = $categories[$id];
+                        $collectionsResponse[] = [
+                            'id' => $cat->id,
+                            'type' => 'category',
+                            'title' => !empty($item['title']) ? $item['title'] : $cat->title,
+                            'subtitle' => $item['subtitle'] ?? 'Explore Category',
+                            'image' => $cat->image_url ?: '/images/placeholder-product.jpg',
+                            'href' => '/e-commerce/' . ($cat->slug ?? $cat->id)
+                        ];
+                    } elseif ($type === 'collection' && isset($collections[$id])) {
+                        $col = $collections[$id];
+                        $collectionsResponse[] = [
+                            'id' => $col->id,
+                            'type' => 'collection',
+                            'title' => !empty($item['title']) ? $item['title'] : $col->name,
+                            'subtitle' => $item['subtitle'] ?? 'View Collection',
+                            'image' => $col->thumbnail_url ?: $col->banner_url ?: '/images/placeholder-product.jpg',
+                            'href' => '/e-commerce/collections/' . ($col->slug ?? $col->id)
+                        ];
+                    }
                 }
             }
+            $response['collections'] = $collectionsResponse;
         }
-        
+
+        // 4. Showcase
+        if (!$group || $group === 'showcase') {
+            $response['showcase'] = $settings->get('homepage_showcase');
+        }
+
         return response()->json($response);
     }
 

@@ -278,7 +278,7 @@ class VendorController extends Controller
 
             'products' => [
                 'total_products_supplied' => $vendor->products()->count(),
-                'active_products' => $vendor->products()->where('is_active', true)->count(),
+                'active_products' => $vendor->products()->where('is_archived', false)->count(),
                 'total_quantity_purchased' => $purchaseOrders->sum(function($po) {
                     return $po->items->sum('quantity_ordered');
                 }),

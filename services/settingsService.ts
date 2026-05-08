@@ -44,8 +44,10 @@ class SettingsService {
   /**
    * Get homepage settings for public display
    */
-  async getHomepageSettings(): Promise<HomepageSettings> {
-    const response = await axiosInstance.get('/catalog/homepage-settings');
+  async getHomepageSettings(group?: 'hero' | 'collections' | 'new_arrivals' | 'showcase'): Promise<Partial<HomepageSettings>> {
+    const response = await axiosInstance.get('/catalog/homepage-settings', {
+      params: group ? { group } : {}
+    });
     return response.data;
   }
 

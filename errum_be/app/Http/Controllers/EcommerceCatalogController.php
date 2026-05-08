@@ -1179,7 +1179,6 @@ class EcommerceCatalogController extends Controller
                 ->with(['images', 'category', 'batches' => function ($q) {
                     $q->where('is_active', true)->where('availability', true);
                 }])
-                ->where('products.is_active', true)
                 ->where('products.is_archived', false);
 
             $perPage = (int) $request->get('per_page', 40);

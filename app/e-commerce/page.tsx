@@ -5,16 +5,24 @@ import Navigation from '@/components/ecommerce/Navigation';
 import HeroSection from '@/components/ecommerce/HeroSection';
 import dynamic from 'next/dynamic';
 import AnnouncementTicker from '@/components/ecommerce/AnnouncementTicker';
+import { 
+  TickerSkeleton, 
+  HeroSkeleton, 
+  CollectionsSkeleton, 
+  SectionSkeleton,
+  ShowcaseSkeleton
+} from '@/components/ecommerce/HomepageSkeletons';
 
 const CollectionTiles = dynamic(() => import('@/components/ecommerce/CollectionTiles'), {
-  loading: () => <div style={{ minHeight: '400px', margin: '40px 0' }} className="w-full bg-[var(--bg-surface-2)] animate-pulse rounded-2xl" />
+  loading: () => <CollectionsSkeleton />
 });
 const NewArrivals = dynamic(() => import('@/components/ecommerce/NewArrivals'), {
-  loading: () => <div style={{ minHeight: '600px', margin: '40px 0' }} className="w-full bg-[var(--bg-surface-2)] animate-pulse rounded-2xl" />
+  loading: () => <SectionSkeleton height="600px" />
 });
 const SubcategoryProductTabs = dynamic(() => import('@/components/ecommerce/SubcategoryProductTabs'), {
-  loading: () => <div style={{ minHeight: '800px', margin: '40px 0' }} className="w-full bg-[var(--bg-surface-2)] animate-pulse rounded-2xl" />
+  loading: () => <ShowcaseSkeleton />
 });
+
 import SectionReveal from '@/components/ecommerce/SectionReveal';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
 import settingsService, { HomepageSettings } from '@/services/settingsService';
@@ -22,98 +30,136 @@ import { toAbsoluteAssetUrl } from '@/lib/urlUtils';
 
 export default function HomePage() {
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
-  const [settings, setSettings] = useState<HomepageSettings | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [heroData, setHeroData] = useState<{ ticker: any; hero: any } | null>(null);
+  const [collections, setCollections] = useState<any[] | null>(null);
+  const [newArrivals, setNewArrivals] = useState<any | null>(null);
+  const [showcase, setShowcase] = useState<any[] | null>(null);
+  
+  // Track individual loading states for granular control
+  const [loadingHero, setLoadingHero] = useState(true);
 
   useEffect(() => {
-    const init = async () => {
-      try {
-        const [catTree, homeSettings] = await Promise.all([
-          catalogService.getCategories(),
-          settingsService.getHomepageSettings()
-        ]);
+    // 1. Fetch Categories (For Fallback Showcase)
+    catalogService.getCategories().then(catTree => {
+      const top = catTree.filter(c => !c.parent_id);
+      setCategories(top.sort((a, b) => (b.product_count || 0) - (a.product_count || 0)));
+    }).catch(err => console.error('Failed to load categories:', err));
 
-        const top = catTree.filter(c => !c.parent_id);
-        setCategories(top.sort((a, b) => (b.product_count || 0) - (a.product_count || 0)));
-        setSettings(homeSettings);
-      } catch (err) {
-        console.error('Failed to initialize homepage:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    // 2. Fetch Hero & Ticker (Priority 1)
+    settingsService.getHomepageSettings('hero').then(data => {
+      setHeroData({ ticker: data.ticker, hero: data.hero });
+      setLoadingHero(false);
+    }).catch(err => {
+      console.error('Failed to load hero settings:', err);
+      setLoadingHero(false);
+    });
 
-    init();
+    // 3. Fetch Collections (Priority 2)
+    settingsService.getHomepageSettings('collections').then(data => {
+      setCollections(data.collections || []);
+    }).catch(err => console.error('Failed to load collections:', err));
+
+    // 4. Fetch New Arrivals (Priority 2)
+    settingsService.getHomepageSettings('new_arrivals').then(data => {
+      setNewArrivals(data.new_arrivals || { enabled: false, products: [] });
+    }).catch(err => console.error('Failed to load new arrivals:', err));
+
+    // 5. Fetch Showcase (Priority 3)
+    settingsService.getHomepageSettings('showcase').then(data => {
+      setShowcase(data.showcase || []);
+    }).catch(err => console.error('Failed to load showcase:', err));
   }, []);
-
-  if (loading) {
-    return (
-      <div className="ec-root min-h-screen bg-white flex flex-col items-center justify-center">
-        <div className="animate-pulse flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-full border-2 border-black/10 border-t-black animate-spin" />
-          <p className="text-[10px] tracking-widest uppercase text-neutral-400 font-bold">Initializing Experience</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="ec-root min-h-screen" style={{ background: '#ffffff' }}>
-      {settings?.ticker?.enabled && (
-        <AnnouncementTicker 
-          phrases={settings.ticker.phrases} 
-          mode={settings.ticker.mode}
-          backgroundColor={settings.ticker.background_color}
-          textColor={settings.ticker.text_color}
-          speed={settings.ticker.speed}
-        />
+      {/* 0. Ticker */}
+      {loadingHero ? (
+        <TickerSkeleton />
+      ) : (
+        heroData?.ticker?.enabled && (
+          <AnnouncementTicker 
+            phrases={heroData.ticker.phrases} 
+            mode={heroData.ticker.mode}
+            backgroundColor={heroData.ticker.background_color}
+            textColor={heroData.ticker.text_color}
+            speed={heroData.ticker.speed}
+          />
+        )
       )}
+
       <Navigation />
 
       {/* 1. Hero section */}
-      <HeroSection 
-        images={settings?.hero?.images ? settings.hero.images.map(img => ({ ...img, url: toAbsoluteAssetUrl(img.url) })) : []} 
-        title={settings?.hero?.title}
-        showTitle={settings?.hero?.show_title}
-        slideshowEnabled={settings?.hero?.slideshow_enabled}
-        autoplaySpeed={settings?.hero?.autoplay_speed}
-        textPosition={settings?.hero?.text_position}
-        textColor={settings?.hero?.text_color}
-        fontSize={settings?.hero?.font_size}
-      />
+      {loadingHero ? (
+        <HeroSkeleton />
+      ) : (
+        <HeroSection 
+          images={heroData?.hero?.images ? heroData.hero.images.map((img: any) => ({ ...img, url: toAbsoluteAssetUrl(img.url) })) : []} 
+          title={heroData?.hero?.title}
+          showTitle={heroData?.hero?.show_title}
+          slideshowEnabled={heroData?.hero?.slideshow_enabled}
+          autoplaySpeed={heroData?.hero?.autoplay_speed}
+          textPosition={heroData?.hero?.text_position}
+          textColor={heroData?.hero?.text_color}
+          fontSize={heroData?.hero?.font_size}
+        />
+      )}
 
       {/* 2. Collection Tiles */}
-      {settings?.collections && settings.collections.length > 0 && (
-        <SectionReveal>
-          <CollectionTiles collections={settings.collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />
-        </SectionReveal>
+      {collections === null ? (
+        <CollectionsSkeleton />
+      ) : (
+        collections.length > 0 && (
+          <SectionReveal>
+            <CollectionTiles collections={collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />
+          </SectionReveal>
+        )
       )}
 
       {/* 4. New Arrivals */}
-      <SectionReveal>
-        <NewArrivals limit={12} customProducts={settings?.new_arrivals?.products} />
-      </SectionReveal>
+      {newArrivals === null ? (
+        <SectionSkeleton height="600px" />
+      ) : (
+        <SectionReveal>
+          <NewArrivals limit={12} customProducts={newArrivals.products} />
+        </SectionReveal>
+      )}
 
       {/* 5. Showcase Categories (Configured via Settings) */}
-      {settings?.showcase?.map((item: any, idx: number) => (
-        <SectionReveal key={`showcase-${item.category_id}-${idx}`} threshold={0.1}>
-          <SubcategoryProductTabs
-            categoryId={item.category_id}
-            subcategoryIds={item.subcategories}
-          />
-        </SectionReveal>
-      ))}
+      {showcase === null ? (
+        <div className="flex flex-col gap-20 py-10">
+          <ShowcaseSkeleton />
+          <ShowcaseSkeleton />
+        </div>
+      ) : (
+        showcase.map((item: any, idx: number) => (
+          <SectionReveal key={`showcase-${item.category_id}-${idx}`} threshold={0.1}>
+            <SubcategoryProductTabs
+              categoryId={item.category_id}
+              subcategoryIds={item.subcategories}
+            />
+          </SectionReveal>
+        ))
+      )}
 
       {/* Fallback loop: if no showcase is configured, show top categories as default behavior */}
-      {(!settings?.showcase || settings.showcase.length === 0) && categories.map((item: any) => (
-        <SectionReveal key={`cat-${item.id}`} threshold={0.1}>
-          <SubcategoryProductTabs
-            categoryId={item.id}
-            eyebrow={item.name}
-            subtitle={`Explore our curated selection of quality ${item.name} essentials.`}
-          />
-        </SectionReveal>
-      ))}
+      {showcase !== null && showcase.length === 0 && (
+        categories.length === 0 ? (
+          <div className="flex flex-col gap-20 py-10">
+            <ShowcaseSkeleton />
+            <ShowcaseSkeleton />
+            <ShowcaseSkeleton />
+          </div>
+        ) : categories.map((item: any) => (
+          <SectionReveal key={`cat-${item.id}`} threshold={0.1}>
+            <SubcategoryProductTabs
+              categoryId={item.id}
+              eyebrow={item.name}
+              subtitle={`Explore our curated selection of quality ${item.name} essentials.`}
+            />
+          </SectionReveal>
+        ))
+      )}
     </div>
   );
 }
