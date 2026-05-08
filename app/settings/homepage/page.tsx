@@ -847,8 +847,11 @@ export default function HomepageSettingsPage() {
                               ))}
                             </div>
                           </div>
-                        </div>
-                    </div>
+                        <button onClick={() => removeShowcase(idx)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </section>
 
