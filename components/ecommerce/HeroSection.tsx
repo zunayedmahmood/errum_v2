@@ -358,10 +358,10 @@ export default function HeroSection({
                      (!isMobile && textPosition.includes('right')) ? 'right' : 'center',
           width: '100%',
           marginTop: 0, // Remove negative margin to prevent overlap with buttons
-          paddingTop: !isMobile && textPosition.includes('top') ? '20px' : '0',
-          paddingBottom: !isMobile && textPosition.includes('bottom') ? '20px' : '0',
-          paddingLeft: !isMobile && textPosition.includes('left') ? '20px' : '0',
-          paddingRight: !isMobile && textPosition.includes('right') ? '20px' : '0',
+          paddingTop: !isMobile && textPosition.includes('top') ? '60px' : '0',
+          paddingBottom: !isMobile ? (textPosition.includes('bottom') ? '45px' : '45px') : '0',
+          paddingLeft: !isMobile ? '65px' : '20px',
+          paddingRight: !isMobile ? '65px' : '20px',
           zIndex: 10,
           pointerEvents: 'none'
         }}>
