@@ -190,7 +190,7 @@ export default function HeroSection({
             style={{
               minWidth: '300px',
               transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              opacity: isFocused ? 0.95 : 0.5, // Slightly higher opacity for better visibility
+              opacity: isFocused ? 0.95 : 0.3, // Slightly higher opacity for better visibility
             }}
             className="w-[90vw] md:w-[60vw] max-w-[1200px]"
           >

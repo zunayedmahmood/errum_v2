@@ -23,6 +23,8 @@ export default function ReturnExchangeFromOrder({ order, onInitiateReturn, onIni
     ? (isConfirmed || isShipped || isDelivered)
     : (isConfirmed || isFulfilled || isDelivered);
 
+  const canInitiate = isSuperAdmin || ['admin', 'branch-manager', 'online-moderator', 'pos-salesman'].includes(role || '');
+
   if (!canInitiate || !isEligibleStatus) return null;
 
   return (
