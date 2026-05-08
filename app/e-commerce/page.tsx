@@ -18,6 +18,7 @@ const SubcategoryProductTabs = dynamic(() => import('@/components/ecommerce/Subc
 import SectionReveal from '@/components/ecommerce/SectionReveal';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
 import settingsService, { HomepageSettings } from '@/services/settingsService';
+import { toAbsoluteAssetUrl } from '@/lib/urlUtils';
 
 const CUSTOM_SECTIONS: Record<string, { eyebrow: string; subtitle: string; queries: string[] }> = {
   'sneakers': {
@@ -68,7 +69,7 @@ export default function HomePage() {
 
       {/* 1. Hero section */}
       <HeroSection 
-        bgUrl={settings?.hero?.image_url} 
+        bgUrl={settings?.hero?.image_url ? toAbsoluteAssetUrl(settings.hero.image_url) : undefined} 
         title={settings?.hero?.title}
         showTitle={settings?.hero?.show_title}
       />
@@ -76,7 +77,7 @@ export default function HomePage() {
       {/* 2. Collection Tiles */}
       {(!settings || (settings.collections && settings.collections.length > 0)) && (
         <SectionReveal>
-          <CollectionTiles collections={settings?.collections as any} />
+          <CollectionTiles collections={settings?.collections ? settings.collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any : undefined} />
         </SectionReveal>
       )}
 

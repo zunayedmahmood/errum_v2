@@ -206,6 +206,7 @@ export default function CategoryPage() {
   const { addToCart, setIsCartOpen } = useCart();
 
   const categorySlug = params.slug || '';
+  const { toAbsoluteAssetUrl } = require('@/lib/urlUtils');
 
   const [products, setProducts] = useState<(Product | SimpleProduct)[]>([]);
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
@@ -571,36 +572,41 @@ export default function CategoryPage() {
       <Navigation />
 
       <div className="ec-root bg-[var(--bg-root)] min-h-screen">
-        <div className={`relative mb-8 ${activeCategory?.banner_url ? 'h-[250px] md:h-[350px] overflow-hidden rounded-b-[40px] md:rounded-b-[60px]' : 'bg-[var(--bg-surface)] border-b border-[var(--border-default)]'}`}>
-          {activeCategory?.banner_url ? (
-            <>
-              <img 
-                src={activeCategory.banner_url} 
-                alt={activeCategory.name} 
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-black/30 backdrop-blur-[1px]" />
-              <div className="relative h-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-center text-center">
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-extralight text-white mb-4 tracking-tight drop-shadow-2xl" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                  {activeCategory.name}
-                </h1>
-                <div className="flex flex-col items-center gap-2">
-                  <div className="h-px w-12 bg-white/40 mb-2" />
-                  <p className="text-white/90 font-medium tracking-[0.2em] uppercase text-[10px] md:text-xs">
-                    {totalResults} {totalResults === 1 ? 'item' : 'items'} curated for you
+        {(() => {
+          const heroUrl = activeCategory?.banner_url ? toAbsoluteAssetUrl(activeCategory.banner_url) : (activeCategory?.image_url ? toAbsoluteAssetUrl(activeCategory.image_url) : null);
+          return (
+            <div className={`relative mb-8 ${heroUrl ? 'h-[250px] md:h-[350px] overflow-hidden rounded-b-[40px] md:rounded-b-[60px]' : 'bg-[var(--bg-surface)] border-b border-[var(--border-default)]'}`}>
+              {heroUrl ? (
+                <>
+                  <img 
+                    src={heroUrl} 
+                    alt={activeCategory?.name} 
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black/30 backdrop-blur-[1px]" />
+                  <div className="relative h-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-center text-center">
+                    <h1 className="text-4xl md:text-5xl lg:text-6xl font-extralight text-white mb-4 tracking-tight drop-shadow-2xl" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                      {activeCategory?.name}
+                    </h1>
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="h-px w-12 bg-white/40 mb-2" />
+                      <p className="text-white/90 font-medium tracking-[0.2em] uppercase text-[10px] md:text-xs">
+                        {totalResults} {totalResults === 1 ? 'item' : 'items'} curated for you
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+                  <h1 className="text-4xl font-light text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Poppins', sans-serif" }}>{activeCategory?.name || 'Products'}</h1>
+                  <p className="text-[var(--text-muted)] font-medium tracking-wide ec-eyebrow uppercase text-xs">
+                    {totalResults} {totalResults === 1 ? 'item' : 'items'} found
                   </p>
                 </div>
-              </div>
-            </>
-          ) : (
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-              <h1 className="text-4xl font-light text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Poppins', sans-serif" }}>{activeCategory?.name || 'Products'}</h1>
-              <p className="text-[var(--text-muted)] font-medium tracking-wide ec-eyebrow uppercase text-xs">
-                {totalResults} {totalResults === 1 ? 'item' : 'items'} found
-              </p>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
           <div className="flex flex-col lg:flex-row gap-8">
