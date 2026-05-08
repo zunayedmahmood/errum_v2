@@ -192,7 +192,8 @@ class Category extends Model
     public function getImageUrlAttribute()
     {
         if ($this->image) {
-            return asset('storage/' . $this->image);
+            // Using config('app.url') to avoid misconfigured APP_URL and proxy host overwrites
+            return rtrim(config('app.url'), '/') . '/storage/' . ltrim($this->image, '/');
         }
         return null;
     }
@@ -203,7 +204,8 @@ class Category extends Model
     public function getBannerUrlAttribute()
     {
         if ($this->banner) {
-            return asset('storage/' . $this->banner);
+            // Using config('app.url') to avoid proxy host overwrites
+            return rtrim(config('app.url'), '/') . '/storage/' . ltrim($this->banner, '/');
         }
         return null;
     }

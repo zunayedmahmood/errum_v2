@@ -17,19 +17,19 @@ class SettingController extends Controller
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
         
         $response = [
-            'ticker' => $settings->get('homepage_ticker', [
+            'ticker' => array_merge([
                 'enabled' => true,
                 'phrases' => [
                     'FREE SHIPPING ON ORDERS OVER ৳2000',
                     'NEW SEASON ARRIVALS NOW LIVE',
                     'SAME DAY DELIVERY IN DHAKA CITY',
                 ],
-            ]),
-            'hero' => $settings->get('homepage_hero', [
+            ], $settings->get('homepage_ticker', [])),
+            'hero' => array_merge([
                 'image_url' => '/e-commerce-hero.jpg',
                 'title' => 'Refining the Art of Lifestyle',
                 'show_title' => true
-            ]),
+            ], $settings->get('homepage_hero', [])),
             'collections' => [],
             'showcase' => $settings->get('homepage_showcase') // default will be null if missing, so storefront knows to fallback to "all categories"
         ];
@@ -45,14 +45,14 @@ class SettingController extends Controller
                     if (isset($categories[$item['id']])) {
                         $cat = $categories[$item['id']];
                         // Use accessors for absolute URLs
-                        $imageUrl = $cat->banner_url ?: ($cat->image_url ?: '/images/placeholder-product.jpg');
+                        $imageUrl = $cat->image_url ?: '/images/placeholder-product.jpg';
                         
                         $response['collections'][] = [
                             'id' => $cat->id,
                             'title' => $cat->title,
                             'subtitle' => $item['subtitle'] ?? 'Explore Collection',
                             'image' => $imageUrl,
-                            'href' => '/e-commerce/categories/' . $cat->slug
+                            'href' => '/e-commerce/' . $cat->slug
                         ];
                     }
                 }
@@ -69,19 +69,19 @@ class SettingController extends Controller
     {
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
         return response()->json([
-            'ticker' => $settings->get('homepage_ticker', [
+            'ticker' => array_merge([
                 'enabled' => true,
                 'phrases' => [
                     'FREE SHIPPING ON ORDERS OVER ৳2000',
                     'NEW SEASON ARRIVALS NOW LIVE',
                     'SAME DAY DELIVERY IN DHAKA CITY',
                 ],
-            ]),
-            'hero' => $settings->get('homepage_hero', [
+            ], $settings->get('homepage_ticker', [])),
+            'hero' => array_merge([
                 'image_url' => '/e-commerce-hero.jpg',
                 'title' => 'Refining the Art of Lifestyle',
                 'show_title' => true
-            ]),
+            ], $settings->get('homepage_hero', [])),
             'collections' => $settings->get('homepage_collections', []),
             'showcase' => $settings->get('homepage_showcase', [])
         ]);
@@ -148,7 +148,7 @@ class SettingController extends Controller
                     Storage::disk('public')->delete($oldPath);
                 }
                 $path = $request->file('hero_image')->store('homepage', 'public');
-                $currentHero['image_url'] = asset('storage/' . $path);
+                $currentHero['image_url'] = rtrim(config('app.url'), '/') . '/storage/' . ltrim($path, '/');
                 $currentHero['image_path'] = $path; // store relative path for future deletion
             }
             

@@ -587,3 +587,12 @@ currently, we are showing all the categories in the home page (in the expanded s
 
 we want a section in the settings homepage where we can select which categories will be show here and which subcategories will be shown in the scrollbar.
 we also want to change the relative order of categories (main) and subcategories (within their parent cat). from the settings page.
+
+### fixing hero img and categories.
+the hero image uploaded from the settings page is not being shown.
+the categories selected in featured section is also not being shown. it most likely is calling a wrong endpoint.  it redirects to e-commerce/categories/slug page. instead it should redirect to e-commerce/slug page.
+also in featured section, we'll show the category image and not the  categoryhero image.
+
+### hompage showcase categories
+hompage showcase categories (set from settings) are not being shown in homepage. double check if the the categories are called being correctly from the backend with proper structure.
+also, the frontend pages uses this prefix for the images and other info (from homepage settings and category banners in the slug page): errum_v2.vercel.app but, it should call the https:/backend2.errumbd.com

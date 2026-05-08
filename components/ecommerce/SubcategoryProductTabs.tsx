@@ -135,7 +135,7 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
          * - If subcategoryIds are provided, strictly use them in that order.
          * - Otherwise, auto-find leaves and sort by product_count.
          */
-        const parent = categoryId ? flat.find(c => c.id === categoryId) || null : findParentNode(flat, parentQueries);
+        const parent = categoryId ? flat.find(c => Number(c.id) === Number(categoryId)) || null : findParentNode(flat, parentQueries);
         
         if (alive) {
           setParentLabel(parent?.name || '');
@@ -148,7 +148,7 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
           if (subcategoryIds && subcategoryIds.length > 0) {
             // Strictly use provided subcategory IDs in the exact order they were provided
             selected = subcategoryIds
-              .map(id => flat.find(c => c.id === id))
+              .map(id => flat.find(c => Number(c.id) === Number(id)))
               .filter(Boolean) as CatalogCategory[];
           } else if (parent.children?.length) {
             const descendants = flattenAll(parent.children);

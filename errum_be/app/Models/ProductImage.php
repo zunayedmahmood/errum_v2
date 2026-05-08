@@ -55,7 +55,7 @@ class ProductImage extends Model
 
     public function getImageUrlAttribute()
     {
-        return $this->image_path ? Storage::disk('public')->url($this->image_path) : null;
+        return $this->image_path ? rtrim(config('app.url'), '/') . '/storage/' . ltrim($this->image_path, '/') : null;
     }
 
     public function makePrimary()

@@ -86,7 +86,7 @@ export default function HomePage() {
       </SectionReveal>
 
       {/* 5. Dynamic Shop by Subcategory sections (categories wise) */}
-      {(settings?.showcase || categories).map((item: any, idx: number) => {
+      {(settings?.showcase?.length ? settings.showcase : categories).map((item: any, idx: number) => {
         const isShowcase = 'category_id' in item;
         const catId = isShowcase ? item.category_id : item.id;
         const subIds = isShowcase ? item.subcategories : undefined;
