@@ -48,7 +48,9 @@ export default function HomepageSettingsPage() {
         hero: {
           images: settingsData.hero?.images || [],
           title: settingsData.hero?.title || "",
-          show_title: settingsData.hero?.show_title ?? true
+          show_title: settingsData.hero?.show_title ?? true,
+          slideshow_enabled: settingsData.hero?.slideshow_enabled ?? true,
+          autoplay_speed: settingsData.hero?.autoplay_speed ?? 5000,
         },
         collections: settingsData.collections || [],
         showcase: (settingsData.showcase || []).map((item: any) => ({
@@ -98,6 +100,8 @@ export default function HomepageSettingsPage() {
       if (heroChanged) {
         formData.append("hero_title", settings.hero.title || "");
         formData.append("hero_show_title", settings.hero.show_title ? "1" : "0");
+        formData.append("hero_slideshow_enabled", settings.hero.slideshow_enabled ? "1" : "0");
+        formData.append("hero_autoplay_speed", String(settings.hero.autoplay_speed || 5000));
         
         const meta: any[] = [];
         let fileIndex = 0;
@@ -412,42 +416,82 @@ export default function HomepageSettingsPage() {
                 {/* Hero Section */}
                 <section className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Hero Section</h2>
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        id="heroShowTitle"
-                        checked={settings.hero.show_title}
-                        onChange={(e) => {
-                          setSettings({ ...settings, hero: { ...settings.hero, show_title: e.target.checked } });
-                          setHeroChanged(true);
-                        }}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <label htmlFor="heroShowTitle" className="text-sm font-medium text-gray-900 dark:text-white">
-                        Show Hero Text
-                      </label>
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            id="heroShowTitle"
+                            checked={settings.hero.show_title}
+                            onChange={(e) => {
+                              setSettings({ ...settings, hero: { ...settings.hero, show_title: e.target.checked } });
+                              setHeroChanged(true);
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                          />
+                          <label htmlFor="heroShowTitle" className="text-sm font-medium text-gray-900 dark:text-white">
+                            Show Hero Text
+                          </label>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            id="heroSlideshowEnabled"
+                            checked={settings.hero.slideshow_enabled}
+                            onChange={(e) => {
+                              setSettings({ ...settings, hero: { ...settings.hero, slideshow_enabled: e.target.checked } });
+                              setHeroChanged(true);
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                          />
+                          <label htmlFor="heroSlideshowEnabled" className="text-sm font-medium text-gray-900 dark:text-white">
+                            Enable Slideshow (Autoplay)
+                          </label>
+                        </div>
+
+                        {settings.hero.slideshow_enabled && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Autoplay Speed (ms)</label>
+                            <input
+                              type="number"
+                              min={1000}
+                              max={30000}
+                              step={500}
+                              value={settings.hero.autoplay_speed}
+                              onChange={(e) => {
+                                setSettings({ ...settings, hero: { ...settings.hero, autoplay_speed: parseInt(e.target.value) || 5000 } });
+                                setHeroChanged(true);
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        {settings.hero.show_title && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hero Title</label>
+                            <textarea
+                              rows={3}
+                              value={settings.hero.title}
+                              onChange={(e) => {
+                                setSettings({ ...settings, hero: { ...settings.hero, title: e.target.value } });
+                                setHeroChanged(true);
+                              }}
+                              placeholder="e.g. Refining the Art of Lifestyle"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                            <p className="mt-1 text-[10px] text-gray-400">Use new lines to control line breaks on the home page.</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     
-                    {settings.hero.show_title && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hero Title</label>
-                        <textarea
-                          rows={2}
-                          value={settings.hero.title}
-                          onChange={(e) => {
-                            setSettings({ ...settings, hero: { ...settings.hero, title: e.target.value } });
-                            setHeroChanged(true);
-                          }}
-                          placeholder="e.g. Refining the Art of Lifestyle"
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                        />
-                        <p className="mt-1 text-xs text-gray-400">Use new lines to control line breaks on the home page.</p>
-                      </div>
-                    )}
-
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
+                    <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-3">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Hero Images (Slider)</label>
                         <label className="flex items-center gap-1 text-blue-600 hover:text-blue-700 text-xs font-medium cursor-pointer">
                           <Plus className="w-3 h-3" /> Add Image
@@ -455,7 +499,7 @@ export default function HomepageSettingsPage() {
                         </label>
                       </div>
                       
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                         {heroImages.map((img, idx) => (
                           <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 aspect-video bg-gray-100 dark:bg-gray-900">
                             <img
@@ -495,7 +539,7 @@ export default function HomepageSettingsPage() {
                         ))}
                         {heroImages.length === 0 && (
                           <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg aspect-video">
-                            <p className="text-sm text-gray-500 italic">No images. Add at least one.</p>
+                            <p className="text-sm text-gray-500 italic">No images.</p>
                           </div>
                         )}
                       </div>

@@ -72,6 +72,8 @@ export default function HomePage() {
         images={settings?.hero?.images ? settings.hero.images.map(img => ({ ...img, url: toAbsoluteAssetUrl(img.url) })) : []} 
         title={settings?.hero?.title}
         showTitle={settings?.hero?.show_title}
+        slideshowEnabled={settings?.hero?.slideshow_enabled}
+        autoplaySpeed={settings?.hero?.autoplay_speed}
       />
 
       {/* 2. Collection Tiles */}

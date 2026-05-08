@@ -15,6 +15,8 @@ export interface HomepageSettings {
     images: { url: string; path?: string }[];
     title: string;
     show_title: boolean;
+    slideshow_enabled?: boolean;
+    autoplay_speed?: number;
   };
   collections: {
     id: number;

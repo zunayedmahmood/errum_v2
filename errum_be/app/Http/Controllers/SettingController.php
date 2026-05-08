@@ -31,7 +31,9 @@ class SettingController extends Controller
                     ['url' => '/e-commerce-hero.jpg', 'path' => null]
                 ],
                 'title' => 'Refining the Art of Lifestyle',
-                'show_title' => true
+                'show_title' => true,
+                'slideshow_enabled' => true,
+                'autoplay_speed' => 5000,
             ], $settings->get('homepage_hero', [])),
             'collections' => [],
             'showcase' => $settings->get('homepage_showcase') // default will be null if missing, so storefront knows to fallback to "all categories"
@@ -86,7 +88,9 @@ class SettingController extends Controller
                     ['url' => '/e-commerce-hero.jpg', 'path' => null]
                 ],
                 'title' => 'Refining the Art of Lifestyle',
-                'show_title' => true
+                'show_title' => true,
+                'slideshow_enabled' => true,
+                'autoplay_speed' => 5000,
             ], $settings->get('homepage_hero', [])),
             'collections' => $settings->get('homepage_collections', []),
             'showcase' => $settings->get('homepage_showcase', [])
@@ -119,6 +123,8 @@ class SettingController extends Controller
             'hero_images_meta' => 'nullable|string', // JSON string representing the order and state of hero images
             'hero_title' => 'nullable|string|max:500',
             'hero_show_title' => 'nullable|string',
+            'hero_slideshow_enabled' => 'nullable|string',
+            'hero_autoplay_speed' => 'nullable|integer|min:1000|max:30000',
         ]);
 
         if ($request->has('ticker')) {
@@ -202,7 +208,15 @@ class SettingController extends Controller
             }
             
             if ($request->has('hero_show_title')) {
-                $currentHero['show_title'] = $request->input('hero_show_title') === '1';
+                $currentHero['show_title'] = filter_var($request->input('hero_show_title'), FILTER_VALIDATE_BOOLEAN);
+            }
+
+            if ($request->has('hero_slideshow_enabled')) {
+                $currentHero['slideshow_enabled'] = filter_var($request->input('hero_slideshow_enabled'), FILTER_VALIDATE_BOOLEAN);
+            }
+
+            if ($request->has('hero_autoplay_speed')) {
+                $currentHero['autoplay_speed'] = (int) $request->input('hero_autoplay_speed');
             }
 
             Setting::updateOrCreate(
