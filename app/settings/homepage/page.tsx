@@ -333,12 +333,17 @@ export default function HomepageSettingsPage() {
     }
     setIsSearching(true);
     try {
-      const response = await catalogService.advancedSearch({
-        query: q,
+      const response = await catalogService.getProducts({
+        search: q,
         group_by_sku: true,
-        per_page: 10
+        per_page: 20 // increased for better selection
       });
-      setSearchResults(response.products || []);
+      
+      const displayProducts = response.grouped_products?.length
+        ? response.grouped_products.map(gp => gp.main_variant)
+        : response.products;
+
+      setSearchResults(displayProducts || []);
     } catch (error) {
       console.error("Search failed:", error);
     } finally {
