@@ -5,6 +5,7 @@ const LOCAL_FRONTEND_PATH_PREFIXES = [
   '/logos/',
   '/favicon',
   '/_next/',
+  '/e-commerce-hero.jpg',
 ];
 
 function trimTrailingSlash(value: string): string {

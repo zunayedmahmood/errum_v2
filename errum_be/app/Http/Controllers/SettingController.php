@@ -16,6 +16,7 @@ class SettingController extends Controller
     {
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
         
+        $response = [
             'ticker' => array_merge([
                 'enabled' => true,
                 'mode' => 'moving',
