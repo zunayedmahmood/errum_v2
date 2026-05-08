@@ -624,3 +624,9 @@ in the lookup page, in both the return and exchange modal,
 we should see a list of barcodes under each products.
 we should be able to click on the barcode to select it for return/exchange.
 this will only replace the manual qty input field (no longer manually edittable)
+
+
+### ticker bg and font colour.
+add a setting in home page setting for announcement ticker.
+we should be able to change the bg and font colour of the ticker from there.
+we should also be able to change the speed (when scroll enabled) of the ticker from there.

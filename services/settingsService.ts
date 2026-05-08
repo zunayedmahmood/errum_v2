@@ -10,6 +10,9 @@ export interface HomepageSettings {
     enabled: boolean;
     mode: 'static' | 'moving';
     phrases: string[];
+    background_color?: string;
+    text_color?: string;
+    speed?: number;
   };
   hero: {
     images: { url: string; path?: string }[];

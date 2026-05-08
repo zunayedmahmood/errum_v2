@@ -20,6 +20,9 @@ class SettingController extends Controller
             'ticker' => array_merge([
                 'enabled' => true,
                 'mode' => 'moving',
+                'background_color' => '#111111',
+                'text_color' => '#ffffff',
+                'speed' => 40,
                 'phrases' => [
                     'FREE SHIPPING ON ORDERS OVER ৳2000',
                     'NEW SEASON ARRIVALS NOW LIVE',
@@ -77,6 +80,9 @@ class SettingController extends Controller
             'ticker' => array_merge([
                 'enabled' => true,
                 'mode' => 'moving',
+                'background_color' => '#111111',
+                'text_color' => '#ffffff',
+                'speed' => 40,
                 'phrases' => [
                     'FREE SHIPPING ON ORDERS OVER ৳2000',
                     'NEW SEASON ARRIVALS NOW LIVE',
@@ -106,6 +112,9 @@ class SettingController extends Controller
             'ticker' => 'nullable|array',
             'ticker.enabled' => 'nullable|string',
             'ticker.mode' => 'nullable|string|in:static,moving',
+            'ticker.background_color' => 'nullable|string|max:20',
+            'ticker.text_color' => 'nullable|string|max:20',
+            'ticker.speed' => 'nullable|integer|min:5|max:200',
             'ticker.phrases' => 'nullable|array',
             'ticker.phrases.*' => 'nullable|string|max:255',
             

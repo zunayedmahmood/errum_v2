@@ -234,7 +234,7 @@ export default function HeroSection({
                 onBlur={() => setIsFocused(false)}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search premium lifestyle essentials..."
-                className="w-full bg-transparent py-3.5 md:py-4 text-base text-[#111111] outline-none border-none placeholder:text-neutral-400 font-['Poppins',_sans-serif]"
+                className="w-full bg-transparent py-3.5 md:py-4 text-base text-[#111111] outline-none border-none placeholder:text-neutral-400 font-poppins"
                 style={{
                   paddingLeft: '60px',
                   paddingRight: query ? '50px' : '20px',
@@ -279,7 +279,7 @@ export default function HeroSection({
               borderRadius: '8px',
               fontSize: '12px',
               fontWeight: 800,
-              fontFamily: "'Poppins', sans-serif",
+              fontFamily: "var(--font-poppins), sans-serif",
               textTransform: 'uppercase',
               letterSpacing: '0.15em',
               textDecoration: 'none',
@@ -309,7 +309,7 @@ export default function HeroSection({
                 borderRadius: '8px',
                 fontSize: '12px',
                 fontWeight: 800,
-                fontFamily: "'Poppins', sans-serif",
+                fontFamily: "var(--font-poppins), sans-serif",
                 textTransform: 'uppercase',
                 letterSpacing: '0.15em',
                 textDecoration: 'none',
@@ -336,7 +336,7 @@ export default function HeroSection({
         {showTitle && (
           <div style={{ textAlign: 'left', maxWidth: '700px', marginLeft: '20px' }}>
             <h1 style={{
-              fontFamily: "'Poppins', sans-serif",
+              fontFamily: "var(--font-poppins), sans-serif",
               fontSize: 'clamp(32px, 6vw, 64px)',
               fontWeight: 200,
               color: '#ffffff',

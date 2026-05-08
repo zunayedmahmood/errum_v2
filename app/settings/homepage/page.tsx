@@ -43,7 +43,10 @@ export default function HomepageSettingsPage() {
         ticker: {
           enabled: settingsData.ticker?.enabled ?? true,
           mode: settingsData.ticker?.mode ?? 'moving',
-          phrases: settingsData.ticker?.phrases || []
+          phrases: settingsData.ticker?.phrases || [],
+          background_color: settingsData.ticker?.background_color ?? '#111111',
+          text_color: settingsData.ticker?.text_color ?? '#ffffff',
+          speed: settingsData.ticker?.speed ?? 40
         },
         hero: {
           images: settingsData.hero?.images || [],
@@ -92,6 +95,9 @@ export default function HomepageSettingsPage() {
       // Ticker — serialize phrases array
       formData.append("ticker[enabled]", settings.ticker.enabled ? "1" : "0");
       formData.append("ticker[mode]", settings.ticker.mode || "moving");
+      formData.append("ticker[background_color]", settings.ticker.background_color || "#111111");
+      formData.append("ticker[text_color]", settings.ticker.text_color || "#ffffff");
+      formData.append("ticker[speed]", String(settings.ticker.speed || 40));
       (settings.ticker.phrases || []).forEach((phrase, i) => {
         formData.append(`ticker[phrases][${i}]`, phrase);
       });
@@ -373,6 +379,42 @@ export default function HomepageSettingsPage() {
                             <option value="moving">Moving / Scrolling</option>
                             <option value="static">Static / Centered</option>
                           </select>
+                        </div>
+
+                        <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">BG Color:</label>
+                            <input
+                              type="color"
+                              value={settings.ticker.background_color}
+                              onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, background_color: e.target.value } })}
+                              className="w-8 h-8 rounded cursor-pointer border-none bg-transparent"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Text Color:</label>
+                            <input
+                              type="color"
+                              value={settings.ticker.text_color}
+                              onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, text_color: e.target.value } })}
+                              className="w-8 h-8 rounded cursor-pointer border-none bg-transparent"
+                            />
+                          </div>
+                          {settings.ticker.mode === 'moving' && (
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Speed:</label>
+                              <input
+                                type="range"
+                                min="5"
+                                max="150"
+                                step="5"
+                                value={settings.ticker.speed}
+                                onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, speed: parseInt(e.target.value) } })}
+                                className="w-32 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                              />
+                              <span className="text-xs text-gray-500 dark:text-gray-400 w-8">{settings.ticker.speed}s</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

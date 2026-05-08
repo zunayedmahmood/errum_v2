@@ -63,6 +63,9 @@ export default function HomePage() {
         <AnnouncementTicker 
           phrases={settings.ticker.phrases} 
           mode={settings.ticker.mode}
+          backgroundColor={settings.ticker.background_color}
+          textColor={settings.ticker.text_color}
+          speed={settings.ticker.speed}
         />
       )}
       <Navigation />
