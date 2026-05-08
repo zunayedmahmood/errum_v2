@@ -779,79 +779,84 @@ export default function HomepageSettingsPage() {
                     {(!settings.showcase || settings.showcase.length === 0) && (
                       <p className="text-gray-500 dark:text-gray-400 italic text-sm">No showcase sections defined. The homepage will default to showing all top-level categories if this is unconfigured.</p>
                     )}
-                    {settings.showcase?.map((showcaseItem, idx) => (
-                      <div key={idx} className="flex gap-4 items-start p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900/50">
-                        <div className="flex flex-col gap-1 mt-1">
-                          <button onClick={() => moveShowcase(idx, 'up')} disabled={idx === 0} className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-30">
-                            <ArrowUp className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => moveShowcase(idx, 'down')} disabled={idx === settings.showcase!.length - 1} className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-30">
-                            <ArrowDown className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <div className="flex-1 space-y-4">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Main Category (Section Title)</label>
-                            <select
-                              value={showcaseItem.category_id}
-                              onChange={(e) => {
-                                const newShowcase = [...settings.showcase!];
-                                newShowcase[idx].category_id = parseInt(e.target.value);
-                                setSettings({ ...settings, showcase: newShowcase });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
-                            >
-                              <option value={0} disabled>Select a category</option>
-                              {flatCategories.map(c => (
-                                <option key={c.id} value={c.id}>{c.title}</option>
-                              ))}
-                            </select>
+                    {settings.showcase?.map((showcaseItem, idx) => {
+                      return (
+                        <div key={idx} className="flex gap-4 items-start p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                          <div className="flex flex-col gap-1 mt-1">
+                            <button onClick={() => moveShowcase(idx, 'up')} disabled={idx === 0} className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-30">
+                              <ArrowUp className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => moveShowcase(idx, 'down')} disabled={idx === settings.showcase!.length - 1} className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-30">
+                              <ArrowDown className="w-4 h-4" />
+                            </button>
                           </div>
                           
-                          <div className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700">
-                            <div className="flex justify-between items-center mb-2">
-                              <label className="block text-xs font-medium text-gray-500">Subcategories (Tabs)</label>
-                              <button onClick={() => addSubcategoryToShowcase(idx)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                                <Plus className="w-3 h-3" /> Add Tab
-                              </button>
+                          <div className="flex-1 space-y-4">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Main Category (Section Title)</label>
+                              <select
+                                value={showcaseItem.category_id}
+                                onChange={(e) => {
+                                  const newShowcase = [...settings.showcase!];
+                                  newShowcase[idx].category_id = parseInt(e.target.value);
+                                  setSettings({ ...settings, showcase: newShowcase });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
+                              >
+                                <option value={0} disabled>Select a category</option>
+                                {flatCategories.map(c => (
+                                  <option key={c.id} value={c.id}>{c.title}</option>
+                                ))}
+                              </select>
                             </div>
                             
-                            <div className="space-y-2">
-                              {showcaseItem.subcategories.length === 0 && (
-                                <p className="text-xs text-gray-400 italic">No explicit subcategories selected. The storefront will automatically display the parent category's children.</p>
-                              )}
-                              {showcaseItem.subcategories.map((subId, subIdx) => (
-                                <div key={subIdx} className="flex items-center gap-2">
-                                  <div className="flex flex-col gap-0">
-                                    <button onClick={() => moveSubcategoryInShowcase(idx, subIdx, 'up')} disabled={subIdx === 0} className="text-gray-400 hover:text-blue-600 disabled:opacity-30">
-                                      <ArrowUp className="w-3 h-3" />
-                                    </button>
-                                    <button onClick={() => moveSubcategoryInShowcase(idx, subIdx, 'down')} disabled={subIdx === showcaseItem.subcategories.length - 1} className="text-gray-400 hover:text-blue-600 disabled:opacity-30">
-                                      <ArrowDown className="w-3 h-3" />
+                            <div className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700">
+                              <div className="flex justify-between items-center mb-2">
+                                <label className="block text-xs font-medium text-gray-500">Subcategories (Tabs)</label>
+                                <button onClick={() => addSubcategoryToShowcase(idx)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                  <Plus className="w-3 h-3" /> Add Tab
+                                </button>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                {showcaseItem.subcategories.length === 0 && (
+                                  <p className="text-xs text-gray-400 italic">No explicit subcategories selected. The storefront will automatically display the parent category's children.</p>
+                                )}
+                                {showcaseItem.subcategories.map((subId, subIdx) => (
+                                  <div key={subIdx} className="flex items-center gap-2">
+                                    <div className="flex flex-col gap-0">
+                                      <button onClick={() => moveSubcategoryInShowcase(idx, subIdx, 'up')} disabled={subIdx === 0} className="text-gray-400 hover:text-blue-600 disabled:opacity-30">
+                                        <ArrowUp className="w-3 h-3" />
+                                      </button>
+                                      <button onClick={() => moveSubcategoryInShowcase(idx, subIdx, 'down')} disabled={subIdx === showcaseItem.subcategories.length - 1} className="text-gray-400 hover:text-blue-600 disabled:opacity-30">
+                                        <ArrowDown className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                    <select
+                                      value={subId}
+                                      onChange={(e) => updateSubcategoryInShowcase(idx, subIdx, parseInt(e.target.value))}
+                                      className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-xs"
+                                    >
+                                      <option value={0} disabled>Select subcategory</option>
+                                      {flatCategories.map(c => (
+                                        <option key={c.id} value={c.id}>{c.title}</option>
+                                      ))}
+                                    </select>
+                                    <button onClick={() => removeSubcategoryFromShowcase(idx, subIdx)} className="text-red-400 hover:text-red-600 p-1">
+                                      <Trash2 className="w-3 h-3" />
                                     </button>
                                   </div>
-                                  <select
-                                    value={subId}
-                                    onChange={(e) => updateSubcategoryInShowcase(idx, subIdx, parseInt(e.target.value))}
-                                    className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-xs"
-                                  >
-                                    <option value={0} disabled>Select subcategory</option>
-                                    {flatCategories.map(c => (
-                                      <option key={c.id} value={c.id}>{c.title}</option>
-                                    ))}
-                                  </select>
-                                  <button onClick={() => removeSubcategoryFromShowcase(idx, subIdx)} className="text-red-400 hover:text-red-600 p-1">
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
                           </div>
-                        <button onClick={() => removeShowcase(idx)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+
+                          <button onClick={() => removeShowcase(idx)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </section>
 
