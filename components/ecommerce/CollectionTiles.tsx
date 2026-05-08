@@ -16,70 +16,11 @@ interface CollectionTilesProps {
   collections?: Collection[];
 }
 
-const FEATURED_COLLECTIONS: Collection[] = [
-  {
-    id: 'sneakers',
-    title: 'Premium Sneakers',
-    subtitle: 'Step into the future',
-    image: 'https://images.unsplash.com/photo-1552346154-21d32810aba3?q=80&w=2070&auto=format&fit=crop',
-    href: '/e-commerce/sneakers',
-  },
-  {
-    id: 't-shirts',
-    title: 'Graphic Tees',
-    subtitle: 'Wear your story',
-    image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=2080&auto=format&fit=crop',
-    href: '/e-commerce/t-shirts',
-  },
-  {
-    id: 'hoodies',
-    title: 'Cozy Hoodies',
-    subtitle: 'Comfort meets style',
-    image: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=1974&auto=format&fit=crop',
-    href: '/e-commerce/hoodies',
-  },
-  {
-    id: 'backpacks',
-    title: 'Urban Backpacks',
-    subtitle: 'Carry your world',
-    image: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?q=80&w=1974&auto=format&fit=crop',
-    href: '/e-commerce/backpacks',
-  },
-  {
-    id: 'caps',
-    title: 'Street Caps',
-    subtitle: 'Top off your look',
-    image: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?q=80&w=2070&auto=format&fit=crop',
-    href: '/e-commerce/caps',
-  },
-  {
-    id: 'jackets',
-    title: 'Outerwear',
-    subtitle: 'Stay warm, stay sharp',
-    image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?q=80&w=1935&auto=format&fit=crop',
-    href: '/e-commerce/jackets',
-  },
-  {
-    id: 'socks',
-    title: 'Premium Socks',
-    subtitle: 'Details that matter',
-    image: 'https://images.unsplash.com/photo-1582966298431-99c6a1e8d44c?q=80&w=2070&auto=format&fit=crop',
-    href: '/e-commerce/socks',
-  },
-  {
-    id: 'sunglasses',
-    title: 'Fashion Shades',
-    subtitle: 'Shadow your style',
-    image: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?q=80&w=2080&auto=format&fit=crop',
-    href: '/e-commerce/sunglasses',
-  },
-];
-
 export default function CollectionTiles({ collections }: CollectionTilesProps) {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   // Use the pre-selected featured collections
-  const displayCollections = collections && collections.length > 0 ? collections : FEATURED_COLLECTIONS;
+  const displayCollections = collections || [];
 
   if (!displayCollections || displayCollections.length === 0) return null;
 

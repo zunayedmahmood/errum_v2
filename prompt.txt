@@ -610,3 +610,11 @@ the hero section will have manual slider for these images.
 the search bar on the hero section needs to be a bit higher, span 80% width, centered and more transparent.
 the "shop now" and "collections" button needs to be adjusted according to the search bar.
 
+### visual builder preload:
+the hompage settings is called by the frontend homepage. 
+it controls information for the ticker, the hero image, the featured colelctions and the showcase categories.
+
+we want to remove the hardcoded values the page and component have for these.
+we want the homepage setting to be called at the very first thing.
+we are seeing a jittering effect, where the hardcoded image is shown first, then the page is hydrated with the api call information.
+we want the page to load with the details from the homepage settings.

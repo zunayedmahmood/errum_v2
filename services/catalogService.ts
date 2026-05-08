@@ -2,6 +2,7 @@ import api from '@/lib/axios';
 import axios from 'axios';
 import { getBaseProductName, getColorLabel, getSizeLabel } from '@/lib/productNameUtils';
 import inventoryService from './inventoryService';
+import { toAbsoluteAssetUrl } from '@/lib/urlUtils';
 
 /**
  * -----------------------------
@@ -283,46 +284,6 @@ const normalizeBoolean = (value: any, fallback = false): boolean => {
 };
 
 
-const toAbsoluteAssetUrl = (value: any): string => {
-  const raw = normalizeString(value || '');
-  if (!raw) return '';
-
-  // Already absolute URL (http://, https://, protocol-relative, data URI)
-  if (/^(https?:)?\/\//i.test(raw) || /^data:/i.test(raw)) {
-    return raw;
-  }
-
-  // Keep only known frontend-local placeholder assets untouched.
-  // IMPORTANT: real product images can also arrive as `/images/...` from backend,
-  // so we must not treat every `/images/*` path as local.
-  const isFrontendPlaceholder =
-    /^\/(?:images\/)?placeholder-product\.(?:png|jpe?g|webp|svg)$/i.test(raw) ||
-    /^\/placeholder-product\.(?:png|jpe?g|webp|svg)$/i.test(raw);
-
-  if (isFrontendPlaceholder) {
-    return raw;
-  }
-
-  // Legacy category image paths: `category/...` should resolve from `/storage/category/...`.
-  // This is important for the e-commerce homepage/category sections.
-  let normalizedRaw = raw;
-  if (/^\/?category\//i.test(normalizedRaw) && !/\/storage\/category\//i.test(normalizedRaw)) {
-    normalizedRaw = normalizedRaw.replace(/^\/?category\//i, '/storage/category/');
-  }
-
-  const apiBase = normalizeString(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
-  const appBase = normalizeString(process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/$/, '');
-
-  const backendBase =
-    (apiBase ? apiBase.replace(/\/api(?:\/v\d+)?$/i, '') : '') ||
-    appBase ||
-    '';
-
-  if (!backendBase) return normalizedRaw;
-
-  const path = normalizedRaw.startsWith('/') ? normalizedRaw : `/${normalizedRaw}`;
-  return `${backendBase}${path}`;
-};
 
 const normalizeImage = (image: any, index = 0): ProductImage | null => {
   if (!image) return null;

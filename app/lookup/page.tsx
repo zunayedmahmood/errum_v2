@@ -1838,14 +1838,12 @@ export default function LookupPage() {
         customer_notes: returnData.customerNotes || 'Initiated from lookup page',
       };
 
-      // Use the atomic quickComplete endpoint
-      await productReturnService.quickComplete(returnRequest);
+      // Use the atomic quickComplete endpoint (call once, reuse response for refund)
+      const res = await productReturnService.quickComplete(returnRequest);
+      const returnId = res?.data?.id;
 
       // Handle refund if needed
-      if (returnData.refundMethods && returnData.refundMethods.total > 0) {
-        // Need return ID for refund - quickComplete returns the product return object
-        const res = await productReturnService.quickComplete(returnRequest);
-        const returnId = res.data.id;
+      if (returnData.refundMethods && returnData.refundMethods.total > 0 && returnId) {
 
         const refundRequest: CreateRefundRequest = {
           return_id: returnId,

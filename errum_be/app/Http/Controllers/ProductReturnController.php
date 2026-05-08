@@ -190,12 +190,23 @@ class ProductReturnController extends Controller
                 ];
             }
 
+            // Resolve store_id: orders from e-commerce/social channels may have null store_id.
+            // Fall back to received_at_store_id, then the authenticated user's store.
+            $resolvedStoreId = $order->store_id
+                ?? $request->received_at_store_id
+                ?? auth()->user()?->store_id
+                ?? null;
+
+            if (!$resolvedStoreId) {
+                throw new \Exception('Cannot determine store for this return. The order has no store assigned and no receiving store was specified.');
+            }
+
             $return = ProductReturn::create([
                 'return_number' => $this->generateReturnNumber(),
                 'order_id' => $order->id,
                 'customer_id' => $order->customer_id,
-                'store_id' => $order->store_id,
-                'received_at_store_id' => $request->received_at_store_id ?? $order->store_id,
+                'store_id' => $resolvedStoreId,
+                'received_at_store_id' => $request->received_at_store_id ?? $resolvedStoreId,
                 'return_reason' => $request->return_reason,
                 'return_type' => $request->return_type,
                 'status' => 'pending',
@@ -333,13 +344,24 @@ class ProductReturnController extends Controller
             // Calculate refund amount (default to full value minus fee)
             $totalRefundAmount = max(0, $totalReturnValue - $processingFee);
 
+            // Resolve store_id: orders from e-commerce/social channels may have null store_id.
+            // Fall back to received_at_store_id, then the authenticated user's store.
+            $resolvedStoreId = $order->store_id
+                ?? $request->received_at_store_id
+                ?? auth()->user()?->store_id
+                ?? null;
+
+            if (!$resolvedStoreId) {
+                throw new \Exception('Cannot determine store for this return. The order has no store assigned and no receiving store was specified.');
+            }
+
             // Create return
             $return = ProductReturn::create([
                 'return_number' => $this->generateReturnNumber(),
                 'order_id' => $order->id,
                 'customer_id' => $order->customer_id,
-                'store_id' => $order->store_id,
-                'received_at_store_id' => $request->received_at_store_id ?? $order->store_id,
+                'store_id' => $resolvedStoreId,
+                'received_at_store_id' => $request->received_at_store_id ?? $resolvedStoreId,
                 'return_reason' => $request->return_reason,
                 'return_type' => $request->return_type,
                 'status' => 'pending',

@@ -6,15 +6,8 @@ import { useRouter } from 'next/navigation';
 import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Search as SearchIcon, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const DEFAULT_HERO_IMAGE = '/e-commerce-hero.jpg';
-
-interface HeroImage {
-  url: string;
-  path?: string;
-}
-
 export default function HeroSection({ 
-  images: initialImages,
+  images = [],
   title: initialTitle,
   showTitle = true 
 }: { 
@@ -28,12 +21,20 @@ export default function HeroSection({
   const [query, setQuery] = useState('');
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const images = useMemo(() => {
-    if (!initialImages || initialImages.length === 0) {
-      return [{ url: DEFAULT_HERO_IMAGE }];
-    }
-    return initialImages;
-  }, [initialImages]);
+  // If no images are provided yet, we'll return a loading skeleton or null to prevent flashing hardcoded defaults
+  if (!images || images.length === 0) {
+    return (
+      <section style={{ minHeight: '100vh', background: '#111111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="animate-pulse flex flex-col items-center gap-8 w-full max-w-3xl px-6">
+           <div className="h-16 bg-white/10 rounded-xl w-full" />
+           <div className="flex gap-4">
+              <div className="h-12 bg-white/10 rounded w-32" />
+              <div className="h-12 bg-white/10 rounded w-32" />
+           </div>
+        </div>
+      </section>
+    );
+  }
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -311,12 +312,6 @@ export default function HeroSection({
                   {i < arr.length - 1 && '\n'}
                 </React.Fragment>
               ))}
-              {!initialTitle && (
-                <>
-                  Refining the Art of<br />
-                  <span style={{ fontStyle: 'italic', marginLeft: '40px' }}>Lifestyle</span>
-                </>
-              )}
             </h1>
           </div>
         )}

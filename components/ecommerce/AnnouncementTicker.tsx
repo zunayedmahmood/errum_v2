@@ -9,16 +9,11 @@ interface AnnouncementTickerProps {
 }
 
 export default function AnnouncementTicker({ 
-  phrases = [
-    "FREE SHIPPING ON ORDERS OVER ৳2000",
-    "NEW SEASON ARRIVALS NOW LIVE",
-    "SAME DAY DELIVERY IN DHAKA CITY",
-    "PREMIUM QUALITY GUARANTEED",
-    "SHOP THE LATEST COLLECTIONS"
-  ],
+  phrases = [],
   speed = 40,
   mode = 'moving'
 }: AnnouncementTickerProps) {
+  if (!phrases || phrases.length === 0) return null;
   // Triple the phrases to ensure no gaps during the animation loop for moving mode
   // For static mode, we just use the original phrases
   const isMoving = mode === 'moving';
