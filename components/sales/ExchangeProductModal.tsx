@@ -204,8 +204,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   // Handle barcode scanned
   const handleProductScanned = (scannedProduct: ScannedProduct) => {
     // 1. Check if it's a return (part of the original order)
-    // We match by product_id. If the order item has a specific barcode, we prefer that match.
-    const matchingOrderItems = order.items.filter(item => item.product_id === scannedProduct.productId);
+    // We match by product_id or barcode/SKU.
+    const matchingOrderItems = order.items.filter(item => 
+      item.product_id === scannedProduct.productId || 
+      item.barcode === scannedProduct.barcode ||
+      item.product_sku === scannedProduct.barcode // Some scanners return SKU as barcode
+    );
     
     let targetItem = null;
     if (matchingOrderItems.length > 0) {
@@ -219,30 +223,41 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
     if (targetItem) {
       const currentQty = exchangeQuantities[targetItem.id] || 0;
-      if (currentQty < targetItem.quantity) {
-        // Prevent duplicate barcode scan for the same return item
-        if ((returnedBarcodes[targetItem.id] || []).includes(scannedProduct.barcode)) {
-          alert('This barcode has already been scanned for this return item.');
-          return;
-        }
+      const currentBarcodes = returnedBarcodes[targetItem.id] || [];
 
+      // Prevent duplicate barcode scan for the same return item
+      if (currentBarcodes.includes(scannedProduct.barcode)) {
+        alert('This barcode has already been scanned for this return item.');
+        return;
+      }
+
+      // If we have an initial quantity from manual checkbox but no barcode, 'fill' it
+      if (currentQty === 1 && currentBarcodes.length === 0) {
+        setReturnedBarcodes(prev => ({
+          ...prev,
+          [targetItem.id]: [scannedProduct.barcode]
+        }));
+      } else if (currentQty < targetItem.quantity) {
         // It's a return!
         setExchangeQuantities(prev => ({ ...prev, [targetItem.id]: currentQty + 1 }));
         setReturnedBarcodes(prev => ({
           ...prev,
           [targetItem.id]: [...(prev[targetItem.id] || []), scannedProduct.barcode]
         }));
-        
-        if (!selectedProducts.includes(targetItem.id)) {
-          setSelectedProducts(prev => [...prev, targetItem.id]);
-        }
-        
-        // Auto-fill sold at price if not set
-        if (!soldAtPrices[targetItem.id]) {
-          setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: targetItem.unit_price }));
-        }
+      } else {
+        alert('This product is already fully scanned for return.');
         return;
       }
+      
+      if (!selectedProducts.includes(targetItem.id)) {
+        setSelectedProducts(prev => [...prev, targetItem.id]);
+      }
+      
+      // Auto-fill sold at price if not set
+      if (!soldAtPrices[targetItem.id]) {
+        setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: targetItem.unit_price }));
+      }
+      return;
     }
 
     // 2. Otherwise, it's a replacement product
@@ -288,7 +303,8 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
   const handleProductCheckbox = (itemId: number) => {
     setSelectedProducts(prev => {
-      if (prev.includes(itemId)) {
+      const isSelected = prev.includes(itemId);
+      if (isSelected) {
         const newSelected = prev.filter(id => id !== itemId);
         const newQuantities = { ...exchangeQuantities };
         delete newQuantities[itemId];
@@ -300,6 +316,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
         
         return newSelected;
       } else {
+        const item = order.items.find(i => i.id === itemId);
+        if (item) {
+          // Initialize values so manual edits work immediately
+          setSoldAtPrices(prevPrices => ({ ...prevPrices, [itemId]: item.unit_price }));
+          setExchangeQuantities(prevQty => ({ ...prevQty, [itemId]: Math.max(prevQty[itemId] || 0, 1) }));
+        }
         return [...prev, itemId];
       }
     });
@@ -623,129 +645,168 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                         Checking inventory availability...
                       </div>
                     )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Select Items to Exchange */}
+                         {/* Select Items to Exchange */}
               <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
                 <h3 className="font-semibold text-gray-900 dark:text-white text-lg mb-4">
                   Select Items to Exchange
                 </h3>
 
                 {order.items && order.items.length > 0 ? (
-                  <div className="space-y-3">
-                    {order.items.map((item) => {
-                      const hasWarning = inventoryWarnings[item.id];
+                  <div className="space-y-4">
+                    {/* Grouping items by product to show a "Product Card" with multiple barcodes */}
+                    {Object.values(order.items.reduce((acc, item) => {
+                      const key = `${item.product_id}-${item.batch_id}-${item.unit_price}`;
+                      if (!acc[key]) {
+                        acc[key] = {
+                          product_id: item.product_id,
+                          product_name: item.product_name,
+                          product_sku: item.product_sku,
+                          unit_price: item.unit_price,
+                          batch_number: item.batch_number,
+                          items: [] as OrderItem[],
+                        };
+                      }
+                      acc[key].items.push(item);
+                      return acc;
+                    }, {} as Record<string, any>)).map((group: any) => {
+                      const groupPrice = parsePrice(group.unit_price);
+                      const groupTotalQty = group.items.reduce((sum: number, it: any) => sum + it.quantity, 0);
                       
                       return (
                         <div
-                          key={item.id}
-                          className={`bg-white dark:bg-gray-900 rounded-lg p-4 border ${
-                            hasWarning 
-                              ? 'border-orange-300 dark:border-orange-700' 
-                              : 'border-gray-200 dark:border-gray-700'
-                          }`}
+                          key={`${group.product_id}-${group.batch_number}`}
+                          className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm"
                         >
-                          <div className="flex items-start gap-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedProducts.includes(item.id)}
-                              onChange={() => handleProductCheckbox(item.id)}
-                              className="mt-1 w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                            />
+                          <div className="flex items-start gap-4">
                             <div className="flex-1">
                               <div className="flex items-center justify-between mb-2">
                                 <div>
-                                  <p className="font-medium text-gray-900 dark:text-white">
-                                    {item.product_name}
+                                  <p className="font-bold text-gray-900 dark:text-white text-base">
+                                    {group.product_name}
                                   </p>
                                   <div className="flex items-center gap-3 mt-1">
-                                    <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
-                                      SKU: {item.product_sku}
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 font-mono bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">
+                                      SKU: {group.product_sku}
                                     </span>
-                                    {item.batch_number && (
+                                    {group.batch_number && (
                                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                                        Batch: {item.batch_number}
-                                      </span>
-                                    )}
-                                    {item.barcode && (
-                                      <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded font-mono">
-                                        🏷️ {item.barcode}
+                                        Batch: {group.batch_number}
                                       </span>
                                     )}
                                   </div>
                                 </div>
-                                <p className="font-bold text-gray-900 dark:text-white">
-                                  ৳{(parsePrice(item.unit_price) * item.quantity).toFixed(2)}
-                                </p>
+                                <div className="text-right">
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">Unit Price</p>
+                                  <p className="font-bold text-gray-900 dark:text-white">
+                                    ৳{groupPrice.toFixed(2)}
+                                  </p>
+                                </div>
                               </div>
-                              <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-                                Price: ৳{parsePrice(item.unit_price).toFixed(2)} × Qty: {item.quantity}
-                              </p>
 
-                              {/* ✅ NEW: Show inventory warning */}
-                              {hasWarning && selectedProducts.includes(item.id) && (
-                                <div className="mb-3 p-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg">
-                                  <div className="flex items-start gap-2">
-                                    <AlertCircle className="w-4 h-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
-                                    <p className="text-xs text-orange-700 dark:text-orange-300">
-                                      {hasWarning}
-                                    </p>
-                                  </div>
+                              <div className="mt-4">
+                                <label className="block text-[10px] uppercase tracking-wider font-bold text-gray-400 mb-2">
+                                  Available Barcodes / Units (Click to select)
+                                </label>
+                                <div className="flex flex-wrap gap-2">
+                                  {group.items.map((item: OrderItem) => {
+                                    // If an item has Qty > 1 (non-tracked), we show it as one clickable unit
+                                    // But usually we expect Qty 1 for individually tracked items.
+                                    const isItemSelected = selectedProducts.includes(item.id);
+                                    const qtyReturned = exchangeQuantities[item.id] || 0;
+                                    const isFullyReturned = qtyReturned >= item.quantity;
+                                    
+                                    return (
+                                      <button
+                                        key={item.id}
+                                        onClick={() => {
+                                          if (isFullyReturned) {
+                                            // Handle removal or just scan again?
+                                            // Clicking an already fully selected one should probably not do anything 
+                                            // or toggle selection if it was a manual click.
+                                            // For now, let's allow "scanning" it again which will alert.
+                                          }
+                                          handleProductScanned({
+                                            productId: item.product_id,
+                                            barcode: item.barcode || item.product_sku,
+                                            name: item.product_name,
+                                            sku: item.product_sku,
+                                            price: parsePrice(item.unit_price)
+                                          });
+                                        }}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${
+                                          isItemSelected 
+                                            ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-300 shadow-sm' 
+                                            : 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-400'
+                                        }`}
+                                      >
+                                        <div className={`w-2 h-2 rounded-full ${isItemSelected ? 'bg-blue-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                                        {item.barcode || 'NO-BARCODE'}
+                                        {item.quantity > 1 && (
+                                          <span className="bg-gray-200 dark:bg-gray-700 px-1.5 rounded text-[10px]">
+                                            {qtyReturned}/{item.quantity}
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
-                              )}
+                              </div>
 
-                              {selectedProducts.includes(item.id) && (
-                                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                                        Scanned Barcodes ({exchangeQuantities[item.id] || 0} / {item.quantity})
-                                      </label>
-                                      <div className="space-y-1.5 mt-2">
+                              {group.items.some((it: any) => selectedProducts.includes(it.id)) && (
+                                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {group.items.filter((it: any) => selectedProducts.includes(it.id)).map((item: OrderItem) => (
+                                    <div key={item.id} className="space-y-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">Unit: {item.barcode || item.id}</span>
+                                        <button 
+                                          onClick={() => handleProductCheckbox(item.id)}
+                                          className="text-red-500 hover:text-red-700"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+                                      
+                                      <div className="flex gap-4">
+                                        <div className="flex-1">
+                                          <label className="block text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400 mb-1">
+                                            Sold At Price *
+                                          </label>
+                                          <div className="relative">
+                                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">৳</span>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="0.01"
+                                              value={soldAtPrices[item.id] || ''}
+                                              onChange={(e) => handleSoldAtChange(item.id, e.target.value)}
+                                              className="w-full pl-6 pr-2 py-1.5 text-sm border border-orange-200 dark:border-orange-900/30 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500/20 outline-none font-bold transition-all"
+                                              placeholder="0.00"
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <span className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Value</span>
+                                          <span className="text-sm font-black text-gray-900 dark:text-white">
+                                            ৳{((exchangeQuantities[item.id] || 0) * parsePrice(soldAtPrices[item.id])).toFixed(2)}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div className="space-y-1">
                                         {(returnedBarcodes[item.id] || []).map((bc, idx) => (
-                                          <div key={idx} className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-xs">
-                                            <span className="font-mono text-gray-700 dark:text-gray-300">{bc}</span>
+                                          <div key={idx} className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded text-[10px] border border-blue-100 dark:border-blue-800/50">
+                                            <span className="font-mono text-blue-700 dark:text-blue-300">{bc}</span>
                                             <button 
                                               onClick={() => handleRemoveReturnBarcode(item.id, bc)}
-                                              className="text-red-500 hover:text-red-700 p-0.5"
+                                              className="text-red-500 hover:text-red-700"
                                             >
-                                              <X size={14} />
+                                              <X size={12} />
                                             </button>
                                           </div>
                                         ))}
-                                        {(returnedBarcodes[item.id] || []).length === 0 && (
-                                          <p className="text-[10px] text-gray-400 italic">No barcodes scanned yet. Scan to add.</p>
-                                        )}
                                       </div>
                                     </div>
-                                    <div className="space-y-3">
-                                      <div>
-                                        <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">
-                                          Manual Sold At Price (REQUIRED) *
-                                        </label>
-                                        <div className="relative">
-                                          <span className="absolute left-3 top-2 text-gray-400 text-sm">৳</span>
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            value={soldAtPrices[item.id] || ''}
-                                            onChange={(e) => handleSoldAtChange(item.id, e.target.value)}
-                                            className="w-full pl-7 pr-3 py-2 text-sm border-2 border-orange-200 dark:border-orange-900/50 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none font-bold"
-                                            placeholder="0.00"
-                                          />
-                                        </div>
-                                        <p className="text-[10px] text-gray-500 mt-1 italic">Verify with original invoice/history</p>
-                                      </div>
-                                      <div>
-                                        <p className="text-xs font-medium text-gray-500">
-                                          Total Return Value: <span className="text-gray-900 dark:text-white font-bold">৳{((exchangeQuantities[item.id] || 0) * parsePrice(soldAtPrices[item.id])).toFixed(2)}</span>
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
+                                  ))}
                                 </div>
                               )}
                             </div>
@@ -755,8 +816,8 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                     })}
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                    No items in this order
+                  <div className="text-center py-12 bg-white dark:bg-gray-900 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
+                    <p className="text-gray-500 dark:text-gray-400">No items available for exchange</p>
                   </div>
                 )}
               </div>

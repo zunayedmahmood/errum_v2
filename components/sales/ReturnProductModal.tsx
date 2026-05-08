@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { X, RotateCcw, Calculator, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, RotateCcw, Calculator, ChevronDown, AlertCircle, Scan } from 'lucide-react';
+import BarcodeScanner, { type ScannedProduct } from '@/components/pos/BarcodeScanner';
 import storeService, { type Store } from '@/services/storeService';
 
 interface OrderItem {
@@ -64,6 +65,7 @@ interface ReturnProductModalProps {
 export default function ReturnProductModal({ order, onClose, onReturn }: ReturnProductModalProps) {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [returnedQuantities, setReturnedQuantities] = useState<{ [key: number]: number }>({});
+  const [returnedBarcodes, setReturnedBarcodes] = useState<{ [key: number]: string[] }>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [soldAtPrices, setSoldAtPrices] = useState<{ [key: number]: string }>({});
   
@@ -158,27 +160,98 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     { value: 'warehouse_return', label: 'Warehouse Return' },
   ];
 
-  const handleProductCheckbox = (productId: number) => {
+  const handleProductScanned = (scannedProduct: ScannedProduct) => {
+    // Check if it's a return (part of the original order)
+    const matchingOrderItems = order.items.filter(item => 
+      item.product_id === scannedProduct.productId || 
+      item.barcode === scannedProduct.barcode ||
+      item.product_sku === scannedProduct.barcode
+    );
+    
+    let targetItem = null;
+    if (matchingOrderItems.length > 0) {
+      targetItem = matchingOrderItems.find(item => item.barcode === scannedProduct.barcode);
+      if (!targetItem) {
+        targetItem = matchingOrderItems.find(item => (returnedQuantities[item.id] || 0) < item.quantity);
+      }
+    }
+
+    if (targetItem) {
+      const currentQty = returnedQuantities[targetItem.id] || 0;
+      const currentBarcodes = returnedBarcodes[targetItem.id] || [];
+
+      if (currentBarcodes.includes(scannedProduct.barcode)) {
+        alert('This barcode has already been scanned for this return item.');
+        return;
+      }
+
+      if (currentQty === 1 && currentBarcodes.length === 0) {
+        setReturnedBarcodes(prev => ({
+          ...prev,
+          [targetItem.id]: [scannedProduct.barcode]
+        }));
+      } else if (currentQty < targetItem.quantity) {
+        setReturnedQuantities(prev => ({ ...prev, [targetItem.id]: currentQty + 1 }));
+        setReturnedBarcodes(prev => ({
+          ...prev,
+          [targetItem.id]: [...(prev[targetItem.id] || []), scannedProduct.barcode]
+        }));
+      } else {
+        alert('This product is already fully scanned for return.');
+        return;
+      }
+      
+      if (!selectedProducts.includes(targetItem.id)) {
+        setSelectedProducts(prev => [...prev, targetItem.id]);
+      }
+      
+      if (!soldAtPrices[targetItem.id]) {
+        setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: targetItem.unit_price }));
+      }
+      return;
+    }
+    
+    alert('Product not found in this order.');
+  };
+
+  const handleRemoveReturnBarcode = (itemId: number, barcode: string) => {
+    setReturnedBarcodes(prev => {
+      const current = prev[itemId] || [];
+      const filtered = current.filter(bc => bc !== barcode);
+      return { ...prev, [itemId]: filtered };
+    });
+    
+    setReturnedQuantities(prev => {
+      const currentQty = prev[itemId] || 0;
+      const newQty = Math.max(0, currentQty - 1);
+      if (newQty === 0 && !returnedBarcodes[itemId]?.length) {
+        setSelectedProducts(sel => sel.filter(id => id !== itemId));
+      }
+      return { ...prev, [itemId]: newQty };
+    });
+  };
+
+  const handleProductCheckbox = (itemId: number) => {
     setSelectedProducts(prev => {
-      if (prev.includes(productId)) {
-        const newSelected = prev.filter(id => id !== productId);
-        const newQuantities = { ...returnedQuantities };
-        delete newQuantities[productId];
-        setReturnedQuantities(newQuantities);
+      const isSelected = prev.includes(itemId);
+      if (isSelected) {
+        const newSelected = prev.filter(id => id !== itemId);
+        setReturnedQuantities(q => { const n = { ...q }; delete n[itemId]; return n; });
+        setReturnedBarcodes(b => { const n = { ...b }; delete n[itemId]; return n; });
         return newSelected;
       } else {
-        return [...prev, productId];
+        const item = order.items.find(i => i.id === itemId);
+        if (item) {
+          setSoldAtPrices(p => ({ ...p, [itemId]: item.unit_price }));
+          setReturnedQuantities(q => ({ ...q, [itemId]: Math.max(q[itemId] || 0, 1) }));
+        }
+        return [...prev, itemId];
       }
     });
   };
 
-  const handleQuantityChange = (productId: number, qty: number, maxQty: number) => {
-    if (qty < 0 || qty > maxQty) return;
-    setReturnedQuantities(prev => ({ ...prev, [productId]: qty }));
-  };
-
-  const handleSoldAtChange = (productId: number, price: string) => {
-    setSoldAtPrices(prev => ({ ...prev, [productId]: price }));
+  const handleSoldAtChange = (itemId: number, price: string) => {
+    setSoldAtPrices(prev => ({ ...prev, [itemId]: price }));
   };
 
   const parseFloatValue = (value: any) => {
@@ -272,17 +345,29 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
 
     setIsProcessing(true);
     try {
-      const selectedProductsWithBarcodes = selectedProducts.map(id => {
-        const product = order.items.find(p => p.id === id);
-        const unitPrice = parseFloatValue(soldAtPrices[id]);
-        const quantity = returnedQuantities[id];
-        return {
-          order_item_id: id,
-          quantity: quantity,
-          unit_price: unitPrice,
-          total_price: unitPrice * quantity,
-          product_barcode_id: product?.barcode_id,
-        };
+      const selectedProductsWithBarcodes = selectedProducts.flatMap(itemId => {
+        const item = order.items.find(i => i.id === itemId);
+        const unitPrice = parseFloatValue(soldAtPrices[itemId]);
+        const barcodes = returnedBarcodes[itemId] || [];
+        
+        if (barcodes.length > 0) {
+          return barcodes.map(bc => ({
+            order_item_id: itemId,
+            quantity: 1,
+            unit_price: unitPrice,
+            total_price: unitPrice,
+            barcode: bc,
+          }));
+        } else {
+          const quantity = returnedQuantities[itemId] || 0;
+          return [{
+            order_item_id: itemId,
+            quantity: quantity,
+            unit_price: unitPrice,
+            total_price: unitPrice * quantity,
+            product_barcode_id: item?.barcode_id,
+          }];
+        }
       });
 
       await onReturn({
@@ -423,93 +508,175 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                 </div>
               </div>
 
-              {/* Product Selection - Keep existing code */}
+              {/* Product Selection */}
               <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
-                <h3 className="font-semibold text-gray-900 dark:text-white text-lg mb-4">Select Items to Return</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900 dark:text-white text-lg">Select Items to Return</h3>
+                  <div className="flex items-center gap-2 px-3 py-1 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full text-xs font-bold">
+                    <Scan className="w-3 h-3" />
+                    Barcode Driven
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <BarcodeScanner onProductScanned={handleProductScanned} />
+                </div>
                 
                 {order.items.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">No products in this order</div>
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-700 rounded-xl">No products in this order</div>
                 ) : (
-                  <div className="space-y-3">
-                    {order.items.map((product) => (
-                      <div key={product.id} className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-start gap-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedProducts.includes(product.id)}
-                            onChange={() => handleProductCheckbox(product.id)}
-                            className="mt-1 w-4 h-4 text-red-600 rounded focus:ring-2 focus:ring-red-500 cursor-pointer"
-                          />
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-2">
-                              <div>
-                                <p className="font-medium text-gray-900 dark:text-white">{product.product_name}</p>
-                                <div className="flex items-center gap-3 mt-1">
-                                  <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
-                                    SKU: {product.product_sku || 'N/A'}
-                                  </span>
-                                  {product.batch_number && (
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                                      Batch: {product.batch_number}
+                  <div className="space-y-4">
+                    {Object.values(order.items.reduce((acc, item) => {
+                      const key = `${item.product_id}-${item.batch_id}-${item.unit_price}`;
+                      if (!acc[key]) {
+                        acc[key] = {
+                          product_id: item.product_id,
+                          product_name: item.product_name,
+                          product_sku: item.product_sku,
+                          unit_price: item.unit_price,
+                          batch_number: item.batch_number,
+                          items: [] as OrderItem[],
+                        };
+                      }
+                      acc[key].items.push(item);
+                      return acc;
+                    }, {} as Record<string, any>)).map((group: any) => {
+                      const groupPrice = parseFloatValue(group.unit_price);
+                      
+                      return (
+                        <div
+                          key={`${group.product_id}-${group.batch_number}`}
+                          className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm"
+                        >
+                          <div className="flex items-start gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between mb-2">
+                                <div>
+                                  <p className="font-bold text-gray-900 dark:text-white text-base">
+                                    {group.product_name}
+                                  </p>
+                                  <div className="flex items-center gap-3 mt-1">
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 font-mono bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">
+                                      SKU: {group.product_sku}
                                     </span>
-                                  )}
-                                  {product.barcode && (
-                                    <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded font-mono">
-                                      🏷️ {product.barcode}
-                                    </span>
-                                  )}
+                                    {group.batch_number && (
+                                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                                        Batch: {group.batch_number}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">Unit Price</p>
+                                  <p className="font-bold text-gray-900 dark:text-white">
+                                    ৳{groupPrice.toFixed(2)}
+                                  </p>
                                 </div>
                               </div>
-                              <p className="font-bold text-gray-900 dark:text-white">
-                                ৳{(parseFloatValue(product.unit_price) * product.quantity).toFixed(2)}
-                              </p>
-                            </div>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-                              Price: ৳{parseFloatValue(product.unit_price).toFixed(2)} × Qty: {product.quantity}
-                            </p>
-                            
-                            {selectedProducts.includes(product.id) && (
-                              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div>
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Original Qty</label>
-                                    <input type="number" value={product.quantity} readOnly className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Return Qty *</label>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max={product.quantity}
-                                      value={returnedQuantities[product.id] || ''}
-                                      onChange={(e) => handleQuantityChange(product.id, parseInt(e.target.value) || 0, product.quantity)}
-                                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 outline-none"
-                                      placeholder="Enter qty"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">Manual Sold At Price (REQUIRED) *</label>
-                                    <div className="relative">
-                                      <span className="absolute left-3 top-2 text-gray-400 text-sm">৳</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={soldAtPrices[product.id] || ''}
-                                        onChange={(e) => handleSoldAtChange(product.id, e.target.value)}
-                                        className="w-full pl-7 pr-3 py-2 text-sm border-2 border-orange-200 dark:border-orange-900/50 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none font-bold"
-                                        placeholder="0.00"
-                                      />
+
+                              <div className="mt-4">
+                                <label className="block text-[10px] uppercase tracking-wider font-bold text-gray-400 mb-2">
+                                  Available Barcodes / Units (Click to select)
+                                </label>
+                                <div className="flex flex-wrap gap-2">
+                                  {group.items.map((item: OrderItem) => {
+                                    const isItemSelected = selectedProducts.includes(item.id);
+                                    const qtyReturned = returnedQuantities[item.id] || 0;
+                                    const isFullyReturned = qtyReturned >= item.quantity;
+                                    
+                                    return (
+                                      <button
+                                        key={item.id}
+                                        onClick={() => {
+                                          handleProductScanned({
+                                            productId: item.product_id,
+                                            barcode: item.barcode || item.product_sku,
+                                            name: item.product_name,
+                                            sku: item.product_sku,
+                                            price: parseFloatValue(item.unit_price)
+                                          });
+                                        }}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${
+                                          isItemSelected 
+                                            ? 'bg-red-50 dark:bg-red-900/10 border-red-500 text-red-700 dark:text-red-300 shadow-sm' 
+                                            : 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-400'
+                                        }`}
+                                      >
+                                        <div className={`w-2 h-2 rounded-full ${isItemSelected ? 'bg-red-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                                        {item.barcode || 'NO-BARCODE'}
+                                        {item.quantity > 1 && (
+                                          <span className="bg-gray-200 dark:bg-gray-700 px-1.5 rounded text-[10px]">
+                                            {qtyReturned}/{item.quantity}
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {group.items.some((it: any) => selectedProducts.includes(it.id)) && (
+                                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {group.items.filter((it: any) => selectedProducts.includes(it.id)).map((item: OrderItem) => (
+                                    <div key={item.id} className="space-y-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase">Unit: {item.barcode || item.id}</span>
+                                        <button 
+                                          onClick={() => handleProductCheckbox(item.id)}
+                                          className="text-red-500 hover:text-red-700"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+                                      
+                                      <div className="flex gap-4">
+                                        <div className="flex-1">
+                                          <label className="block text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400 mb-1">
+                                            Sold At Price *
+                                          </label>
+                                          <div className="relative">
+                                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">৳</span>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="0.01"
+                                              value={soldAtPrices[item.id] || ''}
+                                              onChange={(e) => handleSoldAtChange(item.id, e.target.value)}
+                                              className="w-full pl-6 pr-2 py-1.5 text-sm border border-orange-200 dark:border-orange-900/30 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500/20 outline-none font-bold transition-all"
+                                              placeholder="0.00"
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <span className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Value</span>
+                                          <span className="text-sm font-black text-gray-900 dark:text-white">
+                                            ৳{( (returnedQuantities[item.id] || 0) * parseFloatValue(soldAtPrices[item.id])).toFixed(2)}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div className="space-y-1">
+                                        {(returnedBarcodes[item.id] || []).map((bc, idx) => (
+                                          <div key={idx} className="flex items-center justify-between bg-red-50 dark:bg-red-900/10 px-2 py-1 rounded text-[10px] border border-red-100 dark:border-red-800/50">
+                                            <span className="font-mono text-red-700 dark:text-red-300">{bc}</span>
+                                            <button 
+                                              onClick={() => handleRemoveReturnBarcode(item.id, bc)}
+                                              className="text-red-500 hover:text-red-700"
+                                            >
+                                              <X size={12} />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
-                                    <p className="text-[10px] text-gray-500 mt-1 italic">Check the original paper invoice or purchase history</p>
-                                  </div>
+                                  ))}
                                 </div>
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

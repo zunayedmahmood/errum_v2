@@ -618,3 +618,9 @@ we want to remove the hardcoded values the page and component have for these.
 we want the homepage setting to be called at the very first thing.
 we are seeing a jittering effect, where the hardcoded image is shown first, then the page is hydrated with the api call information.
 we want the page to load with the details from the homepage settings.
+
+### manual barcode entry for return-exchange 
+in the lookup page, in both the return and exchange modal,
+we should see a list of barcodes under each products.
+we should be able to click on the barcode to select it for return/exchange.
+this will only replace the manual qty input field (no longer manually edittable)
