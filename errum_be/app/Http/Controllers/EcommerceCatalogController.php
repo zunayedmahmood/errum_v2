@@ -1184,14 +1184,15 @@ class EcommerceCatalogController extends Controller
             $perPage = (int) $request->get('per_page', 40);
             $products = $query->paginate($perPage);
 
-            // Re-use logic to format products (grouping variants if needed)
-            // For now, we'll return them as is, or use the existing grouping logic if required by storefront
-            
+            $formattedProducts = collect($products->items())->map(function ($product) {
+                return $this->formatProductForApi($product);
+            });
+
             return response()->json([
                 'success' => true,
                 'data' => [
                     'collection' => $collection,
-                    'products' => $products->items(),
+                    'products' => $formattedProducts,
                     'pagination' => [
                         'current_page' => $products->currentPage(),
                         'last_page' => $products->lastPage(),

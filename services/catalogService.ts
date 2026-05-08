@@ -1276,15 +1276,31 @@ const catalogService = {
   },
 
   async getCollection(slug: string, params: { page?: number } = {}): Promise<any> {
-    const response = await api.get(`/catalog/collections/${slug}`, { params });
-    const data = response.data;
-    
-    if (data.success && data.products) {
-      // Normalize products in the collection
-      data.products.data = data.products.data.map((p: any) => normalizeProduct(p));
+    try {
+      const response = await api.get(`/catalog/collections/${slug}`, { params });
+      const payload = response.data?.data;
+      
+      if (response.data.success && payload) {
+        // Use the existing parseProductsPayload to handle the products and pagination
+        const parsed = parseProductsPayload(payload);
+        
+        return {
+          success: true,
+          collection: payload.collection,
+          products: {
+            data: parsed.products,
+            current_page: parsed.pagination.current_page,
+            last_page: parsed.pagination.last_page,
+            total: parsed.pagination.total,
+          }
+        };
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching collection:', error);
+      throw error;
     }
-    
-    return data;
   },
 };
 
