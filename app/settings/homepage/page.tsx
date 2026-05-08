@@ -31,7 +31,27 @@ export default function HomepageSettingsPage() {
         settingsService.getAdminHomepageSettings(),
         categoryService.getTree(true)
       ]);
-      setSettings(settingsData);
+
+      // Normalize settings to prevent "length of undefined" errors
+      const normalized: HomepageSettings = {
+        ...settingsData,
+        ticker: {
+          enabled: settingsData.ticker?.enabled ?? true,
+          phrases: settingsData.ticker?.phrases || []
+        },
+        hero: {
+          image_url: settingsData.hero?.image_url || "/e-commerce-hero.jpg",
+          title: settingsData.hero?.title || "",
+          show_title: settingsData.hero?.show_title ?? true
+        },
+        collections: settingsData.collections || [],
+        showcase: (settingsData.showcase || []).map((item: any) => ({
+          ...item,
+          subcategories: item.subcategories || []
+        }))
+      };
+
+      setSettings(normalized);
       setHeroChanged(false); // reset dirty flag on fresh load
       
       const flatten = (cats: typeof categoryTree, path = ""): { id: number; title: string }[] => {
@@ -62,7 +82,7 @@ export default function HomepageSettingsPage() {
 
       // Ticker — serialize phrases array
       formData.append("ticker[enabled]", settings.ticker.enabled ? "1" : "0");
-      settings.ticker.phrases.forEach((phrase, i) => {
+      (settings.ticker.phrases || []).forEach((phrase, i) => {
         formData.append(`ticker[phrases][${i}]`, phrase);
       });
 
@@ -78,7 +98,7 @@ export default function HomepageSettingsPage() {
       }
 
       // Collections
-      if (settings.collections.length === 0) {
+      if (!settings.collections || settings.collections.length === 0) {
         formData.append("collections", ""); // Send empty string (null) to clear
       } else {
         settings.collections.forEach((col, index) => {
@@ -94,7 +114,7 @@ export default function HomepageSettingsPage() {
         } else {
           settings.showcase.forEach((showcase, index) => {
             formData.append(`showcase[${index}][category_id]`, String(showcase.category_id));
-            showcase.subcategories.forEach((subId, subIndex) => {
+            (showcase.subcategories || []).forEach((subId, subIndex) => {
               formData.append(`showcase[${index}][subcategories][${subIndex}]`, String(subId));
             });
           });
