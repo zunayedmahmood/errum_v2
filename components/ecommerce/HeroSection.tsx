@@ -189,11 +189,10 @@ export default function HeroSection({
             onSubmit={onSubmit} 
             style={{ 
               minWidth: '300px',
-              maxWidth: '900px',
               transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              opacity: isFocused ? 0.75 : 0.4, // Focus behavior
+              opacity: isFocused ? 0.95 : 0.7, // Slightly higher opacity for better visibility
             }}
-            className="w-[60%] lg:w-[60%]"
+            className="w-[90vw] md:w-[60vw] max-w-[1200px]"
           >
             <div style={{
               position: 'relative',
@@ -208,7 +207,26 @@ export default function HeroSection({
               border: `1px solid ${isFocused ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)'}`,
               transition: 'all 0.3s ease'
             }}>
-              <SearchIcon style={{ position: 'absolute', left: '20px', width: '20px', height: '20px', color: '#666666', pointerEvents: 'none', flexShrink: 0 }} />
+              <button
+                type="submit"
+                style={{ 
+                  position: 'absolute', 
+                  left: '12px', 
+                  width: '44px', 
+                  height: '44px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  background: 'none', 
+                  border: 'none', 
+                  cursor: 'pointer',
+                  color: '#666666',
+                  zIndex: 20
+                }}
+                aria-label="Search"
+              >
+                <SearchIcon style={{ width: '20px', height: '20px' }} />
+              </button>
               <input
                 ref={inputRef}
                 value={query}
@@ -216,44 +234,30 @@ export default function HeroSection({
                 onBlur={() => setIsFocused(false)}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search premium lifestyle essentials..."
-                className="w-full bg-transparent px-14 py-3.5 md:py-4 text-base text-[#111111] outline-none border-none placeholder:text-neutral-400 font-['Poppins',_sans-serif]"
+                className="w-full bg-transparent py-3.5 md:py-4 text-base text-[#111111] outline-none border-none placeholder:text-neutral-400 font-['Poppins',_sans-serif]"
                 style={{
-                  paddingLeft: '56px',
-                  paddingRight: '140px',
+                  paddingLeft: '60px',
+                  paddingRight: query ? '50px' : '20px',
                 }}
               />
               {query && (
                 <button
                   type="button"
                   onClick={clear}
-                  style={{ position: 'absolute', right: '110px', padding: '8px', color: '#666666', background: 'none', border: 'none', cursor: 'pointer' }}
+                  style={{ 
+                    position: 'absolute', 
+                    right: '12px', 
+                    padding: '8px', 
+                    color: '#666666', 
+                    background: 'none', 
+                    border: 'none', 
+                    cursor: 'pointer',
+                    zIndex: 20
+                  }}
                 >
                   <X style={{ width: '18px', height: '18px' }} />
                 </button>
               )}
-              <button
-                type="submit"
-                disabled={!query.trim()}
-                style={{
-                  position: 'absolute',
-                  right: '8px',
-                  padding: '10px 24px',
-                  background: '#111111',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '10px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  fontFamily: "'Poppins', sans-serif",
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.1em',
-                  cursor: query.trim() ? 'pointer' : 'not-allowed',
-                  opacity: query.trim() ? 1 : 0.6,
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                Search
-              </button>
             </div>
           </form>
 
