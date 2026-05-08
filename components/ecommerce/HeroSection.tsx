@@ -11,13 +11,13 @@ export interface HeroImage {
   path?: string;
 }
 
-export default function HeroSection({ 
+export default function HeroSection({
   images = [],
   title: initialTitle,
   showTitle = true,
   slideshowEnabled = true,
   autoplaySpeed = 5000
-}: { 
+}: {
   images?: HeroImage[];
   title?: string;
   showTitle?: boolean;
@@ -67,7 +67,7 @@ export default function HeroSection({
     const distance = touchStart - touchEnd;
     const isLeftSwipe = distance > 50;
     const isRightSwipe = distance < -50;
-    
+
     if (isLeftSwipe) nextSlide();
     if (isRightSwipe) prevSlide();
   };
@@ -77,11 +77,11 @@ export default function HeroSection({
     return (
       <section style={{ minHeight: '100vh', background: '#111111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="animate-pulse flex flex-col items-center gap-8 w-full max-w-3xl px-6">
-           <div className="h-16 bg-white/10 rounded-xl w-full" />
-           <div className="flex gap-4">
-              <div className="h-12 bg-white/10 rounded w-32" />
-              <div className="h-12 bg-white/10 rounded w-32" />
-           </div>
+          <div className="h-16 bg-white/10 rounded-xl w-full" />
+          <div className="flex gap-4">
+            <div className="h-12 bg-white/10 rounded w-32" />
+            <div className="h-12 bg-white/10 rounded w-32" />
+          </div>
         </div>
       </section>
     );
@@ -100,7 +100,7 @@ export default function HeroSection({
   };
 
   return (
-    <section 
+    <section
       style={{ position: 'relative', overflow: 'hidden', minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
@@ -166,14 +166,14 @@ export default function HeroSection({
       )}
 
       {/* Content */}
-      <div className="ec-container" style={{ 
-        position: 'relative', 
-        zIndex: 10, 
+      <div className="ec-container" style={{
+        position: 'relative',
+        zIndex: 10,
         height: '100vh',
-        display: 'flex', 
-        flexDirection: 'column', 
+        display: 'flex',
+        flexDirection: 'column',
         justifyContent: 'space-between',
-        padding: '40px 20px 80px' 
+        padding: '40px 20px 80px'
       }}>
         {/* Top Controls: Search + Buttons */}
         <div style={{
@@ -185,12 +185,12 @@ export default function HeroSection({
           marginTop: '80px' // Positioning it slightly higher
         }}>
           {/* Search bar - Adaptive width, centered, focus-based opacity */}
-          <form 
-            onSubmit={onSubmit} 
-            style={{ 
+          <form
+            onSubmit={onSubmit}
+            style={{
               minWidth: '300px',
               transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              opacity: isFocused ? 0.95 : 0.7, // Slightly higher opacity for better visibility
+              opacity: isFocused ? 0.95 : 0.5, // Slightly higher opacity for better visibility
             }}
             className="w-[90vw] md:w-[60vw] max-w-[1200px]"
           >
@@ -209,16 +209,16 @@ export default function HeroSection({
             }}>
               <button
                 type="submit"
-                style={{ 
-                  position: 'absolute', 
-                  left: '12px', 
-                  width: '44px', 
-                  height: '44px', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  background: 'none', 
-                  border: 'none', 
+                style={{
+                  position: 'absolute',
+                  left: '12px',
+                  width: '44px',
+                  height: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'none',
+                  border: 'none',
                   cursor: 'pointer',
                   color: '#666666',
                   zIndex: 20
@@ -244,13 +244,13 @@ export default function HeroSection({
                 <button
                   type="button"
                   onClick={clear}
-                  style={{ 
-                    position: 'absolute', 
-                    right: '12px', 
-                    padding: '8px', 
-                    color: '#666666', 
-                    background: 'none', 
-                    border: 'none', 
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    padding: '8px',
+                    color: '#666666',
+                    background: 'none',
+                    border: 'none',
                     cursor: 'pointer',
                     zIndex: 20
                   }}
@@ -262,11 +262,11 @@ export default function HeroSection({
           </form>
 
           {/* CTAs */}
-          <div style={{ 
-            display: 'flex', 
-            flexWrap: 'wrap', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'center',
             gap: '20px',
             transition: 'all 0.4s ease',
             opacity: isFocused ? 0.3 : 1, // Dim buttons when focused
@@ -358,7 +358,7 @@ export default function HeroSection({
         )}
       </div>
 
-      </section>
+    </section>
   );
 }
 
