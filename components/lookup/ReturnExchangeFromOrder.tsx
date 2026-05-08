@@ -12,11 +12,18 @@ interface Props {
 export default function ReturnExchangeFromOrder({ order, onInitiateReturn, onInitiateExchange }: Props) {
   const { role, isSuperAdmin } = useAuth();
 
-  // Check roles: admin, branch-manager and POS (pos-salesman)
-  const allowedRoles = ['super-admin', 'admin', 'branch-manager', 'pos-salesman'];
-  const canInitiate = isSuperAdmin || (role && allowedRoles.includes(role));
+  // Status-based visibility
+  const isPos = order.order_type === 'counter';
+  const isConfirmed = order.status === 'confirmed';
+  const isShipped = order.status === 'shipped';
+  const isDelivered = order.status === 'delivered';
+  const isFulfilled = order.fulfillment_status === 'fulfilled';
 
-  if (!canInitiate) return null;
+  const isEligibleStatus = isPos 
+    ? (isConfirmed || isShipped || isDelivered)
+    : (isConfirmed || isFulfilled || isDelivered);
+
+  if (!canInitiate || !isEligibleStatus) return null;
 
   return (
     <div className="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">

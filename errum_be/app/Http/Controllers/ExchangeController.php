@@ -30,14 +30,15 @@ class ExchangeController extends Controller
     public function process(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'order_id' => 'required|exists:orders,id',
             'customer_id' => 'required|exists:customers,id',
             'exchangeAtStoreId' => 'required|exists:stores,id',
             'removedProducts' => 'required|array|min:1',
             'removedProducts.*.product_id' => 'required|exists:products,id',
-            'removedProducts.*.product_batch_id' => 'required|exists:product_batches,id',
+            'removedProducts.*.product_batch_id' => 'nullable|exists:product_batches,id',
             'removedProducts.*.quantity' => 'required|integer|min:1',
             'removedProducts.*.unit_price' => 'required|numeric|min:0',
-            'removedProducts.*.total_price' => 'required|numeric|min:0',
+            'removedProducts.*.total_price' => 'nullable|numeric|min:0',
             'removedProducts.*.order_item_id' => 'nullable|exists:order_items,id',
             'removedProducts.*.barcode_id' => 'nullable|exists:product_barcodes,id',
             'removedProducts.*.return_reason' => 'required|string',
@@ -45,10 +46,10 @@ class ExchangeController extends Controller
             
             'replacementProducts' => 'required|array|min:1',
             'replacementProducts.*.product_id' => 'required|exists:products,id',
-            'replacementProducts.*.batch_id' => 'required|exists:product_batches,id',
+            'replacementProducts.*.batch_id' => 'nullable|exists:product_batches,id',
             'replacementProducts.*.quantity' => 'required|integer|min:1',
             'replacementProducts.*.unit_price' => 'required|numeric|min:0',
-            'replacementProducts.*.total_price' => 'required|numeric|min:0',
+            'replacementProducts.*.total_price' => 'nullable|numeric|min:0',
             'replacementProducts.*.discount_amount' => 'nullable|numeric|min:0',
             'replacementProducts.*.barcode' => 'nullable|string',
             
@@ -78,21 +79,64 @@ class ExchangeController extends Controller
             $storeId = $request->exchangeAtStoreId;
             $customer_id = $request->customer_id;
 
+            // --- 0. VALIDATE ORDER AVAILABILITY ---
+            $originalOrder = Order::findOrFail($request->order_id);
+            
+            if ($originalOrder->order_type === 'counter') {
+                // POS: "sold" equivalent is confirmed/shipped/delivered in this system
+                if (!in_array($originalOrder->status, ['confirmed', 'shipped', 'delivered'])) {
+                    throw new \Exception("Exchange is only available for completed POS orders. Current status: {$originalOrder->status}");
+                }
+            } else {
+                // E-commerce / Social Commerce: confirmed or fulfilled
+                $isConfirmed = ($originalOrder->status === 'confirmed');
+                $isFulfilled = ($originalOrder->fulfillment_status === 'fulfilled');
+                
+                if (!$isConfirmed && !$isFulfilled) {
+                    throw new \Exception("Exchange is only available for confirmed or fulfilled online orders.");
+                }
+            }
+
             // --- 1. CREATE PRODUCT RETURN ---
             $returnNumber = $this->generateReturnNumber();
             $totalReturnValue = 0;
             $returnItems = [];
 
             foreach ($request->removedProducts as $item) {
-                $totalReturnValue += (float) $item['total_price'];
+                $batchId = $item['product_batch_id'] ?? null;
+                $barcodeId = $item['barcode_id'] ?? null;
+
+                // 1. Resolve batch from Barcode if provided
+                if (!$batchId && $barcodeId) {
+                    $barcode = ProductBarcode::find($barcodeId);
+                    if ($barcode) {
+                        $batchId = $barcode->batch_id;
+                    }
+                }
+
+                // 2. Resolve batch from Order Item
+                if (!$batchId && !empty($item['order_item_id'])) {
+                    $orderItem = OrderItem::find($item['order_item_id']);
+                    if ($orderItem) {
+                        $batchId = $orderItem->product_batch_id;
+                    }
+                }
+
+                if (!$batchId) {
+                    throw new \Exception("Product batch ID could not be resolved for returned item. Product ID: {$item['product_id']}");
+                }
+
+                $itemTotal = $item['total_price'] ?? ($item['quantity'] * $item['unit_price']);
+                $totalReturnValue += (float) $itemTotal;
+
                 $returnItems[] = [
                     'product_id' => $item['product_id'],
-                    'product_batch_id' => $item['product_batch_id'],
+                    'product_batch_id' => $batchId,
                     'order_item_id' => $item['order_item_id'] ?? null,
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
-                    'total_price' => $item['total_price'],
-                    'refundable_amount' => $item['total_price'],
+                    'total_price' => $itemTotal,
+                    'refundable_amount' => $itemTotal,
                     'return_reason' => $item['return_reason'],
                     'quality_check_passed' => $item['quality_check_passed'],
                     'returned_barcode_ids' => isset($item['barcode_id']) ? [$item['barcode_id']] : [],
@@ -148,7 +192,31 @@ class ExchangeController extends Controller
 
             foreach ($request->replacementProducts as $itemData) {
                 $product = Product::findOrFail($itemData['product_id']);
-                $batch = ProductBatch::findOrFail($itemData['batch_id']);
+                $batchId = $itemData['batch_id'] ?? null;
+                $scannedBarcode = null;
+
+                // Resolve batch from barcode if provided
+                if (!empty($itemData['barcode'])) {
+                    $scannedBarcode = ProductBarcode::where('barcode', $itemData['barcode'])
+                        ->where('product_id', $product->id)
+                        ->first();
+                    
+                    if (!$scannedBarcode) {
+                        throw new \Exception("Barcode {$itemData['barcode']} not found for product {$product->name}");
+                    }
+                    
+                    if (!$batchId) {
+                        $batchId = $scannedBarcode->batch_id;
+                    } elseif ($batchId != $scannedBarcode->batch_id) {
+                        throw new \Exception("Barcode {$itemData['barcode']} does not belong to the selected batch.");
+                    }
+                }
+
+                if (!$batchId) {
+                    throw new \Exception("Batch ID or Barcode is required for replacement product {$product->name}");
+                }
+
+                $batch = ProductBatch::findOrFail($batchId);
 
                 // Validate stock
                 if ($batch->quantity < $itemData['quantity']) {
@@ -163,16 +231,11 @@ class ExchangeController extends Controller
 
                 // Handle Barcode
                 $barcodeId = null;
-                if (!empty($itemData['barcode'])) {
-                    $barcode = ProductBarcode::where('barcode', $itemData['barcode'])
-                        ->where('product_id', $product->id)
-                        ->where('batch_id', $batch->id)
-                        ->first();
-                    
-                    if (!$barcode) throw new \Exception("Barcode {$itemData['barcode']} not found");
-                    if (in_array($barcode->current_status, ['sold', 'with_customer'])) throw new \Exception("Barcode sold");
-                    
-                    $barcodeId = $barcode->id;
+                if ($scannedBarcode) {
+                    if (in_array($scannedBarcode->current_status, ['sold', 'with_customer'])) {
+                        throw new \Exception("Barcode {$itemData['barcode']} has already been sold.");
+                    }
+                    $barcodeId = $scannedBarcode->id;
                 }
 
                 $quantity = $itemData['quantity'];

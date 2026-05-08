@@ -87,6 +87,7 @@ interface ReplacementProduct {
 export default function ExchangeProductModal({ order, onClose, onExchange }: ExchangeProductModalProps) {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [exchangeQuantities, setExchangeQuantities] = useState<{ [key: number]: number }>({});
+  const [returnedBarcodes, setReturnedBarcodes] = useState<{ [key: number]: string[] }>({});
   const [replacementProducts, setReplacementProducts] = useState<ReplacementProduct[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [soldAtPrices, setSoldAtPrices] = useState<{ [key: number]: string }>({});
@@ -202,6 +203,55 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
   // Handle barcode scanned
   const handleProductScanned = (scannedProduct: ScannedProduct) => {
+    // 1. Check if it's a return (part of the original order)
+    // We match by product_id. If the order item has a specific barcode, we prefer that match.
+    const matchingOrderItems = order.items.filter(item => item.product_id === scannedProduct.productId);
+    
+    let targetItem = null;
+    if (matchingOrderItems.length > 0) {
+      // Try to find one where the barcode matches exactly
+      targetItem = matchingOrderItems.find(item => item.barcode === scannedProduct.barcode);
+      // Fallback to any item of the same product that isn't fully "scanned" yet
+      if (!targetItem) {
+        targetItem = matchingOrderItems.find(item => (exchangeQuantities[item.id] || 0) < item.quantity);
+      }
+    }
+
+    if (targetItem) {
+      const currentQty = exchangeQuantities[targetItem.id] || 0;
+      if (currentQty < targetItem.quantity) {
+        // Prevent duplicate barcode scan for the same return item
+        if ((returnedBarcodes[targetItem.id] || []).includes(scannedProduct.barcode)) {
+          alert('This barcode has already been scanned for this return item.');
+          return;
+        }
+
+        // It's a return!
+        setExchangeQuantities(prev => ({ ...prev, [targetItem.id]: currentQty + 1 }));
+        setReturnedBarcodes(prev => ({
+          ...prev,
+          [targetItem.id]: [...(prev[targetItem.id] || []), scannedProduct.barcode]
+        }));
+        
+        if (!selectedProducts.includes(targetItem.id)) {
+          setSelectedProducts(prev => [...prev, targetItem.id]);
+        }
+        
+        // Auto-fill sold at price if not set
+        if (!soldAtPrices[targetItem.id]) {
+          setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: targetItem.unit_price }));
+        }
+        return;
+      }
+    }
+
+    // 2. Otherwise, it's a replacement product
+    // Prevent duplicate barcode in replacement
+    if (replacementProducts.some(p => p.barcode === scannedProduct.barcode)) {
+      alert('This barcode is already added as a replacement.');
+      return;
+    }
+
     const newItem: ReplacementProduct = {
       id: Date.now() + Math.random(),
       product_id: scannedProduct.productId,
@@ -213,10 +263,27 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       amount: scannedProduct.price,
       available: scannedProduct.availableQty,
       barcode: scannedProduct.barcode,
-      // barcode_id will be handled by backend or can be omitted if not available
     };
 
     setReplacementProducts(prev => [...prev, newItem]);
+  };
+
+  const handleRemoveReturnBarcode = (itemId: number, barcode: string) => {
+    setReturnedBarcodes(prev => {
+      const filtered = (prev[itemId] || []).filter(b => b !== barcode);
+      return { ...prev, [itemId]: filtered };
+    });
+    setExchangeQuantities(prev => {
+      const newQty = (prev[itemId] || 1) - 1;
+      if (newQty <= 0) {
+        const next = { ...prev };
+        delete next[itemId];
+        // Also deselect if no barcodes left
+        setSelectedProducts(p => p.filter(id => id !== itemId));
+        return next;
+      }
+      return { ...prev, [itemId]: newQty };
+    });
   };
 
   const handleProductCheckbox = (itemId: number) => {
@@ -226,6 +293,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
         const newQuantities = { ...exchangeQuantities };
         delete newQuantities[itemId];
         setExchangeQuantities(newQuantities);
+        
+        const newReturnedBarcodes = { ...returnedBarcodes };
+        delete newReturnedBarcodes[itemId];
+        setReturnedBarcodes(newReturnedBarcodes);
+        
         return newSelected;
       } else {
         return [...prev, itemId];
@@ -394,17 +466,32 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     setIsProcessing(true);
     try {
       const exchangeData = {
-        removedProducts: selectedProducts.map(itemId => {
+        removedProducts: selectedProducts.flatMap(itemId => {
           const item = order.items.find(i => i.id === itemId);
           const unitPrice = parsePrice(soldAtPrices[itemId]);
-          const quantity = exchangeQuantities[itemId];
-          return {
-            order_item_id: itemId,
-            quantity: quantity,
-            unit_price: unitPrice,
-            total_price: unitPrice * quantity,
-            product_barcode_id: item?.barcode_id,
-          };
+          const barcodes = returnedBarcodes[itemId] || [];
+          
+          if (barcodes.length > 0) {
+            // Send one entry per barcode
+            return barcodes.map(bc => ({
+              order_item_id: itemId,
+              quantity: 1,
+              unit_price: unitPrice,
+              total_price: unitPrice,
+              barcode: bc,
+              // We don't have barcode_id here but backend resolves from string
+            }));
+          } else {
+            // Fallback (shouldn't happen with new logic but safe to keep)
+            const quantity = exchangeQuantities[itemId] || 0;
+            return [{
+              order_item_id: itemId,
+              quantity: quantity,
+              unit_price: unitPrice,
+              total_price: unitPrice * quantity,
+              product_barcode_id: item?.barcode_id,
+            }];
+          }
         }),
         replacementProducts: replacementProducts.map(p => ({
           product_id: p.product_id,
@@ -611,51 +698,52 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
                               {selectedProducts.includes(item.id) && (
                                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                                  <div className="grid grid-cols-2 gap-3">
+                                  <div className="grid grid-cols-2 gap-4">
                                     <div>
                                       <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                                        Available Qty
+                                        Scanned Barcodes ({exchangeQuantities[item.id] || 0} / {item.quantity})
                                       </label>
-                                      <input
-                                        type="number"
-                                        value={item.quantity}
-                                        readOnly
-                                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                                        Exchange Qty *
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        max={item.quantity}
-                                        value={exchangeQuantities[item.id] || ''}
-                                        onChange={(e) =>
-                                          handleQuantityChange(item.id, parseInt(e.target.value) || 0, item.quantity)
-                                        }
-                                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="Enter qty"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">
-                                        Manual Sold At Price (REQUIRED) *
-                                      </label>
-                                      <div className="relative">
-                                        <span className="absolute left-3 top-2 text-gray-400 text-sm">৳</span>
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          step="0.01"
-                                          value={soldAtPrices[item.id] || ''}
-                                          onChange={(e) => handleSoldAtChange(item.id, e.target.value)}
-                                          className="w-full pl-7 pr-3 py-2 text-sm border-2 border-orange-200 dark:border-orange-900/50 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none font-bold"
-                                          placeholder="0.00"
-                                        />
+                                      <div className="space-y-1.5 mt-2">
+                                        {(returnedBarcodes[item.id] || []).map((bc, idx) => (
+                                          <div key={idx} className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-xs">
+                                            <span className="font-mono text-gray-700 dark:text-gray-300">{bc}</span>
+                                            <button 
+                                              onClick={() => handleRemoveReturnBarcode(item.id, bc)}
+                                              className="text-red-500 hover:text-red-700 p-0.5"
+                                            >
+                                              <X size={14} />
+                                            </button>
+                                          </div>
+                                        ))}
+                                        {(returnedBarcodes[item.id] || []).length === 0 && (
+                                          <p className="text-[10px] text-gray-400 italic">No barcodes scanned yet. Scan to add.</p>
+                                        )}
                                       </div>
-                                      <p className="text-[10px] text-gray-500 mt-1 italic">Verify with original invoice/history</p>
+                                    </div>
+                                    <div className="space-y-3">
+                                      <div>
+                                        <label className="block text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">
+                                          Manual Sold At Price (REQUIRED) *
+                                        </label>
+                                        <div className="relative">
+                                          <span className="absolute left-3 top-2 text-gray-400 text-sm">৳</span>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={soldAtPrices[item.id] || ''}
+                                            onChange={(e) => handleSoldAtChange(item.id, e.target.value)}
+                                            className="w-full pl-7 pr-3 py-2 text-sm border-2 border-orange-200 dark:border-orange-900/50 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none font-bold"
+                                            placeholder="0.00"
+                                          />
+                                        </div>
+                                        <p className="text-[10px] text-gray-500 mt-1 italic">Verify with original invoice/history</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs font-medium text-gray-500">
+                                          Total Return Value: <span className="text-gray-900 dark:text-white font-bold">৳{((exchangeQuantities[item.id] || 0) * parsePrice(soldAtPrices[item.id])).toFixed(2)}</span>
+                                        </p>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -714,30 +802,21 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleUpdateReplacementQty(product.id, product.quantity - 1)}
-                                className="w-7 h-7 flex items-center justify-center border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                              >
-                                −
-                              </button>
-                              <span className="w-8 text-center text-sm font-semibold text-gray-900 dark:text-white">
-                                {product.quantity}
-                              </span>
-                              <button
-                                onClick={() => handleUpdateReplacementQty(product.id, product.quantity + 1)}
-                                className="w-7 h-7 flex items-center justify-center border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                              >
-                                +
-                              </button>
-                              <p className="font-bold text-gray-900 dark:text-white min-w-[80px] text-right">
-                                ৳{product.amount.toLocaleString()}
-                              </p>
+                            <div className="flex items-center gap-4">
+                              <div className="text-right">
+                                <p className="text-sm font-bold text-gray-900 dark:text-white">
+                                  ৳{product.amount.toLocaleString()}
+                                </p>
+                                <p className="text-[10px] text-gray-500">
+                                  Qty: {product.quantity}
+                                </p>
+                              </div>
                               <button
                                 onClick={() => handleRemoveReplacement(product.id)}
-                                className="text-red-600 hover:text-red-700"
+                                className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                title="Remove item"
                               >
-                                <X size={18} />
+                                <X size={20} />
                               </button>
                             </div>
                           </div>
