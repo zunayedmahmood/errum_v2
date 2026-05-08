@@ -14,9 +14,14 @@ export default function HomepageSettingsPage() {
   const [flatCategories, setFlatCategories] = useState<{ id: number; title: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [heroImageFile, setHeroImageFile] = useState<File | null>(null);
-  const [heroPreview, setHeroPreview] = useState("");
-  const [heroChanged, setHeroChanged] = useState(false); // only send hero fields when they changed
+  const [heroImages, setHeroImages] = useState<{
+    type: 'existing' | 'new';
+    url?: string;
+    path?: string;
+    file?: File;
+    preview?: string;
+  }[]>([]);
+  const [heroChanged, setHeroChanged] = useState(false);
   const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -37,10 +42,11 @@ export default function HomepageSettingsPage() {
         ...settingsData,
         ticker: {
           enabled: settingsData.ticker?.enabled ?? true,
+          mode: settingsData.ticker?.mode ?? 'moving',
           phrases: settingsData.ticker?.phrases || []
         },
         hero: {
-          image_url: settingsData.hero?.image_url || "/e-commerce-hero.jpg",
+          images: settingsData.hero?.images || [],
           title: settingsData.hero?.title || "",
           show_title: settingsData.hero?.show_title ?? true
         },
@@ -52,6 +58,7 @@ export default function HomepageSettingsPage() {
       };
 
       setSettings(normalized);
+      setHeroImages((normalized.hero.images || []).map(img => ({ type: 'existing', url: img.url, path: img.path })));
       setHeroChanged(false); // reset dirty flag on fresh load
       
       const flatten = (cats: typeof categoryTree, path = ""): { id: number; title: string }[] => {
@@ -82,19 +89,30 @@ export default function HomepageSettingsPage() {
 
       // Ticker — serialize phrases array
       formData.append("ticker[enabled]", settings.ticker.enabled ? "1" : "0");
+      formData.append("ticker[mode]", settings.ticker.mode || "moving");
       (settings.ticker.phrases || []).forEach((phrase, i) => {
         formData.append(`ticker[phrases][${i}]`, phrase);
       });
 
       // Hero — only send hero fields if something in the hero section changed
       if (heroChanged) {
-        if (settings.hero.title) {
-          formData.append("hero_title", settings.hero.title);
-        }
+        formData.append("hero_title", settings.hero.title || "");
         formData.append("hero_show_title", settings.hero.show_title ? "1" : "0");
-        if (heroImageFile) {
-          formData.append("hero_image", heroImageFile);
-        }
+        
+        const meta: any[] = [];
+        let fileIndex = 0;
+        
+        heroImages.forEach((img) => {
+          if (img.type === 'existing') {
+            meta.push({ type: 'existing', url: img.url, path: img.path });
+          } else if (img.type === 'new' && img.file) {
+            meta.push({ type: 'new', fileIndex });
+            formData.append(`hero_images[${fileIndex}]`, img.file);
+            fileIndex++;
+          }
+        });
+        
+        formData.append("hero_images_meta", JSON.stringify(meta));
       }
 
       // Collections
@@ -124,13 +142,49 @@ export default function HomepageSettingsPage() {
       await settingsService.updateHomepageSettings(formData);
       toast.success("Homepage settings updated successfully");
       loadData(); // reload to get new image URL (also resets heroChanged)
-      setHeroImageFile(null);
     } catch (error) {
       console.error("Failed to save settings:", error);
       toast.error("Failed to save settings");
     } finally {
       setSaving(false);
     }
+  };
+
+  // Helpers for Hero Images
+  const handleAddHeroImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const newImgs = [...heroImages];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      newImgs.push({
+        type: 'new',
+        file,
+        preview: URL.createObjectURL(file)
+      });
+    }
+    setHeroImages(newImgs);
+    setHeroChanged(true);
+    e.target.value = ''; // reset input
+  };
+
+  const removeHeroImage = (index: number) => {
+    const newImgs = [...heroImages];
+    newImgs.splice(index, 1);
+    setHeroImages(newImgs);
+    setHeroChanged(true);
+  };
+
+  const moveHeroImage = (index: number, direction: 'up' | 'down') => {
+    const newImgs = [...heroImages];
+    if (direction === 'up' && index > 0) {
+      [newImgs[index - 1], newImgs[index]] = [newImgs[index], newImgs[index - 1]];
+    } else if (direction === 'down' && index < newImgs.length - 1) {
+      [newImgs[index + 1], newImgs[index]] = [newImgs[index], newImgs[index + 1]];
+    }
+    setHeroImages(newImgs);
+    setHeroChanged(true);
   };
 
   // Helpers for ticker phrases
@@ -290,17 +344,33 @@ export default function HomepageSettingsPage() {
                 <section className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Announcement Ticker</h2>
                   <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        id="tickerEnabled"
-                        checked={settings.ticker.enabled}
-                        onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, enabled: e.target.checked } })}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <label htmlFor="tickerEnabled" className="text-sm font-medium text-gray-900 dark:text-white">
-                        Enable Ticker
-                      </label>
+                    <div className="flex flex-wrap items-center gap-6">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          id="tickerEnabled"
+                          checked={settings.ticker.enabled}
+                          onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, enabled: e.target.checked } })}
+                          className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                        <label htmlFor="tickerEnabled" className="text-sm font-medium text-gray-900 dark:text-white">
+                          Enable Ticker
+                        </label>
+                      </div>
+
+                      {settings.ticker.enabled && (
+                        <div className="flex items-center gap-3">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Ticker Mode:</label>
+                          <select
+                            value={settings.ticker.mode || 'moving'}
+                            onChange={(e) => setSettings({ ...settings, ticker: { ...settings.ticker, mode: e.target.value as 'static' | 'moving' } })}
+                            className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="moving">Moving / Scrolling</option>
+                            <option value="static">Static / Centered</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
                     {settings.ticker.enabled && (
                       <div className="space-y-2">
@@ -377,31 +447,59 @@ export default function HomepageSettingsPage() {
                     )}
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Upload New Hero Image</label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            setHeroImageFile(file);
-                            setHeroPreview(URL.createObjectURL(file));
-                            setHeroChanged(true);
-                          }
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    {(heroPreview || settings.hero.image_url) && (
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Current Image Preview:</p>
-                        <img
-                          src={heroPreview || settings.hero.image_url}
-                          alt="Hero Preview"
-                          className="h-48 object-cover rounded-lg border border-gray-200 dark:border-gray-700 w-full max-w-2xl"
-                        />
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Hero Images (Slider)</label>
+                        <label className="flex items-center gap-1 text-blue-600 hover:text-blue-700 text-xs font-medium cursor-pointer">
+                          <Plus className="w-3 h-3" /> Add Image
+                          <input type="file" accept="image/*" multiple className="hidden" onChange={handleAddHeroImage} />
+                        </label>
                       </div>
-                    )}
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {heroImages.map((img, idx) => (
+                          <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 aspect-video bg-gray-100 dark:bg-gray-900">
+                            <img
+                              src={img.preview || img.url}
+                              alt={`Hero ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => moveHeroImage(idx, 'up')}
+                                disabled={idx === 0}
+                                className="p-1.5 bg-white/20 hover:bg-white/40 rounded text-white disabled:opacity-20"
+                                title="Move up"
+                              >
+                                <ArrowUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => moveHeroImage(idx, 'down')}
+                                disabled={idx === heroImages.length - 1}
+                                className="p-1.5 bg-white/20 hover:bg-white/40 rounded text-white disabled:opacity-20"
+                                title="Move down"
+                              >
+                                <ArrowDown className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => removeHeroImage(idx)}
+                                className="p-1.5 bg-red-500/80 hover:bg-red-500 rounded text-white"
+                                title="Remove image"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 rounded text-[10px] text-white font-bold uppercase tracking-wider">
+                              {idx + 1}
+                            </div>
+                          </div>
+                        ))}
+                        {heroImages.length === 0 && (
+                          <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg aspect-video">
+                            <p className="text-sm text-gray-500 italic">No images. Add at least one.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </section>
 

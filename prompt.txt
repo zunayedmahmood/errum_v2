@@ -596,3 +596,17 @@ also in featured section, we'll show the category image and not the  categoryher
 ### hompage showcase categories
 hompage showcase categories (set from settings) are not being shown in homepage. double check if the the categories are called being correctly from the backend with proper structure.
 also, the frontend pages uses this prefix for the images and other info (from homepage settings and category banners in the slug page): errum_v2.vercel.app but, it should call the https:/backend2.errumbd.com
+
+
+### visual builder:
+
+we want these features in home page ticker:
+it should have am option for static vs moving.
+currently, for 1 phrase (instead of many/ we still need many phrase support) it starts from middle instead of the whole page width. fix that.
+
+the homepage hero, needs to be an array of images (1-n). we can upload them and serial them from homepage settings.
+the hero section will have manual slider for these images.
+
+the search bar on the hero section needs to be a bit higher, span 80% width, centered and more transparent.
+the "shop now" and "collections" button needs to be adjusted according to the search bar.
+

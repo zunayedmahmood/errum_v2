@@ -63,13 +63,16 @@ export default function HomePage() {
   return (
     <div className="ec-root min-h-screen" style={{ background: '#ffffff' }}>
       {(!settings || settings.ticker.enabled) && (
-        <AnnouncementTicker phrases={settings?.ticker?.phrases?.length ? settings.ticker.phrases : undefined} />
+        <AnnouncementTicker 
+          phrases={settings?.ticker?.phrases?.length ? settings.ticker.phrases : undefined} 
+          mode={settings?.ticker?.mode}
+        />
       )}
       <Navigation />
 
       {/* 1. Hero section */}
       <HeroSection 
-        bgUrl={settings?.hero?.image_url ? toAbsoluteAssetUrl(settings.hero.image_url) : undefined} 
+        images={settings?.hero?.images ? settings.hero.images.map(img => ({ ...img, url: toAbsoluteAssetUrl(img.url) })) : undefined} 
         title={settings?.hero?.title}
         showTitle={settings?.hero?.show_title}
       />

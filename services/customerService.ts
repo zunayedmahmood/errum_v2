@@ -66,6 +66,7 @@ export interface CustomerOrder {
   }>;
   shipping_address?: string;
   notes?: string;
+  customer?: Customer;
 }
 
 export interface CustomerAnalytics {

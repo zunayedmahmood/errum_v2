@@ -758,6 +758,7 @@ export default function LookupPage() {
           items: Array.isArray(o?.items) ? o.items : [],
           shipping_address: o?.shipping_address || o?.delivery_address || o?.address,
           notes: o?.notes,
+          customer: o?.customer,
         } as CustomerOrder;
       })
       .filter((o: any) => o?.id);
@@ -932,6 +933,7 @@ export default function LookupPage() {
       }),
       shipping_address: o.shipping_address,
       notes: o.notes,
+      customer: o.customer,
     };
   };
 
@@ -1027,6 +1029,7 @@ export default function LookupPage() {
       store: o.store ?? payload?.store ?? null,
       store_id: o.store_id ?? payload?.store_id ?? o?.store?.id ?? payload?.store?.id ?? null,
       store_name: o.store_name ?? payload?.store_name ?? o?.store?.name ?? payload?.store?.name ?? null,
+      customer: o.customer ?? payload?.customer ?? null,
       subtotal: o.subtotal,
       total_amount: o.total_amount ?? o.total ?? o.total_price,
       // some UIs expect order_date; keep both

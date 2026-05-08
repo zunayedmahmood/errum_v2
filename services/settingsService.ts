@@ -8,10 +8,11 @@ export interface ShowcaseCategory {
 export interface HomepageSettings {
   ticker: {
     enabled: boolean;
+    mode: 'static' | 'moving';
     phrases: string[];
   };
   hero: {
-    image_url: string;
+    images: { url: string; path?: string }[];
     title: string;
     show_title: boolean;
   };

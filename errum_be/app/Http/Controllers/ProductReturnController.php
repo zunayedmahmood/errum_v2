@@ -167,7 +167,8 @@ class ProductReturnController extends Controller
                 }
 
                 $returnableBarcodes = $this->getReturnableBarcodesForOrderItem($order, $orderItem, (int) $item['quantity']);
-                if ($returnableBarcodes->count() < (int) $item['quantity']) {
+                // If it was explicitly barcode-tracked during sale, mandate the barcode return
+                if (!empty($orderItem->product_barcode_id) && $returnableBarcodes->count() < (int) $item['quantity']) {
                     throw new \Exception("Unable to identify sold barcode units for {$orderItem->product_name}.");
                 }
 
@@ -297,13 +298,14 @@ class ProductReturnController extends Controller
                     throw new \Exception("Cannot return {$item['quantity']} units. Only {$availableForReturn} available for return.");
                 }
 
-                // Requirement: only barcode-tracked sold items are returnable.
-                if (empty($orderItem->product_barcode_id) && empty($orderItem->product_batch_id)) {
-                    throw new \Exception("Item {$orderItem->id} is not barcode-trackable. Returns require barcode-tracked items.");
+                // Only items with a batch can be returned (pre-orders without batches cannot be physically returned)
+                if (empty($orderItem->product_batch_id)) {
+                    throw new \Exception("Item {$orderItem->id} has no batch tracking. Returns require batch-tracked items.");
                 }
 
                 $returnableBarcodes = $this->getReturnableBarcodesForOrderItem($order, $orderItem, (int) $item['quantity']);
-                if ($returnableBarcodes->count() < (int) $item['quantity']) {
+                // If it was explicitly barcode-tracked during sale, mandate the barcode return
+                if (!empty($orderItem->product_barcode_id) && $returnableBarcodes->count() < (int) $item['quantity']) {
                     throw new \Exception("Unable to identify {$item['quantity']} sold barcode unit(s) for {$orderItem->product_name}. Return requires sold barcode tracking.");
                 }
 

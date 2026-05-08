@@ -16,9 +16,9 @@ class SettingController extends Controller
     {
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
         
-        $response = [
             'ticker' => array_merge([
                 'enabled' => true,
+                'mode' => 'moving',
                 'phrases' => [
                     'FREE SHIPPING ON ORDERS OVER ৳2000',
                     'NEW SEASON ARRIVALS NOW LIVE',
@@ -26,7 +26,9 @@ class SettingController extends Controller
                 ],
             ], $settings->get('homepage_ticker', [])),
             'hero' => array_merge([
-                'image_url' => '/e-commerce-hero.jpg',
+                'images' => [
+                    ['url' => '/e-commerce-hero.jpg', 'path' => null]
+                ],
                 'title' => 'Refining the Art of Lifestyle',
                 'show_title' => true
             ], $settings->get('homepage_hero', [])),
@@ -71,6 +73,7 @@ class SettingController extends Controller
         return response()->json([
             'ticker' => array_merge([
                 'enabled' => true,
+                'mode' => 'moving',
                 'phrases' => [
                     'FREE SHIPPING ON ORDERS OVER ৳2000',
                     'NEW SEASON ARRIVALS NOW LIVE',
@@ -78,7 +81,9 @@ class SettingController extends Controller
                 ],
             ], $settings->get('homepage_ticker', [])),
             'hero' => array_merge([
-                'image_url' => '/e-commerce-hero.jpg',
+                'images' => [
+                    ['url' => '/e-commerce-hero.jpg', 'path' => null]
+                ],
                 'title' => 'Refining the Art of Lifestyle',
                 'show_title' => true
             ], $settings->get('homepage_hero', [])),
@@ -94,7 +99,8 @@ class SettingController extends Controller
     {
         $validated = $request->validate([
             'ticker' => 'nullable|array',
-            'ticker.enabled' => 'nullable|string', // arrives as "1" or "0" from FormData; cast below
+            'ticker.enabled' => 'nullable|string',
+            'ticker.mode' => 'nullable|string|in:static,moving',
             'ticker.phrases' => 'nullable|array',
             'ticker.phrases.*' => 'nullable|string|max:255',
             
@@ -107,9 +113,11 @@ class SettingController extends Controller
             'showcase.*.subcategories' => 'nullable|array',
             'showcase.*.subcategories.*' => 'integer',
             
-            'hero_image' => 'nullable|image|max:5120',
-            'hero_title' => 'nullable|string|max:255',
-            'hero_show_title' => 'nullable|string', // arrives as "1" or "0" from FormData
+            'hero_images' => 'nullable|array',
+            'hero_images.*' => 'nullable|image|max:5120',
+            'hero_images_meta' => 'nullable|string', // JSON string representing the order and state of hero images
+            'hero_title' => 'nullable|string|max:500',
+            'hero_show_title' => 'nullable|string',
         ]);
 
         if ($request->has('ticker')) {
@@ -138,27 +146,62 @@ class SettingController extends Controller
             );
         }
 
-        if ($request->hasFile('hero_image') || $request->has('hero_title') || $request->has('hero_show_title')) {
+        if ($request->has('hero_images') || $request->has('hero_images_meta') || $request->has('hero_title') || $request->has('hero_show_title')) {
             $currentHero = Setting::where('key', 'homepage_hero')->first()?->value ?? [];
             
-            if ($request->hasFile('hero_image')) {
-                // Delete old hero image from storage before replacing
+            // Handle multiple hero images
+            if ($request->has('hero_images_meta')) {
+                $meta = json_decode($request->input('hero_images_meta'), true);
+                $newImages = [];
+                
+                // Track files by index
+                $uploadedFiles = $request->file('hero_images') ?? [];
+                
+                foreach ($meta as $item) {
+                    if ($item['type'] === 'existing') {
+                        $newImages[] = [
+                            'url' => $item['url'],
+                            'path' => $item['path'] ?? null
+                        ];
+                    } elseif ($item['type'] === 'new' && isset($uploadedFiles[$item['fileIndex']])) {
+                        $file = $uploadedFiles[$item['fileIndex']];
+                        $path = $file->store('homepage', 'public');
+                        $newImages[] = [
+                            'url' => rtrim(config('app.url'), '/') . '/storage/' . ltrim($path, '/'),
+                            'path' => $path
+                        ];
+                    }
+                }
+                
+                // Clean up old images that are no longer in the list
+                $oldPaths = collect($currentHero['images'] ?? [])->pluck('path')->filter()->toArray();
+                $newPaths = collect($newImages)->pluck('path')->filter()->toArray();
+                $toDelete = array_diff($oldPaths, $newPaths);
+                
+                foreach ($toDelete as $path) {
+                    Storage::disk('public')->delete($path);
+                }
+                
+                $currentHero['images'] = $newImages;
+            } elseif ($request->hasFile('hero_image')) {
+                // Fallback for single image upload (backward compatibility)
                 $oldPath = $currentHero['image_path'] ?? null;
                 if ($oldPath) {
                     Storage::disk('public')->delete($oldPath);
                 }
                 $path = $request->file('hero_image')->store('homepage', 'public');
-                $currentHero['image_url'] = rtrim(config('app.url'), '/') . '/storage/' . ltrim($path, '/');
-                $currentHero['image_path'] = $path; // store relative path for future deletion
+                $url = rtrim(config('app.url'), '/') . '/storage/' . ltrim($path, '/');
+                $currentHero['images'] = [['url' => $url, 'path' => $path]];
+                $currentHero['image_url'] = $url;
+                $currentHero['image_path'] = $path;
             }
             
-            // Only overwrite title if it's non-empty (guards against empty-string overwrite)
-            if ($request->has('hero_title') && !empty($validated['hero_title'])) {
-                $currentHero['title'] = $validated['hero_title'];
+            if ($request->has('hero_title')) {
+                $currentHero['title'] = $request->input('hero_title');
             }
             
             if ($request->has('hero_show_title')) {
-                $currentHero['show_title'] = $validated['hero_show_title'] === '1';
+                $currentHero['show_title'] = $request->input('hero_show_title') === '1';
             }
 
             Setting::updateOrCreate(

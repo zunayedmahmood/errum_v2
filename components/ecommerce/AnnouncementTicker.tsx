@@ -5,6 +5,7 @@ import React from 'react';
 interface AnnouncementTickerProps {
   phrases?: string[];
   speed?: number;
+  mode?: 'static' | 'moving';
 }
 
 export default function AnnouncementTicker({ 
@@ -15,10 +16,13 @@ export default function AnnouncementTicker({
     "PREMIUM QUALITY GUARANTEED",
     "SHOP THE LATEST COLLECTIONS"
   ],
-  speed = 40
+  speed = 40,
+  mode = 'moving'
 }: AnnouncementTickerProps) {
-  // Triple the phrases to ensure no gaps during the animation loop
-  const displayPhrases = [...phrases, ...phrases, ...phrases];
+  // Triple the phrases to ensure no gaps during the animation loop for moving mode
+  // For static mode, we just use the original phrases
+  const isMoving = mode === 'moving';
+  const displayPhrases = isMoving ? [...phrases, ...phrases, ...phrases] : phrases;
 
   return (
     <div 
@@ -26,10 +30,9 @@ export default function AnnouncementTicker({
       style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}
     >
       <div 
-        className="inline-block animate-ticker-scroll"
+        className={`${isMoving ? 'inline-flex animate-ticker-scroll' : 'flex justify-center flex-wrap'}`}
         style={{
-          display: 'inline-flex',
-          animation: `ticker-scroll ${speed}s linear infinite`,
+          animation: isMoving ? `ticker-scroll ${speed}s linear infinite` : 'none',
         }}
       >
         {displayPhrases.map((phrase, i) => (
@@ -37,7 +40,7 @@ export default function AnnouncementTicker({
             <span className="inline-block px-12 font-bold text-[10px] tracking-[0.25em] uppercase font-[Poppins]">
               {phrase}
             </span>
-            <div className="h-1 w-1 rounded-full bg-white/30" />
+            {isMoving && <div className="h-1 w-1 rounded-full bg-white/30" />}
           </div>
         ))}
       </div>
