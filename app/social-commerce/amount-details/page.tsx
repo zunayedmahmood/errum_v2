@@ -236,8 +236,6 @@ export default function AmountDetailsPage() {
   const total = useMemo(() => Math.max(0, subtotal - orderDiscount + transport), [subtotal, orderDiscount, transport]);
   
   const isEditMode = useMemo(() => !!(orderData?.editOrderId), [orderData]);
-  const advance = useMemo(() => parseNumber(advanceAmount), [advanceAmount]);
-  const finalDue = useMemo(() => Math.max(0, total - alreadyPaid - advance), [total, alreadyPaid, advance]);
 
   const selectedMethod = useMemo(
     () => paymentMethods.find((m) => String(m.id) === String(selectedPaymentMethod)),
@@ -278,6 +276,8 @@ export default function AmountDetailsPage() {
     if (paymentOption === 'installment') return parseNumber(installmentPayNow);
     return parseNumber(advanceAmount);
   }, [paymentOption, total, alreadyPaid, advanceAmount, installmentPayNow]);
+
+  const finalDue = useMemo(() => Math.max(0, total - alreadyPaid - advance), [total, alreadyPaid, advance]);
 
   const codAmount = useMemo(() => {
     if (paymentOption === 'full') return 0;
