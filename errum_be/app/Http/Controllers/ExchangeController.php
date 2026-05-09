@@ -507,7 +507,7 @@ class ExchangeController extends Controller
             : $query->where('barcode', $barcodeString)->first();
 
         if (!$barcode) {
-            throw new \Exception('Returned barcode was not found.');
+            return null;
         }
 
         if ((int) $barcode->product_id !== (int) ($orderItem?->product_id ?? $item['product_id'])) {
