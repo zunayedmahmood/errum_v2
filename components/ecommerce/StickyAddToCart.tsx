@@ -37,12 +37,12 @@ const StickyAddToCart: React.FC<StickyAddToCartProps> = ({
         <button
           onClick={onAddToCart}
           disabled={disabled || isAdding}
-          className="h-11 px-5 rounded-lg bg-black text-white text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 active:scale-95 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-md"
+          className="h-11 px-5 rounded-lg bg-black text-white text-[14px] font-bold uppercase tracking-wider flex items-center gap-2 active:scale-95 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-md"
         >
           {isAdding ? (
             <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           ) : (
-            <ShoppingCart size={14} />
+            <ShoppingCart size={18} />
           )}
           {isAdding ? 'ADDING...' : 'ADD TO CART'}
         </button>

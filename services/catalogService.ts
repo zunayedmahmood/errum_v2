@@ -1284,9 +1284,16 @@ const catalogService = {
         // Use the existing parseProductsPayload to handle the products and pagination
         const parsed = parseProductsPayload(payload);
         
+        const rawCollection = payload.collection;
+        const normalizedCollection = {
+          ...rawCollection,
+          image_url: toAbsoluteAssetUrl(rawCollection?.image_url || rawCollection?.image || undefined),
+          banner_url: toAbsoluteAssetUrl(rawCollection?.banner_url || rawCollection?.banner || rawCollection?.banner_path || undefined),
+        };
+
         return {
           success: true,
-          collection: payload.collection,
+          collection: normalizedCollection,
           products: {
             data: parsed.products,
             current_page: parsed.pagination.current_page,

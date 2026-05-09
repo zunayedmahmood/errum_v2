@@ -170,12 +170,12 @@ const ProductImageGallery: React.FC<ProductImageGalleryProps> = memo(({
           {/* Status Badges */}
           <div className="absolute top-0 left-0 flex flex-col gap-2 z-20">
             {!inStock && (
-              <span className="bg-black text-white px-2 py-1 rounded-sm text-[8px] font-bold tracking-widest uppercase shadow-sm">
+              <span className="bg-black text-white px-2 py-1 rounded-sm text-[12px] font-bold tracking-widest uppercase shadow-sm">
                 Out of Stock
               </span>
             )}
             {discountPercent > 0 && (
-              <span className="bg-[#b83228] text-white px-2 py-1 rounded-sm text-[8px] font-bold tracking-widest uppercase">
+              <span className="bg-[#b83228] text-white px-2 py-1 rounded-sm text-[12px] font-bold tracking-widest uppercase">
                 {discountPercent}% OFF
               </span>
             )}

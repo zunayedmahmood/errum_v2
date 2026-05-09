@@ -207,21 +207,21 @@ export default function HeroSection({
             style={{
               minWidth: '300px',
               transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              opacity: isFocused ? 0.95 : 0.4,
+              opacity: isFocused ? 1 : 0.8,
             }}
             className="w-[90vw] md:w-[60vw] max-w-[1200px]"
           >
             <div style={{
               position: 'relative',
-              background: 'rgba(255,255,255,0.95)',
-              backdropFilter: 'blur(16px)',
+              background: 'rgba(255,255,255,0.12)',
+              backdropFilter: 'blur(24px)',
               borderRadius: '12px',
-              boxShadow: '0 12px 48px rgba(0,0,0,0.3)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
               display: 'flex',
               alignItems: 'center',
               overflow: 'hidden',
               padding: '1px',
-              border: `1px solid ${isFocused ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)'}`,
+              border: `1px solid ${isFocused ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)'}`,
               transition: 'all 0.3s ease'
             }}>
               <button
@@ -237,7 +237,7 @@ export default function HeroSection({
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  color: '#666666',
+                  color: '#ffffff',
                   zIndex: 20
                 }}
                 aria-label="Search"
@@ -251,7 +251,7 @@ export default function HeroSection({
                 onBlur={() => setIsFocused(false)}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search premium lifestyle essentials..."
-                className="w-full bg-transparent py-2.5 text-sm text-[#111111] outline-none border-none placeholder:text-neutral-400 font-poppins"
+                className="w-full bg-transparent py-2.5 text-sm text-white outline-none border-none placeholder:text-neutral-300 font-poppins"
                 style={{
                   paddingLeft: '52px',
                   paddingRight: query ? '44px' : '16px',
@@ -265,7 +265,11 @@ export default function HeroSection({
                     position: 'absolute',
                     right: '8px',
                     padding: '6px',
-                    color: '#666666',
+                  style={{
+                    position: 'absolute',
+                    right: '8px',
+                    padding: '6px',
+                    color: '#ffffff',
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',

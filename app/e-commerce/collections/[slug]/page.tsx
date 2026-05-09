@@ -128,41 +128,37 @@ export default function CollectionPage() {
       <Navigation />
       <div className="ec-root bg-[var(--bg-root)] min-h-screen">
         {/* Collection Hero */}
-        <div className={`relative mb-12 ${bannerUrl ? 'h-[300px] md:h-[450px] overflow-hidden rounded-b-[40px] md:rounded-b-[80px]' : 'bg-[var(--bg-surface)] border-b border-[var(--border-default)]'}`}>
-          {bannerUrl ? (
-            <>
-              <img src={bannerUrl} alt={collection?.name} className="absolute inset-0 w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
-              <div className="relative h-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-center text-center">
-                <span className="text-[var(--cyan)] font-bold tracking-[0.3em] uppercase text-[10px] md:text-xs mb-4 ec-anim-fade-up">
-                  Curated Collection
-                </span>
-                <h1 className="text-4xl md:text-6xl lg:text-7xl font-extralight text-white mb-6 tracking-tight drop-shadow-2xl ec-anim-fade-up" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                  {collection?.name}
-                </h1>
-                <p className="text-white/80 max-w-2xl text-sm md:text-base font-light leading-relaxed ec-anim-fade-up">
-                  {collection?.description}
-                </p>
-                <div className="mt-8 flex items-center gap-4 ec-anim-fade-up">
-                  <div className="h-px w-12 bg-white/30" />
-                  <span className="text-white/60 text-[10px] uppercase tracking-widest">{totalResults} Pieces</span>
-                  <div className="h-px w-12 bg-white/30" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
+          {(() => {
+            const bannerUrl = collection?.banner_url;
+            return (
+              <>
+                {bannerUrl && (
+                  <div className="relative h-[300px] md:h-[450px] overflow-hidden rounded-[30px] md:rounded-[60px] mb-12 shadow-sm border border-[var(--border-default)]">
+                    <img src={bannerUrl} alt={collection?.name} className="w-full h-full object-cover" />
+                  </div>
+                )}
+                
+                <div className="mb-16 text-left ec-anim-fade-up">
+                  <span className="text-[var(--cyan)] font-bold tracking-[0.3em] uppercase text-[10px] md:text-xs mb-4 block">
+                    Curated Collection
+                  </span>
+                  <h1 className="text-4xl md:text-6xl lg:text-7xl font-light text-[var(--text-primary)] mb-6 tracking-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                    {collection?.name}
+                  </h1>
+                  {collection?.description && (
+                    <p className="text-[var(--text-secondary)] max-w-2xl text-sm md:text-base font-light leading-relaxed mb-8">
+                      {collection.description}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-4">
+                    <div className="h-px w-12 bg-[var(--cyan)]" />
+                    <span className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">{totalResults} Pieces Available</span>
+                  </div>
                 </div>
-              </div>
-            </>
-          ) : (
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
-               <span className="text-[var(--cyan)] font-bold tracking-[0.3em] uppercase text-[10px] md:text-xs mb-4 block">
-                  Curated Collection
-                </span>
-              <h1 className="text-4xl md:text-5xl font-light text-[var(--text-primary)] mb-4" style={{ fontFamily: "'Poppins', sans-serif" }}>{collection?.name}</h1>
-              <p className="text-[var(--text-secondary)] max-w-2xl mx-auto text-sm">{collection?.description}</p>
-              <div className="mt-6 inline-flex items-center gap-3 px-4 py-1.5 bg-[var(--bg-surface-2)] rounded-full border border-[var(--border-default)]">
-                <Package className="w-4 h-4 text-[var(--text-muted)]" />
-                <span className="text-[var(--text-primary)] text-xs font-medium uppercase tracking-widest">{totalResults} Items</span>
-              </div>
-            </div>
-          )}
+              </>
+            );
+          })()}
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">

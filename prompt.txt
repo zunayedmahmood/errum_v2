@@ -706,3 +706,7 @@ and remove the existing order eit modal.
 keep this in mind:
 both social commerce and e-commerce orders should be editable this way.
 also, the database structure and backend codes aren't exactly same as the example pages.
+
+### slugs 
+update the collection/slug page and /slug pages.
+the texts in the banner should be below the banner image in the left.

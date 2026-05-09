@@ -1081,7 +1081,7 @@ export default function ProductDetailPage() {
 
                 {/* Stock Progress Bar */}
                 <div className="space-y-2 p-3 bg-gray-50/50 rounded-xl border border-gray-100">
-                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
+                  <div className="flex justify-between items-center text-[15px] font-bold uppercase tracking-widest">
                     <span className={availableInventory <= 5 ? 'text-[#b83228]' : 'text-gray-600'}>
                       {availableInventory <= 0 ? 'Out of stock' :
                         availableInventory <= 8 ? `HURRY! ONLY ${availableInventory} LEFT IN STOCK.` :
@@ -1129,11 +1129,11 @@ export default function ProductDetailPage() {
                     ref={mainCtaRef}
                     onClick={handleAddToCart}
                     disabled={!selectedVariant.in_stock || isAdding || availableInventory <= 0}
-                    className={`flex-1 h-[52px] rounded-lg font-bold uppercase tracking-wider text-[11px] flex items-center justify-center gap-3 transition-all active:scale-95 disabled:bg-gray-100 disabled:text-gray-400 ${
+                    className={`flex-1 h-[52px] rounded-lg font-bold uppercase tracking-wider text-[16.5px] flex items-center justify-center gap-3 transition-all active:scale-95 disabled:bg-gray-100 disabled:text-gray-400 ${
                       cartStatus === 'success' ? 'bg-[#1a9456] text-white' : 'bg-black text-white hover:bg-gray-800'
                     }`}
                   >
-                    {cartStatus === 'idle' && <ShoppingCart size={16} />}
+                    {cartStatus === 'idle' && <ShoppingCart size={22} />}
                     {cartStatus === 'loading' && <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
                     {cartStatus === 'success' && <span>✓ Added!</span>}
                     {cartStatus === 'idle' && (availableInventory <= 0 ? 'SOLD OUT' : 'ADD TO CART')}
@@ -1143,7 +1143,7 @@ export default function ProductDetailPage() {
                 <button
                   onClick={handleBuyItNow}
                   disabled={!selectedVariant.in_stock || isAdding || availableInventory <= 0}
-                  className="w-full h-[52px] bg-black text-white rounded-lg font-bold uppercase tracking-wider text-[11px] transition-all hover:bg-gray-800 active:scale-95 disabled:opacity-50"
+                  className="w-full h-[52px] bg-black text-white rounded-lg font-bold uppercase tracking-wider text-[16.5px] transition-all hover:bg-gray-800 active:scale-95 disabled:opacity-50"
                 >
                   BUY IT NOW
                 </button>
@@ -1166,12 +1166,12 @@ export default function ProductDetailPage() {
                 ].map((section, idx) => (
                   <details key={idx} className="group overflow-hidden rounded-md border border-gray-100">
                     <summary className="flex items-center justify-between cursor-pointer list-none p-3 bg-gray-50/50 hover:bg-gray-50 transition-colors">
-                      <span className="text-[10px] font-bold tracking-widest text-gray-900">
+                      <span className="text-[15px] font-bold tracking-widest text-gray-900">
                         {section.title}
                       </span>
-                      <Plus size={14} className="text-gray-400 group-open:rotate-45 transition-transform" />
+                      <Plus size={18} className="text-gray-400 group-open:rotate-45 transition-transform" />
                     </summary>
-                    <div className="p-3 text-sm text-gray-600 leading-relaxed whitespace-pre-line bg-white border-t border-gray-100">
+                    <div className="p-3 text-[21px] text-gray-600 leading-relaxed whitespace-pre-line bg-white border-t border-gray-100">
                       {section.content}
                     </div>
                   </details>
@@ -1181,22 +1181,22 @@ export default function ProductDetailPage() {
               {/* Bottom Trust Badges */}
               <div className="grid grid-cols-3 gap-2 pt-4 border-t border-gray-100">
                 <div className="flex flex-col items-center text-center gap-1">
-                  <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
-                    <Truck size={16} strokeWidth={1.5} />
+                  <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
+                    <Truck size={24} strokeWidth={1.5} />
                   </div>
-                  <span className="text-[8px] font-bold tracking-wider text-gray-900 uppercase">Shipping Worldwide</span>
+                  <span className="text-[12px] font-bold tracking-wider text-gray-900 uppercase">Shipping Worldwide</span>
                 </div>
                 <div className="flex flex-col items-center text-center gap-1">
-                  <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
-                    <RotateCcw size={16} strokeWidth={1.5} />
+                  <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
+                    <RotateCcw size={24} strokeWidth={1.5} />
                   </div>
-                  <span className="text-[8px] font-bold tracking-wider text-gray-900 uppercase">Easy Returns</span>
+                  <span className="text-[12px] font-bold tracking-wider text-gray-900 uppercase">Easy Returns</span>
                 </div>
                 <div className="flex flex-col items-center text-center gap-1">
-                  <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
-                    <ShieldCheck size={16} strokeWidth={1.5} />
+                  <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
+                    <ShieldCheck size={24} strokeWidth={1.5} />
                   </div>
-                  <span className="text-[8px] font-bold tracking-wider text-gray-900 uppercase">Secure Checkout</span>
+                  <span className="text-[12px] font-bold tracking-wider text-gray-900 uppercase">Secure Checkout</span>
                 </div>
               </div>
             </div>
