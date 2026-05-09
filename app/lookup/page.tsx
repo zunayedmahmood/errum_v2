@@ -1891,14 +1891,16 @@ export default function LookupPage() {
           const originalItem = selectedOrderForAction.items.find((i: any) => i.id === item.order_item_id);
           return {
             order_item_id: item.order_item_id,
-            product_id: originalItem?.product_id,
-            product_batch_id: originalItem?.product_batch_id || originalItem?.batch_id,
+            product_id: originalItem?.product_id || item.product_id,
+            product_batch_id: originalItem?.product_batch_id || originalItem?.batch_id || item.product_batch_id,
             quantity: item.quantity,
             unit_price: item.unit_price,
             total_price: item.total_price,
-            product_barcode_id: item.product_barcode_id,
-            return_reason: 'other', // Default reason
-            quality_check_passed: true, // Defaulting for quick exchange
+            barcode: item.barcode, // Pass through barcode string
+            product_barcode_id: item.product_barcode_id || item.barcode_id, // Primary ID for removed items
+            barcode_id: item.product_barcode_id || item.barcode_id, // Fallback/Alternative
+            return_reason: item.return_reason || 'other',
+            quality_check_passed: item.quality_check_passed ?? true,
           };
         }),
         replacementProducts: exchangeData.replacementProducts.map((p: any) => ({
@@ -1912,9 +1914,9 @@ export default function LookupPage() {
         paymentRefund: {
           type: exchangeData.paymentRefund?.type === 'payment' ? 'surplus' : (exchangeData.paymentRefund?.type === 'refund' ? 'refund' : 'even'),
           amount: exchangeData.paymentRefund?.total || 0,
-          method: exchangeData.paymentRefund?.card > 0 ? 'card' : 
-                  (exchangeData.paymentRefund?.bkash > 0 ? 'bkash' : 
-                  (exchangeData.paymentRefund?.nagad > 0 ? 'nagad' : 'cash')),
+          method: exchangeData.paymentRefund?.card > 0 ? 'card' :
+            (exchangeData.paymentRefund?.bkash > 0 ? 'bkash' :
+              (exchangeData.paymentRefund?.nagad > 0 ? 'nagad' : 'cash')),
           details: {
             cash: exchangeData.paymentRefund?.cash || 0,
             card: exchangeData.paymentRefund?.card || 0,
@@ -1926,10 +1928,10 @@ export default function LookupPage() {
       };
 
       const response = await axiosInstance.post('/exchange/process', payload);
-      
+
       console.log('✅ Exchange processed successfully:', response.data);
       alert('Exchange processed successfully!');
-      
+
       // Close modal and refresh data
       setShowExchangeModal(false);
       setSelectedOrderForAction(null);
@@ -2253,8 +2255,8 @@ export default function LookupPage() {
                     <button
                       onClick={() => switchTab('customer')}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'customer'
-                          ? 'bg-black dark:bg-white text-white dark:text-black'
-                          : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
+                        ? 'bg-black dark:bg-white text-white dark:text-black'
+                        : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
                         }`}
                     >
                       Customer Lookup
@@ -2263,8 +2265,8 @@ export default function LookupPage() {
                     <button
                       onClick={() => switchTab('order')}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'order'
-                          ? 'bg-black dark:bg-white text-white dark:text-black'
-                          : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
+                        ? 'bg-black dark:bg-white text-white dark:text-black'
+                        : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
                         }`}
                     >
                       Order Lookup
@@ -2273,8 +2275,8 @@ export default function LookupPage() {
                     <button
                       onClick={() => switchTab('barcode')}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'barcode'
-                          ? 'bg-black dark:bg-white text-white dark:text-black'
-                          : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
+                        ? 'bg-black dark:bg-white text-white dark:text-black'
+                        : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
                         }`}
                     >
                       Barcode History
@@ -2283,8 +2285,8 @@ export default function LookupPage() {
                     <button
                       onClick={() => switchTab('batch')}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'batch'
-                          ? 'bg-black dark:bg-white text-white dark:text-black'
-                          : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
+                        ? 'bg-black dark:bg-white text-white dark:text-black'
+                        : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
                         }`}
                     >
                       Batch History

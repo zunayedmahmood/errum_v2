@@ -679,3 +679,21 @@ we want to upgrade this and now, homepage settings should be saved in groups tha
 then, homepage loads as soon as the hero group is loaded. it then behind the scenes, loads the rest of the page.
 however, to avoid a shaking effect, there should be a rough skeleton first imported (like,  ticker is on or off before ticker phrase is being tried to load. this prevents ticker bacground to appear and disapear).
 the homepage skeleton should be loaded at first, before anything else.
+
+
+### retex cli check
+see the return and exchange modal in lookup page.
+see the backend code it calls. you must carefully read through the migrations, controllers,models,observers
+
+we are getting errors after errors from this return exchange process.
+basically, i want you to do 2 things:
+track the full process to find any logic error, validation error, db error, type error or anything that can cause issue.
+and check the code integrity across frontend and backend.
+and then,i want you make a full list of all the issues (with proposed fixes and explanations) that i can give an Ai model to fix.
+do not write a single code. i only want the list.
+
+secondly, i want you to check the accounting and cash sheets and all its backend code.
+i want to know if the observers are properly tracking return-exchange and order edit amount changes and other things.
+this should be with proper details and handling edgecases like adding more items, tax calculation, Purchase order creation, deletion etc to order (edit order), exchanging partial orders etc.
+i want you make a full list of all the issues (with proposed fixes and explanations) that i can give an Ai model to fix.\
+do not write a single code. i only want the list.

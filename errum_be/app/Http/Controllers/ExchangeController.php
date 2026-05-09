@@ -41,6 +41,7 @@ class ExchangeController extends Controller
             'removedProducts.*.total_price' => 'nullable|numeric|min:0',
             'removedProducts.*.order_item_id' => 'nullable|exists:order_items,id',
             'removedProducts.*.barcode_id' => 'nullable|exists:product_barcodes,id',
+            'removedProducts.*.product_barcode_id' => 'nullable|exists:product_barcodes,id', // Added for consistency
             'removedProducts.*.return_reason' => 'required|string',
             'removedProducts.*.quality_check_passed' => 'required|boolean',
             
@@ -103,10 +104,28 @@ class ExchangeController extends Controller
             $returnItems = [];
 
             foreach ($request->removedProducts as $item) {
-                $batchId = $item['product_batch_id'] ?? null;
-                $barcodeId = $item['barcode_id'] ?? null;
+                $batchId = $item['product_batch_id'] ?? $item['batch_id'] ?? null;
+                $barcodeId = $item['product_barcode_id'] ?? $item['barcode_id'] ?? null;
+                $barcodeStr = $item['barcode'] ?? null;
 
-                // 1. Resolve batch from Barcode if provided
+                // 1. Resolve barcode ID from string if needed
+                if (!$barcodeId && $barcodeStr) {
+                    $resolvedBarcode = ProductBarcode::where('barcode', $barcodeStr)->first();
+                    if ($resolvedBarcode) {
+                        $barcodeId = $resolvedBarcode->id;
+                    }
+                }
+
+                // 2. Resolve from Order Item if still missing
+                if ((!$batchId || !$barcodeId) && !empty($item['order_item_id'])) {
+                    $orderItem = OrderItem::find($item['order_item_id']);
+                    if ($orderItem) {
+                        $batchId = $batchId ?: $orderItem->product_batch_id;
+                        $barcodeId = $barcodeId ?: $orderItem->product_barcode_id;
+                    }
+                }
+
+                // 3. Resolve batch from Barcode if we have barcode but no batch
                 if (!$batchId && $barcodeId) {
                     $barcode = ProductBarcode::find($barcodeId);
                     if ($barcode) {
@@ -114,11 +133,13 @@ class ExchangeController extends Controller
                     }
                 }
 
-                // 2. Resolve batch from Order Item
-                if (!$batchId && !empty($item['order_item_id'])) {
-                    $orderItem = OrderItem::find($item['order_item_id']);
-                    if ($orderItem) {
-                        $batchId = $orderItem->product_batch_id;
+                // 4. Fallback to primary barcode if database constraint requires it
+                if (!$barcodeId) {
+                    $primaryBarcode = ProductBarcode::where('product_id', $item['product_id'])
+                        ->where('is_primary', true)
+                        ->first();
+                    if ($primaryBarcode) {
+                        $barcodeId = $primaryBarcode->id;
                     }
                 }
 
@@ -139,16 +160,18 @@ class ExchangeController extends Controller
                     'refundable_amount' => $itemTotal,
                     'return_reason' => $item['return_reason'],
                     'quality_check_passed' => $item['quality_check_passed'],
-                    'returned_barcode_ids' => isset($item['barcode_id']) ? [$item['barcode_id']] : [],
+                    'barcode_id' => $barcodeId,
+                    'returned_barcode_ids' => $barcodeId ? [$barcodeId] : [],
                 ];
             }
 
             $productReturn = ProductReturn::create([
                 'return_number' => $returnNumber,
+                'order_id' => $originalOrder->id,
                 'customer_id' => $customer_id,
                 'store_id' => $storeId, // Returned to THIS store
-                'return_reason' => 'Exchange',
-                'return_type' => 'exchange',
+                'return_reason' => 'other',
+                'return_type' => 'customer_return',
                 'status' => 'processing',
                 'return_date' => now(),
                 'received_date' => now(),
@@ -353,9 +376,10 @@ class ExchangeController extends Controller
                 $refund = Refund::create([
                     'refund_number' => 'REF-EXC-' . date('Ymd') . '-' . Str::random(4),
                     'return_id' => $productReturn->id,
-                    'order_id' => null, // This refund is from the return value difference
+                    'order_id' => $originalOrder->id, // Linked to the original order being exchanged
                     'customer_id' => $customer_id,
-                    'refund_type' => 'exchange_refund', // Silences RefundObserver for ledger
+                    'refund_type' => 'partial_amount', // Standard partial refund type
+                    'internal_notes' => 'Exchange refund difference',
                     'original_amount' => $totalReturnValue,
                     'refund_amount' => (float)$request->paymentRefund['amount'],
                     'refund_method' => $refundMethodCode,
@@ -451,23 +475,37 @@ class ExchangeController extends Controller
             if (!$originalBatch) continue;
 
             // In lookup page exchange, we usually restore to the current store
-            $targetBatch = null;
-            if ((int) $originalBatch->store_id === (int) $returnStore) {
-                $targetBatch = $originalBatch;
-            } else {
-                // Find or create batch at this store
-                $targetBatch = ProductBatch::firstOrCreate([
-                    'product_id' => $item['product_id'],
-                    'store_id' => $returnStore,
-                    'batch_number' => $originalBatch->batch_number, // Try same batch number
-                ], [
-                    'quantity' => 0,
-                    'cost_price' => $originalBatch->cost_price,
-                    'sell_price' => $originalBatch->sell_price,
-                    'tax_percentage' => $originalBatch->tax_percentage,
-                    'availability' => true,
-                    'is_active' => true,
-                ]);
+            // Find or create target batch with collision protection
+            $targetBatch = ProductBatch::where('batch_number', $originalBatch->batch_number)
+                ->where('store_id', $returnStore)
+                ->first();
+
+            if (!$targetBatch) {
+                // If not found at this store, check if the batch number is taken anywhere globally
+                $isTakenGlobally = ProductBatch::where('batch_number', $originalBatch->batch_number)->exists();
+                $targetBatchNumber = $originalBatch->batch_number;
+
+                if ($isTakenGlobally) {
+                    // Global collision! Append store suffix to ensure uniqueness in this branch
+                    $targetBatchNumber = $originalBatch->batch_number . '-S' . $returnStore;
+                    
+                    // Check if the suffixed batch already exists at this store
+                    $targetBatch = ProductBatch::where('batch_number', $targetBatchNumber)->first();
+                }
+
+                if (!$targetBatch) {
+                    $targetBatch = ProductBatch::create([
+                        'product_id' => $item['product_id'],
+                        'store_id' => $returnStore,
+                        'batch_number' => $targetBatchNumber,
+                        'quantity' => 0,
+                        'cost_price' => $originalBatch->cost_price,
+                        'sell_price' => $originalBatch->sell_price,
+                        'tax_percentage' => $originalBatch->tax_percentage,
+                        'availability' => true,
+                        'is_active' => true,
+                    ]);
+                }
             }
 
             $targetBatch->increment('quantity', (int) $item['quantity']);
@@ -490,6 +528,9 @@ class ExchangeController extends Controller
                         'movement_type' => 'return',
                         'quantity' => 1,
                         'unit_cost' => $barcode->batch->cost_price ?? 0,
+                        'unit_price' => $item['unit_price'] ?? 0,
+                        'total_cost' => $barcode->batch->cost_price ?? 0,
+                        'total_value' => $item['unit_price'] ?? 0,
                         'reference_type' => 'return',
                         'reference_id' => $return->id,
                         'performed_by' => $employee->id,
@@ -497,14 +538,19 @@ class ExchangeController extends Controller
                 });
             } else {
                 // Bulk return without specific barcodes
+                $fallbackBarcodeId = $item['barcode_id'] ?? ProductBarcode::where('product_id', $item['product_id'])->where('is_primary', true)->value('id');
+                
                 ProductMovement::create([
                     'product_id' => $item['product_id'],
                     'product_batch_id' => $targetBatch->id,
+                    'product_barcode_id' => $fallbackBarcodeId,
                     'to_store_id' => $returnStore,
                     'movement_type' => 'return',
                     'quantity' => $item['quantity'],
                     'unit_cost' => $originalBatch->cost_price,
+                    'unit_price' => $item['unit_price'] ?? 0,
                     'total_cost' => $originalBatch->cost_price * $item['quantity'],
+                    'total_value' => ($item['unit_price'] ?? 0) * $item['quantity'],
                     'reference_type' => 'return',
                     'reference_id' => $return->id,
                     'performed_by' => $employee->id,

@@ -70,6 +70,11 @@ interface ExchangeProductModalProps {
   }) => Promise<void>;
 }
 
+interface ReturnedBarcode {
+  barcode: string;
+  barcode_id?: number;
+}
+
 interface ReplacementProduct {
   id: number | string;
   product_id: number;
@@ -87,7 +92,7 @@ interface ReplacementProduct {
 export default function ExchangeProductModal({ order, onClose, onExchange }: ExchangeProductModalProps) {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [exchangeQuantities, setExchangeQuantities] = useState<{ [key: number]: number }>({});
-  const [returnedBarcodes, setReturnedBarcodes] = useState<{ [key: number]: string[] }>({});
+  const [returnedBarcodes, setReturnedBarcodes] = useState<{ [key: number]: ReturnedBarcode[] }>({});
   const [replacementProducts, setReplacementProducts] = useState<ReplacementProduct[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [soldAtPrices, setSoldAtPrices] = useState<{ [key: number]: string }>({});
@@ -226,23 +231,28 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       const currentBarcodes = returnedBarcodes[targetItem.id] || [];
 
       // Prevent duplicate barcode scan for the same return item
-      if (currentBarcodes.includes(scannedProduct.barcode)) {
+      if (currentBarcodes.some(b => b.barcode === scannedProduct.barcode)) {
         alert('This barcode has already been scanned for this return item.');
         return;
       }
+
+      const newBarcode: ReturnedBarcode = {
+        barcode: scannedProduct.barcode,
+        barcode_id: scannedProduct.barcodeId
+      };
 
       // If we have an initial quantity from manual checkbox but no barcode, 'fill' it
       if (currentQty === 1 && currentBarcodes.length === 0) {
         setReturnedBarcodes(prev => ({
           ...prev,
-          [targetItem.id]: [scannedProduct.barcode]
+          [targetItem.id]: [newBarcode]
         }));
       } else if (currentQty < targetItem.quantity) {
         // It's a return!
         setExchangeQuantities(prev => ({ ...prev, [targetItem.id]: currentQty + 1 }));
         setReturnedBarcodes(prev => ({
           ...prev,
-          [targetItem.id]: [...(prev[targetItem.id] || []), scannedProduct.barcode]
+          [targetItem.id]: [...(prev[targetItem.id] || []), newBarcode]
         }));
       } else {
         alert('This product is already fully scanned for return.');
@@ -278,6 +288,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       amount: scannedProduct.price,
       available: scannedProduct.availableQty,
       barcode: scannedProduct.barcode,
+      barcode_id: scannedProduct.barcodeId,
     };
 
     setReplacementProducts(prev => [...prev, newItem]);
@@ -285,7 +296,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
   const handleRemoveReturnBarcode = (itemId: number, barcode: string) => {
     setReturnedBarcodes(prev => {
-      const filtered = (prev[itemId] || []).filter(b => b !== barcode);
+      const filtered = (prev[itemId] || []).filter(b => b.barcode !== barcode);
       return { ...prev, [itemId]: filtered };
     });
     setExchangeQuantities(prev => {
@@ -500,8 +511,8 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
               quantity: 1,
               unit_price: unitPrice,
               total_price: unitPrice,
-              barcode: bc,
-              // We don't have barcode_id here but backend resolves from string
+              barcode: bc.barcode,
+              product_barcode_id: bc.barcode_id || item?.barcode_id,
             }));
           } else {
             // Fallback (shouldn't happen with new logic but safe to keep)
@@ -734,7 +745,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                             barcode: item.barcode || item.product_sku,
                                             name: item.product_name,
                                             sku: item.product_sku,
-                                            price: parsePrice(item.unit_price)
+                                            price: parsePrice(item.unit_price),
+                                            batchId: item.batch_id,
+                                            batchNumber: item.batch_number || '',
+                                            availableQty: item.quantity,
+                                            barcodeId: item.barcode_id
                                           });
                                         }}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${
@@ -799,9 +814,9 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                       <div className="space-y-1">
                                         {(returnedBarcodes[item.id] || []).map((bc, idx) => (
                                           <div key={idx} className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded text-[10px] border border-blue-100 dark:border-blue-800/50">
-                                            <span className="font-mono text-blue-700 dark:text-blue-300">{bc}</span>
+                                            <span className="font-mono text-blue-700 dark:text-blue-300">{bc.barcode}</span>
                                             <button 
-                                              onClick={() => handleRemoveReturnBarcode(item.id, bc)}
+                                              onClick={() => handleRemoveReturnBarcode(item.id, bc.barcode)}
                                               className="text-red-500 hover:text-red-700"
                                             >
                                               <X size={12} />
