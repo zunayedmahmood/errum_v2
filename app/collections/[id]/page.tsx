@@ -418,9 +418,10 @@ export default function EditCollectionPage() {
                         )}
                       </div>
                     </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          </main>
+            </main>
           </div>
         </div>
 
