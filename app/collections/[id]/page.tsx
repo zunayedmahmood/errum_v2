@@ -416,6 +416,7 @@ export default function EditCollectionPage() {
                             <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'banner')} />
                           </label>
                         )}
+                        </div>
                       </div>
                     </div>
                   </div>
