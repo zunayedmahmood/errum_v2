@@ -422,8 +422,8 @@ export default function EditCollectionPage() {
                 </div>
               </div>
             </main>
-          </div>
         </div>
+      </div>
 
       {/* Product Search Modal */}
       {showSearch && (
