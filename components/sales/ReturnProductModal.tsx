@@ -41,8 +41,8 @@ interface ReturnProductModalProps {
   order: Order;
   onClose: () => void;
   onReturn: (returnData: {
-    selectedProducts: Array<{ 
-      order_item_id: number; 
+    selectedProducts: Array<{
+      order_item_id: number;
       quantity: number;
       unit_price: number;
       total_price: number;
@@ -68,12 +68,12 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
   const [returnedBarcodes, setReturnedBarcodes] = useState<{ [key: number]: string[] }>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [soldAtPrices, setSoldAtPrices] = useState<{ [key: number]: string }>({});
-  
+
   // Return info
   const [returnReason, setReturnReason] = useState<ReturnReason>('other');
   const [returnType, setReturnType] = useState<ReturnType>('customer_return');
   const [customerNotes, setCustomerNotes] = useState('');
-  
+
   // ✅ NEW: Store selection for where return is received
   const [stores, setStores] = useState<Store[]>([]);
   const [receivedAtStoreId, setReceivedAtStoreId] = useState<number>(order.store?.id || 0);
@@ -106,7 +106,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     try {
       const response = await storeService.getStores({ is_active: true });
       console.log('🏪 Store service response:', response);
-      
+
       // Handle different response formats
       let storesData: Store[] = [];
       if (response?.success && response?.data) {
@@ -123,10 +123,10 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
         // Format: [...]
         storesData = response;
       }
-      
+
       console.log('✅ Parsed stores:', storesData);
       setStores(storesData);
-      
+
       // If no stores found, show warning
       if (storesData.length === 0) {
         console.warn('⚠️ No stores available');
@@ -162,12 +162,12 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
 
   const handleProductScanned = (scannedProduct: ScannedProduct) => {
     // Check if it's a return (part of the original order)
-    const matchingOrderItems = order.items.filter(item => 
-      item.product_id === scannedProduct.productId || 
+    const matchingOrderItems = order.items.filter(item =>
+      item.product_id === scannedProduct.productId ||
       item.barcode === scannedProduct.barcode ||
       item.product_sku === scannedProduct.barcode
     );
-    
+
     let targetItem = null;
     if (matchingOrderItems.length > 0) {
       targetItem = matchingOrderItems.find(item => item.barcode === scannedProduct.barcode);
@@ -200,17 +200,17 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
         alert('This product is already fully scanned for return.');
         return;
       }
-      
+
       if (!selectedProducts.includes(targetItem.id)) {
         setSelectedProducts(prev => [...prev, targetItem.id]);
       }
-      
+
       if (!soldAtPrices[targetItem.id]) {
         setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: targetItem.unit_price }));
       }
       return;
     }
-    
+
     alert('Product not found in this order.');
   };
 
@@ -220,7 +220,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       const filtered = current.filter(bc => bc !== barcode);
       return { ...prev, [itemId]: filtered };
     });
-    
+
     setReturnedQuantities(prev => {
       const currentQty = prev[itemId] || 0;
       const newQty = Math.max(0, currentQty - 1);
@@ -292,9 +292,9 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
 
   const totals = calculateTotals();
 
-  const cashFromNotes = (note1000 * 1000) + (note500 * 500) + (note200 * 200) + 
-                        (note100 * 100) + (note50 * 50) + (note20 * 20) + 
-                        (note10 * 10) + (note5 * 5) + (note2 * 2) + (note1 * 1);
+  const cashFromNotes = (note1000 * 1000) + (note500 * 500) + (note200 * 200) +
+    (note100 * 100) + (note50 * 50) + (note20 * 20) +
+    (note10 * 10) + (note5 * 5) + (note2 * 2) + (note1 * 1);
 
   const effectiveRefundCash = cashFromNotes > 0 ? cashFromNotes : refundCash;
   const totalRefundProcessed = effectiveRefundCash + refundCard + refundBkash + refundNagad;
@@ -330,7 +330,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     confirmMessage += `Return Reason: ${returnReasonOptions.find(r => r.value === returnReason)?.label}\n`;
     confirmMessage += `Return Type: ${returnTypeOptions.find(t => t.value === returnType)?.label}\n`;
     confirmMessage += `Received At: ${stores.find(s => s.id === receivedAtStoreId)?.name || 'N/A'}\n\n`;
-    
+
     if (totals.refundToCustomer > 0) {
       if (remainingRefund > 0) {
         confirmMessage += `Refund Required: ৳${totals.refundToCustomer.toLocaleString()}\nRefunded: ৳${totalRefundProcessed.toLocaleString()}\nRemaining: ৳${remainingRefund.toLocaleString()}\n\nCustomer can collect remaining later.`;
@@ -349,7 +349,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
         const item = order.items.find(i => i.id === itemId);
         const unitPrice = parseFloatValue(soldAtPrices[itemId]);
         const barcodes = returnedBarcodes[itemId] || [];
-        
+
         if (barcodes.length > 0) {
           return barcodes.map(bc => ({
             order_item_id: itemId,
@@ -395,12 +395,12 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
   const NoteInput = ({ value, state, setState }: any) => (
     <div>
       <label className="block text-xs text-gray-700 dark:text-gray-300 mb-1">৳{value} ×</label>
-      <input 
-        type="number" 
-        min="0" 
-        value={state} 
-        onChange={(e) => setState(Number(e.target.value))} 
-        className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" 
+      <input
+        type="number"
+        min="0"
+        value={state}
+        onChange={(e) => setState(Number(e.target.value))}
+        className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
       />
     </div>
   );
@@ -521,7 +521,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                 <div className="mb-6">
                   <BarcodeScanner onProductScanned={handleProductScanned} />
                 </div>
-                
+
                 {order.items.length === 0 ? (
                   <div className="text-center py-12 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-700 rounded-xl">No products in this order</div>
                 ) : (
@@ -542,7 +542,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                       return acc;
                     }, {} as Record<string, any>)).map((group: any) => {
                       const groupPrice = parseFloatValue(group.unit_price);
-                      
+
                       return (
                         <div
                           key={`${group.product_id}-${group.batch_number}`}
@@ -583,7 +583,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                     const isItemSelected = selectedProducts.includes(item.id);
                                     const qtyReturned = returnedQuantities[item.id] || 0;
                                     const isFullyReturned = qtyReturned >= item.quantity;
-                                    
+
                                     return (
                                       <button
                                         key={item.id}
@@ -596,14 +596,13 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                             price: parseFloatValue(item.unit_price)
                                           });
                                         }}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${
-                                          isItemSelected 
-                                            ? 'bg-red-50 dark:bg-red-900/10 border-red-500 text-red-700 dark:text-red-300 shadow-sm' 
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${isItemSelected
+                                            ? 'bg-red-50 dark:bg-red-900/10 border-red-500 text-red-700 dark:text-red-300 shadow-sm'
                                             : 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-400'
-                                        }`}
+                                          }`}
                                       >
                                         <div className={`w-2 h-2 rounded-full ${isItemSelected ? 'bg-red-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                                        {item.barcode || 'NO-BARCODE'}
+                                        {item.barcode || 'Select Barcode'}
                                         {item.quantity > 1 && (
                                           <span className="bg-gray-200 dark:bg-gray-700 px-1.5 rounded text-[10px]">
                                             {qtyReturned}/{item.quantity}
@@ -621,14 +620,14 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                     <div key={item.id} className="space-y-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
                                       <div className="flex justify-between items-center">
                                         <span className="text-[10px] font-bold text-gray-500 uppercase">Unit: {item.barcode || item.id}</span>
-                                        <button 
+                                        <button
                                           onClick={() => handleProductCheckbox(item.id)}
                                           className="text-red-500 hover:text-red-700"
                                         >
                                           <X size={14} />
                                         </button>
                                       </div>
-                                      
+
                                       <div className="flex gap-4">
                                         <div className="flex-1">
                                           <label className="block text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400 mb-1">
@@ -650,7 +649,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                         <div className="text-right">
                                           <span className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Value</span>
                                           <span className="text-sm font-black text-gray-900 dark:text-white">
-                                            ৳{( (returnedQuantities[item.id] || 0) * parseFloatValue(soldAtPrices[item.id])).toFixed(2)}
+                                            ৳{((returnedQuantities[item.id] || 0) * parseFloatValue(soldAtPrices[item.id])).toFixed(2)}
                                           </span>
                                         </div>
                                       </div>
@@ -659,7 +658,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                         {(returnedBarcodes[item.id] || []).map((bc, idx) => (
                                           <div key={idx} className="flex items-center justify-between bg-red-50 dark:bg-red-900/10 px-2 py-1 rounded text-[10px] border border-red-100 dark:border-red-800/50">
                                             <span className="font-mono text-red-700 dark:text-red-300">{bc}</span>
-                                            <button 
+                                            <button
                                               onClick={() => handleRemoveReturnBarcode(item.id, bc)}
                                               className="text-red-500 hover:text-red-700"
                                             >
@@ -690,13 +689,13 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                   <h3 className="font-semibold text-gray-900 dark:text-white text-lg">Return Summary</h3>
                   <ChevronDown className="w-4 h-4 text-gray-500" />
                 </div>
-                
+
                 <div className="space-y-3">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600 dark:text-gray-400">Items selected:</span>
                     <span className="font-semibold text-gray-900 dark:text-white">{selectedProducts.length}</span>
                   </div>
-                  
+
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600 dark:text-gray-400">Return Amount:</span>
                     <span className="font-semibold text-red-600 dark:text-red-400">৳{totals.returnAmount.toFixed(2)}</span>
@@ -726,7 +725,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                     <h3 className="text-sm font-medium text-gray-900 dark:text-white">Process Refund</h3>
                     <ChevronDown className="w-4 h-4 text-gray-500" />
                   </div>
-                  
+
                   <div className="p-4 space-y-3">
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
@@ -736,7 +735,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                           {showNoteCounter ? 'Hide' : 'Count Notes'}
                         </button>
                       </div>
-                      
+
                       {showNoteCounter ? (
                         <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-lg p-3 space-y-2">
                           <div className="grid grid-cols-3 gap-2">
@@ -777,7 +776,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                         <input type="number" min="0" value={refundNagad} onChange={(e) => setRefundNagad(Number(e.target.value))} className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" />
                       </div>
                     </div>
-                    
+
                     <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-between text-sm mb-1">
                         <span className="text-gray-700 dark:text-gray-300">Total Refunded</span>

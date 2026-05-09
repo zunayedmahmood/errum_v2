@@ -159,6 +159,7 @@ class ProductBarcode extends Model
         // Create movement record for audit trail
         if ($createMovement && ($oldStore != $storeId || $oldStatus != $status)) {
             ProductMovement::create([
+                'product_id' => $this->product_id,
                 'product_batch_id' => $this->batch_id,
                 'product_barcode_id' => $this->id,
                 'from_store_id' => $oldStore,
@@ -167,7 +168,10 @@ class ProductBarcode extends Model
                 'quantity' => 1,
                 'status_before' => $oldStatus,
                 'status_after' => $status,
-                'notes' => "Location updated: {$oldStatus} → {$status}",
+                'notes' => $metadata['notes'] ?? "Location updated: {$oldStatus} → {$status}",
+                'reference_type' => isset($metadata['order_id']) ? 'order' : (isset($metadata['return_id']) ? 'return' : null),
+                'reference_id' => $metadata['order_id'] ?? $metadata['return_id'] ?? null,
+                'performed_by' => $metadata['performed_by'] ?? auth()->id(),
             ]);
         }
 
@@ -377,12 +381,12 @@ class ProductBarcode extends Model
      */
     protected function determineMovementType($oldStatus, $newStatus): string
     {
-        if ($newStatus === 'with_customer') return 'sale';
         if ($newStatus === 'in_return') return 'return';
         if ($newStatus === 'in_transit') return 'dispatch';
-        if ($newStatus === 'defective') return 'defective';
         if ($oldStatus === 'in_warehouse' && $newStatus === 'in_shop') return 'transfer';
         
+        // 'sale' and 'defective' are not always in the enum, so we use 'adjustment' 
+        // but the status_before/after and notes will track the actual change.
         return 'adjustment';
     }
 

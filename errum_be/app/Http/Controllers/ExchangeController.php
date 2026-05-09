@@ -300,7 +300,7 @@ class ExchangeController extends Controller
                 // Update barcode status
                 if ($barcodeId) {
                     $barcode = ProductBarcode::find($barcodeId);
-                    $barcode->updateLocation(null, 'with_customer', ['order_id' => $replacementOrder->id]);
+                    $barcode->updateLocation($request->exchangeAtStoreId, 'with_customer', ['order_id' => $replacementOrder->id]);
                 }
 
                 $subtotal += $itemSubtotal;
@@ -329,11 +329,12 @@ class ExchangeController extends Controller
             $exchangeBalanceUsed = min($totalReturnValue, $totalAmount);
             
             // 3a. Use "Exchange Balance" payment method
-            $exchangeMethod = PaymentMethod::where('code', 'exchange_balance')->first();
+            $exchangeMethod = PaymentMethod::where('code', 'exchange_balance')->first() 
+                ?? PaymentMethod::where('code', 'other')->first() 
+                ?? PaymentMethod::first();
+
             if (!$exchangeMethod) {
-                // Fallback or dynamic creation if needed, but per GEMINI.md, system should have it.
-                // For now, let's assume it exists or use 'other'
-                $exchangeMethod = PaymentMethod::where('code', 'other')->first();
+                throw new \Exception('No valid payment method found for exchange settlement. Please ensure "exchange_balance" or "other" exists.');
             }
 
             if ($exchangeBalanceUsed > 0) {
@@ -353,8 +354,14 @@ class ExchangeController extends Controller
             // 3b. Handle Surplus (Customer pays extra)
             if ($request->paymentRefund['type'] === 'surplus' && $request->paymentRefund['amount'] > 0) {
                 $surplusMethodCode = $request->paymentRefund['method'] ?? 'cash';
-                $surplusMethod = PaymentMethod::where('code', $surplusMethodCode)->first();
-                if (!$surplusMethod) $surplusMethod = PaymentMethod::where('code', 'cash')->first();
+                $surplusMethod = PaymentMethod::where('code', $surplusMethodCode)->first() 
+                    ?? PaymentMethod::where('code', 'cash')->first() 
+                    ?? PaymentMethod::where('code', 'other')->first() 
+                    ?? PaymentMethod::first();
+
+                if (!$surplusMethod) {
+                    throw new \Exception('No valid payment method found for surplus payment.');
+                }
 
                 $payment = OrderPayment::createPayment(
                     $replacementOrder,
@@ -373,23 +380,26 @@ class ExchangeController extends Controller
             if ($request->paymentRefund['type'] === 'refund' && $request->paymentRefund['amount'] > 0) {
                 $refundMethodCode = $request->paymentRefund['method'] ?? 'cash';
                 
+                // Create Refund record to track the payout
                 $refund = Refund::create([
                     'refund_number' => 'REF-EXC-' . date('Ymd') . '-' . Str::random(4),
                     'return_id' => $productReturn->id,
-                    'order_id' => $originalOrder->id, // Linked to the original order being exchanged
+                    'order_id' => $originalOrder->id, // Linked to original order
                     'customer_id' => $customer_id,
-                    'refund_type' => 'partial_amount', // Standard partial refund type
-                    'internal_notes' => 'Exchange refund difference',
+                    'refund_type' => 'partial_amount',
                     'original_amount' => $totalReturnValue,
                     'refund_amount' => (float)$request->paymentRefund['amount'],
                     'refund_method' => $refundMethodCode,
-                    'status' => 'completed', // In-person exchange typically means immediate refund
-                    'processed_by' => $employee->id,
-                    'approved_by' => $employee->id,
+                    'status' => 'completed', // Typically immediate in-store refund
+                    'processed_by' => $employee?->id,
+                    'approved_by' => $employee?->id,
                     'completed_at' => now(),
+                    'internal_notes' => "Automatic refund for exchange difference. Original Order: {$originalOrder->order_number}",
+                    'refund_method_details' => $request->paymentRefund['details'] ?? null
                 ]);
 
-                // Note: Ledger entry for refund is handled by Transaction::createFromExchange below
+                // Note: Ledger entry for this refund is handled by Transaction::createFromExchange below
+                // to maintain unified accounting for the exchange event.
             }
 
             // Final Order Update
@@ -398,16 +408,19 @@ class ExchangeController extends Controller
 
 
             // --- 4. LINK EXCHANGE & ACCOUNTING ---
-            $productReturn->status_history = array_merge($productReturn->status_history ?? [], [[
+            // 4a. Update Return Status and History
+            $history = $productReturn->status_history ?? [];
+            $history[] = [
                 'status' => 'exchange_linked',
                 'changed_at' => now()->toISOString(),
-                'changed_by' => $employee->id,
-                'order_id' => $replacementOrder->id,
-            ]]);
+                'changed_by' => $employee?->id,
+                'notes' => 'Exchange transaction completed via Lookup Page',
+                'replacement_order_id' => $replacementOrder->id,
+            ];
+            $productReturn->status_history = $history;
             
-            if ($request->paymentRefund['type'] !== 'surplus') {
-                 $productReturn->status = 'refunded'; // Fully utilized or refunded
-            }
+            // Mark as refunded as the value is now fully accounted for (via replacement or refund record)
+            $productReturn->status = 'refunded';
             $productReturn->save();
 
             // Unified Exchange Journal

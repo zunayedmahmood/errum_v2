@@ -149,7 +149,7 @@ class ProductMovement extends Model
     public function getMovementDescriptionAttribute()
     {
         $fromStore = $this->fromStore ? $this->fromStore->name : 'External';
-        $toStore = $this->toStore->name;
+        $toStore = $this->toStore ? $this->toStore->name : ($this->status_after === 'with_customer' ? 'Customer' : 'External');
 
         return match($this->movement_type) {
             'dispatch' => "Dispatched from {$fromStore} to {$toStore}",

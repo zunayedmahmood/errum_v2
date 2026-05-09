@@ -139,7 +139,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     try {
       const response = await storeService.getStores({ is_active: true });
       console.log('🏪 Store service response:', response);
-      
+
       let storesData: Store[] = [];
       if (response?.success && response?.data) {
         if (Array.isArray(response.data.data)) {
@@ -152,10 +152,10 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       } else if (Array.isArray(response)) {
         storesData = response;
       }
-      
+
       console.log('✅ Parsed stores:', storesData);
       setStores(storesData);
-      
+
       if (storesData.length === 0) {
         console.warn('⚠️ No stores available');
       } else if (exchangeAtStoreId === 0) {
@@ -178,11 +178,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     try {
       // Here you would call your inventory service to check availability
       // For now, we'll show a placeholder implementation
-      
+
       for (const itemId of selectedProducts) {
         const item = order.items.find(i => i.id === itemId);
         const exchangeQty = exchangeQuantities[itemId] || 0;
-        
+
         if (!item || exchangeQty === 0) continue;
 
         // TODO: Replace with actual API call to check inventory
@@ -210,12 +210,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   const handleProductScanned = (scannedProduct: ScannedProduct) => {
     // 1. Check if it's a return (part of the original order)
     // We match by product_id or barcode/SKU.
-    const matchingOrderItems = order.items.filter(item => 
-      item.product_id === scannedProduct.productId || 
+    const matchingOrderItems = order.items.filter(item =>
+      item.product_id === scannedProduct.productId ||
       item.barcode === scannedProduct.barcode ||
       item.product_sku === scannedProduct.barcode // Some scanners return SKU as barcode
     );
-    
+
     let targetItem = null;
     if (matchingOrderItems.length > 0) {
       // Try to find one where the barcode matches exactly
@@ -258,11 +258,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
         alert('This product is already fully scanned for return.');
         return;
       }
-      
+
       if (!selectedProducts.includes(targetItem.id)) {
         setSelectedProducts(prev => [...prev, targetItem.id]);
       }
-      
+
       // Auto-fill sold at price if not set
       if (!soldAtPrices[targetItem.id]) {
         setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: targetItem.unit_price }));
@@ -320,11 +320,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
         const newQuantities = { ...exchangeQuantities };
         delete newQuantities[itemId];
         setExchangeQuantities(newQuantities);
-        
+
         const newReturnedBarcodes = { ...returnedBarcodes };
         delete newReturnedBarcodes[itemId];
         setReturnedBarcodes(newReturnedBarcodes);
-        
+
         return newSelected;
       } else {
         const item = order.items.find(i => i.id === itemId);
@@ -416,15 +416,15 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
   const totals = calculateTotals();
 
-  const cashFromNotes = 
-    (note1000 * 1000) + (note500 * 500) + (note200 * 200) + 
-    (note100 * 100) + (note50 * 50) + (note20 * 20) + 
+  const cashFromNotes =
+    (note1000 * 1000) + (note500 * 500) + (note200 * 200) +
+    (note100 * 100) + (note50 * 50) + (note20 * 20) +
     (note10 * 10) + (note5 * 5) + (note2 * 2) + (note1 * 1);
 
   const effectiveCash = cashFromNotes > 0 ? cashFromNotes : cashAmount;
   const totalPaymentRefund = effectiveCash + cardAmount + bkashAmount + nagadAmount;
-  
-  const due = totals.difference > 0 
+
+  const due = totals.difference > 0
     ? Math.max(0, totals.difference - totalPaymentRefund)
     : Math.max(0, Math.abs(totals.difference) - totalPaymentRefund);
 
@@ -503,7 +503,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
           const item = order.items.find(i => i.id === itemId);
           const unitPrice = parsePrice(soldAtPrices[itemId]);
           const barcodes = returnedBarcodes[itemId] || [];
-          
+
           if (barcodes.length > 0) {
             // Send one entry per barcode
             return barcodes.map(bc => ({
@@ -546,7 +546,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       };
 
       await onExchange(exchangeData);
-        
+
     } catch (error: any) {
       console.error('Exchange failed:', error);
       alert(error.message || 'Failed to process exchange');
@@ -626,7 +626,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                       Select the store where this exchange will be processed. Items must be available at the selected location.
                     </p>
-                    
+
                     {stores.length === 0 ? (
                       <div className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
                         Loading stores...
@@ -645,11 +645,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                         ))}
                       </select>
                     )}
-                    
+
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                       {stores.length} store(s) available • Original order location: {order.store?.name || 'Unknown'}
                     </p>
-                    
+
                     {isCheckingInventory && (
                       <div className="flex items-center gap-2 mt-2 text-sm text-blue-600 dark:text-blue-400">
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -686,7 +686,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                     }, {} as Record<string, any>)).map((group: any) => {
                       const groupPrice = parsePrice(group.unit_price);
                       const groupTotalQty = group.items.reduce((sum: number, it: any) => sum + it.quantity, 0);
-                      
+
                       return (
                         <div
                           key={`${group.product_id}-${group.batch_number}`}
@@ -729,7 +729,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                     const isItemSelected = selectedProducts.includes(item.id);
                                     const qtyReturned = exchangeQuantities[item.id] || 0;
                                     const isFullyReturned = qtyReturned >= item.quantity;
-                                    
+
                                     return (
                                       <button
                                         key={item.id}
@@ -752,14 +752,13 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                             barcodeId: item.barcode_id
                                           });
                                         }}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${
-                                          isItemSelected 
-                                            ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-300 shadow-sm' 
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${isItemSelected
+                                            ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-300 shadow-sm'
                                             : 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-400'
-                                        }`}
+                                          }`}
                                       >
                                         <div className={`w-2 h-2 rounded-full ${isItemSelected ? 'bg-blue-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                                        {item.barcode || 'NO-BARCODE'}
+                                        {item.barcode || 'Select Barcode'}
                                         {item.quantity > 1 && (
                                           <span className="bg-gray-200 dark:bg-gray-700 px-1.5 rounded text-[10px]">
                                             {qtyReturned}/{item.quantity}
@@ -777,14 +776,14 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                     <div key={item.id} className="space-y-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700/50">
                                       <div className="flex justify-between items-center">
                                         <span className="text-[10px] font-bold text-gray-500 uppercase">Unit: {item.barcode || item.id}</span>
-                                        <button 
+                                        <button
                                           onClick={() => handleProductCheckbox(item.id)}
                                           className="text-red-500 hover:text-red-700"
                                         >
                                           <X size={14} />
                                         </button>
                                       </div>
-                                      
+
                                       <div className="flex gap-4">
                                         <div className="flex-1">
                                           <label className="block text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400 mb-1">
@@ -815,7 +814,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                         {(returnedBarcodes[item.id] || []).map((bc, idx) => (
                                           <div key={idx} className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded text-[10px] border border-blue-100 dark:border-blue-800/50">
                                             <span className="font-mono text-blue-700 dark:text-blue-300">{bc.barcode}</span>
-                                            <button 
+                                            <button
                                               onClick={() => handleRemoveReturnBarcode(item.id, bc.barcode)}
                                               className="text-red-500 hover:text-red-700"
                                             >
@@ -971,13 +970,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                       <div className="flex justify-between items-center">
                         <span className="font-semibold text-gray-900 dark:text-white">Difference:</span>
                         <span
-                          className={`font-bold text-lg ${
-                            totals.difference > 0
+                          className={`font-bold text-lg ${totals.difference > 0
                               ? 'text-orange-600 dark:text-orange-400'
                               : totals.difference < 0
-                              ? 'text-green-600 dark:text-green-400'
-                              : 'text-gray-900 dark:text-white'
-                          }`}
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-gray-900 dark:text-white'
+                            }`}
                         >
                           {totals.difference > 0 ? '+' : ''}৳{totals.difference.toLocaleString()}
                         </span>
@@ -1119,11 +1117,10 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                           {totals.difference > 0 ? 'Outstanding' : 'Remaining Refund'}
                         </span>
                         <span
-                          className={`font-bold ${
-                            due > 0
+                          className={`font-bold ${due > 0
                               ? 'text-orange-600 dark:text-orange-400'
                               : 'text-green-600 dark:text-green-400'
-                          }`}
+                            }`}
                         >
                           ৳{due.toFixed(2)}
                         </span>
