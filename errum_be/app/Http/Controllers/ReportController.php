@@ -43,7 +43,8 @@ class ReportController extends Controller
         $groupBy = $request->get('group_by', 'day'); // day, week, month
 
         $query = Order::whereBetween('created_at', [$dateFrom, $dateTo])
-            ->where('status', 'completed');
+            ->where('status', 'completed')
+            ->whereRaw("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(orders.metadata, '$.is_exchange_replacement')), 'false') <> 'true'");
 
         $dateFormatSql = $this->getDateFormatSql('created_at', $groupBy);
 
@@ -80,6 +81,7 @@ class ReportController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->whereBetween('orders.created_at', [$dateFrom, $dateTo])
             ->where('orders.status', 'completed')
+            ->whereRaw("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(orders.metadata, '$.is_exchange_replacement')), 'false') <> 'true'")
             ->select(
                 'products.id',
                 'products.name',
@@ -132,6 +134,7 @@ class ReportController extends Controller
             ->leftJoin('orders', 'employees.id', '=', 'orders.employee_id')
             ->whereBetween('orders.created_at', [$dateFrom, $dateTo])
             ->where('orders.status', 'completed')
+            ->whereRaw("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(orders.metadata, '$.is_exchange_replacement')), 'false') <> 'true'")
             ->select(
                 'employees.id',
                 'employees.name',
@@ -157,6 +160,7 @@ class ReportController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->whereBetween('orders.created_at', [$dateFrom, $dateTo])
             ->where('orders.status', 'completed')
+            ->whereRaw("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(orders.metadata, '$.is_exchange_replacement')), 'false') <> 'true'")
             ->select(
                 'products.id',
                 'products.name',
@@ -290,6 +294,7 @@ class ReportController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->whereBetween('orders.created_at', $dateRange)
             ->where('orders.status', 'completed')
+            ->whereRaw("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(orders.metadata, '$.is_exchange_replacement')), 'false') <> 'true'")
             ->select(
                 'products.name',
                 DB::raw('SUM(order_items.quantity) as quantity'),

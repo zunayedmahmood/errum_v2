@@ -55,6 +55,8 @@ interface ExchangeProductModalProps {
       batch_id: number;
       quantity: number;
       unit_price: number;
+      total_price?: number;
+      discount_amount?: number;
       barcode?: string;
       barcode_id?: number;
     }>;
@@ -206,27 +208,32 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     }
   };
 
-  // Handle barcode scanned
-  const handleProductScanned = (scannedProduct: ScannedProduct) => {
-    // 1. Check if it's a return (part of the original order)
-    // We match by product_id or barcode/SKU.
-    const matchingOrderItems = order.items.filter(item =>
-      item.product_id === scannedProduct.productId ||
-      item.barcode === scannedProduct.barcode ||
-      item.product_sku === scannedProduct.barcode // Some scanners return SKU as barcode
-    );
+  // Handle barcode scanned.
+  // Scanner mode is explicit so a same-product replacement does not get mistaken as a returned item.
+  const handleProductScanned = (scannedProduct: ScannedProduct, scanPurpose: 'return' | 'replacement' = 'replacement') => {
+    if (scanPurpose === 'return') {
+      // 1. Check if it's a return (part of the original order)
+      // We match by product_id or barcode/SKU.
+      const matchingOrderItems = order.items.filter(item =>
+        item.product_id === scannedProduct.productId ||
+        item.barcode === scannedProduct.barcode ||
+        item.product_sku === scannedProduct.barcode // Some scanners return SKU as barcode
+      );
 
-    let targetItem = null;
-    if (matchingOrderItems.length > 0) {
-      // Try to find one where the barcode matches exactly
-      targetItem = matchingOrderItems.find(item => item.barcode === scannedProduct.barcode);
-      // Fallback to any item of the same product that isn't fully "scanned" yet
-      if (!targetItem) {
-        targetItem = matchingOrderItems.find(item => (exchangeQuantities[item.id] || 0) < item.quantity);
+      let targetItem = null;
+      if (matchingOrderItems.length > 0) {
+        // Try to find one where the barcode matches exactly
+        targetItem = matchingOrderItems.find(item => item.barcode === scannedProduct.barcode);
+        // Fallback to any item of the same product that isn't fully "scanned" yet
+        if (!targetItem) {
+          targetItem = matchingOrderItems.find(item => (exchangeQuantities[item.id] || 0) < item.quantity);
+        }
       }
-    }
 
-    if (targetItem) {
+      if (!targetItem) {
+        alert('Product not found in this order. Replacement products must be scanned from the replacement scanner section.');
+        return;
+      }
       const currentQty = exchangeQuantities[targetItem.id] || 0;
       const currentBarcodes = returnedBarcodes[targetItem.id] || [];
 
@@ -270,7 +277,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       return;
     }
 
-    // 2. Otherwise, it's a replacement product
+    // 2. Replacement product scanner path
     // Prevent duplicate barcode in replacement
     if (replacementProducts.some(p => p.barcode === scannedProduct.barcode)) {
       alert('This barcode is already added as a replacement.');
@@ -531,6 +538,8 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
           batch_id: p.batch_id,
           quantity: p.quantity,
           unit_price: p.price,
+          total_price: p.amount,
+          discount_amount: 0,
           barcode: p.barcode,
           barcode_id: p.barcode_id,
         })),
@@ -750,7 +759,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                             batchNumber: item.batch_number || '',
                                             availableQty: item.quantity,
                                             barcodeId: item.barcode_id
-                                          });
+                                          }, 'return');
                                         }}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${isItemSelected
                                             ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-300 shadow-sm'

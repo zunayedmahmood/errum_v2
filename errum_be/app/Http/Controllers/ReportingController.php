@@ -60,6 +60,7 @@ class ReportingController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->join('categories', 'products.category_id', '=', 'categories.id')
             ->whereNull('orders.deleted_at')
+            ->whereRaw("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(orders.metadata, '$.is_exchange_replacement')), 'false') <> 'true'")
             ->whereNull('products.deleted_at')
             ->whereNull('categories.deleted_at');
 
@@ -97,7 +98,7 @@ class ReportingController extends Controller
         // Calculate returns and refunds per category
         $categoryReturns = ProductReturn::query()
             ->join('orders', 'product_returns.order_id', '=', 'orders.id')
-            ->whereIn('product_returns.status', ['approved', 'processed', 'completed'])
+            ->whereIn('product_returns.status', ['approved', 'processing', 'completed'])
             ->when($request->filled('date_from'), function($q) use ($request) {
                 $q->whereDate('product_returns.return_date', '>=', $request->date_from);
             })
@@ -140,7 +141,7 @@ class ReportingController extends Controller
         $categoryRefunds = Refund::query()
             ->join('product_returns', 'refunds.return_id', '=', 'product_returns.id')
             ->join('orders', 'refunds.order_id', '=', 'orders.id')
-            ->whereIn('refunds.status', ['completed', 'processed'])
+            ->whereIn('refunds.status', ['completed', 'processing'])
             ->where('refunds.refund_method', 'exchange') // Exchange transactions
             ->when($request->filled('date_from'), function($q) use ($request) {
                 $q->whereDate('refunds.completed_at', '>=', $request->date_from);

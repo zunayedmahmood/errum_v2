@@ -44,7 +44,8 @@ export interface Refund {
 export type RefundType = 
   | 'full'
   | 'percentage'
-  | 'partial_amount';
+  | 'partial_amount'
+  | 'exchange_refund';
 
 export type RefundMethod = 
   | 'cash'

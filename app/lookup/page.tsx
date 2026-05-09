@@ -1833,7 +1833,9 @@ export default function LookupPage() {
           quantity: item.quantity,
           unit_price: item.unit_price,
           total_price: item.total_price,
-          product_barcode_id: item.product_barcode_id,
+          product_barcode_id: item.product_barcode_id || item.barcode_id,
+          barcode_id: item.product_barcode_id || item.barcode_id,
+          barcode: item.barcode,
         })),
         customer_notes: returnData.customerNotes || 'Initiated from lookup page',
       };
@@ -1845,10 +1847,15 @@ export default function LookupPage() {
       // Handle refund if needed
       if (returnData.refundMethods && returnData.refundMethods.total > 0 && returnId) {
 
+        const refundMethod: CreateRefundRequest['refund_method'] = returnData.refundMethods.card > 0
+          ? 'card_refund'
+          : ((returnData.refundMethods.bkash > 0 || returnData.refundMethods.nagad > 0) ? 'digital_wallet' : 'cash');
+
         const refundRequest: CreateRefundRequest = {
           return_id: returnId,
-          refund_type: 'full',
-          refund_method: 'cash',
+          refund_type: 'partial_amount',
+          refund_amount: returnData.refundMethods.total,
+          refund_method: refundMethod,
           refund_method_details: {
             cash: returnData.refundMethods.cash,
             card: returnData.refundMethods.card,
@@ -1908,6 +1915,8 @@ export default function LookupPage() {
           batch_id: p.batch_id,
           quantity: p.quantity,
           unit_price: p.unit_price,
+          total_price: p.total_price ?? p.amount ?? (Number(p.unit_price || 0) * Number(p.quantity || 0)),
+          discount_amount: p.discount_amount || 0,
           barcode: p.barcode,
           barcode_id: p.barcode_id,
         })),

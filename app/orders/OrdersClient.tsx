@@ -1596,47 +1596,17 @@ export default function OrdersDashboard() {
 
   const canReturnOrExchange = (statusRaw: any) => {
     const s = normalize(statusRaw);
-    return s === 'delivered' || s === 'completed';
+    return Boolean(s) && !['pending', 'assigned_to_store', 'pending_assignment'].includes(s);
   };
 
-  const openReturnModal = async (order: Order) => {
+  const openReturnModal = async (_order: Order) => {
     setActiveMenu(null);
-    try {
-      const fullOrder = await orderService.getById(order.id);
-
-      if (!canReturnOrExchange(fullOrder.status)) {
-        alert(
-          `Return is available only for delivered/completed orders.\n\nOrder: ${fullOrder.order_number}\nCurrent status: ${fullOrder.status}`
-        );
-        return;
-      }
-
-      setSelectedOrderForAction(fullOrder);
-      setShowReturnModal(true);
-    } catch (error: any) {
-      console.error('Failed to load order for return:', error);
-      alert('Failed to load order details for return. Please try again.');
-    }
+    alert('Return is now handled only from the Lookup section. Please open Lookup, search the order, and use Return there.');
   };
 
-  const openExchangeModal = async (order: Order) => {
+  const openExchangeModal = async (_order: Order) => {
     setActiveMenu(null);
-    try {
-      const fullOrder = await orderService.getById(order.id);
-
-      if (!canReturnOrExchange(fullOrder.status)) {
-        alert(
-          `Exchange is available only for delivered/completed orders.\n\nOrder: ${fullOrder.order_number}\nCurrent status: ${fullOrder.status}`
-        );
-        return;
-      }
-
-      setSelectedOrderForAction(fullOrder);
-      setShowExchangeModal(true);
-    } catch (error: any) {
-      console.error('Failed to load order for exchange:', error);
-      alert('Failed to load order details for exchange. Please try again.');
-    }
+    alert('Exchange is now handled only from the Lookup section. Please open Lookup, search the order, and use Exchange there.');
   };
 
   const handleReturnSubmit = async (returnData: {

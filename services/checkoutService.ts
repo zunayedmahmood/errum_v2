@@ -668,12 +668,10 @@ class CheckoutService {
    * Check if order can be returned (within 7 days of delivery)
    */
   canReturnOrder(order: Order): boolean {
-    if (order.status !== 'delivered') return false;
+    const blockedStatuses = new Set(['pending', 'assigned_to_store', 'pending_assignment']);
+    const status = String(order.status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
-    const deliveryDate = new Date(order.created_at);
-    const daysSinceDelivery = (Date.now() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24);
-
-    return daysSinceDelivery <= 7;
+    return Boolean(status) && !blockedStatuses.has(status);
   }
 
   /**

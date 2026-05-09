@@ -34,6 +34,11 @@ interface Order {
   outstanding_amount: string;
 }
 
+interface ReturnedBarcode {
+  barcode: string;
+  barcode_id?: number;
+}
+
 type ReturnReason = 'defective_product' | 'wrong_item' | 'not_as_described' | 'customer_dissatisfaction' | 'size_issue' | 'color_issue' | 'quality_issue' | 'late_delivery' | 'changed_mind' | 'duplicate_order' | 'other';
 type ReturnType = 'customer_return' | 'store_return' | 'warehouse_return';
 
@@ -47,6 +52,8 @@ interface ReturnProductModalProps {
       unit_price: number;
       total_price: number;
       product_barcode_id?: number;
+      barcode_id?: number;
+      barcode?: string;
     }>;
     refundMethods: {
       cash: number;
@@ -65,7 +72,7 @@ interface ReturnProductModalProps {
 export default function ReturnProductModal({ order, onClose, onReturn }: ReturnProductModalProps) {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [returnedQuantities, setReturnedQuantities] = useState<{ [key: number]: number }>({});
-  const [returnedBarcodes, setReturnedBarcodes] = useState<{ [key: number]: string[] }>({});
+  const [returnedBarcodes, setReturnedBarcodes] = useState<{ [key: number]: ReturnedBarcode[] }>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [soldAtPrices, setSoldAtPrices] = useState<{ [key: number]: string }>({});
 
@@ -180,7 +187,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       const currentQty = returnedQuantities[targetItem.id] || 0;
       const currentBarcodes = returnedBarcodes[targetItem.id] || [];
 
-      if (currentBarcodes.includes(scannedProduct.barcode)) {
+      if (currentBarcodes.some(b => b.barcode === scannedProduct.barcode)) {
         alert('This barcode has already been scanned for this return item.');
         return;
       }
@@ -188,13 +195,13 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       if (currentQty === 1 && currentBarcodes.length === 0) {
         setReturnedBarcodes(prev => ({
           ...prev,
-          [targetItem.id]: [scannedProduct.barcode]
+          [targetItem.id]: [{ barcode: scannedProduct.barcode, barcode_id: scannedProduct.barcodeId }]
         }));
       } else if (currentQty < targetItem.quantity) {
         setReturnedQuantities(prev => ({ ...prev, [targetItem.id]: currentQty + 1 }));
         setReturnedBarcodes(prev => ({
           ...prev,
-          [targetItem.id]: [...(prev[targetItem.id] || []), scannedProduct.barcode]
+          [targetItem.id]: [...(prev[targetItem.id] || []), { barcode: scannedProduct.barcode, barcode_id: scannedProduct.barcodeId }]
         }));
       } else {
         alert('This product is already fully scanned for return.');
@@ -217,7 +224,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
   const handleRemoveReturnBarcode = (itemId: number, barcode: string) => {
     setReturnedBarcodes(prev => {
       const current = prev[itemId] || [];
-      const filtered = current.filter(bc => bc !== barcode);
+      const filtered = current.filter(bc => bc.barcode !== barcode);
       return { ...prev, [itemId]: filtered };
     });
 
@@ -356,7 +363,9 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
             quantity: 1,
             unit_price: unitPrice,
             total_price: unitPrice,
-            barcode: bc,
+            product_barcode_id: bc.barcode_id || item?.barcode_id,
+            barcode_id: bc.barcode_id || item?.barcode_id,
+            barcode: bc.barcode,
           }));
         } else {
           const quantity = returnedQuantities[itemId] || 0;
@@ -657,9 +666,9 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                       <div className="space-y-1">
                                         {(returnedBarcodes[item.id] || []).map((bc, idx) => (
                                           <div key={idx} className="flex items-center justify-between bg-red-50 dark:bg-red-900/10 px-2 py-1 rounded text-[10px] border border-red-100 dark:border-red-800/50">
-                                            <span className="font-mono text-red-700 dark:text-red-300">{bc}</span>
+                                            <span className="font-mono text-red-700 dark:text-red-300">{bc.barcode}</span>
                                             <button
-                                              onClick={() => handleRemoveReturnBarcode(item.id, bc)}
+                                              onClick={() => handleRemoveReturnBarcode(item.id, bc.barcode)}
                                               className="text-red-500 hover:text-red-700"
                                             >
                                               <X size={12} />

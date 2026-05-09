@@ -12,16 +12,12 @@ interface Props {
 export default function ReturnExchangeFromOrder({ order, onInitiateReturn, onInitiateExchange }: Props) {
   const { role, isSuperAdmin } = useAuth();
 
-  // Status-based visibility
-  const isPos = order.order_type === 'counter';
-  const isConfirmed = order.status === 'confirmed';
-  const isShipped = order.status === 'shipped';
-  const isDelivered = order.status === 'delivered';
-  const isFulfilled = order.fulfillment_status === 'fulfilled';
-
-  const isEligibleStatus = isPos 
-    ? (isConfirmed || isShipped || isDelivered)
-    : (isConfirmed || isFulfilled || isDelivered);
+  // Lookup is now the only place where return/exchange can be initiated.
+  // Business rule: every order status is eligible except these early/pre-sale states.
+  const blockedReturnExchangeStatuses = new Set(['pending', 'assigned_to_store', 'pending_assignment']);
+  const normalizeOrderStatus = (status: any) => String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const orderStatus = normalizeOrderStatus(order?.status);
+  const isEligibleStatus = !!orderStatus && !blockedReturnExchangeStatuses.has(orderStatus);
 
   const canInitiate = isSuperAdmin || ['admin', 'branch-manager', 'online-moderator', 'pos-salesman'].includes(role || '');
 
