@@ -147,6 +147,9 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     }
   };
 
+  const outstandingAmount = parseFloatValue(order.outstanding_amount);
+  const isFullyPaid = Math.abs(outstandingAmount) < 0.01;
+
   const returnReasonOptions: Array<{ value: ReturnReason; label: string }> = [
     { value: 'defective_product', label: 'Defective Product' },
     { value: 'wrong_item', label: 'Wrong Item' },
@@ -326,6 +329,11 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
   const remainingRefund = totals.refundToCustomer - totalRefundProcessed;
 
   const handleProcessReturn = async () => {
+    if (!isFullyPaid) {
+      alert(`This order has an outstanding balance of ৳${outstandingAmount.toFixed(2)}. It must be fully paid before a return can be processed.`);
+      return;
+    }
+
     if (selectedProducts.length === 0) {
       alert('Please select at least one product to return');
       return;
@@ -469,6 +477,19 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                   </div>
                 </div>
               </div>
+
+              {!isFullyPaid && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3 mb-6">
+                  <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Payment Required</p>
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      This order has an outstanding balance of ৳{outstandingAmount.toFixed(2)}. 
+                      Returns can only be processed for fully paid orders.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Return Reason & Type */}
               <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">

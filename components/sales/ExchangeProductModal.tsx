@@ -404,6 +404,9 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     return isNaN(n) ? 0 : n;
   };
 
+  const outstandingAmount = parsePrice(order.total_amount) - parsePrice(order.paid_amount);
+  const isFullyPaid = Math.abs(outstandingAmount) < 0.01;
+
   const calculateTotals = () => {
     // Calculate original amount for exchanged items
     const originalAmount = selectedProducts.reduce((sum, itemId) => {
@@ -452,6 +455,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     : Math.max(0, Math.abs(totals.difference) - totalPaymentRefund);
 
   const handleProcessExchange = async () => {
+    if (!isFullyPaid) {
+      alert(`This order has an outstanding balance of ৳${outstandingAmount.toFixed(2)}. It must be fully paid before an exchange can be processed.`);
+      return;
+    }
+
     if (selectedProducts.length === 0) {
       alert('Please select at least one product to exchange');
       return;
@@ -694,6 +702,19 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                   </div>
                 </div>
               </div>
+
+              {!isFullyPaid && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3 mt-4 mb-4">
+                  <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Payment Required</p>
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      This order has an outstanding balance of ৳{outstandingAmount.toFixed(2)}. 
+                      Exchanges can only be processed for fully paid orders.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Select Items to Exchange */}
               <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
