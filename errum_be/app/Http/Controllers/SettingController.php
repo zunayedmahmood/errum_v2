@@ -256,7 +256,7 @@ class SettingController extends Controller
             'hero_autoplay_speed' => 'nullable|integer|min:1000|max:30000',
             'hero_text_position' => 'nullable|string|in:top-left,top-right,bottom-left,bottom-right,center',
             'hero_text_color' => 'nullable|string|max:20',
-            'hero_font_size' => 'nullable|integer|min:20|max:200',
+            'hero_font_size' => 'nullable|integer|min:20',
             'hero_transition_type' => 'nullable|string|in:fade,slide',
 
             'new_arrivals' => 'nullable|array',

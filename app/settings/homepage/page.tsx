@@ -708,11 +708,10 @@ export default function HomepageSettingsPage() {
                                 </div>
                               </div>
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Font Size (Max)</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Font Size</label>
                                 <input
                                   type="number"
                                   min={20}
-                                  max={200}
                                   value={settings.hero.font_size || 84}
                                   onChange={(e) => {
                                     setSettings({ ...settings, hero: { ...settings.hero, font_size: parseInt(e.target.value) || 84 } });
