@@ -1014,9 +1014,9 @@ export default function StoreAssignmentPage() {
                                     Required: <span className="font-bold text-gray-900 dark:text-white">{detail.required_quantity}</span>
                                   </span>
                                   <div className="flex flex-wrap gap-2 text-[10px]">
-                                    <span className="bg-white/50 dark:bg-black/20 px-1.5 py-0.5 rounded border border-gray-100 dark:border-gray-700">Physical: {detail.physical_quantity}</span>
+                                    <span className="bg-white/50 dark:bg-black/20 px-1.5 py-0.5 rounded border border-gray-100 dark:border-gray-700">In store: {detail.physical_quantity}</span>
                                     <span className="bg-white/50 dark:bg-black/20 px-1.5 py-0.5 rounded border border-gray-100 dark:border-gray-700 text-amber-600 dark:text-amber-400">Reserved: {detail.reserved_quantity}</span>
-                                    <span className="bg-blue-100/50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 font-bold text-blue-700 dark:text-blue-300">Available: {detail.available_quantity}</span>
+                                    <span className="bg-blue-100/50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 font-bold text-blue-700 dark:text-blue-300">Global Available: {detail.available_quantity}</span>
                                   </div>
                                 </div>
                                 <span

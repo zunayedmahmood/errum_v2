@@ -181,13 +181,6 @@ export default function CollectionsPage() {
                              Products
                           </span>
                         </div>
-                        <Link 
-                          href={`/e-commerce/collections/${collection.slug}`}
-                          target="_blank"
-                          className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline"
-                        >
-                          View Live <ExternalLink className="w-3 h-3" />
-                        </Link>
                       </div>
                     </div>
                   </div>

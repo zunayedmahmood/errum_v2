@@ -95,7 +95,13 @@ export default function EditCollectionPage() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const next = { ...prev, [name]: value };
+      if (name === "name") {
+        next.slug = value.trim().toLowerCase().split(/\s+/).join("-").replace(/[^a-z0-9-]/g, "");
+      }
+      return next;
+    });
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'thumbnail' | 'banner') => {
@@ -227,13 +233,6 @@ export default function EditCollectionPage() {
                 </div>
                 
                 <div className="flex items-center gap-3">
-                  <Link 
-                    href={`/e-commerce/collections/${formData.slug}`}
-                    target="_blank"
-                    className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
-                  >
-                    View Live
-                  </Link>
                   <button
                     onClick={handleSubmit}
                     disabled={saving || !formData.name}
@@ -268,17 +267,6 @@ export default function EditCollectionPage() {
                             className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Slug
-                          </label>
-                          <input
-                            type="text"
-                            name="slug"
-                            value={formData.slug}
-                            onChange={handleInputChange}
-                            className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
                         </div>
                       </div>
                       
@@ -365,31 +353,8 @@ export default function EditCollectionPage() {
                           <option value="archived">Archived</option>
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Collection Type</label>
-                        <select
-                          name="type"
-                          value={formData.type}
-                          onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="season">Seasonal</option>
-                          <option value="occasion">Occasion</option>
-                          <option value="category">Curated Category</option>
-                          <option value="campaign">Marketing Campaign</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Sort Order</label>
-                        <input
-                          type="number"
-                          name="sort_order"
-                          value={formData.sort_order}
-                          onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
                     </div>
+                  </div>
                   </div>
 
                   {/* Images */}

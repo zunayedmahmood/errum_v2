@@ -28,7 +28,7 @@ export default function CreateCollectionPage() {
     name: "",
     slug: "",
     description: "",
-    type: "season",
+    type: "category",
     status: "draft",
     sort_order: 0,
   });
@@ -51,7 +51,13 @@ export default function CreateCollectionPage() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const next = { ...prev, [name]: value };
+      if (name === "name") {
+        next.slug = value.trim().toLowerCase().split(/\s+/).join("-").replace(/[^a-z0-9-]/g, "");
+      }
+      return next;
+    });
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'thumbnail' | 'banner') => {
@@ -166,19 +172,6 @@ export default function CreateCollectionPage() {
                           className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                         />
                       </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Custom Slug (Optional)
-                        </label>
-                        <input
-                          type="text"
-                          name="slug"
-                          value={formData.slug}
-                          onChange={handleInputChange}
-                          placeholder="summer-essentials-2026"
-                          className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                        />
                       </div>
                       
                       <div>
@@ -238,25 +231,7 @@ export default function CreateCollectionPage() {
                     <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider mb-4">
                       Configuration
                     </h2>
-                    
                     <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Collection Type
-                        </label>
-                        <select
-                          name="type"
-                          value={formData.type}
-                          onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                        >
-                          <option value="season">Seasonal</option>
-                          <option value="occasion">Occasion</option>
-                          <option value="category">Curated Category</option>
-                          <option value="campaign">Marketing Campaign</option>
-                        </select>
-                      </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                           Publication Status
@@ -271,19 +246,6 @@ export default function CreateCollectionPage() {
                           <option value="active">Active (Visible)</option>
                           <option value="archived">Archived</option>
                         </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Display Order
-                        </label>
-                        <input
-                          type="number"
-                          name="sort_order"
-                          value={formData.sort_order}
-                          onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                        />
                       </div>
                     </div>
                   </div>
