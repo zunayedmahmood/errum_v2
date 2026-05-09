@@ -11,7 +11,7 @@ interface OrderItem {
   batch_id: number;
   batch_number?: string;
   barcode_id?: number;
-  barcode?: string | { barcode: string; id?: number; type?: string; [key: string]: any };
+  barcode?: string;
   quantity: number;
   unit_price: string;
   total_amount: string;
@@ -357,19 +357,14 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
         const unitPrice = parseFloatValue(soldAtPrices[itemId]);
         const barcodes = returnedBarcodes[itemId] || [];
 
-        // Extract original barcode ID from item if it's an object
-        const itemBarcodeId = typeof item?.barcode === 'object' 
-          ? item.barcode.id 
-          : item?.barcode_id;
-
         if (barcodes.length > 0) {
           return barcodes.map(bc => ({
             order_item_id: itemId,
             quantity: 1,
             unit_price: unitPrice,
             total_price: unitPrice,
-            product_barcode_id: bc.barcode_id || itemBarcodeId,
-            barcode_id: bc.barcode_id || itemBarcodeId,
+            product_barcode_id: bc.barcode_id || item?.barcode_id,
+            barcode_id: bc.barcode_id || item?.barcode_id,
             barcode: bc.barcode,
           }));
         } else {
@@ -379,7 +374,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
             quantity: quantity,
             unit_price: unitPrice,
             total_price: unitPrice * quantity,
-            product_barcode_id: itemBarcodeId,
+            product_barcode_id: item?.barcode_id,
           }];
         }
       });
@@ -602,28 +597,24 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                       <button
                                         key={item.id}
                                         onClick={() => {
-                                          const itemBarcodeStr = typeof item.barcode === 'object' ? item.barcode.barcode : item.barcode;
-                                          const itemBarcodeId = typeof item.barcode === 'object' ? item.barcode.id : item.barcode_id;
-
                                           handleProductScanned({
                                             productId: item.product_id,
-                                            barcode: itemBarcodeStr || item.product_sku,
-                                            name: item.product_name,
-                                            sku: item.product_sku,
-                                            price: parseFloatValue(item.unit_price),
+                                            productName: item.product_name,
                                             batchId: item.batch_id,
                                             batchNumber: item.batch_number || '',
+                                            price: parseFloatValue(item.unit_price),
                                             availableQty: item.quantity,
-                                            barcodeId: itemBarcodeId
+                                            barcode: item.barcode || item.product_sku,
+                                            barcodeId: item.barcode_id
                                           });
                                         }}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${isItemSelected
-                                            ? 'bg-red-50 dark:bg-red-900/30 border-red-500 text-red-700 dark:text-red-300 shadow-sm'
+                                            ? 'bg-red-50 dark:bg-red-900/10 border-red-500 text-red-700 dark:text-red-300 shadow-sm'
                                             : 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-400'
                                           }`}
                                       >
                                         <div className={`w-2 h-2 rounded-full ${isItemSelected ? 'bg-red-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                                        {typeof item.barcode === 'object' ? item.barcode.barcode : (item.barcode || 'Select Barcode')}
+                                        {item.barcode || 'Select Barcode'}
                                         {item.quantity > 1 && (
                                           <span className="bg-gray-200 dark:bg-gray-700 px-1.5 rounded text-[10px]">
                                             {qtyReturned}/{item.quantity}

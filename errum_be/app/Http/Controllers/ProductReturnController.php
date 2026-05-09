@@ -833,13 +833,21 @@ class ProductReturnController extends Controller
             throw new \Exception("Scan each returned barcode separately for {$orderItem->product_name}; one explicit barcode cannot represent multiple tracked units.");
         }
 
-        $query = ProductBarcode::query()->lockForUpdate();
-        $barcode = $barcodeId
-            ? $query->where('id', $barcodeId)->first()
-            : $query->where('barcode', $barcodeString)->first();
+        $barcode = null;
+        if ($barcodeId) {
+            $barcode = ProductBarcode::query()->lockForUpdate()->where('id', $barcodeId)->first();
+        } elseif ($barcodeString) {
+            $barcode = ProductBarcode::query()->lockForUpdate()->where('barcode', $barcodeString)->first();
+        }
+
+        // Lookup may send SKU as the visible barcode if the order payload did not include
+        // product_barcode_id. For a tracked order item, trust the stored sold barcode id.
+        if (!$barcode && !empty($orderItem->product_barcode_id)) {
+            $barcode = ProductBarcode::query()->lockForUpdate()->find($orderItem->product_barcode_id);
+        }
 
         if (!$barcode) {
-            throw new \Exception('Returned barcode was not found.');
+            throw new \Exception('Returned barcode was not found. Please refresh the Lookup order and select the barcode again.');
         }
 
         if ((int) $barcode->product_id !== (int) $orderItem->product_id) {

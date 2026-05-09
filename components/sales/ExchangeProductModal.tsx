@@ -11,7 +11,7 @@ interface OrderItem {
   batch_id: number;
   batch_number?: string;
   barcode_id?: number;
-  barcode?: string | { barcode: string; id?: number; type?: string; [key: string]: any };
+  barcode?: string;
   quantity: number;
   unit_price: string;
   discount_amount: string;
@@ -511,11 +511,6 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
           const unitPrice = parsePrice(soldAtPrices[itemId]);
           const barcodes = returnedBarcodes[itemId] || [];
 
-          // Extract original barcode ID from item if it's an object
-          const itemBarcodeId = typeof item?.barcode === 'object' 
-            ? item.barcode.id 
-            : item?.barcode_id;
-
           if (barcodes.length > 0) {
             // Send one entry per barcode
             return barcodes.map(bc => ({
@@ -524,7 +519,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
               unit_price: unitPrice,
               total_price: unitPrice,
               barcode: bc.barcode,
-              product_barcode_id: bc.barcode_id || itemBarcodeId,
+              product_barcode_id: bc.barcode_id || item?.barcode_id,
             }));
           } else {
             // Fallback (shouldn't happen with new logic but safe to keep)
@@ -534,7 +529,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
               quantity: quantity,
               unit_price: unitPrice,
               total_price: unitPrice * quantity,
-              product_barcode_id: itemBarcodeId,
+              product_barcode_id: item?.barcode_id,
             }];
           }
         }),
@@ -748,19 +743,21 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                       <button
                                         key={item.id}
                                         onClick={() => {
-                                          const itemBarcodeStr = typeof item.barcode === 'object' ? item.barcode.barcode : item.barcode;
-                                          const itemBarcodeId = typeof item.barcode === 'object' ? item.barcode.id : item.barcode_id;
-                                          
+                                          if (isFullyReturned) {
+                                            // Handle removal or just scan again?
+                                            // Clicking an already fully selected one should probably not do anything 
+                                            // or toggle selection if it was a manual click.
+                                            // For now, let's allow "scanning" it again which will alert.
+                                          }
                                           handleProductScanned({
                                             productId: item.product_id,
-                                            barcode: itemBarcodeStr || item.product_sku,
-                                            name: item.product_name,
-                                            sku: item.product_sku,
-                                            price: parsePrice(item.unit_price),
+                                            productName: item.product_name,
                                             batchId: item.batch_id,
                                             batchNumber: item.batch_number || '',
+                                            price: parsePrice(item.unit_price),
                                             availableQty: item.quantity,
-                                            barcodeId: itemBarcodeId
+                                            barcode: item.barcode || item.product_sku,
+                                            barcodeId: item.barcode_id
                                           }, 'return');
                                         }}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2 border-2 ${isItemSelected
@@ -769,7 +766,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                           }`}
                                       >
                                         <div className={`w-2 h-2 rounded-full ${isItemSelected ? 'bg-blue-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                                        {typeof item.barcode === 'object' ? item.barcode.barcode : (item.barcode || 'Select Barcode')}
+                                        {item.barcode || 'Select Barcode'}
                                         {item.quantity > 1 && (
                                           <span className="bg-gray-200 dark:bg-gray-700 px-1.5 rounded text-[10px]">
                                             {qtyReturned}/{item.quantity}

@@ -1037,7 +1037,18 @@ export default function LookupPage() {
       created_at: o.order_date ?? o.created_at ?? null,
       updated_at: o.updated_at ?? null,
       items: items.map((it: any, idx: number) => {
-        const barcodeVal = it?.barcode?.barcode ?? it?.barcode ?? null;
+        const barcodeObj = it?.barcode && typeof it.barcode === 'object' ? it.barcode : null;
+        const barcodeVal =
+          barcodeObj?.barcode ??
+          it?.barcode_number ??
+          (typeof it?.barcode === 'string' ? it.barcode : null) ??
+          null;
+        const barcodeId =
+          barcodeObj?.id ??
+          barcodeObj?.barcode_id ??
+          it?.product_barcode_id ??
+          it?.barcode_id ??
+          null;
         const barcodesArr = Array.isArray(it?.barcodes) ? it.barcodes : [];
         const finalBarcodes: string[] = barcodeVal
           ? [String(barcodeVal)]
@@ -1048,6 +1059,12 @@ export default function LookupPage() {
           product_id: it?.product?.id ?? it?.product_id ?? null,
           product_name: it?.product?.name ?? it?.product_name ?? 'Unknown Product',
           product_sku: it?.product?.sku ?? it?.product_sku ?? 'N/A',
+          batch_id: it?.batch?.id ?? it?.batch_id ?? it?.product_batch_id ?? null,
+          product_batch_id: it?.batch?.id ?? it?.product_batch_id ?? it?.batch_id ?? null,
+          batch_number: it?.batch?.batch_number ?? it?.batch_number ?? '',
+          barcode: barcodeVal ? String(barcodeVal) : undefined,
+          barcode_id: barcodeId ? Number(barcodeId) : undefined,
+          product_barcode_id: barcodeId ? Number(barcodeId) : undefined,
           quantity: it?.quantity ?? 0,
           unit_price: it?.unit_price ?? it?.sale_price ?? it?.price ?? null,
           total_amount: it?.total_amount ?? it?.total ?? null,

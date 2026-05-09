@@ -501,13 +501,22 @@ class ExchangeController extends Controller
             return null;
         }
 
-        $query = ProductBarcode::query()->lockForUpdate();
-        $barcode = $barcodeId
-            ? $query->where('id', $barcodeId)->first()
-            : $query->where('barcode', $barcodeString)->first();
+        $barcode = null;
+        if ($barcodeId) {
+            $barcode = ProductBarcode::query()->lockForUpdate()->where('id', $barcodeId)->first();
+        } elseif ($barcodeString) {
+            $barcode = ProductBarcode::query()->lockForUpdate()->where('barcode', $barcodeString)->first();
+        }
+
+        // Lookup order rows may show the product SKU when barcode_id was not flattened
+        // correctly by older frontend builds. If the order item already has the sold
+        // barcode id, use that as the source of truth instead of failing on the SKU text.
+        if (!$barcode && $orderItem && !empty($orderItem->product_barcode_id)) {
+            $barcode = ProductBarcode::query()->lockForUpdate()->find($orderItem->product_barcode_id);
+        }
 
         if (!$barcode) {
-            return null;
+            throw new \Exception('Returned barcode was not found. Please refresh the Lookup order and select the barcode again.');
         }
 
         if ((int) $barcode->product_id !== (int) ($orderItem?->product_id ?? $item['product_id'])) {
