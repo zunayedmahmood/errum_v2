@@ -71,6 +71,56 @@ interface ProductSearchResult {
   branchStocks?: { store_name: string; quantity: number }[];
 }
 
+
+const SC_EDIT_PREFILL_KEY = 'socialCommerceEditPrefillV1';
+
+const parseMoney = (value: any): number => {
+  const n = Number(String(value ?? '0').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+};
+
+const normalizePrefillCartItem = (item: any): CartProduct | null => {
+  if (!item || typeof item !== 'object') return null;
+
+  const quantity = Math.max(1, Math.floor(parseMoney(item.quantity ?? item.qty ?? 1) || 1));
+  const discountAmount = parseMoney(item.discount_amount ?? item.discount ?? item.discountAmount ?? 0);
+  const apiLineTotal = parseMoney(item.total_amount ?? item.total ?? item.line_total ?? item.amount ?? 0);
+  let unitPrice = parseMoney(
+    item.unit_price ??
+    item.unitPrice ??
+    item.price ??
+    item.sell_price ??
+    item.selling_price ??
+    item.product?.sell_price ??
+    item.product?.selling_price ??
+    item.product?.price ??
+    0
+  );
+
+  if (unitPrice <= 0 && apiLineTotal > 0 && quantity > 0) {
+    unitPrice = (apiLineTotal + discountAmount) / quantity;
+  }
+
+  const productId = Number(item.product_id ?? item.productId ?? item.product?.id ?? 0) || 0;
+  if (!productId) return null;
+
+  return {
+    id: item.id ?? item.order_item_id ?? `${productId}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    product_id: productId,
+    batch_id: item.batch_id ?? item.product_batch_id ?? item.productBatchId ?? item.batch?.id ?? null,
+    productName: item.productName ?? item.product_name ?? item.name ?? item.product?.name ?? 'Unnamed product',
+    sku: item.sku ?? item.product_sku ?? item.product?.sku ?? '',
+    quantity,
+    unit_price: unitPrice,
+    discount_amount: discountAmount,
+    amount: apiLineTotal > 0 ? apiLineTotal : Math.max(0, unitPrice * quantity - discountAmount),
+    isDefective: Boolean(item.isDefective),
+    defectId: item.defectId,
+    store_id: item.store_id ?? null,
+    store_name: item.store_name ?? item.store?.name ?? null,
+  };
+};
+
 export default function SocialCommercePage() {
   const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -85,6 +135,9 @@ export default function SocialCommercePage() {
   const [userEmail, setUserEmail] = useState('');
   const [userPhone, setUserPhone] = useState('');
   const [socialId, setSocialId] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
+  const [editOrderId, setEditOrderId] = useState<number | null>(null);
+  const [editOrderNumber, setEditOrderNumber] = useState<string | null>(null);
 
   const [isInternational, setIsInternational] = useState(false);
 
@@ -511,6 +564,58 @@ export default function SocialCommercePage() {
   };
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const raw = sessionStorage.getItem(SC_EDIT_PREFILL_KEY);
+      if (!raw) return;
+
+      sessionStorage.removeItem(SC_EDIT_PREFILL_KEY);
+      const prefill = JSON.parse(raw);
+      if (!prefill || typeof prefill !== 'object') return;
+
+      const incomingEditOrderId = Number(prefill.editOrderId || 0) || null;
+      const incomingEditOrderNumber = typeof prefill.editOrderNumber === 'string' ? prefill.editOrderNumber : null;
+
+      if (incomingEditOrderId) setEditOrderId(incomingEditOrderId);
+      if (incomingEditOrderNumber) setEditOrderNumber(incomingEditOrderNumber);
+
+      if (typeof prefill.userName === 'string') setUserName(prefill.userName);
+      if (typeof prefill.userPhone === 'string') setUserPhone(prefill.userPhone);
+      if (typeof prefill.userEmail === 'string') setUserEmail(prefill.userEmail);
+      if (typeof prefill.socialId === 'string') setSocialId(prefill.socialId);
+      if (typeof prefill.orderNotes === 'string') setOrderNotes(prefill.orderNotes);
+      if (typeof prefill.isInternational === 'boolean') setIsInternational(prefill.isInternational);
+      if (typeof prefill.streetAddress === 'string') setStreetAddress(prefill.streetAddress);
+      if (typeof prefill.postalCode === 'string') setPostalCode(prefill.postalCode);
+      if (typeof prefill.country === 'string') setCountry(prefill.country);
+      if (typeof prefill.state === 'string') setState(prefill.state);
+      if (typeof prefill.internationalCity === 'string') setInternationalCity(prefill.internationalCity);
+      if (typeof prefill.internationalPostalCode === 'string') setInternationalPostalCode(prefill.internationalPostalCode);
+      if (typeof prefill.deliveryAddress === 'string') setDeliveryAddress(prefill.deliveryAddress);
+      if (typeof prefill.shippingAmount === 'number') setTransportCost(String(prefill.shippingAmount));
+
+      if (typeof prefill.storeId === 'string' && prefill.storeId) {
+        setStoreAssignmentType('specific');
+        setSelectedStoreId(prefill.storeId);
+      } else {
+        setStoreAssignmentType('auto');
+        setSelectedStoreId('');
+      }
+
+      if (Array.isArray(prefill.cart)) {
+        setCart(prefill.cart.map(normalizePrefillCartItem).filter(Boolean) as CartProduct[]);
+      }
+
+      setPaymentOption('none');
+      fireToast(`Editing order ${incomingEditOrderNumber ? `#${incomingEditOrderNumber}` : ''}. Existing payments will be preserved.`, 'success');
+    } catch (error) {
+      console.error('Failed to hydrate order edit prefill:', error);
+      fireToast('Failed to load order editing data', 'error');
+    }
+  }, []);
+
+  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const defectId = urlParams.get('defect');
 
@@ -777,8 +882,8 @@ export default function SocialCommercePage() {
       return;
     }
 
-    // Payment validation
-    if (paymentOption !== 'none') {
+    // Payment validation. During edit mode, keep existing payments intact and only update the order/cart/details.
+    if (!editOrderId && paymentOption !== 'none') {
       if (!selectedPaymentMethod) {
         fireToast('Please select a payment method', 'error');
         return;
@@ -790,7 +895,7 @@ export default function SocialCommercePage() {
       }
     }
 
-    if (paymentOption === 'partial') {
+    if (!editOrderId && paymentOption === 'partial') {
       const adv = parseFloat(advanceAmount) || 0;
       if (adv <= 0 || adv >= subtotal - totalDiscount + (parseFloat(transportCost) || 0)) {
         fireToast('Please enter a valid advance amount', 'error');
@@ -802,14 +907,14 @@ export default function SocialCommercePage() {
       }
     }
 
-    if (paymentOption === 'none' && !codPaymentMethod) {
+    if (!editOrderId && paymentOption === 'none' && !codPaymentMethod) {
       fireToast('Please select COD payment method for full amount', 'error');
       return;
     }
 
     try {
       setIsProcessingOrder(true);
-      console.log('📦 CREATING SOCIAL COMMERCE ORDER');
+      console.log(editOrderId ? '✏️ UPDATING ORDER FROM SOCIAL COMMERCE FLOW' : '📦 CREATING SOCIAL COMMERCE ORDER');
 
       const total = subtotal - totalDiscount + (parseFloat(transportCost) || 0);
 
@@ -832,6 +937,8 @@ export default function SocialCommercePage() {
 
       const orderData = {
         order_type: 'social_commerce',
+        ...(editOrderId ? { editOrderId } : {}),
+        ...(editOrderNumber ? { editOrderNumber } : {}),
         customer: {
           name: userName,
           email: userEmail || undefined,
@@ -840,14 +947,15 @@ export default function SocialCommercePage() {
         shipping_address,
         store_id: storeAssignmentType === 'specific' ? parseInt(selectedStoreId) : null,
         items: cart.map(item => ({
+          ...(typeof item.id === 'number' ? { id: item.id } : {}),
           product_id: item.product_id,
-          batch_id: item.isDefective ? item.batch_id : null,
+          batch_id: item.batch_id ?? null,
           quantity: item.quantity,
           unit_price: item.unit_price,
           discount_amount: item.discount_amount,
         })),
         shipping_amount: parseFloat(transportCost) || 0,
-        notes: `Social Commerce. ${socialId ? `ID: ${socialId}. ` : ''}${isInternational ? 'International' : 'Domestic'} delivery. ${paymentOption === 'full' ? 'Full payment' : paymentOption === 'partial' ? 'Partial (Advance+COD)' : 'Full COD'}`,
+        notes: orderNotes || `Social Commerce. ${socialId ? `ID: ${socialId}. ` : ''}${isInternational ? 'International' : 'Domestic'} delivery. ${paymentOption === 'full' ? 'Full payment' : paymentOption === 'partial' ? 'Partial (Advance+COD)' : 'Full COD'}`,
       };
 
       const response = await axios.post('/orders', orderData);
@@ -874,8 +982,8 @@ export default function SocialCommercePage() {
         }
       }
 
-      // Handle Payment
-      if (paymentOption !== 'none') {
+      // Handle Payment only for new orders. Editing preserves existing payments and recalculates due amount.
+      if (!editOrderId && paymentOption !== 'none') {
         const method = paymentMethods.find(m => String(m.id) === selectedPaymentMethod);
         const amountToPay = paymentOption === 'full' ? total : (parseFloat(advanceAmount) || 0);
 
@@ -901,7 +1009,7 @@ export default function SocialCommercePage() {
         await axios.post(`/orders/${createdOrder.id}/payments/simple`, paymentData);
       }
 
-      fireToast(`Order ${createdOrder.order_number} placed successfully!`, 'success');
+      fireToast(`Order ${createdOrder.order_number} ${editOrderId ? 'updated' : 'placed'} successfully!`, 'success');
 
       // Cleanup and NOT redirecting
       setCart([]);
@@ -909,6 +1017,9 @@ export default function SocialCommercePage() {
       setUserPhone('');
       setUserEmail('');
       setSocialId('');
+      setOrderNotes('');
+      setEditOrderId(null);
+      setEditOrderNumber(null);
       setStreetAddress('');
       setPostalCode('');
       setCountry('');
@@ -1143,7 +1254,7 @@ export default function SocialCommercePage() {
           disabled={cart.length === 0 || isProcessingOrder}
           className="w-full mt-2 bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          {isProcessingOrder ? 'Creating Order...' : 'Confirm Order'}
+          {isProcessingOrder ? (editOrderId ? 'Updating Order...' : 'Creating Order...') : (editOrderId ? 'Update Order' : 'Confirm Order')}
         </button>
       </div>
     </div>
@@ -1370,6 +1481,12 @@ export default function SocialCommercePage() {
                   <div className="bg-white dark:bg-gray-800 px-4 py-2 rounded-xl shadow-sm border text-xs font-bold uppercase tracking-wider">By: {salesBy}</div>
                 </div>
               </div>
+
+              {editOrderId && (
+                <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-200">
+                  <strong>Editing Order {editOrderNumber ? `#${editOrderNumber}` : ''}</strong> — update customer details, delivery info, products, discounts, and transport cost here. Existing payments will not be duplicated.
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                 <div className="lg:col-span-1 space-y-8">

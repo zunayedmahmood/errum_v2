@@ -1556,25 +1556,68 @@ export default function OrdersDashboard() {
   const handleEditOrder = async (order: Order) => {
     setActiveMenu(null);
     setIsLoadingDetails(true);
-    setShowEditModal(true);
 
     try {
       const fullOrder = await orderService.getById(order.id);
-      setSelectedBackendOrder(fullOrder);
-      const transformedOrder = transformOrder(fullOrder);
 
-      setSelectedOrder(transformedOrder);
-      setEditableOrder(transformedOrder);
-      setServicesTouched(false);
-      ensureProductThumbs((fullOrder.items ?? []).map((it: any) => it?.product_id));
-      if (fullOrder.store?.id) {
-        setPickerStoreId(fullOrder.store.id);
-      }
+      const shippingAddress = (fullOrder as any).shipping_address || (fullOrder as any).delivery_address || {};
+      const normalisedShippingAddress = shippingAddress && typeof shippingAddress === 'object' ? shippingAddress : {};
+      const countryRaw = String(normalisedShippingAddress.country || '').trim();
+      const isInternational = Boolean(countryRaw && countryRaw.toLowerCase() !== 'bangladesh');
+
+      const streetAddress =
+        normalisedShippingAddress.address ||
+        normalisedShippingAddress.street ||
+        normalisedShippingAddress.address_line_1 ||
+        normalisedShippingAddress.address_line1 ||
+        normalisedShippingAddress.address_line_2 ||
+        normalisedShippingAddress.address_line2 ||
+        '';
+
+      const prefillPayload = {
+        editOrderId: fullOrder.id,
+        editOrderNumber: fullOrder.order_number,
+        orderType: fullOrder.order_type,
+        storeId: fullOrder.store?.id ? String(fullOrder.store.id) : '',
+        userName: fullOrder.customer?.name || '',
+        userPhone: fullOrder.customer?.phone || '',
+        userEmail: fullOrder.customer?.email || '',
+        socialId: (fullOrder.customer as any)?.social_id || '',
+        orderNotes: fullOrder.notes || '',
+        isInternational,
+        streetAddress,
+        postalCode: normalisedShippingAddress.postal_code || normalisedShippingAddress.postalCode || '',
+        country: normalisedShippingAddress.country || '',
+        state: normalisedShippingAddress.state || '',
+        internationalCity: normalisedShippingAddress.city || '',
+        internationalPostalCode: normalisedShippingAddress.postal_code || normalisedShippingAddress.postalCode || '',
+        deliveryAddress: normalisedShippingAddress.address || normalisedShippingAddress.street || streetAddress,
+        cart: [
+          ...(fullOrder.items || []).map((item: any) => ({
+            ...item,
+            id: item.id || item.order_item_id,
+            product_id: item.product_id || item.product?.id,
+            batch_id: item.batch_id || item.product_batch_id || item.batch?.id || null,
+            productName: item.product_name || item.product?.name || item.name,
+            sku: item.product_sku || item.product?.sku || item.sku || '',
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            discount_amount: item.discount_amount,
+            amount: item.total_amount,
+          })),
+        ],
+        paidAmount: Number(fullOrder.paid_amount || 0),
+        totalAmount: Number(fullOrder.total_amount || 0),
+        outstandingAmount: Number(fullOrder.outstanding_amount || 0),
+        discountAmount: Number(fullOrder.discount_amount || 0),
+        shippingAmount: Number(fullOrder.shipping_amount || 0),
+      };
+
+      sessionStorage.setItem('socialCommerceEditPrefillV1', JSON.stringify(prefillPayload));
+      window.location.href = '/social-commerce';
     } catch (error: any) {
-      console.error('Failed to load order details:', error);
-      alert('Failed to load order details: ' + error.message);
-      setShowEditModal(false);
-      setEditableOrder(null);
+      console.error('Failed to prepare order editing:', error);
+      alert('Failed to prepare order editing: ' + (error?.message || 'Unknown error'));
     } finally {
       setIsLoadingDetails(false);
     }
@@ -2097,7 +2140,7 @@ export default function OrdersDashboard() {
 
           // Trigger background queue worker just in case cron isn't running
           try {
-             await axiosInstance.post('/shipments/pathao-queue-tick', { max_jobs: 5, max_time: 15 });
+             await axios.post('/shipments/pathao-queue-tick', { max_jobs: 5, max_time: 15 });
           } catch (e) {}
 
           await wait(2500); // Poll every 2.5 seconds
@@ -2406,7 +2449,7 @@ export default function OrdersDashboard() {
         while (summary.status === 'pending' || summary.status === 'processing') {
           // Trigger background queue worker
           try {
-             await axiosInstance.post('/shipments/pathao-queue-tick', { max_jobs: 2, max_time: 10 });
+             await axios.post('/shipments/pathao-queue-tick', { max_jobs: 2, max_time: 10 });
           } catch (e) {}
 
           await wait(2000);
@@ -4595,8 +4638,8 @@ export default function OrdersDashboard() {
         </div>
       )}
 
-      {/* Edit Order Modal */}
-      {showEditModal && (
+      {/* Legacy Edit Order Modal removed from the active flow. Orders now edit through /social-commerce. */}
+      {false && showEditModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-900 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-auto border border-gray-200 dark:border-gray-800">
             <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between z-10">

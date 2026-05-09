@@ -697,3 +697,12 @@ i want to know if the observers are properly tracking return-exchange and order 
 this should be with proper details and handling edgecases like adding more items, tax calculation, Purchase order creation, deletion etc to order (edit order), exchanging partial orders etc.
 i want you make a full list of all the issues (with proposed fixes and explanations) that i can give an Ai model to fix.\
 do not write a single code. i only want the list.
+
+### order-edit(should be like deshio):
+see the orders-example page and social-commerce-example pages.
+these are examples from a different project.
+we want that order editing system in our current system.
+and remove the existing order eit modal.
+keep this in mind:
+both social commerce and e-commerce orders should be editable this way.
+also, the database structure and backend codes aren't exactly same as the example pages.
