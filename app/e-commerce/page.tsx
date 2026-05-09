@@ -102,6 +102,7 @@ export default function HomePage() {
           textPosition={heroData?.hero?.text_position}
           textColor={heroData?.hero?.text_color}
           fontSize={heroData?.hero?.font_size}
+          transitionType={heroData?.hero?.transition_type}
         />
       )}
 
@@ -163,4 +164,3 @@ export default function HomePage() {
     </div>
   );
 }
-

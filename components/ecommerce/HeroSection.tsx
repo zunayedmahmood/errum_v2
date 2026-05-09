@@ -19,7 +19,8 @@ export default function HeroSection({
   autoplaySpeed = 5000,
   textPosition = 'center',
   textColor = '#ffffff',
-  fontSize = 84
+  fontSize = 84,
+  transitionType = 'fade'
 }: {
   images?: HeroImage[];
   title?: string;
@@ -29,6 +30,7 @@ export default function HeroSection({
   textPosition?: string;
   textColor?: string;
   fontSize?: number;
+  transitionType?: 'fade' | 'slide';
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,9 +130,14 @@ export default function HeroSection({
             style={{
               position: 'absolute',
               inset: 0,
-              opacity: currentIndex === idx ? 1 : 0,
-              transition: 'opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1)',
-              zIndex: currentIndex === idx ? 1 : 0
+              opacity: transitionType === 'fade' ? (currentIndex === idx ? 1 : 0) : 1,
+              transform: transitionType === 'slide' 
+                ? `translateX(${(idx - currentIndex) * 100}%)`
+                : 'none',
+              transition: transitionType === 'fade'
+                ? 'opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                : 'transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+              zIndex: transitionType === 'fade' ? (currentIndex === idx ? 1 : 0) : 1
             }}
           >
             <Image

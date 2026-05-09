@@ -23,6 +23,7 @@ export interface HomepageSettings {
     text_position?: string;
     text_color?: string;
     font_size?: number;
+    transition_type?: 'fade' | 'slide';
   };
   collections: {
     id: number;

@@ -67,6 +67,7 @@ export default function HomepageSettingsPage() {
           text_position: settingsData.hero?.text_position || 'center',
           text_color: settingsData.hero?.text_color || '#ffffff',
           font_size: settingsData.hero?.font_size || 84,
+          transition_type: settingsData.hero?.transition_type || 'fade',
         },
         collections: settingsData.collections || [],
         showcase: (settingsData.showcase || []).map((item: any) => ({
@@ -140,6 +141,7 @@ export default function HomepageSettingsPage() {
         formData.append("hero_text_position", settings.hero.text_position || "center");
         formData.append("hero_text_color", settings.hero.text_color || "#ffffff");
         formData.append("hero_font_size", String(settings.hero.font_size || 84));
+        formData.append("hero_transition_type", settings.hero.transition_type || "fade");
         
         const meta: any[] = [];
         let fileIndex = 0;
@@ -664,6 +666,21 @@ export default function HomepageSettingsPage() {
                                 <option value="bottom-right">Bottom Right</option>
                               </select>
                               <p className="mt-1 text-[10px] text-gray-400">Position applies to desktop view only. Mobile always uses center center.</p>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Transition Effect</label>
+                              <select
+                                value={settings.hero.transition_type || 'fade'}
+                                onChange={(e) => {
+                                  setSettings({ ...settings, hero: { ...settings.hero, transition_type: e.target.value as 'fade' | 'slide' } });
+                                  setHeroChanged(true);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                              >
+                                <option value="fade">Fade In (Current)</option>
+                                <option value="slide">Slide In (Right to Left)</option>
+                              </select>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">

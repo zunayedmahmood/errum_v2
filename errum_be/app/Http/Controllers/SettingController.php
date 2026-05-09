@@ -46,6 +46,7 @@ class SettingController extends Controller
                 'text_position' => 'center',
                 'text_color' => '#ffffff',
                 'font_size' => 84,
+                'transition_type' => 'fade',
             ], $settings->get('homepage_hero', []));
         }
 
@@ -212,6 +213,7 @@ class SettingController extends Controller
                 'text_position' => 'center',
                 'text_color' => '#ffffff',
                 'font_size' => 84,
+                'transition_type' => 'fade',
             ], $settings->get('homepage_hero', [])),
             'collections' => $settings->get('homepage_collections', []),
             'showcase' => $settings->get('homepage_showcase', []),
@@ -255,6 +257,7 @@ class SettingController extends Controller
             'hero_text_position' => 'nullable|string|in:top-left,top-right,bottom-left,bottom-right,center',
             'hero_text_color' => 'nullable|string|max:20',
             'hero_font_size' => 'nullable|integer|min:20|max:200',
+            'hero_transition_type' => 'nullable|string|in:fade,slide',
 
             'new_arrivals' => 'nullable|array',
             'new_arrivals.enabled' => 'nullable|string',
@@ -299,7 +302,7 @@ class SettingController extends Controller
             );
         }
 
-        if ($request->has('hero_images') || $request->has('hero_images_meta') || $request->has('hero_title') || $request->has('hero_show_title') || $request->has('hero_text_position')) {
+        if ($request->has('hero_images') || $request->has('hero_images_meta') || $request->has('hero_title') || $request->has('hero_show_title') || $request->has('hero_text_position') || $request->has('hero_transition_type')) {
             $currentHero = Setting::where('key', 'homepage_hero')->first()?->value ?? [];
             
             // Handle multiple hero images
@@ -375,6 +378,10 @@ class SettingController extends Controller
 
             if ($request->has('hero_font_size')) {
                 $currentHero['font_size'] = (int) $request->input('hero_font_size');
+            }
+
+            if ($request->has('hero_transition_type')) {
+                $currentHero['transition_type'] = $request->input('hero_transition_type');
             }
 
             Setting::updateOrCreate(

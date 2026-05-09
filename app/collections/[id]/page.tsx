@@ -181,7 +181,7 @@ export default function EditCollectionPage() {
   const addProductToCollection = async (product: any) => {
     try {
       await collectionService.addProducts(id, [product.id]);
-      showToast(`${product.name} added to collection`);
+      showToast(`${product.base_name || product.name} added to collection`);
       loadProducts();
     } catch (error: any) {
       showToast(error.response?.data?.message || 'Failed to add product', 'error');
@@ -315,7 +315,7 @@ export default function EditCollectionPage() {
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{product.name}</p>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{product.base_name || product.name}</p>
                               <p className="text-[10px] text-gray-500 uppercase tracking-wider">{product.sku}</p>
                             </div>
                             <button 
@@ -470,7 +470,7 @@ export default function EditCollectionPage() {
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{product.name}</p>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{product.base_name || product.name}</p>
                         <p className="text-[10px] text-gray-500 uppercase tracking-widest">{product.sku}</p>
                       </div>
                       <button 
