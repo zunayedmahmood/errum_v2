@@ -236,33 +236,49 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       }
       const currentQty = exchangeQuantities[targetItem.id] || 0;
       const currentBarcodes = returnedBarcodes[targetItem.id] || [];
+      const scannedCode = String(scannedProduct.barcode || '').trim();
+      const targetHasTrackedBarcode = Boolean(targetItem.barcode_id || targetItem.barcode);
+      const shouldRecordBarcode = Boolean(
+        scannedProduct.barcodeId ||
+        (targetHasTrackedBarcode && scannedCode && scannedCode === String(targetItem.barcode || '').trim())
+      );
 
-      // Prevent duplicate barcode scan for the same return item
-      if (currentBarcodes.some(b => b.barcode === scannedProduct.barcode)) {
+      // Prevent duplicate barcode scan for the same tracked return item.
+      // Non-tracked counter items are quantity-based and should not store SKU as barcode.
+      if (shouldRecordBarcode && currentBarcodes.some(b => b.barcode === scannedCode)) {
         alert('This barcode has already been scanned for this return item.');
         return;
       }
 
-      const newBarcode: ReturnedBarcode = {
-        barcode: scannedProduct.barcode,
-        barcode_id: scannedProduct.barcodeId
+      const addQuantity = () => {
+        if (currentQty >= targetItem.quantity) {
+          alert('This product is already fully selected for return.');
+          return false;
+        }
+        setExchangeQuantities(prev => ({ ...prev, [targetItem.id]: currentQty + 1 }));
+        return true;
       };
 
-      // If we have an initial quantity from manual checkbox but no barcode, 'fill' it
-      if (currentQty === 1 && currentBarcodes.length === 0) {
-        setReturnedBarcodes(prev => ({
-          ...prev,
-          [targetItem.id]: [newBarcode]
-        }));
-      } else if (currentQty < targetItem.quantity) {
-        // It's a return!
-        setExchangeQuantities(prev => ({ ...prev, [targetItem.id]: currentQty + 1 }));
-        setReturnedBarcodes(prev => ({
-          ...prev,
-          [targetItem.id]: [...(prev[targetItem.id] || []), newBarcode]
-        }));
-      } else {
-        alert('This product is already fully scanned for return.');
+      if (shouldRecordBarcode) {
+        const newBarcode: ReturnedBarcode = {
+          barcode: scannedCode,
+          barcode_id: scannedProduct.barcodeId || targetItem.barcode_id
+        };
+
+        if (currentQty === 1 && currentBarcodes.length === 0) {
+          setReturnedBarcodes(prev => ({
+            ...prev,
+            [targetItem.id]: [newBarcode]
+          }));
+        } else if (addQuantity()) {
+          setReturnedBarcodes(prev => ({
+            ...prev,
+            [targetItem.id]: [...(prev[targetItem.id] || []), newBarcode]
+          }));
+        } else {
+          return;
+        }
+      } else if (!addQuantity()) {
         return;
       }
 
@@ -512,7 +528,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
           const barcodes = returnedBarcodes[itemId] || [];
 
           if (barcodes.length > 0) {
-            // Send one entry per barcode
+            // Send one entry per tracked barcode
             return barcodes.map(bc => ({
               order_item_id: itemId,
               quantity: 1,
@@ -520,9 +536,10 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
               total_price: unitPrice,
               barcode: bc.barcode,
               product_barcode_id: bc.barcode_id || item?.barcode_id,
+              barcode_id: bc.barcode_id || item?.barcode_id,
             }));
           } else {
-            // Fallback (shouldn't happen with new logic but safe to keep)
+            // Quantity-based/non-tracked item. Do not send SKU as barcode.
             const quantity = exchangeQuantities[itemId] || 0;
             return [{
               order_item_id: itemId,
@@ -530,6 +547,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
               unit_price: unitPrice,
               total_price: unitPrice * quantity,
               product_barcode_id: item?.barcode_id,
+              barcode_id: item?.barcode_id,
             }];
           }
         }),
@@ -756,7 +774,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                             batchNumber: item.batch_number || '',
                                             price: parsePrice(item.unit_price),
                                             availableQty: item.quantity,
-                                            barcode: item.barcode || item.product_sku,
+                                            barcode: item.barcode_id && item.barcode ? item.barcode : '',
                                             barcodeId: item.barcode_id
                                           }, 'return');
                                         }}
@@ -766,7 +784,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                           }`}
                                       >
                                         <div className={`w-2 h-2 rounded-full ${isItemSelected ? 'bg-blue-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                                        {item.barcode || 'Select Barcode'}
+                                        {item.barcode || 'Select Item'}
                                         {item.quantity > 1 && (
                                           <span className="bg-gray-200 dark:bg-gray-700 px-1.5 rounded text-[10px]">
                                             {qtyReturned}/{item.quantity}

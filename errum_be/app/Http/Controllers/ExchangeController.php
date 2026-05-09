@@ -351,6 +351,7 @@ class ExchangeController extends Controller
                 $payment->payment_type = 'exchange_balance';
                 $payment->notes = "Exchange credit from return #{$returnNumber}";
                 $payment->save();
+                $payment->process($employee);
                 $payment->complete('EXC-' . $returnNumber, 'INTERNAL');
             }
 
@@ -387,6 +388,7 @@ class ExchangeController extends Controller
                     $payment->payment_type = 'exchange_surplus';
                     $payment->notes = 'Extra payment collected for exchange upgrade';
                     $payment->save();
+                    $payment->process($employee);
                     $payment->complete('EXC-SUR-' . $returnNumber, 'EXTERNAL');
                 }
             } elseif ($difference < 0) {
@@ -497,6 +499,11 @@ class ExchangeController extends Controller
         $barcodeId = $item['product_barcode_id'] ?? $item['barcode_id'] ?? null;
         $barcodeString = $item['barcode'] ?? null;
 
+        $orderItemSoldBarcodeId = $orderItem?->product_barcode_id;
+
+        // Non-barcode/counter items do not have a sold unit barcode. Older Lookup modal
+        // builds sent the product SKU in the `barcode` field for these rows. Treat that
+        // as a normal quantity-based return instead of failing with "barcode not found".
         if (!$barcodeId && !$barcodeString) {
             return null;
         }
@@ -511,11 +518,14 @@ class ExchangeController extends Controller
         // Lookup order rows may show the product SKU when barcode_id was not flattened
         // correctly by older frontend builds. If the order item already has the sold
         // barcode id, use that as the source of truth instead of failing on the SKU text.
-        if (!$barcode && $orderItem && !empty($orderItem->product_barcode_id)) {
-            $barcode = ProductBarcode::query()->lockForUpdate()->find($orderItem->product_barcode_id);
+        if (!$barcode && $orderItemSoldBarcodeId) {
+            $barcode = ProductBarcode::query()->lockForUpdate()->find($orderItemSoldBarcodeId);
         }
 
         if (!$barcode) {
+            if (!$orderItemSoldBarcodeId) {
+                return null;
+            }
             throw new \Exception('Returned barcode was not found. Please refresh the Lookup order and select the barcode again.');
         }
 

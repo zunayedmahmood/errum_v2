@@ -186,25 +186,43 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     if (targetItem) {
       const currentQty = returnedQuantities[targetItem.id] || 0;
       const currentBarcodes = returnedBarcodes[targetItem.id] || [];
+      const scannedCode = String(scannedProduct.barcode || '').trim();
+      const targetHasTrackedBarcode = Boolean(targetItem.barcode_id || targetItem.barcode);
+      const shouldRecordBarcode = Boolean(
+        scannedProduct.barcodeId ||
+        (targetHasTrackedBarcode && scannedCode && scannedCode === String(targetItem.barcode || '').trim())
+      );
 
-      if (currentBarcodes.some(b => b.barcode === scannedProduct.barcode)) {
+      if (shouldRecordBarcode && currentBarcodes.some(b => b.barcode === scannedCode)) {
         alert('This barcode has already been scanned for this return item.');
         return;
       }
 
-      if (currentQty === 1 && currentBarcodes.length === 0) {
-        setReturnedBarcodes(prev => ({
-          ...prev,
-          [targetItem.id]: [{ barcode: scannedProduct.barcode, barcode_id: scannedProduct.barcodeId }]
-        }));
-      } else if (currentQty < targetItem.quantity) {
+      const addQuantity = () => {
+        if (currentQty >= targetItem.quantity) {
+          alert('This product is already fully selected for return.');
+          return false;
+        }
         setReturnedQuantities(prev => ({ ...prev, [targetItem.id]: currentQty + 1 }));
-        setReturnedBarcodes(prev => ({
-          ...prev,
-          [targetItem.id]: [...(prev[targetItem.id] || []), { barcode: scannedProduct.barcode, barcode_id: scannedProduct.barcodeId }]
-        }));
-      } else {
-        alert('This product is already fully scanned for return.');
+        return true;
+      };
+
+      if (shouldRecordBarcode) {
+        const newBarcode = { barcode: scannedCode, barcode_id: scannedProduct.barcodeId || targetItem.barcode_id };
+        if (currentQty === 1 && currentBarcodes.length === 0) {
+          setReturnedBarcodes(prev => ({
+            ...prev,
+            [targetItem.id]: [newBarcode]
+          }));
+        } else if (addQuantity()) {
+          setReturnedBarcodes(prev => ({
+            ...prev,
+            [targetItem.id]: [...(prev[targetItem.id] || []), newBarcode]
+          }));
+        } else {
+          return;
+        }
+      } else if (!addQuantity()) {
         return;
       }
 
@@ -375,6 +393,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
             unit_price: unitPrice,
             total_price: unitPrice * quantity,
             product_barcode_id: item?.barcode_id,
+            barcode_id: item?.barcode_id,
           }];
         }
       });
@@ -604,7 +623,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                             batchNumber: item.batch_number || '',
                                             price: parseFloatValue(item.unit_price),
                                             availableQty: item.quantity,
-                                            barcode: item.barcode || item.product_sku,
+                                            barcode: item.barcode_id && item.barcode ? item.barcode : '',
                                             barcodeId: item.barcode_id
                                           });
                                         }}
@@ -614,7 +633,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                           }`}
                                       >
                                         <div className={`w-2 h-2 rounded-full ${isItemSelected ? 'bg-red-500 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                                        {item.barcode || 'Select Barcode'}
+                                        {item.barcode || 'Select Item'}
                                         {item.quantity > 1 && (
                                           <span className="bg-gray-200 dark:bg-gray-700 px-1.5 rounded text-[10px]">
                                             {qtyReturned}/{item.quantity}

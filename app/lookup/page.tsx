@@ -1920,7 +1920,7 @@ export default function LookupPage() {
             quantity: item.quantity,
             unit_price: item.unit_price,
             total_price: item.total_price,
-            barcode: item.barcode, // Pass through barcode string
+            barcode: (item.product_barcode_id || item.barcode_id) ? item.barcode : undefined, // Never send SKU as returned barcode
             product_barcode_id: item.product_barcode_id || item.barcode_id, // Primary ID for removed items
             barcode_id: item.product_barcode_id || item.barcode_id, // Fallback/Alternative
             return_reason: item.return_reason || 'other',

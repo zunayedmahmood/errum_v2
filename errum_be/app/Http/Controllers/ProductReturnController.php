@@ -829,7 +829,7 @@ class ProductReturnController extends Controller
             return $this->getReturnableBarcodesForOrderItem($order, $orderItem, $quantity);
         }
 
-        if ($quantity > 1) {
+        if ($quantity > 1 && !empty($orderItem->product_barcode_id)) {
             throw new \Exception("Scan each returned barcode separately for {$orderItem->product_name}; one explicit barcode cannot represent multiple tracked units.");
         }
 
@@ -847,6 +847,9 @@ class ProductReturnController extends Controller
         }
 
         if (!$barcode) {
+            if (empty($orderItem->product_barcode_id)) {
+                return collect();
+            }
             throw new \Exception('Returned barcode was not found. Please refresh the Lookup order and select the barcode again.');
         }
 
