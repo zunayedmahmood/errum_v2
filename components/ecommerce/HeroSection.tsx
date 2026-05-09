@@ -265,10 +265,6 @@ export default function HeroSection({
                     position: 'absolute',
                     right: '8px',
                     padding: '6px',
-                  style={{
-                    position: 'absolute',
-                    right: '8px',
-                    padding: '6px',
                     color: '#ffffff',
                     background: 'none',
                     border: 'none',
