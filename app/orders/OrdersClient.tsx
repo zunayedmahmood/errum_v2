@@ -1574,6 +1574,16 @@ export default function OrdersDashboard() {
         normalisedShippingAddress.address_line2 ||
         '';
 
+      // Errum historically used orders.discount_amount for both order-level and
+      // item-level discounts in different places. If it equals the sum of item
+      // discounts, treat it as legacy item discount so Amount Details does not
+      // subtract it twice as a global discount.
+      const itemDiscountTotal = (fullOrder.items || []).reduce((sum: number, item: any) => {
+        return sum + (Number(item.discount_amount || 0) || 0);
+      }, 0);
+      const rawOrderDiscount = Number(fullOrder.discount_amount || 0) || 0;
+      const safeOrderDiscount = Math.abs(rawOrderDiscount - itemDiscountTotal) < 0.01 ? 0 : rawOrderDiscount;
+
       const prefillPayload = {
         editOrderId: fullOrder.id,
         editOrderNumber: fullOrder.order_number,
@@ -1609,7 +1619,7 @@ export default function OrdersDashboard() {
         paidAmount: Number(fullOrder.paid_amount || 0),
         totalAmount: Number(fullOrder.total_amount || 0),
         outstandingAmount: Number(fullOrder.outstanding_amount || 0),
-        discountAmount: Number(fullOrder.discount_amount || 0),
+        discountAmount: safeOrderDiscount,
         shippingAmount: Number(fullOrder.shipping_amount || 0),
       };
 

@@ -73,6 +73,7 @@ interface ProductSearchResult {
 
 
 const SC_EDIT_PREFILL_KEY = 'socialCommerceEditPrefillV1';
+const SC_EDIT_CONTEXT_KEY = 'socialCommerceEditContextV1';
 
 const parseMoney = (value: any): number => {
   const n = Number(String(value ?? '0').replace(/[^0-9.-]/g, ''));
@@ -138,6 +139,7 @@ export default function SocialCommercePage() {
   const [orderNotes, setOrderNotes] = useState('');
   const [editOrderId, setEditOrderId] = useState<number | null>(null);
   const [editOrderNumber, setEditOrderNumber] = useState<string | null>(null);
+  const [editOrderType, setEditOrderType] = useState<string>('social_commerce');
 
   const [isInternational, setIsInternational] = useState(false);
 
@@ -172,6 +174,14 @@ export default function SocialCommercePage() {
   const [paymentNotes, setPaymentNotes] = useState('');
   const [codPaymentMethod, setCodPaymentMethod] = useState('');
   const [isProcessingOrder, setIsProcessingOrder] = useState(false);
+
+  // Existing payment/total metadata carried from Orders page while editing.
+  // Amount Details uses these to preserve previous payments and calculate final due.
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [totalAmountState, setTotalAmountState] = useState(0);
+  const [outstandingAmountState, setOutstandingAmountState] = useState(0);
+  const [orderDiscountAmountState, setOrderDiscountAmountState] = useState(0);
+
   const [selectedProductInventory, setSelectedProductInventory] = useState<GlobalInventoryItem | null>(null);
 
   const [quantity, setQuantity] = useState('');
@@ -577,8 +587,15 @@ export default function SocialCommercePage() {
       const incomingEditOrderId = Number(prefill.editOrderId || 0) || null;
       const incomingEditOrderNumber = typeof prefill.editOrderNumber === 'string' ? prefill.editOrderNumber : null;
 
-      if (incomingEditOrderId) setEditOrderId(incomingEditOrderId);
+      if (incomingEditOrderId) {
+        setEditOrderId(incomingEditOrderId);
+        sessionStorage.setItem(
+          SC_EDIT_CONTEXT_KEY,
+          JSON.stringify({ editOrderId: incomingEditOrderId, editOrderNumber: incomingEditOrderNumber })
+        );
+      }
       if (incomingEditOrderNumber) setEditOrderNumber(incomingEditOrderNumber);
+      if (typeof prefill.orderType === 'string') setEditOrderType(prefill.orderType);
 
       if (typeof prefill.userName === 'string') setUserName(prefill.userName);
       if (typeof prefill.userPhone === 'string') setUserPhone(prefill.userPhone);
@@ -594,6 +611,10 @@ export default function SocialCommercePage() {
       if (typeof prefill.internationalPostalCode === 'string') setInternationalPostalCode(prefill.internationalPostalCode);
       if (typeof prefill.deliveryAddress === 'string') setDeliveryAddress(prefill.deliveryAddress);
       if (typeof prefill.shippingAmount === 'number') setTransportCost(String(prefill.shippingAmount));
+      if (typeof prefill.paidAmount === 'number') setPaidAmount(prefill.paidAmount);
+      if (typeof prefill.totalAmount === 'number') setTotalAmountState(prefill.totalAmount);
+      if (typeof prefill.outstandingAmount === 'number') setOutstandingAmountState(prefill.outstandingAmount);
+      if (typeof prefill.discountAmount === 'number') setOrderDiscountAmountState(prefill.discountAmount);
 
       if (typeof prefill.storeId === 'string' && prefill.storeId) {
         setStoreAssignmentType('specific');
@@ -854,196 +875,167 @@ export default function SocialCommercePage() {
   const totalDiscount = cart.reduce((sum, item) => sum + (item.discount_amount || 0), 0);
 
   const handleConfirmOrder = async () => {
-    if (!userName || !userPhone) {
+    let cleanPhone = userPhone ? userPhone.replace(/\D/g, '') : '';
+    if (cleanPhone.startsWith('880')) {
+      cleanPhone = '0' + cleanPhone.slice(3);
+    }
+
+    if (!userName || !cleanPhone) {
       fireToast('Please fill in customer name and phone number', 'error');
       return;
     }
+
+    if (cleanPhone.length !== 11) {
+      fireToast('Mobile number must be exactly 11 digits.', 'error');
+      return;
+    }
+
     if (cart.length === 0) {
       fireToast('Please add products to cart', 'error');
       return;
     }
 
-    // ✅ Validate delivery address
     if (isInternational) {
       if (!country || !internationalCity || (!deliveryAddress && !streetAddress)) {
         fireToast('Please fill in international address', 'error');
         return;
       }
-    } else {
-      if (!streetAddress) {
-        fireToast('Please enter full delivery address', 'error');
-        return;
-      }
+    } else if (!streetAddress) {
+      fireToast('Please enter full delivery address', 'error');
+      return;
     }
 
-    // Store assignment validation
     if (storeAssignmentType === 'specific' && !selectedStoreId) {
       fireToast('Please select a store or choose auto-assign', 'error');
       return;
     }
 
-    // Payment validation. During edit mode, keep existing payments intact and only update the order/cart/details.
-    if (!editOrderId && paymentOption !== 'none') {
-      if (!selectedPaymentMethod) {
-        fireToast('Please select a payment method', 'error');
-        return;
-      }
-      const method = paymentMethods.find(m => String(m.id) === selectedPaymentMethod);
-      if (method?.requires_reference && !transactionReference.trim()) {
-        fireToast(`Please enter transaction reference for ${method.name}`, 'error');
-        return;
-      }
-    }
-
-    if (!editOrderId && paymentOption === 'partial') {
-      const adv = parseFloat(advanceAmount) || 0;
-      if (adv <= 0 || adv >= subtotal - totalDiscount + (parseFloat(transportCost) || 0)) {
-        fireToast('Please enter a valid advance amount', 'error');
-        return;
-      }
-      if (!codPaymentMethod) {
-        fireToast('Please select COD payment method', 'error');
-        return;
-      }
-    }
-
-    if (!editOrderId && paymentOption === 'none' && !codPaymentMethod) {
-      fireToast('Please select COD payment method for full amount', 'error');
-      return;
-    }
-
     try {
       setIsProcessingOrder(true);
-      console.log(editOrderId ? '✏️ UPDATING ORDER FROM SOCIAL COMMERCE FLOW' : '📦 CREATING SOCIAL COMMERCE ORDER');
+      console.log(editOrderId ? '✏️ PREPARING EDIT ORDER FOR AMOUNT DETAILS' : '📦 PREPARING NEW SOCIAL COMMERCE ORDER');
 
-      const total = subtotal - totalDiscount + (parseFloat(transportCost) || 0);
+      let effectiveEditOrderId = editOrderId;
+      let effectiveEditOrderNumber = editOrderNumber;
+      if (!effectiveEditOrderId && typeof window !== 'undefined') {
+        try {
+          const ctx = JSON.parse(sessionStorage.getItem(SC_EDIT_CONTEXT_KEY) || '{}');
+          effectiveEditOrderId = Number(ctx.editOrderId || 0) || null;
+          effectiveEditOrderNumber = effectiveEditOrderNumber || (typeof ctx.editOrderNumber === 'string' ? ctx.editOrderNumber : null);
+        } catch {
+          // ignore bad session data
+        }
+      }
+
+      const selectedStore = storeAssignmentType === 'specific' ? selectedStoreId : '';
+      const shippingAmount = parseFloat(transportCost) || 0;
+
+      const formattedCustomerAddress = isInternational
+        ? `${deliveryAddress || streetAddress}, ${internationalCity}${state ? ', ' + state : ''}, ${country}${internationalPostalCode ? ' - ' + internationalPostalCode : ''}`
+        : `${streetAddress}${postalCode ? ' - ' + postalCode : ''}`;
 
       const shipping_address = isInternational
         ? {
-          name: userName,
-          phone: userPhone,
-          street: deliveryAddress || streetAddress,
-          city: internationalCity,
-          state: state || undefined,
-          country,
-          postal_code: internationalPostalCode || undefined,
-        }
+            name: userName,
+            phone: cleanPhone,
+            address_line1: deliveryAddress || streetAddress,
+            street: deliveryAddress || streetAddress,
+            city: internationalCity,
+            state: state || undefined,
+            country: country || 'Bangladesh',
+            postal_code: internationalPostalCode || undefined,
+          }
         : {
-          name: userName,
-          phone: userPhone,
-          street: streetAddress,
-          postal_code: postalCode || undefined,
-        };
+            name: userName,
+            phone: cleanPhone,
+            address_line1: streetAddress,
+            street: streetAddress,
+            city: 'Dhaka',
+            country: 'Bangladesh',
+            postal_code: postalCode || undefined,
+          };
 
-      const orderData = {
-        order_type: 'social_commerce',
-        ...(editOrderId ? { editOrderId } : {}),
-        ...(editOrderNumber ? { editOrderNumber } : {}),
+      const deliveryAddressForUi = isInternational
+        ? {
+            country,
+            state: state || '',
+            city: internationalCity,
+            postalCode: internationalPostalCode || '',
+            address: deliveryAddress || streetAddress,
+          }
+        : {
+            auto_pathao_location: true,
+            city: 'Dhaka',
+            zone: '',
+            area: '',
+            postalCode: postalCode || '',
+            address: streetAddress,
+          };
+
+      const pendingOrder = {
+        order_type: effectiveEditOrderId ? (editOrderType || 'social_commerce') : 'social_commerce',
+        ...(effectiveEditOrderId ? { editOrderId: effectiveEditOrderId } : {}),
+        ...(effectiveEditOrderNumber ? { editOrderNumber: effectiveEditOrderNumber } : {}),
+        ...(selectedStore ? { store_id: parseInt(selectedStore, 10) } : {}),
         customer: {
           name: userName,
           email: userEmail || undefined,
-          phone: userPhone,
+          phone: cleanPhone,
+          address: formattedCustomerAddress,
         },
         shipping_address,
-        store_id: storeAssignmentType === 'specific' ? parseInt(selectedStoreId) : null,
-        items: cart.map(item => ({
-          ...(typeof item.id === 'number' ? { id: item.id } : {}),
-          product_id: item.product_id,
-          batch_id: item.batch_id ?? null,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          discount_amount: item.discount_amount,
-        })),
-        shipping_amount: parseFloat(transportCost) || 0,
-        notes: orderNotes || `Social Commerce. ${socialId ? `ID: ${socialId}. ` : ''}${isInternational ? 'International' : 'Domestic'} delivery. ${paymentOption === 'full' ? 'Full payment' : paymentOption === 'partial' ? 'Partial (Advance+COD)' : 'Full COD'}`,
+        delivery_address: shipping_address,
+        items: cart.map((item) => {
+          // Existing order item ids are small database ids. New cart rows use Date.now(),
+          // so do not send those as existing ids during edit mode.
+          const rawItemId = Number(item.id) || 0;
+          const numericExistingId = rawItemId > 0 && rawItemId < 1000000000 ? rawItemId : null;
+          return {
+            ...(numericExistingId ? { id: numericExistingId } : {}),
+            product_id: item.product_id,
+            ...(item.batch_id ? { batch_id: item.batch_id } : {}),
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            discount_amount: item.discount_amount || 0,
+            amount: item.amount,
+            productName: item.productName,
+            sku: item.sku || '',
+          };
+        }),
+        services: [],
+        shipping_amount: shippingAmount,
+        discount_amount: orderDiscountAmountState || 0,
+        notes: orderNotes || `Social Commerce. ${socialId ? `ID: ${socialId}. ` : ''}${isInternational ? 'International' : 'Domestic'} delivery.`,
+        salesBy,
+        date,
+        isInternational,
+        subtotal,
+        deliveryAddress: deliveryAddressForUi,
+        defectiveItems: cart
+          .filter((item) => item.isDefective)
+          .map((item) => ({
+            defectId: item.defectId,
+            price: item.unit_price,
+            productName: item.productName,
+          })),
+        paid_amount: paidAmount,
+        outstanding_amount: outstandingAmountState,
+        total_amount: totalAmountState,
+        original_discount_amount: orderDiscountAmountState || 0,
+        original_shipping_amount: shippingAmount,
       };
 
-      const response = await axios.post('/orders', orderData);
-
-      if (!response.data.success) {
-        throw new Error(response.data.message || 'Failed to create order');
+      sessionStorage.setItem('pendingOrder', JSON.stringify(pendingOrder));
+      if (effectiveEditOrderId) {
+        sessionStorage.setItem(
+          SC_EDIT_CONTEXT_KEY,
+          JSON.stringify({ editOrderId: effectiveEditOrderId, editOrderNumber: effectiveEditOrderNumber })
+        );
       }
 
-      const createdOrder = response.data.data;
-      console.log('✅ Order created:', createdOrder.order_number);
-
-      // Handle defective items
-      const defectiveItems = cart.filter(item => item.isDefective);
-      for (const defectItem of defectiveItems) {
-        try {
-          await axios.post(`/defects/${defectItem.defectId}/mark-sold`, {
-            order_id: createdOrder.id,
-            selling_price: defectItem.unit_price,
-            sale_notes: `Sold via Social Commerce - Order #${createdOrder.order_number}`,
-            sold_at: new Date().toISOString()
-          });
-        } catch (err) {
-          console.error(`Failed to mark defective ${defectItem.defectId} as sold`, err);
-        }
-      }
-
-      // Handle Payment only for new orders. Editing preserves existing payments and recalculates due amount.
-      if (!editOrderId && paymentOption !== 'none') {
-        const method = paymentMethods.find(m => String(m.id) === selectedPaymentMethod);
-        const amountToPay = paymentOption === 'full' ? total : (parseFloat(advanceAmount) || 0);
-
-        const paymentData: any = {
-          payment_method_id: parseInt(selectedPaymentMethod),
-          amount: amountToPay,
-          payment_type: paymentOption === 'full' ? 'full' : 'partial',
-          auto_complete: true,
-          notes: paymentNotes || `Social Commerce ${paymentOption} payment via ${method?.name}`,
-          payment_data: {
-            mobile_number: userPhone,
-            provider: method?.name,
-            transaction_id: transactionReference,
-            payment_stage: paymentOption === 'full' ? 'full' : 'advance'
-          }
-        };
-
-        if (method?.requires_reference) {
-          paymentData.transaction_reference = transactionReference;
-          paymentData.external_reference = transactionReference;
-        }
-
-        await axios.post(`/orders/${createdOrder.id}/payments/simple`, paymentData);
-      }
-
-      fireToast(`Order ${createdOrder.order_number} ${editOrderId ? 'updated' : 'placed'} successfully!`, 'success');
-
-      // Cleanup and NOT redirecting
-      setCart([]);
-      setUserName('');
-      setUserPhone('');
-      setUserEmail('');
-      setSocialId('');
-      setOrderNotes('');
-      setEditOrderId(null);
-      setEditOrderNumber(null);
-      setStreetAddress('');
-      setPostalCode('');
-      setCountry('');
-      setState('');
-      setInternationalCity('');
-      setInternationalPostalCode('');
-      setDeliveryAddress('');
-      setIsInternational(false);
-      setTransportCost('0');
-      setPaymentOption('full');
-      setAdvanceAmount('');
-      setTransactionReference('');
-      setPaymentNotes('');
-      setExistingCustomer(null);
-      setLastOrderInfo(null);
-      setSearchQuery('');
-      setSearchResults([]);
-      setSelectedProduct(null);
-      setExpandedGroupId(null);
-      setSelectedProductInventory(null);
-
+      window.location.href = '/social-commerce/amount-details';
     } catch (error: any) {
-      console.error('❌ Error:', error);
-      fireToast(error.response?.data?.message || error.message || 'Failed to process order', 'error');
+      console.error('❌ Error preparing order:', error);
+      fireToast(error?.message || 'Failed to prepare order', 'error');
     } finally {
       setIsProcessingOrder(false);
     }
@@ -1180,73 +1172,8 @@ export default function SocialCommercePage() {
           )}
         </div>
 
-        {/* Payment Logic */}
-        <div className="space-y-2 pt-2">
-          <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Payment Flow</label>
-          <div className="flex gap-2">
-            {[
-              { id: 'full', label: 'Full', icon: <DollarSign size={14} /> },
-              { id: 'partial', label: 'Partial', icon: <Wallet size={14} /> },
-              { id: 'none', label: 'None', icon: <X size={14} /> }
-            ].map((opt) => (
-              <button
-                key={opt.id}
-                onClick={() => {
-                  setPaymentOption(opt.id as any);
-                  if (opt.id === 'none') setAdvanceAmount('');
-                }}
-                className={`flex-1 px-2 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all ${paymentOption === opt.id
-                  ? 'bg-blue-500 text-white border-blue-500 shadow-md'
-                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-              >
-                {opt.icon} {opt.label}
-              </button>
-            ))}
-          </div>
-
-          {(paymentOption === 'full' || paymentOption === 'partial') && (
-            <div className="space-y-2 pt-1">
-              {paymentOption === 'partial' && (
-                <input
-                  type="number"
-                  placeholder="Advance Amount"
-                  value={advanceAmount}
-                  onChange={(e) => setAdvanceAmount(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              )}
-              <select
-                value={selectedPaymentMethod}
-                onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="">Select Payment Method</option>
-                {paymentMethods.map(m => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
-              <input
-                type="text"
-                placeholder="Transaction Reference"
-                value={transactionReference}
-                onChange={(e) => setTransactionReference(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-          )}
-
-          {(paymentOption === 'partial' || paymentOption === 'none') && (
-            <select
-              value={codPaymentMethod}
-              onChange={(e) => setCodPaymentMethod(e.target.value)}
-              className="w-full px-3 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="">Select COD Method</option>
-              {paymentMethods.filter(m => m.type === 'cash').map(m => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          )}
+        <div className="rounded-lg border border-blue-100 dark:border-blue-900 bg-blue-50/70 dark:bg-blue-950/30 p-3 text-xs text-blue-700 dark:text-blue-300">
+          Payment, COD, advance, EMI/installment, final discount, and final due will be confirmed on the Amount Details page.
         </div>
 
         <button
@@ -1254,7 +1181,7 @@ export default function SocialCommercePage() {
           disabled={cart.length === 0 || isProcessingOrder}
           className="w-full mt-2 bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          {isProcessingOrder ? (editOrderId ? 'Updating Order...' : 'Creating Order...') : (editOrderId ? 'Update Order' : 'Confirm Order')}
+          {isProcessingOrder ? 'Preparing...' : 'Continue to Amount Details'}
         </button>
       </div>
     </div>

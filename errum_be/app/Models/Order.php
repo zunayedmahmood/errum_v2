@@ -683,25 +683,46 @@ class Order extends Model
     public function calculateTotals()
     {
         $taxMode = config('app.tax_mode', 'inclusive');
-        
-        $subtotal = $this->items->sum('total_amount');
-        $taxAmount = $this->items->sum('tax_amount');
-        $discountAmount = $this->items->sum('discount_amount');
 
-        $this->subtotal = $subtotal;
+        // Use gross subtotal (qty × unit price). Order items already keep a net total_amount,
+        // so summing total_amount and subtracting discounts again makes edited orders too low.
+        $grossSubtotal = $this->items->sum(function ($item) {
+            return (float) bcmul((string) $item->quantity, (string) $item->unit_price, 2);
+        });
+
+        $totalItemDiscount = (float) $this->items->sum('discount_amount');
+        $taxAmount = (float) $this->items->sum('tax_amount');
+
+        // Older Errum builds sometimes stored item-level discount total in orders.discount_amount.
+        // Treat that legacy value as non-global to avoid double-discounting during edit sync.
+        $storedOrderDiscount = (float) ($this->discount_amount ?? 0);
+        $globalDiscount = abs($storedOrderDiscount - $totalItemDiscount) < 0.01 ? 0.0 : $storedOrderDiscount;
+
+        $this->subtotal = $grossSubtotal;
         $this->tax_amount = $taxAmount;
-        $this->discount_amount = $discountAmount;
 
         if ($taxMode === 'inclusive') {
-            // Inclusive: Tax is already included in subtotal
-            // Total = subtotal - discount + shipping
-            $this->attributes['total_amount'] = bcadd(bcsub($subtotal, $discountAmount, 2), $this->shipping_amount, 2);
+            $netAmount = bcsub(
+                bcsub((string) $grossSubtotal, (string) $totalItemDiscount, 2),
+                (string) $globalDiscount,
+                2
+            );
+            $this->attributes['total_amount'] = (float) bcadd($netAmount, (string) $this->shipping_amount, 2);
         } else {
-            // Exclusive: Tax is calculated on top of subtotal
-            // Total = subtotal + tax - discount + shipping
-            $totalBeforeShipping = bcadd(bcsub($subtotal, $discountAmount, 2), $taxAmount, 2);
-            $this->attributes['total_amount'] = bcadd($totalBeforeShipping, $this->shipping_amount, 2);
+            $netBeforeTax = bcsub(
+                bcsub((string) $grossSubtotal, (string) $totalItemDiscount, 2),
+                (string) $globalDiscount,
+                2
+            );
+            $this->attributes['total_amount'] = (float) bcadd(
+                bcadd($netBeforeTax, (string) $taxAmount, 2),
+                (string) $this->shipping_amount,
+                2
+            );
         }
+
+        $paidAmount = (float) ($this->paid_amount ?? 0);
+        $this->outstanding_amount = max(0, (float) $this->attributes['total_amount'] - $paidAmount);
 
         $this->save();
         $this->updatePaymentStatus();
