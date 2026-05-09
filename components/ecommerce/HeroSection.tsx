@@ -32,6 +32,14 @@ export default function HeroSection({
   fontSize?: number;
   transitionType?: 'fade' | 'slide';
 }) {
+  const hexToRgba = (hex: string, alpha: number) => {
+    if (!hex || !hex.startsWith('#')) return hex;
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -220,16 +228,16 @@ export default function HeroSection({
           >
             <div style={{
               position: 'relative',
-              background: 'rgba(255,255,255,0.12)',
-              backdropFilter: 'blur(24px)',
+              background: isFocused ? '#ffffff' : 'rgba(255,255,255,0.12)',
+              backdropFilter: isFocused ? 'none' : 'blur(24px)',
               borderRadius: '12px',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              boxShadow: isFocused ? '0 12px 48px rgba(0,0,0,0.3)' : '0 8px 32px rgba(0,0,0,0.2)',
               display: 'flex',
               alignItems: 'center',
               overflow: 'hidden',
               padding: '1px',
-              border: `1px solid ${isFocused ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)'}`,
-              transition: 'all 0.3s ease'
+              border: `1px solid ${isFocused ? '#ffffff' : 'rgba(255,255,255,0.4)'}`,
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
             }}>
               <button
                 type="submit"
@@ -244,8 +252,9 @@ export default function HeroSection({
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  color: '#ffffff',
-                  zIndex: 20
+                  color: isFocused ? '#111111' : '#ffffff',
+                  zIndex: 20,
+                  transition: 'color 0.3s ease'
                 }}
                 aria-label="Search"
               >
@@ -258,7 +267,7 @@ export default function HeroSection({
                 onBlur={() => setIsFocused(false)}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search premium lifestyle essentials..."
-                className="w-full bg-transparent py-2.5 text-sm text-white outline-none border-none placeholder:text-neutral-300 font-poppins"
+                className={`w-full bg-transparent py-2.5 text-sm outline-none border-none font-poppins transition-colors duration-300 ${isFocused ? 'text-neutral-900 placeholder:text-neutral-500' : 'text-white placeholder:text-neutral-300'}`}
                 style={{
                   paddingLeft: '52px',
                   paddingRight: query ? '44px' : '16px',
@@ -272,11 +281,12 @@ export default function HeroSection({
                     position: 'absolute',
                     right: '8px',
                     padding: '6px',
-                    color: '#ffffff',
+                    color: isFocused ? '#111111' : '#ffffff',
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    zIndex: 20
+                    zIndex: 20,
+                    transition: 'color 0.3s ease'
                   }}
                 >
                   <X style={{ width: '16px', height: '16px' }} />
@@ -366,9 +376,9 @@ export default function HeroSection({
           width: '100%',
           marginTop: 0, // Remove negative margin to prevent overlap with buttons
           paddingTop: !isMobile && textPosition.includes('top') ? '60px' : '0',
-          paddingBottom: !isMobile ? (textPosition.includes('bottom') ? '45px' : '45px') : '0',
-          paddingLeft: !isMobile ? '65px' : '20px',
-          paddingRight: !isMobile ? '65px' : '20px',
+          paddingBottom: !isMobile ? '90px' : '0',
+          paddingLeft: !isMobile ? '32.5px' : '20px',
+          paddingRight: !isMobile ? '32.5px' : '20px',
           zIndex: 10,
           pointerEvents: 'none'
         }}>
@@ -378,7 +388,7 @@ export default function HeroSection({
                 fontFamily: "var(--font-poppins), sans-serif",
                 fontSize: `clamp(48px, 10vw, ${fontSize}px)`,
                 fontWeight: 500,
-                color: textColor || '#ffffff',
+                color: hexToRgba(textColor || '#ffffff', 0.9),
                 lineHeight: 1.0,
                 letterSpacing: '-0.04em',
                 textShadow: '0 8px 48px rgba(0,0,0,0.5)',
