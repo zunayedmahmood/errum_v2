@@ -482,6 +482,14 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       return;
     }
 
+    // 🚫 Block partial payments/refunds (Frontend enforcement)
+    if (due > 0.01) {
+      const actionType = totals.difference > 0 ? 'payment' : 'refund';
+      const requiredAmount = Math.abs(totals.difference).toFixed(2);
+      alert(`Full ${actionType} required. Please ${actionType === 'payment' ? 'collect' : 'process'} exactly ৳${requiredAmount} to complete this exchange.`);
+      return;
+    }
+
     // ✅ NEW: Check for inventory warnings
     const hasWarnings = Object.keys(inventoryWarnings).length > 0;
     if (hasWarnings) {
@@ -1151,12 +1159,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                           ৳{due.toFixed(2)}
                         </span>
                       </div>
-                      {due > 0 && (
-                        <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                          Can {totals.difference > 0 ? 'pay' : 'refund'} later
+                      {due > 0.01 && (
+                        <p className="text-xs font-bold text-red-600 dark:text-red-400 mt-1 animate-pulse">
+                          ⚠️ Full {totals.difference > 0 ? 'payment' : 'refund'} required to proceed
                         </p>
                       )}
-                      {due === 0 && totalPaymentRefund > 0 && (
+                      {due <= 0.01 && totalPaymentRefund > 0 && (
                         <p className="text-xs text-green-600 dark:text-green-400 mt-1">
                           ✓ Fully {totals.difference > 0 ? 'paid' : 'refunded'}
                         </p>
@@ -1179,7 +1187,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                 <button
                   type="button"
                   onClick={handleProcessExchange}
-                  disabled={isProcessing || selectedProducts.length === 0 || replacementProducts.length === 0}
+                  disabled={isProcessing || selectedProducts.length === 0 || replacementProducts.length === 0 || due > 0.01}
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
                 >
                   {isProcessing ? (

@@ -351,17 +351,19 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       return;
     }
 
+    // 🚫 Block partial refunds (Frontend enforcement)
+    if (remainingRefund > 0.01) {
+      alert(`Full refund required. Please process exactly ৳${totals.refundToCustomer.toFixed(2)} to complete this return.`);
+      return;
+    }
+
     let confirmMessage = `Process return?\n\n`;
     confirmMessage += `Return Reason: ${returnReasonOptions.find(r => r.value === returnReason)?.label}\n`;
     confirmMessage += `Return Type: ${returnTypeOptions.find(t => t.value === returnType)?.label}\n`;
     confirmMessage += `Received At: ${stores.find(s => s.id === receivedAtStoreId)?.name || 'N/A'}\n\n`;
 
     if (totals.refundToCustomer > 0) {
-      if (remainingRefund > 0) {
-        confirmMessage += `Refund Required: ৳${totals.refundToCustomer.toLocaleString()}\nRefunded: ৳${totalRefundProcessed.toLocaleString()}\nRemaining: ৳${remainingRefund.toLocaleString()}\n\nCustomer can collect remaining later.`;
-      } else {
-        confirmMessage += `Refund ৳${totals.refundToCustomer.toLocaleString()} to customer (Fully processed)`;
-      }
+      confirmMessage += `Refund ৳${totals.refundToCustomer.toLocaleString()} to customer (Fully processed)`;
     } else {
       confirmMessage += `Reduce order total by ৳${totals.returnAmount.toLocaleString()}`;
     }
@@ -821,8 +823,8 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                         <span className="font-semibold text-gray-900 dark:text-white">Remaining</span>
                         <span className={`font-bold ${remainingRefund > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>৳{remainingRefund.toFixed(2)}</span>
                       </div>
-                      {remainingRefund > 0 && <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">Can refund later</p>}
-                      {remainingRefund <= 0 && totalRefundProcessed > 0 && <p className="text-xs text-green-600 dark:text-green-400 mt-1">✓ Full refund processed</p>}
+                      {remainingRefund > 0.01 && <p className="text-xs font-bold text-red-600 dark:text-red-400 mt-1 animate-pulse">⚠️ Full refund required to proceed</p>}
+                      {remainingRefund <= 0.01 && totalRefundProcessed > 0 && <p className="text-xs text-green-600 dark:text-green-400 mt-1">✓ Full refund processed</p>}
                     </div>
                   </div>
                 </div>
@@ -836,7 +838,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                 <button
                   type="button"
                   onClick={handleProcessReturn}
-                  disabled={isProcessing || selectedProducts.length === 0}
+                  disabled={isProcessing || selectedProducts.length === 0 || remainingRefund > 0.01}
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
                 >
                   <RotateCcw className="w-5 h-5" />

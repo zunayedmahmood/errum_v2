@@ -800,12 +800,8 @@ export default function POSPage() {
           }
           : {}),
 
-        // ✅ Add notes if any
-        ...(address || change > 0
-          ? {
-            notes: `${address ? `Address: ${address}` : ''}${address && change > 0 ? ', ' : ''}${change > 0 ? `Change Given: ৳${change.toFixed(2)}` : ''}`.trim(),
-          }
-          : {}),
+        // ✅ Add notes (customer address only, no auto-generated change note)
+        notes: address || "",
       };
 
       console.log('═══════════════════════════════════');
@@ -906,19 +902,21 @@ export default function POSPage() {
           let adjustedNagadPaid = nagadPaid;
 
           if (change > 0) {
-            // Customer overpaid - reduce cash payment by the change amount
-            adjustedCashPaid = Math.max(0, cashPaid - change);
             console.log(
-              `⚠️ Overpayment detected. Reducing cash from ৳${cashPaid} to ৳${adjustedCashPaid}`
+              `⚠️ Overpayment detected: ৳${change.toFixed(2)}. This amount is not charged to the ledger but shown on receipt.`
             );
+            // We do NOT reduce adjustedCashPaid here for the receipt; 
+            // the receipt should show what the customer actually handed over.
+            // But we DO reduce it for the payment service below to avoid over-charging the ledger.
+            adjustedCashPaid = Math.max(0, cashPaid - change);
           }
 
-          // Save exact split for receipt printing
+          // Save exact split for receipt printing (actual amounts handed by customer)
           receiptPaymentBreakdown = {
-            cash: adjustedCashPaid,
-            card: adjustedCardPaid,
-            bkash: adjustedBkashPaid,
-            nagad: adjustedNagadPaid,
+            cash: cashPaid,
+            card: cardPaid,
+            bkash: bkashPaid,
+            nagad: nagadPaid,
           };
 
           if (adjustedCashPaid > 0) {
@@ -1023,6 +1021,7 @@ export default function POSPage() {
 
             const printableOrder = {
               ...(fullOrder as any),
+              paid_amount: totalPaid, // Actual total handed by customer
               payment_breakdown: receiptPaymentBreakdown,
               change_amount: change,
               cashPaid: receiptPaymentBreakdown.cash,
