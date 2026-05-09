@@ -935,41 +935,41 @@ export default function SocialCommercePage() {
 
       const shipping_address = isInternational
         ? {
-            name: userName,
-            phone: cleanPhone,
-            address_line1: deliveryAddress || streetAddress,
-            street: deliveryAddress || streetAddress,
-            city: internationalCity,
-            state: state || undefined,
-            country: country || 'Bangladesh',
-            postal_code: internationalPostalCode || undefined,
-          }
+          name: userName,
+          phone: cleanPhone,
+          address_line1: deliveryAddress || streetAddress,
+          street: deliveryAddress || streetAddress,
+          city: internationalCity,
+          state: state || undefined,
+          country: country || 'Bangladesh',
+          postal_code: internationalPostalCode || undefined,
+        }
         : {
-            name: userName,
-            phone: cleanPhone,
-            address_line1: streetAddress,
-            street: streetAddress,
-            city: 'Dhaka',
-            country: 'Bangladesh',
-            postal_code: postalCode || undefined,
-          };
+          name: userName,
+          phone: cleanPhone,
+          address_line1: streetAddress,
+          street: streetAddress,
+          city: 'Dhaka',
+          country: 'Bangladesh',
+          postal_code: postalCode || undefined,
+        };
 
       const deliveryAddressForUi = isInternational
         ? {
-            country,
-            state: state || '',
-            city: internationalCity,
-            postalCode: internationalPostalCode || '',
-            address: deliveryAddress || streetAddress,
-          }
+          country,
+          state: state || '',
+          city: internationalCity,
+          postalCode: internationalPostalCode || '',
+          address: deliveryAddress || streetAddress,
+        }
         : {
-            auto_pathao_location: true,
-            city: 'Dhaka',
-            zone: '',
-            area: '',
-            postalCode: postalCode || '',
-            address: streetAddress,
-          };
+          auto_pathao_location: true,
+          city: 'Dhaka',
+          zone: '',
+          area: '',
+          postalCode: postalCode || '',
+          address: streetAddress,
+        };
 
       const pendingOrder = {
         order_type: effectiveEditOrderId ? (editOrderType || 'social_commerce') : 'social_commerce',
@@ -1145,7 +1145,7 @@ export default function SocialCommercePage() {
                 ? 'bg-teal-500 text-white border-teal-500 shadow-md'
                 : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
             >
-              <Truck size={14} /> Auto
+              <Truck size={14} /> Assign Later
             </button>
             <button
               onClick={() => setStoreAssignmentType('specific')}

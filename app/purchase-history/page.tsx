@@ -166,48 +166,35 @@ export default function PurchaseHistoryPage() {
 
   const fetchStores = async () => {
     try {
-      // If store-scoped/restricted, only fetch user's assigned store details for the display field
+      // If store-scoped/restricted, only fetch user's assigned store details
       if (!canSelectStore && (scopedStoreId || user?.store_id)) {
-        try {
-          const targetId = scopedStoreId || user?.store_id;
-          const res: any = await storeService.getStore(Number(targetId));
-          const storeObj = res?.data ?? res;
-          if (storeObj) {
-            setStores([
-              {
-                id: storeObj.id,
-                name: storeObj.name,
-                location: storeObj.address || storeObj.location || '',
-              },
-            ]);
-            return;
-          }
-        } catch {
-          // fallback to empty
+        const targetId = scopedStoreId || user?.store_id;
+        const res: any = await storeService.getStore(Number(targetId));
+        const storeObj = res?.success && res.data ? res.data : (res?.data ?? res);
+        
+        if (storeObj) {
+          setStores([
+            {
+              id: storeObj.id,
+              name: storeObj.name,
+              location: storeObj.address || storeObj.location || '',
+            },
+          ]);
+          return;
         }
       }
 
       // If user has multi-store access (admin/moderator), fetch all stores for dropdown
       if (canSelectStore) {
-        const response = await axiosInstance.get('/stores');
-        const result = response.data;
-        let storesData: Store[] = result?.success && Array.isArray(result.data) ? result.data : (Array.isArray(result) ? result : []);
-        setStores(storesData);
+        const storesData = await storeService.getAllStores();
+        setStores(storesData.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          location: s.address || s.location || '',
+        })));
       } else {
         setStores([]);
       }
-
-      const response = await axiosInstance.get('/stores');
-      const result = response.data;
-
-      let storesData: Store[] = [];
-      if (result?.success && Array.isArray(result.data)) {
-        storesData = result.data;
-      } else if (Array.isArray(result)) {
-        storesData = result;
-      }
-
-      setStores(storesData);
     } catch (error) {
       console.error('Failed to fetch stores:', error);
       setStores([]);
@@ -692,58 +679,73 @@ export default function PurchaseHistoryPage() {
 
               <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search by order#, customer, phone..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase px-1">Search</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Order#, customer, phone..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      />
+                    </div>
                   </div>
 
                   {!canSelectStore && scopedStoreId ? (
-                    <div className="relative">
-                      <input
-                        type="text"
-                        readOnly
-                        value={
-                          stores.find((s) => String(s.id) === String(selectedStore))
-                            ? `${stores.find((s) => String(s.id) === String(selectedStore))?.name ?? ''} - ${stores.find((s) => String(s.id) === String(selectedStore))?.location ?? ''}`
-                            : 'Loading Store...'
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-white text-sm cursor-not-allowed"
-                      />
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase px-1">Store</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          readOnly
+                          value={
+                            stores.find((s) => String(s.id) === String(selectedStore))
+                              ? `${stores.find((s) => String(s.id) === String(selectedStore))?.name ?? ''} - ${stores.find((s) => String(s.id) === String(selectedStore))?.location ?? ''}`
+                              : 'Loading Store...'
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-white text-sm cursor-not-allowed"
+                        />
+                      </div>
                     </div>
                   ) : (
-                    <select
-                      value={selectedStore}
-                      onChange={(e) => setSelectedStore(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    >
-                      <option value="">All Stores</option>
-                      {stores.map((store) => (
-                        <option key={store.id} value={store.id}>
-                          {store.name} - {store.location}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase px-1">Store</label>
+                      <select
+                        value={selectedStore}
+                        onChange={(e) => setSelectedStore(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      >
+                        <option value="">All Stores</option>
+                        {stores.map((store) => (
+                          <option key={store.id} value={store.id}>
+                            {store.name} - {store.location}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   )}
 
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase px-1">From</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
 
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase px-1">To</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
                 </div>
               </div>
 

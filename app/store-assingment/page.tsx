@@ -166,9 +166,16 @@ export default function StoreAssignmentPage() {
         const requiredQty = toNumber(d?.required_quantity);
         const productId = toNumber(d?.product_id);
         const physicalQty = toNumber(d?.physical_quantity ?? d?.quantity ?? d?.stock ?? 0);
-        const assignedQty = toNumber(d?.assigned_quantity ?? 0);
-        const availableQty = toNumber(d?.available_quantity ?? (physicalQty - assignedQty));
         const globalAvailable = toNumber(d?.global_available ?? 0);
+        const assignedQty = toNumber(d?.assigned_quantity ?? 0);
+
+        // Reserved is the difference if globalAvailable is provided, otherwise use assignedQty
+        const reservedQty = (assignedQty === 0 && globalAvailable > 0 && globalAvailable < physicalQty)
+          ? (physicalQty - globalAvailable)
+          : assignedQty;
+
+        // The "Available" count for fulfillment should be the globalAvailable (the for-sale count)
+        const effectiveAvailable = globalAvailable > 0 ? globalAvailable : (physicalQty - reservedQty);
 
         return {
           ...d,
@@ -177,10 +184,9 @@ export default function StoreAssignmentPage() {
           product_sku: d?.product_sku ?? d?.sku ?? '',
           required_quantity: requiredQty,
           physical_quantity: physicalQty,
-          assigned_quantity: assignedQty,
-          available_quantity: availableQty,
-          global_available: globalAvailable,
-          can_fulfill: availableQty >= requiredQty,
+          reserved_quantity: reservedQty,
+          available_quantity: effectiveAvailable,
+          can_fulfill: effectiveAvailable >= requiredQty,
         };
       });
 
@@ -1009,11 +1015,8 @@ export default function StoreAssignmentPage() {
                                   </span>
                                   <div className="flex flex-wrap gap-2 text-[10px]">
                                     <span className="bg-white/50 dark:bg-black/20 px-1.5 py-0.5 rounded border border-gray-100 dark:border-gray-700">Physical: {detail.physical_quantity}</span>
-                                    <span className="bg-white/50 dark:bg-black/20 px-1.5 py-0.5 rounded border border-gray-100 dark:border-gray-700 text-amber-600 dark:text-amber-400">Promise: {detail.assigned_quantity}</span>
+                                    <span className="bg-white/50 dark:bg-black/20 px-1.5 py-0.5 rounded border border-gray-100 dark:border-gray-700 text-amber-600 dark:text-amber-400">Reserved: {detail.reserved_quantity}</span>
                                     <span className="bg-blue-100/50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 font-bold text-blue-700 dark:text-blue-300">Available: {detail.available_quantity}</span>
-                                    {detail.global_available !== undefined && (
-                                      <span className="bg-teal-100/50 dark:bg-teal-900/30 px-1.5 py-0.5 rounded border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300">Global Avail: {detail.global_available}</span>
-                                    )}
                                   </div>
                                 </div>
                                 <span
