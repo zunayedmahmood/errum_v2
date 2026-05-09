@@ -172,7 +172,6 @@ export default function CreateCollectionPage() {
                           className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                         />
                       </div>
-                      </div>
                       
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -277,17 +276,17 @@ export default function CreateCollectionPage() {
                               Square ratio recommended (Max 2MB)
                             </p>
                           </div>
-                          <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'thumbnail')} />
-                        </label>
-                      )}
+                      <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'thumbnail')} />
+                    </label>
+                  )}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </main>
+          </div>
         </div>
-      </div>
 
       {toast && (
         <Toast
