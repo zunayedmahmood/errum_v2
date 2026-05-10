@@ -123,6 +123,17 @@ async function ensureJsBarcode() {
   });
 }
 
+async function ensurePoppinsLoaded(px = 24) {
+  if (typeof document === "undefined" || !(document as any).fonts?.load) return;
+
+  try {
+    await (document as any).fonts.load(`700 ${px}px Poppins`);
+    await (document as any).fonts.ready;
+  } catch {
+    // Font loading is best-effort; canvas will fall back if unavailable.
+  }
+}
+
 function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
   const ellipsis = "…";
   if (ctx.measureText(text).width <= maxWidth) return text;
@@ -209,6 +220,8 @@ async function renderLabelBase64(opts: {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported");
 
+  await ensurePoppinsLoaded(Math.round(hPx * 0.1));
+
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, wPx, hPx);
@@ -223,7 +236,7 @@ async function renderLabelBase64(opts: {
   ctx.fillStyle = "#000";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.font = `900 ${Math.round(hPx * 0.11)}px Arial`;
+  ctx.font = `900 ${Math.round(hPx * 0.11)}px Poppins, Arial, sans-serif`;
   ctx.fillText("ERRUM BD", centerX, topPad);
 
   // Product name — up to 3 lines, shrinking font as needed
@@ -234,18 +247,18 @@ async function renderLabelBase64(opts: {
   const fullName = normalizeLabelName(opts.productName || "Product");
 
   let nameFont = Math.round(hPx * 0.095);
-  ctx.font = `700 ${nameFont}px Arial`;
+  ctx.font = `700 ${nameFont}px Poppins, Arial, sans-serif`;
   let nameLines = wrapLines(ctx, fullName, nameMaxW, 3);
 
   if (nameLines.length > 1) {
     nameFont = Math.round(hPx * 0.082);
-    ctx.font = `700 ${nameFont}px Arial`;
+    ctx.font = `700 ${nameFont}px Poppins, Arial, sans-serif`;
     nameLines = wrapLines(ctx, fullName, nameMaxW, 3);
   }
 
   if (nameLines.length > 2) {
     nameFont = Math.round(hPx * 0.070);
-    ctx.font = `700 ${nameFont}px Arial`;
+    ctx.font = `700 ${nameFont}px Poppins, Arial, sans-serif`;
     nameLines = wrapLines(ctx, fullName, nameMaxW, 3);
   }
 
@@ -301,11 +314,11 @@ async function renderLabelBase64(opts: {
   ctx.drawImage(bcCanvas, bcX, bcY, drawW, drawH);
 
   // Price
-  const priceText = `BDT ৳${Number(opts.price || 0).toLocaleString("en-BD")}`;
+  const priceText = `BDT ${Number(opts.price || 0).toLocaleString("en-BD")}`;
   ctx.textBaseline = "bottom";
   const priceFontSize = Math.round(hPx * 0.1);
   // Use a mono-style numeric font stack for clearer digit differentiation (e.g., 6 vs 8)
-  ctx.font = `800 ${priceFontSize}px "Consolas", "Lucida Console", "DejaVu Sans Mono", "Courier New", monospace`;
+  ctx.font = `700 ${priceFontSize}px Poppins, Arial, sans-serif`;
   const priceY = hPx - pad;
   ctx.fillText(fitText(ctx, priceText, wPx - pad * 2), centerX, priceY);
 

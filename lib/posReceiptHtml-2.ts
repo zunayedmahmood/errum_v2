@@ -278,35 +278,9 @@ function resolveStoreDisplay(order: any, r: ReceiptOrder): { brand: string; tagl
   return { brand, tagline, address, phone };
 }
 
-function extractAddressFromNotes(rawNotes: unknown): string {
-  const text = String(rawNotes || '').trim();
-  if (!text) return '';
-
-  const match = text.match(/(?:^|[\n|])\s*Address:\s*(.+?)(?=(?:,\s*Change Given:|[\n|]|$))/i);
-  return match?.[1]?.trim() || '';
-}
-
-function sanitizeReceiptNotes(rawNotes: unknown): string {
-  let text = String(rawNotes || '').trim();
-  if (!text) return '';
-
-  text = text.replace(/(?:^|[\n|])\s*Address:\s*(.+?)(?=(?:,\s*Change Given:|[\n|]|$))/ig, '');
-  text = text.replace(/(?:^|,\s*)Change Given:\s*৳?[0-9,]+(?:\.\d{1,2})?/ig, '');
-  text = text.replace(/^[,\s|]+|[,\s|]+$/g, '').trim();
-
-  return text;
-}
-
 function posReceiptBody(order: any) {
   const r: ReceiptOrder = normalizeOrderForReceipt(order);
   const branch = resolveStoreDisplay(order, r);
-  const addressFromNotes = extractAddressFromNotes(r.notes);
-  const customerAddressLines = Array.isArray(r.customerAddressLines) && r.customerAddressLines.length > 0
-    ? r.customerAddressLines
-    : addressFromNotes
-    ? [addressFromNotes]
-    : [];
-  const sanitizedNotes = sanitizeReceiptNotes(r.notes);
 
   const rows = (r.items || [])
     .map((it) => {
@@ -399,8 +373,8 @@ function posReceiptBody(order: any) {
       <div><span class="lbl">Customer Name:</span> ${escapeHtml(r.customerName || 'Walk-in Customer')}</div>
       <div><span class="lbl">Phone:</span> ${escapeHtml(r.customerPhone || 'WALK-IN')}</div>
       ${r.salesBy ? `<div><span class="lbl">Sales By:</span> ${escapeHtml(r.salesBy)}</div>` : ''}
-      ${customerAddressLines.length > 0
-        ? `<div><span class="lbl">Address:</span> ${escapeHtml(customerAddressLines.join(', '))}</div>`
+      ${Array.isArray(r.customerAddressLines) && r.customerAddressLines.length > 0
+        ? `<div><span class="lbl">Address:</span> ${escapeHtml(r.customerAddressLines.join(', '))}</div>`
         : ''}
     </div>
 
@@ -440,7 +414,7 @@ function posReceiptBody(order: any) {
 
     ${paymentInfoHtml}
 
-    ${sanitizedNotes ? `<div class="note">Note: ${escapeHtml(sanitizedNotes)}</div>` : ''}
+    ${r.notes ? `<div class="note">Note: ${escapeHtml(r.notes)}</div>` : ''}
 
     <div class="policy">
       Items sold cannot be returned but may only be exchanged in their unworn condition with tags and original receipt within 7 days. Discount &amp; Offer items cannot be exchanged.

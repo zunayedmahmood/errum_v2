@@ -110,6 +110,18 @@ export default function DispatchManagementPage() {
     }
   };
 
+  const refreshSelectedDispatch = async (dispatchId?: number) => {
+    const id = dispatchId ?? selectedDispatch?.id;
+    if (!id) return;
+
+    try {
+      const response = await dispatchService.getDispatch(id);
+      setSelectedDispatch(response.data);
+    } catch (error) {
+      console.error('Error refreshing dispatch details:', error);
+    }
+  };
+
   const handleCreateDispatch = async (data: any) => {
     try {
       setLoading(true);
@@ -276,10 +288,14 @@ export default function DispatchManagementPage() {
     }
   };
 
-  const handleBarcodeScanComplete = () => {
-    // Refresh the dispatches to show updated scanning progress
-    fetchDispatches();
-    fetchStatistics();
+  const handleBarcodeScanComplete = async () => {
+    // Refresh table/statistics and also reload the currently open dispatch so
+    // the scan modal item list and counters stay in sync in real time.
+    await Promise.all([
+      fetchDispatches(),
+      fetchStatistics(),
+      refreshSelectedDispatch(),
+    ]);
   };
 
   const handleMarkDeliveredFromScan = async () => {
@@ -412,7 +428,10 @@ export default function DispatchManagementPage() {
       {showBarcodeScanModal && selectedDispatch && (
         <DispatchBarcodeScanModal
           isOpen={showBarcodeScanModal}
-          onClose={() => setShowBarcodeScanModal(false)}
+          onClose={() => {
+            setShowBarcodeScanModal(false);
+            void refreshSelectedDispatch();
+          }}
           dispatch={selectedDispatch}
           mode={barcodeScanMode}
           onComplete={handleBarcodeScanComplete}

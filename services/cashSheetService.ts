@@ -112,15 +112,29 @@ export interface DayEntries {
 // ── Normalizers ───────────────────────────────────────────────────────────────
 
 function normalizeBranchCostEntry(entry: any): BranchCostEntry {
-  return { ...entry, created_by: entry?.created_by ?? entry?.createdBy ?? null };
+  return {
+    ...entry,
+    store_id: entry?.store_id != null ? Number(entry.store_id) : 0,
+    amount: Number(entry?.amount ?? 0),
+    created_by: entry?.created_by ?? entry?.createdBy ?? null,
+  };
 }
 
 function normalizeAdminEntry(entry: any): AdminEntry {
-  return { ...entry, created_by: entry?.created_by ?? entry?.createdBy ?? null };
+  return {
+    ...entry,
+    store_id: entry?.store_id != null ? Number(entry.store_id) : null,
+    amount: Number(entry?.amount ?? 0),
+    created_by: entry?.created_by ?? entry?.createdBy ?? null,
+  };
 }
 
 function normalizeOwnerEntry(entry: any): OwnerEntry {
-  return { ...entry, created_by: entry?.created_by ?? entry?.createdBy ?? null };
+  return {
+    ...entry,
+    amount: Number(entry?.amount ?? 0),
+    created_by: entry?.created_by ?? entry?.createdBy ?? null,
+  };
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────

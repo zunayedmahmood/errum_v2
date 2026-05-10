@@ -165,7 +165,7 @@ function DayDetailDrawer({ date, onClose }: { date: string; onClose: () => void 
 function SummaryRow({ row, stores, onClick }: { row: CashSheetRow; stores: {id:number;name:string;is_warehouse?:boolean}[]; onClick: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const isToday = row.date === new Date().toISOString().split('T')[0];
-  const hasActivity = row.totals.total_sale > 0 || row.owner.cash_invest > 0 || row.owner.bank_invest > 0 || row.owner.cash_cost > 0 || row.owner.bank_cost > 0;
+  const branchCostTotal = row.branches.reduce((sum, branch) => sum + Number(branch.daily_cost || 0), 0);
 
   return (
     <div className={`bg-white dark:bg-gray-900 rounded-xl border ${isToday ? 'border-blue-300 dark:border-blue-600' : 'border-gray-200 dark:border-gray-700'} overflow-hidden`}>
@@ -211,6 +211,11 @@ function SummaryRow({ row, stores, onClick }: { row: CashSheetRow; stores: {id:n
                 −{fmt(row.owner.cash_cost + row.owner.bank_cost)} spent
               </span>
             )}
+            {branchCostTotal > 0 && (
+              <span className="text-[10px] text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 px-1.5 py-0.5 rounded">
+                −{fmt(branchCostTotal)} branch cost
+              </span>
+            )}
           </div>
           {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
         </div>
@@ -221,7 +226,7 @@ function SummaryRow({ row, stores, onClick }: { row: CashSheetRow; stores: {id:n
         <div className="border-t border-gray-100 dark:border-gray-800 px-4 py-3 space-y-3">
           {/* per-branch */}
           <div className="grid grid-cols-1 gap-2">
-            {row.branches.filter(b => b.daily_sale > 0 || b.cash > 0 || b.bank > 0).map(b => (
+            {row.branches.filter(b => b.daily_sale > 0 || b.cash > 0 || b.bank > 0 || b.daily_cost > 0 || b.salary > 0 || b.cash_to_bank > 0).map(b => (
               <div key={b.store_id} className="flex items-center justify-between text-xs">
                 <span className="font-medium text-indigo-600 dark:text-indigo-400 w-28 flex-shrink-0">{b.store_name}</span>
                 <div className="flex items-center gap-4 text-gray-600 dark:text-gray-400">
@@ -298,16 +303,21 @@ export default function SummaryPanel() {
   useEffect(() => { if (!authLoading && isAdmin) load(); }, [month, authLoading, isAdmin]);
 
   const activeRows = rows.filter(r =>
-    r.totals.total_sale > 0 || r.disbursements.sslzc_received > 0 ||
-    r.disbursements.pathao_received > 0 || r.owner.cash_invest > 0 ||
-    r.owner.bank_invest > 0 || r.owner.cash_cost > 0 || r.owner.bank_cost > 0
+    r.totals.total_sale > 0 ||
+    r.disbursements.sslzc_received > 0 ||
+    r.disbursements.pathao_received > 0 ||
+    r.owner.cash_invest > 0 ||
+    r.owner.bank_invest > 0 ||
+    r.owner.cash_cost > 0 ||
+    r.owner.bank_cost > 0 ||
+    r.branches.some(b => Number(b.daily_cost) > 0 || Number(b.salary) > 0 || Number(b.cash_to_bank) > 0)
   );
 
   return (
     <div className={`min-h-screen flex ${darkMode ? 'dark bg-gray-950' : 'bg-gray-50'}`}>
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
       <div className="flex-1 flex flex-col">
-        <Header onMenuClick={() => setSidebarOpen(true)} darkMode={darkMode} onDarkModeToggle={() => setDarkMode(!darkMode)} />
+        <Header toggleSidebar={() => setSidebarOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />
         <main className="flex-1 p-4 md:p-6 max-w-2xl mx-auto w-full">
 
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">

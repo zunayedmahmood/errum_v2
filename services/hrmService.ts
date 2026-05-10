@@ -3,11 +3,24 @@ import axiosInstance from '@/lib/axios';
 export interface AttendancePolicy {
   id: number;
   store_id: number;
-  shift_start: string;
-  shift_end: string;
-  late_grace_period: number;
-  early_exit_grace_period: number;
-  weekend_days: string[];
+  mode?: 'fixed_day_off' | 'always_on_duty' | string;
+  fixed_days_off?: string[] | null;
+  fixed_start_time?: string | null;
+  fixed_end_time?: string | null;
+  late_fee_per_minute?: number;
+  overtime_rate_per_hour?: number;
+  grace_period_minutes?: number;
+  notes?: string | null;
+  effective_from?: string;
+  effective_to?: string | null;
+  timezone?: string | null;
+  declared_by?: number;
+  // legacy compatibility
+  shift_start?: string;
+  shift_end?: string;
+  late_grace_period?: number;
+  early_exit_grace_period?: number;
+  weekend_days?: string[];
 }
 
 export interface AttendanceRecord {
@@ -38,6 +51,27 @@ export interface SalesTarget {
   employee?: {
     name: string;
     employee_code?: string;
+  };
+}
+
+export interface EmployeeSchedule {
+  id: number;
+  employee_id: number;
+  store_id: number;
+  start_time: string;
+  end_time: string;
+  effective_from: string;
+  effective_to?: string | null;
+  duty_mode?: 'all_days' | 'weekly_pattern' | 'selected_dates' | string;
+  weekly_days?: string[] | null;
+  duty_dates?: string[] | null;
+  is_active?: boolean;
+  notes?: string | null;
+  employee?: {
+    id: number;
+    name: string;
+    employee_code?: string;
+    store_id?: number;
   };
 }
 
@@ -133,6 +167,27 @@ const hrmService = {
   async getAttendanceReport(params: { store_id: number; from: string; to: string; employee_ids?: number[] }): Promise<any> {
     const response = await axiosInstance.get('/hrm/attendance/report/range', { params });
     return response.data.success ? (response.data.data || {}) : {};
+  },
+
+  async getSchedules(params: { store_id: number; employee_id?: number; date?: string }): Promise<EmployeeSchedule[]> {
+    const response = await axiosInstance.get('/hrm/attendance/schedules', { params });
+    return (response.data.success && Array.isArray(response.data.data)) ? response.data.data : [];
+  },
+
+  async assignSchedule(data: {
+    employee_id: number;
+    store_id: number;
+    start_time: string;
+    end_time: string;
+    effective_from?: string;
+    effective_to?: string | null;
+    duty_mode?: 'all_days' | 'weekly_pattern' | 'selected_dates';
+    weekly_days?: string[];
+    duty_dates?: string[];
+    notes?: string;
+  }): Promise<any> {
+    const response = await axiosInstance.post('/hrm/attendance/schedules', data);
+    return response.data;
   },
 
   // Sales Targets

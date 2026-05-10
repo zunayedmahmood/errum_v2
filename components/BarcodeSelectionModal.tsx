@@ -104,7 +104,7 @@ export default function BarcodeSelectionModal({
                 Select Barcodes to Print
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                {productName} - ৳{price.toLocaleString('en-BD')}
+                <span>{productName} - </span><span className="font-bold" style={{ fontFamily: 'Poppins, Arial, sans-serif' }}>BDT {price.toLocaleString('en-BD')}</span>
               </p>
             </div>
             <button

@@ -101,7 +101,7 @@ interface MatrixPOGroup {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const tk = (n: number) => `৳${n.toLocaleString('en-BD', { maximumFractionDigits: 0 })}`;
+const tk  = (n: number) => `৳${n.toLocaleString('en-BD', { maximumFractionDigits: 0 })}`;
 const pct = (n: number) => `${n.toFixed(1)}%`;
 const safeDate = (value: string | null) => {
   if (!value) return '—';
@@ -223,13 +223,13 @@ function getMatrixCellStyle(state: 'high' | 'low' | 'normal') {
 function StatusBadge({ status }: { status: string | null }) {
   if (!status) return null;
   const cfg: Record<string, { bg: string; color: string }> = {
-    received: { bg: 'rgba(52,211,153,0.12)', color: '#34d399' },
-    fully_received: { bg: 'rgba(52,211,153,0.12)', color: '#34d399' },
+    received:           { bg: 'rgba(52,211,153,0.12)',  color: '#34d399' },
+    fully_received:     { bg: 'rgba(52,211,153,0.12)',  color: '#34d399' },
     partially_received: { bg: 'rgba(251,191,36,0.12)', color: '#fbbf24' },
-    sent_to_vendor: { bg: 'rgba(129,140,248,0.12)', color: '#818cf8' },
-    approved: { bg: 'rgba(99,102,241,0.12)', color: '#818cf8' },
-    draft: { bg: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' },
-    cancelled: { bg: 'rgba(239,68,68,0.12)', color: '#f87171' },
+    sent_to_vendor:     { bg: 'rgba(129,140,248,0.12)', color: '#818cf8' },
+    approved:           { bg: 'rgba(99,102,241,0.12)',  color: '#818cf8' },
+    draft:              { bg: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' },
+    cancelled:          { bg: 'rgba(239,68,68,0.12)',   color: '#f87171' },
   };
   const c = cfg[status] ?? { bg: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' };
   return (
@@ -243,23 +243,23 @@ function StatusBadge({ status }: { status: string | null }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BatchReportPage() {
-  const [items, setItems] = useState<ProductGroup[]>([]);
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [items, setItems]         = useState<ProductGroup[]>([]);
+  const [summary, setSummary]     = useState<Summary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [lastPage, setLastPage] = useState(1);
+  const [total, setTotal]         = useState(0);
+  const [page, setPage]           = useState(1);
+  const [lastPage, setLastPage]   = useState(1);
 
   // Filters
-  const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('received_date');
-  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
+  const [search, setSearch]       = useState('');
+  const [sortBy, setSortBy]       = useState('received_date');
+  const [sortDir, setSortDir]     = useState<'desc' | 'asc'>('desc');
   const perPage = 15;
 
   // Expanded state
   const [expandedProducts, setExpandedProducts] = useState<Set<number>>(new Set());
-  const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
-  const [expandedBatches, setExpandedBatches] = useState<Set<number>>(new Set());
+  const [expandedPOs, setExpandedPOs]           = useState<Set<string>>(new Set());
+  const [expandedBatches, setExpandedBatches]   = useState<Set<number>>(new Set());
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -512,11 +512,11 @@ export default function BatchReportPage() {
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {[
-            { label: 'Products', value: summary.total_products, color: '#818cf8', bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.12)' },
-            { label: 'POs', value: summary.total_pos, color: '#f0d080', bg: 'rgba(201,168,76,0.08)', border: 'rgba(201,168,76,0.12)' },
-            { label: 'Batches', value: summary.total_batches, color: '#34d399', bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.12)' },
-            { label: 'Units Sold', value: summary.total_sold, color: '#fb923c', bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.12)' },
-            { label: 'Sell-Through', value: `${summary.overall_sell_through}%`, color: summary.overall_sell_through >= 50 ? '#34d399' : '#f87171', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.08)' },
+            { label: 'Products',    value: summary.total_products,   color: '#818cf8', bg: 'rgba(99,102,241,0.08)',  border: 'rgba(99,102,241,0.12)' },
+            { label: 'POs',         value: summary.total_pos,        color: '#f0d080', bg: 'rgba(201,168,76,0.08)', border: 'rgba(201,168,76,0.12)' },
+            { label: 'Batches',     value: summary.total_batches,    color: '#34d399', bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.12)' },
+            { label: 'Units Sold',  value: summary.total_sold,       color: '#fb923c', bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.12)' },
+            { label: 'Sell-Through',value: `${summary.overall_sell_through}%`, color: summary.overall_sell_through >= 50 ? '#34d399' : '#f87171', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.08)' },
           ].map(s => (
             <div key={s.label} className="rounded-xl p-4" style={{ background: s.bg, border: `1px solid ${s.border}` }}>
               <p className="text-[9px] uppercase tracking-widest font-600 mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.label}</p>
@@ -528,9 +528,9 @@ export default function BatchReportPage() {
       {summary && (
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: 'Total Revenue', value: tk(summary.total_revenue), color: '#f0d080' },
-            { label: 'Gross Profit', value: tk(summary.total_profit), color: '#34d399' },
-            { label: 'Stock Value Left', value: tk(summary.total_stock_value), color: '#818cf8' },
+            { label: 'Total Revenue',    value: tk(summary.total_revenue),    color: '#f0d080' },
+            { label: 'Gross Profit',     value: tk(summary.total_profit),     color: '#34d399' },
+            { label: 'Stock Value Left', value: tk(summary.total_stock_value),color: '#818cf8' },
           ].map(s => (
             <div key={s.label} className="bc p-4 flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-widest font-600" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.label}</span>
@@ -918,14 +918,14 @@ export default function BatchReportPage() {
                                     style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                                       {[
-                                        { label: 'Cost Price', value: tk(batch.cost_price) },
-                                        { label: 'Sell Price', value: tk(batch.sell_price) },
-                                        { label: 'Stock Value', value: tk(batch.stock_value) },
-                                        { label: 'Pot. Revenue', value: tk(batch.potential_revenue) },
-                                        { label: 'Gross Profit', value: tk(batch.gross_profit), color: '#34d399' },
-                                        { label: 'Orders', value: batch.order_count },
-                                        { label: 'First Sale', value: batch.first_sale_date ? format(new Date(batch.first_sale_date), 'dd MMM yy') : '—' },
-                                        { label: 'Last Sale', value: batch.last_sale_date ? format(new Date(batch.last_sale_date), 'dd MMM yy') : '—' },
+                                        { label: 'Cost Price',    value: tk(batch.cost_price) },
+                                        { label: 'Sell Price',    value: tk(batch.sell_price) },
+                                        { label: 'Stock Value',   value: tk(batch.stock_value) },
+                                        { label: 'Pot. Revenue',  value: tk(batch.potential_revenue) },
+                                        { label: 'Gross Profit',  value: tk(batch.gross_profit), color: '#34d399' },
+                                        { label: 'Orders',        value: batch.order_count },
+                                        { label: 'First Sale',    value: batch.first_sale_date ? format(new Date(batch.first_sale_date), 'dd MMM yy') : '—' },
+                                        { label: 'Last Sale',     value: batch.last_sale_date  ? format(new Date(batch.last_sale_date),  'dd MMM yy') : '—' },
                                       ].map(m => (
                                         <div key={m.label} className="rounded-lg p-2.5"
                                           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
