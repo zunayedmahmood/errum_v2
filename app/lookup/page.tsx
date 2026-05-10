@@ -99,17 +99,6 @@ async function ensureJsBarcode() {
   });
 }
 
-async function ensurePoppinsLoaded(px = 24) {
-  if (typeof document === "undefined" || !(document as any).fonts?.load) return;
-
-  try {
-    await (document as any).fonts.load(`700 ${px}px Poppins`);
-    await (document as any).fonts.ready;
-  } catch {
-    // Font loading is best-effort; canvas will fall back if unavailable.
-  }
-}
-
 function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
   const ellipsis = "…";
   if (ctx.measureText(text).width <= maxWidth) return text;
@@ -189,8 +178,6 @@ async function renderLabelBase64(opts: { code: string; productName: string; pric
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported");
 
-  await ensurePoppinsLoaded(Math.round(hPx * 0.1));
-
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, wPx, hPx);
@@ -206,7 +193,7 @@ async function renderLabelBase64(opts: { code: string; productName: string; pric
   ctx.fillStyle = "#000";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.font = `900 ${Math.round(hPx * 0.11)}px Poppins, Arial, sans-serif`;
+  ctx.font = `900 ${Math.round(hPx * 0.11)}px Arial`;
   ctx.fillText("ERRUM BD", centerX, topPad);
 
   // Product name — up to 3 lines, shrinking font as needed
@@ -216,18 +203,18 @@ async function renderLabelBase64(opts: { code: string; productName: string; pric
   const fullName = normalizeLabelName(opts.productName || "Product");
 
   let nameFont = Math.round(hPx * 0.095);
-  ctx.font = `700 ${nameFont}px Poppins, Arial, sans-serif`;
+  ctx.font = `700 ${nameFont}px Arial`;
   let nameLines = wrapLines(ctx, fullName, nameMaxW, 3);
 
   if (nameLines.length > 1) {
     nameFont = Math.round(hPx * 0.082);
-    ctx.font = `700 ${nameFont}px Poppins, Arial, sans-serif`;
+    ctx.font = `700 ${nameFont}px Arial`;
     nameLines = wrapLines(ctx, fullName, nameMaxW, 3);
   }
 
   if (nameLines.length > 2) {
     nameFont = Math.round(hPx * 0.070);
-    ctx.font = `700 ${nameFont}px Poppins, Arial, sans-serif`;
+    ctx.font = `700 ${nameFont}px Arial`;
     nameLines = wrapLines(ctx, fullName, nameMaxW, 3);
   }
 
@@ -283,11 +270,11 @@ async function renderLabelBase64(opts: { code: string; productName: string; pric
   ctx.drawImage(bcCanvas, bcX, bcY, drawW, drawH);
 
   // Price
-  const priceText = `BDT ${Number(opts.price || 0).toLocaleString("en-BD")}`;
+  const priceText = `Price (VAT inc.): ৳${Number(opts.price || 0).toLocaleString("en-BD")}`;
   ctx.textBaseline = "bottom";
   const priceFontSize = Math.round(hPx * 0.095);
   // Use a mono-style numeric font stack for clearer digit differentiation (e.g., 6 vs 8)
-  ctx.font = `700 ${priceFontSize}px Poppins, Arial, sans-serif`;
+  ctx.font = `700 ${priceFontSize}px "Consolas", "Lucida Console", "DejaVu Sans Mono", "Courier New", monospace`;
   const priceY = hPx - pad;
   ctx.fillText(fitText(ctx, priceText, wPx - pad * 2), centerX, priceY);
 
@@ -771,6 +758,7 @@ export default function LookupPage() {
           items: Array.isArray(o?.items) ? o.items : [],
           shipping_address: o?.shipping_address || o?.delivery_address || o?.address,
           notes: o?.notes,
+          customer: o?.customer,
         } as CustomerOrder;
       })
       .filter((o: any) => o?.id);
@@ -945,6 +933,7 @@ export default function LookupPage() {
       }),
       shipping_address: o.shipping_address,
       notes: o.notes,
+      customer: o.customer,
     };
   };
 
@@ -1040,6 +1029,7 @@ export default function LookupPage() {
       store: o.store ?? payload?.store ?? null,
       store_id: o.store_id ?? payload?.store_id ?? o?.store?.id ?? payload?.store?.id ?? null,
       store_name: o.store_name ?? payload?.store_name ?? o?.store?.name ?? payload?.store?.name ?? null,
+      customer: o.customer ?? payload?.customer ?? null,
       subtotal: o.subtotal,
       total_amount: o.total_amount ?? o.total ?? o.total_price,
       // some UIs expect order_date; keep both
@@ -1047,7 +1037,18 @@ export default function LookupPage() {
       created_at: o.order_date ?? o.created_at ?? null,
       updated_at: o.updated_at ?? null,
       items: items.map((it: any, idx: number) => {
-        const barcodeVal = it?.barcode?.barcode ?? it?.barcode ?? null;
+        const barcodeObj = it?.barcode && typeof it.barcode === 'object' ? it.barcode : null;
+        const barcodeVal =
+          barcodeObj?.barcode ??
+          it?.barcode_number ??
+          (typeof it?.barcode === 'string' ? it.barcode : null) ??
+          null;
+        const barcodeId =
+          barcodeObj?.id ??
+          barcodeObj?.barcode_id ??
+          it?.product_barcode_id ??
+          it?.barcode_id ??
+          null;
         const barcodesArr = Array.isArray(it?.barcodes) ? it.barcodes : [];
         const finalBarcodes: string[] = barcodeVal
           ? [String(barcodeVal)]
@@ -1058,6 +1059,12 @@ export default function LookupPage() {
           product_id: it?.product?.id ?? it?.product_id ?? null,
           product_name: it?.product?.name ?? it?.product_name ?? 'Unknown Product',
           product_sku: it?.product?.sku ?? it?.product_sku ?? 'N/A',
+          batch_id: it?.batch?.id ?? it?.batch_id ?? it?.product_batch_id ?? null,
+          product_batch_id: it?.batch?.id ?? it?.product_batch_id ?? it?.batch_id ?? null,
+          batch_number: it?.batch?.batch_number ?? it?.batch_number ?? '',
+          barcode: barcodeVal ? String(barcodeVal) : undefined,
+          barcode_id: barcodeId ? Number(barcodeId) : undefined,
+          product_barcode_id: barcodeId ? Number(barcodeId) : undefined,
           quantity: it?.quantity ?? 0,
           unit_price: it?.unit_price ?? it?.sale_price ?? it?.price ?? null,
           total_amount: it?.total_amount ?? it?.total ?? null,
@@ -1841,24 +1848,31 @@ export default function LookupPage() {
         items: returnData.selectedProducts.map((item: any) => ({
           order_item_id: item.order_item_id,
           quantity: item.quantity,
-          product_barcode_id: item.product_barcode_id,
+          unit_price: item.unit_price,
+          total_price: item.total_price,
+          product_barcode_id: item.product_barcode_id || item.barcode_id,
+          barcode_id: item.product_barcode_id || item.barcode_id,
+          barcode: item.barcode,
         })),
         customer_notes: returnData.customerNotes || 'Initiated from lookup page',
       };
 
-      // Use the atomic quickComplete endpoint
-      await productReturnService.quickComplete(returnRequest);
+      // Use the atomic quickComplete endpoint (call once, reuse response for refund)
+      const res = await productReturnService.quickComplete(returnRequest);
+      const returnId = res?.data?.id;
 
       // Handle refund if needed
-      if (returnData.refundMethods && returnData.refundMethods.total > 0) {
-        // Need return ID for refund - quickComplete returns the product return object
-        const res = await productReturnService.quickComplete(returnRequest);
-        const returnId = res.data.id;
+      if (returnData.refundMethods && returnData.refundMethods.total > 0 && returnId) {
+
+        const refundMethod: CreateRefundRequest['refund_method'] = returnData.refundMethods.card > 0
+          ? 'card_refund'
+          : ((returnData.refundMethods.bkash > 0 || returnData.refundMethods.nagad > 0) ? 'digital_wallet' : 'cash');
 
         const refundRequest: CreateRefundRequest = {
           return_id: returnId,
-          refund_type: 'full',
-          refund_method: 'cash',
+          refund_type: 'partial_amount',
+          refund_amount: returnData.refundMethods.total,
+          refund_method: refundMethod,
           refund_method_details: {
             cash: returnData.refundMethods.cash,
             card: returnData.refundMethods.card,
@@ -1899,17 +1913,18 @@ export default function LookupPage() {
         customer_id: selectedOrderForAction.customer?.id,
         removedProducts: exchangeData.removedProducts.map((item: any) => {
           const originalItem = selectedOrderForAction.items.find((i: any) => i.id === item.order_item_id);
-          const unitPrice = parseFloat(originalItem?.unit_price || '0');
           return {
             order_item_id: item.order_item_id,
-            product_id: originalItem?.product_id,
-            product_batch_id: originalItem?.product_batch_id || originalItem?.batch_id,
+            product_id: originalItem?.product_id || item.product_id,
+            product_batch_id: originalItem?.product_batch_id || originalItem?.batch_id || item.product_batch_id,
             quantity: item.quantity,
-            unit_price: unitPrice,
-            total_price: unitPrice * item.quantity,
-            product_barcode_id: item.product_barcode_id,
-            return_reason: 'other', // Default reason
-            quality_check_passed: true, // Defaulting for quick exchange
+            unit_price: item.unit_price,
+            total_price: item.total_price,
+            barcode: (item.product_barcode_id || item.barcode_id) ? item.barcode : undefined, // Never send SKU as returned barcode
+            product_barcode_id: item.product_barcode_id || item.barcode_id, // Primary ID for removed items
+            barcode_id: item.product_barcode_id || item.barcode_id, // Fallback/Alternative
+            return_reason: item.return_reason || 'other',
+            quality_check_passed: item.quality_check_passed ?? true,
           };
         }),
         replacementProducts: exchangeData.replacementProducts.map((p: any) => ({
@@ -1917,15 +1932,17 @@ export default function LookupPage() {
           batch_id: p.batch_id,
           quantity: p.quantity,
           unit_price: p.unit_price,
+          total_price: p.total_price ?? p.amount ?? (Number(p.unit_price || 0) * Number(p.quantity || 0)),
+          discount_amount: p.discount_amount || 0,
           barcode: p.barcode,
           barcode_id: p.barcode_id,
         })),
         paymentRefund: {
           type: exchangeData.paymentRefund?.type === 'payment' ? 'surplus' : (exchangeData.paymentRefund?.type === 'refund' ? 'refund' : 'even'),
           amount: exchangeData.paymentRefund?.total || 0,
-          method: exchangeData.paymentRefund?.card > 0 ? 'card' : 
-                  (exchangeData.paymentRefund?.bkash > 0 ? 'bkash' : 
-                  (exchangeData.paymentRefund?.nagad > 0 ? 'nagad' : 'cash')),
+          method: exchangeData.paymentRefund?.card > 0 ? 'card' :
+            (exchangeData.paymentRefund?.bkash > 0 ? 'bkash' :
+              (exchangeData.paymentRefund?.nagad > 0 ? 'nagad' : 'cash')),
           details: {
             cash: exchangeData.paymentRefund?.cash || 0,
             card: exchangeData.paymentRefund?.card || 0,
@@ -1937,10 +1954,10 @@ export default function LookupPage() {
       };
 
       const response = await axiosInstance.post('/exchange/process', payload);
-      
+
       console.log('✅ Exchange processed successfully:', response.data);
       alert('Exchange processed successfully!');
-      
+
       // Close modal and refresh data
       setShowExchangeModal(false);
       setSelectedOrderForAction(null);
@@ -2264,8 +2281,8 @@ export default function LookupPage() {
                     <button
                       onClick={() => switchTab('customer')}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'customer'
-                          ? 'bg-black dark:bg-white text-white dark:text-black'
-                          : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
+                        ? 'bg-black dark:bg-white text-white dark:text-black'
+                        : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
                         }`}
                     >
                       Customer Lookup
@@ -2274,8 +2291,8 @@ export default function LookupPage() {
                     <button
                       onClick={() => switchTab('order')}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'order'
-                          ? 'bg-black dark:bg-white text-white dark:text-black'
-                          : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
+                        ? 'bg-black dark:bg-white text-white dark:text-black'
+                        : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
                         }`}
                     >
                       Order Lookup
@@ -2284,8 +2301,8 @@ export default function LookupPage() {
                     <button
                       onClick={() => switchTab('barcode')}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'barcode'
-                          ? 'bg-black dark:bg-white text-white dark:text-black'
-                          : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
+                        ? 'bg-black dark:bg-white text-white dark:text-black'
+                        : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
                         }`}
                     >
                       Barcode History
@@ -2294,8 +2311,8 @@ export default function LookupPage() {
                     <button
                       onClick={() => switchTab('batch')}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'batch'
-                          ? 'bg-black dark:bg-white text-white dark:text-black'
-                          : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
+                        ? 'bg-black dark:bg-white text-white dark:text-black'
+                        : 'bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'
                         }`}
                     >
                       Batch History
