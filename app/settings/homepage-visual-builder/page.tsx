@@ -27,6 +27,7 @@ import settingsService, { HomepageSettings } from "@/services/settingsService";
 import categoryService from "@/services/categoryService";
 import collectionService from "@/services/collectionService";
 import catalogService from "@/services/catalogService";
+import { CustomerAuthProvider } from "@/contexts/CustomerAuthContext";
 
 // Import Ecommerce Components for Mimic
 import Navigation from '@/components/ecommerce/Navigation';
@@ -373,8 +374,10 @@ export default function HomepageVisualBuilder() {
           <div className={`transition-all duration-500 bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden ${viewport === 'mobile' ? 'w-[375px] h-[750px]' : 'w-full max-w-6xl'}`}>
              <div className="h-full overflow-y-auto relative scrollbar-hide">
               {previewSettings && (
-                <div className="homepage-mimic">
-                   <SectionWrapper id="ticker" active={activeSection === 'ticker'} onSelect={() => selectSection('ticker')} title="Ticker">
+                <CustomerAuthProvider>
+                  <div className="homepage-mimic">
+                     <SectionWrapper id="ticker" active={activeSection === 'ticker'} onSelect={() => selectSection('ticker')} title="Ticker">
+
                     {previewSettings.ticker.enabled && (
                       <AnnouncementTicker {...previewSettings.ticker} />
                     )}
@@ -414,7 +417,8 @@ export default function HomepageVisualBuilder() {
                     }
                   })}
                 </div>
-              )}
+              </CustomerAuthProvider>
+            )}
             </div>
           </div>
         </div>
