@@ -17,7 +17,8 @@ import {
   Move,
   Plus,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Sliders
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Sidebar from "@/components/Sidebar";
