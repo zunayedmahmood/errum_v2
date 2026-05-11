@@ -29,9 +29,11 @@ import collectionService from "@/services/collectionService";
 import catalogService from "@/services/catalogService";
 import { CustomerAuthProvider } from "@/contexts/CustomerAuthContext";
 import { PromotionProvider } from "@/contexts/PromotionContext";
+import { CartProvider } from "@/app/e-commerce/CartContext";
 
 // Import Ecommerce Components for Mimic
-import Navigation from '@/components/ecommerce/Navigation';
+// Navigation is NOT imported here — it calls useCart/useCustomerAuth with router-redirecting
+// logout that would crash in the admin builder context. Use a static placeholder instead.
 import HeroSection from '@/components/ecommerce/HeroSection';
 import AnnouncementTicker from '@/components/ecommerce/AnnouncementTicker';
 import CollectionTiles from '@/components/ecommerce/CollectionTiles';
@@ -377,6 +379,7 @@ export default function HomepageVisualBuilder() {
               {previewSettings && (
                 <CustomerAuthProvider>
                   <PromotionProvider>
+                    <CartProvider>
                     <div className="homepage-mimic relative overflow-hidden">
                        <SectionWrapper id="ticker" active={activeSection === 'ticker'} onSelect={() => selectSection('ticker')} title="Ticker">
 
@@ -385,7 +388,7 @@ export default function HomepageVisualBuilder() {
                       <AnnouncementTicker {...previewSettings.ticker} />
                     )}
                   </SectionWrapper>
-                  <Navigation />
+                  <PreviewNavbar />
                   {previewSettings.section_order.map((sectionKey) => {
                     switch (sectionKey) {
                       case 'hero': return (
@@ -420,7 +423,8 @@ export default function HomepageVisualBuilder() {
                     }
                   })}
                 </div>
-              </PromotionProvider>
+                    </CartProvider>
+                  </PromotionProvider>
             </CustomerAuthProvider>
           )}
             </div>
@@ -527,6 +531,39 @@ export default function HomepageVisualBuilder() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Static nav preview — no context hooks, no router calls, purely visual
+function PreviewNavbar() {
+  return (
+    <nav
+      style={{
+        background: '#ffffff',
+        borderBottom: '1px solid rgba(0,0,0,0.10)',
+        height: '56px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 24px',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <img src="/logo.png" alt="Errum" style={{ height: '28px', width: 'auto' }} />
+        <span style={{ fontWeight: 800, fontSize: '15px', letterSpacing: '0.04em', fontFamily: "'Poppins', sans-serif" }}>ERRUM</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '13px', fontWeight: 600, color: '#444' }}>
+        <span>Shop</span>
+        <span>New Arrivals</span>
+        <span>Collections</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', color: '#444' }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+    </nav>
   );
 }
 
