@@ -69,7 +69,10 @@ export default function HomepageSettingsPage() {
           font_size: settingsData.hero?.font_size || 84,
           transition_type: settingsData.hero?.transition_type || 'fade',
         },
-        collections: settingsData.collections || [],
+        collections: (settingsData.collections || []).map((col: any) => ({
+          ...col,
+          show_text: col.show_text ?? true
+        })),
         showcase: (settingsData.showcase || []).map((item: any) => ({
           ...item,
           subcategories: item.subcategories || []
@@ -77,7 +80,11 @@ export default function HomepageSettingsPage() {
         new_arrivals: {
           enabled: settingsData.new_arrivals?.enabled ?? false,
           product_ids: (settingsData.new_arrivals?.product_ids || []).map((id: any) => Number(id))
-        }
+        },
+        bannered_collections: (settingsData.bannered_collections || []).map((col: any) => ({
+          ...col,
+          show_text: col.show_text ?? true
+        }))
       };
 
       if (settingsData.new_arrivals?.products) {
@@ -168,6 +175,7 @@ export default function HomepageSettingsPage() {
           formData.append(`collections[${index}][type]`, col.type || "category");
           formData.append(`collections[${index}][title]`, col.title || "");
           formData.append(`collections[${index}][subtitle]`, col.subtitle || "");
+          formData.append(`collections[${index}][show_text]`, col.show_text ? "1" : "0");
         });
       }
 
@@ -195,6 +203,39 @@ export default function HomepageSettingsPage() {
             formData.append(`new_arrivals[product_ids][${index}]`, String(id));
           });
         }
+        }
+      }
+
+      // Bannered Collections
+      if (settings.bannered_collections) {
+        const banneredMeta: any[] = [];
+        let banneredFileIndex = 0;
+        
+        settings.bannered_collections.forEach((col: any) => {
+          const itemMeta: any = {
+            id: col.id,
+            type: col.type,
+            title: col.title || "",
+            subtitle: col.subtitle || "",
+            show_text: col.show_text ?? true,
+          };
+
+          if (col.new_image_file) {
+            itemMeta.image_type = 'new';
+            itemMeta.fileIndex = banneredFileIndex;
+            formData.append(`bannered_collections_images[${banneredFileIndex}]`, col.new_image_file);
+            banneredFileIndex++;
+          } else if (col.override_image) {
+            itemMeta.image_type = 'existing';
+            itemMeta.override_image = col.override_image;
+          } else {
+            itemMeta.image_type = 'none';
+          }
+          
+          banneredMeta.push(itemMeta);
+        });
+        
+        formData.append("bannered_collections_meta", JSON.stringify(banneredMeta));
       }
 
       await settingsService.updateHomepageSettings(formData);
@@ -327,7 +368,7 @@ export default function HomepageSettingsPage() {
     if (!settings) return;
     setSettings({
       ...settings,
-      collections: [...settings.collections, { id: flatCategories[0]?.id || 0, type: "category", title: "", subtitle: "" }]
+      collections: [...settings.collections, { id: flatCategories[0]?.id || 0, type: "category", title: "", subtitle: "", show_text: true }]
     });
   };
 
@@ -347,6 +388,59 @@ export default function HomepageSettingsPage() {
       [newCollections[index + 1], newCollections[index]] = [newCollections[index], newCollections[index + 1]];
     }
     setSettings({ ...settings, collections: newCollections });
+  };
+
+  // Bannered Collections Helpers
+  const addBanneredCollection = () => {
+    if (!settings) return;
+    if ((settings.bannered_collections || []).length >= 3) {
+      toast.error("You can add up to 3 bannered collections");
+      return;
+    }
+    setSettings({
+      ...settings,
+      bannered_collections: [
+        ...(settings.bannered_collections || []),
+        { id: flatCategories[0]?.id || 0, type: "category", title: "", subtitle: "", show_text: true }
+      ]
+    });
+  };
+
+  const removeBanneredCollection = (index: number) => {
+    if (!settings) return;
+    const newBannered = [...(settings.bannered_collections || [])];
+    newBannered.splice(index, 1);
+    setSettings({ ...settings, bannered_collections: newBannered });
+  };
+
+  const updateBanneredCollection = (index: number, updates: any) => {
+    if (!settings) return;
+    const newBannered = (settings.bannered_collections || []).map((col, i) =>
+      i === index ? { ...col, ...updates } : col
+    );
+    setSettings({ ...settings, bannered_collections: newBannered });
+  };
+
+  const moveBanneredCollection = (index: number, direction: 'up' | 'down') => {
+    if (!settings || !settings.bannered_collections) return;
+    const newBannered = [...settings.bannered_collections];
+    if (direction === 'up' && index > 0) {
+      [newBannered[index - 1], newBannered[index]] = [newBannered[index], newBannered[index - 1]];
+    } else if (direction === 'down' && index < newBannered.length - 1) {
+      [newBannered[index + 1], newBannered[index]] = [newBannered[index], newBannered[index + 1]];
+    }
+    setSettings({ ...settings, bannered_collections: newBannered });
+  };
+
+  const handleBanneredImageUpload = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    updateBanneredCollection(index, {
+      new_image_file: file,
+      new_image_preview: URL.createObjectURL(file)
+    });
+    e.target.value = ''; // reset
   };
 
   // Helpers for New Arrivals
@@ -890,6 +984,23 @@ export default function HomepageSettingsPage() {
                               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
                             />
                           </div>
+                          <div className="md:col-span-2">
+                            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={col.show_text ?? true}
+                                onChange={(e) => {
+                                  const newCols = settings.collections.map((c, i) =>
+                                    i === idx ? { ...c, show_text: e.target.checked } : c
+                                  );
+                                  setSettings({ ...settings, collections: newCols });
+                                }}
+                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                              />
+                              Show Text on Homepage Card
+                            </label>
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400 ml-6">When off, the collection card will not show any titles or subtitles.</p>
+                          </div>
                         </div>
                         <button onClick={() => removeCollection(idx)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg mt-5 transition-colors">
                           <Trash2 className="w-4 h-4" />
@@ -1130,6 +1241,147 @@ export default function HomepageSettingsPage() {
                       </div>
                     </div>
                   )}
+                </section>
+
+                {/* Bannered Collections Section */}
+                <section className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mt-8">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Bannered Categories/Collection</h2>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Add 1, 2, or 3 items to show in the bannered section. Layout adapts automatically.</p>
+                    </div>
+                    <button
+                      onClick={addBanneredCollection}
+                      disabled={(settings.bannered_collections || []).length >= 3}
+                      className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-40"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Item
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {(settings.bannered_collections || []).length === 0 && (
+                      <p className="text-gray-500 dark:text-gray-400 italic text-sm text-center py-8 border-2 border-dashed border-gray-100 dark:border-gray-700 rounded-xl">No bannered items added.</p>
+                    )}
+                    {settings.bannered_collections?.map((col: any, idx) => (
+                      <div key={idx} className="flex gap-4 items-start p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                        <div className="flex flex-col gap-1 mt-1">
+                          <button onClick={() => moveBanneredCollection(idx, 'up')} disabled={idx === 0} className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-30">
+                            <ArrowUp className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => moveBanneredCollection(idx, 'down')} disabled={idx === settings.bannered_collections!.length - 1} className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-30">
+                            <ArrowDown className="w-4 h-4" />
+                          </button>
+                        </div>
+                        
+                        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="md:col-span-1 space-y-4">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Entity Type</label>
+                              <select
+                                value={col.type || 'category'}
+                                onChange={(e) => updateBanneredCollection(idx, { type: e.target.value, id: e.target.value === 'category' ? (flatCategories[0]?.id || 0) : (availableCollections[0]?.id || 0) })}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                              >
+                                <option value="category">Category</option>
+                                <option value="collection">Collection</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Target Item</label>
+                              <select
+                                value={col.id}
+                                onChange={(e) => updateBanneredCollection(idx, { id: parseInt(e.target.value) })}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                              >
+                                {col.type === 'collection' ? (
+                                  <>
+                                    <option value={0} disabled>Select a collection</option>
+                                    {availableCollections.map(c => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </>
+                                ) : (
+                                  <>
+                                    <option value={0} disabled>Select a category</option>
+                                    {flatCategories.map(c => (
+                                      <option key={c.id} value={c.id}>{c.title}</option>
+                                    ))}
+                                  </>
+                                )}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="md:col-span-1 space-y-4">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Override Title</label>
+                              <input
+                                type="text"
+                                value={col.title}
+                                onChange={(e) => updateBanneredCollection(idx, { title: e.target.value })}
+                                placeholder="Leave blank to use item name"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Subtitle</label>
+                              <input
+                                type="text"
+                                value={col.subtitle}
+                                onChange={(e) => updateBanneredCollection(idx, { subtitle: e.target.value })}
+                                placeholder="e.g. Limited Edition"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                              />
+                            </div>
+                            <label className="flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={col.show_text ?? true}
+                                onChange={(e) => updateBanneredCollection(idx, { show_text: e.target.checked })}
+                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                              />
+                              Show Text on Banner
+                            </label>
+                          </div>
+
+                          <div className="md:col-span-1">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Override Banner Image</label>
+                            <div className="relative group aspect-video bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
+                              {(col.new_image_preview || col.override_image?.url) ? (
+                                <img src={col.new_image_preview || col.override_image?.url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                                  <Plus className="w-6 h-6 mb-1" />
+                                  <span className="text-[10px]">Click to upload</span>
+                                </div>
+                              )}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleBanneredImageUpload(idx, e)}
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                              />
+                              {(col.new_image_preview || col.override_image?.url) && (
+                                <button
+                                  onClick={() => updateBanneredCollection(idx, { new_image_file: null, new_image_preview: null, override_image: null })}
+                                  className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            <p className="mt-1 text-[10px] text-gray-400">If none, uses category/collection banner/thumbnail.</p>
+                          </div>
+                        </div>
+
+                        <button onClick={() => removeBanneredCollection(idx)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg mt-5 transition-colors">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </section>
               </div>
             </div>

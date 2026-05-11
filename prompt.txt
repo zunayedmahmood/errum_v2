@@ -710,3 +710,38 @@ also, the database structure and backend codes aren't exactly same as the exampl
 ### slugs 
 update the collection/slug page and /slug pages.
 the texts in the banner should be below the banner image in the left.
+
+### banner style collections 
+in the home page, below New Arrivals, above the Homepage showcase (categories)
+we want a section that looks the image attached,
+we'll call this section: "Bannered Categories/Collection"
+we can feature, 1,2 or 3 collections/categories (or both) in this section.
+we'll control this from the homepage settings.
+
+when one is added,
+we show it like this:
+______________________________________
+|                                     |
+|        banner text                  |
+|_____________________________________|
+
+accross the  width matching other sections. (text, override title, etc  can be toggled on or off)
+
+if two:
+______________________________________    ______________________________________
+|                                     |   |                                     |
+|        banner text                  |   |         banner text                 |
+|_____________________________________|   |_____________________________________|
+
+if three: like this:
+
+_____________________________________    ___________________ 
+|                                     |  |    banner       |
+|       banner text                   |  |_________________|
+|                                     |  |    banner       |
+|_____________________________________|  |_________________|
+
+we can add  collections or categories.
+they'll be clickable and refer to e-commerce/slug and e-commerce/collections/slug pages.
+it will first show the banner image, if unavailable, it will show the thumbnail.
+we can also add an override image(banner). if override banner is given, that will be displayed.

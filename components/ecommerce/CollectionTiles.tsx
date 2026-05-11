@@ -10,6 +10,7 @@ interface Collection {
   subtitle: string;
   image: string;
   href: string;
+  show_text?: boolean;
 }
 
 interface CollectionTilesProps {
@@ -52,20 +53,24 @@ export default function CollectionTiles({ collections }: CollectionTilesProps) {
                 }}
               />
 
-              {/* Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent transition-opacity group-hover:opacity-90" />
+              {/* Overlay - Only show if text is enabled to make it readable */}
+              {item.show_text !== false && (
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent transition-opacity group-hover:opacity-90" />
+              )}
 
               {/* Content */}
-              <div className="absolute inset-0 p-8 flex flex-col justify-end">
-                <p className="text-white/60 text-[10px]  tracking-widest uppercase mb-1 line-clamp-2">{item.subtitle}</p>
-                <h3 className="text-white text-2xl  mb-2 line-clamp-3">{item.title}</h3>
+              {item.show_text !== false && (
+                <div className="absolute inset-0 p-8 flex flex-col justify-end">
+                  <p className="text-white/60 text-[10px]  tracking-widest uppercase mb-1 line-clamp-2">{item.subtitle}</p>
+                  <h3 className="text-white text-2xl  mb-2 line-clamp-3">{item.title}</h3>
 
-                <div className="overflow-hidden h-6">
-                  <div className="transition-transform duration-500 transform translate-y-6 group-hover:translate-y-0 flex items-center gap-2 text-white text-[10px] font-semibold uppercase tracking-wider">
-                    Explore Collection <span className="text-sm">→</span>
+                  <div className="overflow-hidden h-6">
+                    <div className="transition-transform duration-500 transform translate-y-6 group-hover:translate-y-0 flex items-center gap-2 text-white text-[10px] font-semibold uppercase tracking-wider">
+                      Explore Collection <span className="text-sm">→</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </Link>
           ))}
         </div>

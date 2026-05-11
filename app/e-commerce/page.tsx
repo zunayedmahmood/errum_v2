@@ -22,6 +22,9 @@ const NewArrivals = dynamic(() => import('@/components/ecommerce/NewArrivals'), 
 const SubcategoryProductTabs = dynamic(() => import('@/components/ecommerce/SubcategoryProductTabs'), {
   loading: () => <ShowcaseSkeleton />
 });
+const BanneredCollections = dynamic(() => import('@/components/ecommerce/BanneredCollections'), {
+  loading: () => <SectionSkeleton height="400px" />
+});
 
 import SectionReveal from '@/components/ecommerce/SectionReveal';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
@@ -33,6 +36,7 @@ export default function HomePage() {
   const [heroData, setHeroData] = useState<{ ticker: any; hero: any } | null>(null);
   const [collections, setCollections] = useState<any[] | null>(null);
   const [newArrivals, setNewArrivals] = useState<any | null>(null);
+  const [banneredCollections, setBanneredCollections] = useState<any[] | null>(null);
   const [showcase, setShowcase] = useState<any[] | null>(null);
   
   // Track individual loading states for granular control
@@ -64,7 +68,12 @@ export default function HomePage() {
       setNewArrivals(data.new_arrivals || { enabled: false, products: [] });
     }).catch(err => console.error('Failed to load new arrivals:', err));
 
-    // 5. Fetch Showcase (Priority 3)
+    // 5. Fetch Bannered Collections (Priority 2)
+    settingsService.getHomepageSettings('bannered_collections').then(data => {
+      setBanneredCollections(data.bannered_collections || []);
+    }).catch(err => console.error('Failed to load bannered collections:', err));
+
+    // 6. Fetch Showcase (Priority 3)
     settingsService.getHomepageSettings('showcase').then(data => {
       setShowcase(data.showcase || []);
     }).catch(err => console.error('Failed to load showcase:', err));
@@ -124,6 +133,17 @@ export default function HomePage() {
         <SectionReveal>
           <NewArrivals limit={12} customProducts={newArrivals.products} />
         </SectionReveal>
+      )}
+
+      {/* 4.5 Bannered Collections */}
+      {banneredCollections === null ? (
+        <SectionSkeleton height="400px" />
+      ) : (
+        banneredCollections.length > 0 && (
+          <SectionReveal>
+            <BanneredCollections items={banneredCollections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />
+          </SectionReveal>
+        )
       )}
 
       {/* 5. Showcase Categories (Configured via Settings) */}
