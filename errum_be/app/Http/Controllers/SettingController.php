@@ -19,6 +19,7 @@ class SettingController extends Controller
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
         
         $response = [];
+        $response['section_order'] = $settings->get('homepage_section_order', ['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']);
 
         // 1. Ticker & Hero (The "Immediate" group)
         if (!$group || $group === 'hero') {
@@ -271,6 +272,7 @@ class SettingController extends Controller
             'collections' => $settings->get('homepage_collections', []),
             'showcase' => $settings->get('homepage_showcase', []),
             'bannered_collections' => $settings->get('homepage_bannered_collections', []),
+            'section_order' => $settings->get('homepage_section_order', ['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']),
             'new_arrivals' => $newArrivals
         ]);
     }
@@ -328,6 +330,9 @@ class SettingController extends Controller
             'bannered_collections_images' => 'nullable|array',
             'bannered_collections_images.*' => 'nullable|image|max:5120',
             'bannered_collections_meta' => 'nullable|string',
+
+            'section_order' => 'nullable|array',
+            'section_order.*' => 'string|in:hero,featured_collections,new_arrivals,bannered_collections,showcase',
         ]);
 
         if ($request->has('ticker')) {
@@ -370,6 +375,13 @@ class SettingController extends Controller
             Setting::updateOrCreate(
                 ['key' => 'homepage_new_arrivals'],
                 ['value' => $newArrivalsData, 'group' => 'homepage']
+            );
+        }
+
+        if ($request->has('section_order')) {
+            Setting::updateOrCreate(
+                ['key' => 'homepage_section_order'],
+                ['value' => $validated['section_order'], 'group' => 'homepage']
             );
         }
 

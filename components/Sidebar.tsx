@@ -156,6 +156,7 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
       label: 'Settings',
       subMenu: [
         { label: 'Homepage Configuration', href: '/settings/homepage' },
+        { label: 'Homepage Visual Builder', href: '/settings/homepage-visual-builder' },
       ],
     },
 

@@ -50,6 +50,7 @@ export interface HomepageSettings {
     override_image?: { url: string; path?: string };
     href?: string;
   }[];
+  section_order?: string[];
 }
 
 class SettingsService {

@@ -11,6 +11,14 @@ import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import { useTheme } from "@/contexts/ThemeContext";
 
+const SECTION_NAMES: Record<string, string> = {
+  hero: "Hero Slider",
+  featured_collections: "Featured Collections",
+  new_arrivals: "New Arrivals",
+  bannered_collections: "Bannered Categories/Collection",
+  showcase: "Category Showcase"
+};
+
 export default function HomepageSettingsPage() {
   const [settings, setSettings] = useState<HomepageSettings | null>(null);
   const [flatCategories, setFlatCategories] = useState<{ id: number; title: string }[]>([]);
@@ -84,7 +92,8 @@ export default function HomepageSettingsPage() {
         bannered_collections: (settingsData.bannered_collections || []).map((col: any) => ({
           ...col,
           show_text: col.show_text ?? true
-        }))
+        })),
+        section_order: settingsData.section_order || ['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']
       };
 
       if (settingsData.new_arrivals?.products) {
@@ -235,6 +244,13 @@ export default function HomepageSettingsPage() {
         });
         
         formData.append("bannered_collections_meta", JSON.stringify(banneredMeta));
+      }
+
+      // Section Order
+      if (settings.section_order) {
+        settings.section_order.forEach((section, index) => {
+          formData.append(`section_order[${index}]`, section);
+        });
       }
 
       await settingsService.updateHomepageSettings(formData);
@@ -442,6 +458,17 @@ export default function HomepageSettingsPage() {
     e.target.value = ''; // reset
   };
 
+  const moveSection = (index: number, direction: 'up' | 'down') => {
+    if (!settings || !settings.section_order) return;
+    const newOrder = [...settings.section_order];
+    if (direction === 'up' && index > 0) {
+      [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+    } else if (direction === 'down' && index < newOrder.length - 1) {
+      [newOrder[index + 1], newOrder[index]] = [newOrder[index], newOrder[index + 1]];
+    }
+    setSettings({ ...settings, section_order: newOrder });
+  };
+
   // Helpers for New Arrivals
   const searchProducts = async (q: string) => {
     if (!q || q.length < 2) {
@@ -560,6 +587,44 @@ export default function HomepageSettingsPage() {
               </div>
 
               <div className="space-y-8">
+                {/* Layout Order Section */}
+                <section className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Homepage Layout Order</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Arrange the order of sections as they appear on the homepage.</p>
+                  
+                  <div className="space-y-3">
+                    {settings.section_order?.map((section, idx) => (
+                      <div 
+                        key={section} 
+                        className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900/50 hover:border-blue-400 dark:hover:border-blue-500 transition-colors group"
+                      >
+                        <div className="flex items-center gap-4">
+                          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-bold text-sm">
+                            {idx + 1}
+                          </span>
+                          <span className="font-medium text-gray-900 dark:text-white">{SECTION_NAMES[section] || section}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => moveSection(idx, 'up')}
+                            disabled={idx === 0}
+                            className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-30 rounded-lg hover:bg-white dark:hover:bg-gray-800 transition-all"
+                          >
+                            <ArrowUp className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => moveSection(idx, 'down')}
+                            disabled={idx === (settings.section_order?.length || 0) - 1}
+                            className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-30 rounded-lg hover:bg-white dark:hover:bg-gray-800 transition-all"
+                          >
+                            <ArrowDown className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
                 {/* Ticker Section */}
                 <section className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Announcement Ticker</h2>

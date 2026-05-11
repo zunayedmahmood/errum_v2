@@ -37,6 +37,7 @@ export default function HomePage() {
   const [collections, setCollections] = useState<any[] | null>(null);
   const [newArrivals, setNewArrivals] = useState<any | null>(null);
   const [banneredCollections, setBanneredCollections] = useState<any[] | null>(null);
+  const [sectionOrder, setSectionOrder] = useState<string[]>(['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']);
   const [showcase, setShowcase] = useState<any[] | null>(null);
   
   // Track individual loading states for granular control
@@ -52,6 +53,7 @@ export default function HomePage() {
     // 2. Fetch Hero & Ticker (Priority 1)
     settingsService.getHomepageSettings('hero').then(data => {
       setHeroData({ ticker: data.ticker, hero: data.hero });
+      if (data.section_order) setSectionOrder(data.section_order);
       setLoadingHero(false);
     }).catch(err => {
       console.error('Failed to load hero settings:', err);
@@ -98,89 +100,116 @@ export default function HomePage() {
 
       <Navigation />
 
-      {/* 1. Hero section */}
-      {loadingHero ? (
-        <HeroSkeleton />
-      ) : (
-        <HeroSection 
-          images={heroData?.hero?.images ? heroData.hero.images.map((img: any) => ({ ...img, url: toAbsoluteAssetUrl(img.url) })) : []} 
-          title={heroData?.hero?.title}
-          showTitle={heroData?.hero?.show_title}
-          slideshowEnabled={heroData?.hero?.slideshow_enabled}
-          autoplaySpeed={heroData?.hero?.autoplay_speed}
-          textPosition={heroData?.hero?.text_position}
-          textColor={heroData?.hero?.text_color}
-          fontSize={heroData?.hero?.font_size}
-          transitionType={heroData?.hero?.transition_type}
-        />
-      )}
+      {/* Dynamic Sections based on order */}
+      {sectionOrder.map((sectionKey) => {
+        switch (sectionKey) {
+          case 'hero':
+            return (
+              <React.Fragment key="hero">
+                {loadingHero ? (
+                  <HeroSkeleton />
+                ) : (
+                  <HeroSection 
+                    images={heroData?.hero?.images ? heroData.hero.images.map((img: any) => ({ ...img, url: toAbsoluteAssetUrl(img.url) })) : []} 
+                    title={heroData?.hero?.title}
+                    showTitle={heroData?.hero?.show_title}
+                    slideshowEnabled={heroData?.hero?.slideshow_enabled}
+                    autoplaySpeed={heroData?.hero?.autoplay_speed}
+                    textPosition={heroData?.hero?.text_position}
+                    textColor={heroData?.hero?.text_color}
+                    fontSize={heroData?.hero?.font_size}
+                    transitionType={heroData?.hero?.transition_type}
+                  />
+                )}
+              </React.Fragment>
+            );
 
-      {/* 2. Collection Tiles */}
-      {collections === null ? (
-        <CollectionsSkeleton />
-      ) : (
-        collections.length > 0 && (
-          <SectionReveal>
-            <CollectionTiles collections={collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />
-          </SectionReveal>
-        )
-      )}
+          case 'featured_collections':
+            return (
+              <React.Fragment key="featured_collections">
+                {collections === null ? (
+                  <CollectionsSkeleton />
+                ) : (
+                  collections.length > 0 && (
+                    <SectionReveal>
+                      <CollectionTiles collections={collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />
+                    </SectionReveal>
+                  )
+                )}
+              </React.Fragment>
+            );
 
-      {/* 4. New Arrivals */}
-      {newArrivals === null ? (
-        <SectionSkeleton height="600px" />
-      ) : (
-        <SectionReveal>
-          <NewArrivals limit={12} customProducts={newArrivals.products} />
-        </SectionReveal>
-      )}
+          case 'new_arrivals':
+            return (
+              <React.Fragment key="new_arrivals">
+                {newArrivals === null ? (
+                  <SectionSkeleton height="600px" />
+                ) : (
+                  <SectionReveal>
+                    <NewArrivals limit={12} customProducts={newArrivals.products} />
+                  </SectionReveal>
+                )}
+              </React.Fragment>
+            );
 
-      {/* 4.5 Bannered Collections */}
-      {banneredCollections === null ? (
-        <SectionSkeleton height="400px" />
-      ) : (
-        banneredCollections.length > 0 && (
-          <SectionReveal>
-            <BanneredCollections items={banneredCollections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />
-          </SectionReveal>
-        )
-      )}
+          case 'bannered_collections':
+            return (
+              <React.Fragment key="bannered_collections">
+                {banneredCollections === null ? (
+                  <SectionSkeleton height="400px" />
+                ) : (
+                  banneredCollections.length > 0 && (
+                    <SectionReveal>
+                      <BanneredCollections items={banneredCollections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />
+                    </SectionReveal>
+                  )
+                )}
+              </React.Fragment>
+            );
 
-      {/* 5. Showcase Categories (Configured via Settings) */}
-      {showcase === null ? (
-        <div className="flex flex-col gap-20 py-10">
-          <ShowcaseSkeleton />
-          <ShowcaseSkeleton />
-        </div>
-      ) : (
-        showcase.map((item: any, idx: number) => (
-          <SectionReveal key={`showcase-${item.category_id}-${idx}`} threshold={0.1}>
-            <SubcategoryProductTabs
-              categoryId={item.category_id}
-              subcategoryIds={item.subcategories}
-            />
-          </SectionReveal>
-        ))
-      )}
+          case 'showcase':
+            return (
+              <React.Fragment key="showcase">
+                {showcase === null ? (
+                  <div className="flex flex-col gap-20 py-10">
+                    <ShowcaseSkeleton />
+                    <ShowcaseSkeleton />
+                  </div>
+                ) : (
+                  showcase.length > 0 ? (
+                    showcase.map((item: any, idx: number) => (
+                      <SectionReveal key={`showcase-${item.category_id}-${idx}`} threshold={0.1}>
+                        <SubcategoryProductTabs
+                          categoryId={item.category_id}
+                          subcategoryIds={item.subcategories}
+                        />
+                      </SectionReveal>
+                    ))
+                  ) : (
+                    categories.length === 0 ? (
+                      <div className="flex flex-col gap-20 py-10">
+                        <ShowcaseSkeleton />
+                        <ShowcaseSkeleton />
+                        <ShowcaseSkeleton />
+                      </div>
+                    ) : categories.map((item: any) => (
+                      <SectionReveal key={`cat-${item.id}`} threshold={0.1}>
+                        <SubcategoryProductTabs
+                          categoryId={item.id}
+                          eyebrow={item.name}
+                          subtitle={`Explore our curated selection of quality ${item.name} essentials.`}
+                        />
+                      </SectionReveal>
+                    ))
+                  )
+                )}
+              </React.Fragment>
+            );
 
-      {/* Fallback loop: if no showcase is configured, show top categories as default behavior */}
-      {showcase !== null && showcase.length === 0 && (
-        categories.length === 0 ? (
-          <div className="flex flex-col gap-20 py-10">
-            <ShowcaseSkeleton />
-            <ShowcaseSkeleton />
-            <ShowcaseSkeleton />
-          </div>
-        ) : categories.map((item: any) => (
-          <SectionReveal key={`cat-${item.id}`} threshold={0.1}>
-            <SubcategoryProductTabs
-              categoryId={item.id}
-              eyebrow={item.name}
-              subtitle={`Explore our curated selection of quality ${item.name} essentials.`}
-            />
-          </SectionReveal>
-        ))
-      )}
+          default:
+            return null;
+        }
+      })}
     </div>
   );
 }

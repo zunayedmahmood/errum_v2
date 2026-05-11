@@ -745,3 +745,24 @@ we can add  collections or categories.
 they'll be clickable and refer to e-commerce/slug and e-commerce/collections/slug pages.
 it will first show the banner image, if unavailable, it will show the thumbnail.
 we can also add an override image(banner). if override banner is given, that will be displayed.
+
+
+### homepage serial updown 
+currently homepage has a solid structure:
+hero -> featured_collections -> new_arrivals -> bannered collection -> showcase categories
+
+we want to make this serial fully controllable from homepage settings. 
+
+###  visual builder.
+add  a new page in the admin side under settings.
+name it homepage-visual-builder.
+this page will have two sidebars, the generic  admin panel sidebar and a new sidebar.
+we'll have 2 buttons on the top left, we can  press  to  one of the either, or keep both closed.
+this page's content  will  mimic the e-commerce homepage. 
+we'll have  the contents  with a little select  icon on  the  top right  of each section (the homepage  is already segmented and can be customised like  that)
+when selected,  the new sidebar opens up and we are shown the settings  for that section (exactly like the homepage settings)
+we change anything,we see  that live change in the mimic homepage (add a little debounce of 1000ms).
+and a save button to save everything.
+the other button for the generic sidebar will hide the new one (if open)andwe can use that to navigate to any other admin page.
+
+basically, we are trying to create a visual builder for the homepage. 
