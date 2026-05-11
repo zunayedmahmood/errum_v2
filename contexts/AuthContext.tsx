@@ -273,8 +273,35 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+  if (context === undefined || context === null) {
+    console.error('❌ [useAuth] Context is missing. Ensure component is wrapped in AuthProvider.');
+    return {
+      user: null,
+      role: null,
+      permissions: [],
+      isGlobal: false,
+      isScoped: true,
+      canSelectStore: false,
+      permissionsResolved: false,
+      isLoading: true,
+      isAuthenticated: false,
+      isSuperAdmin: false,
+      hasPermission: () => false,
+      hasAnyPermission: () => false,
+      hasAllPermissions: () => false,
+      login: async () => {},
+      logout: async () => {},
+      refreshUser: async () => {},
+      isRole: () => false,
+      canAccessPOS: false,
+      canAccessSocialCommerce: false,
+      canAccessInventory: false,
+      canAccessOrders: false,
+      canAccessPurchaseOrders: false,
+      canAccessPackagePage: false,
+      canAccessStoreAssignment: false,
+      canAccessDailyCashReport: false,
+    } as any;
   }
 
   const isRole = (slugs: RoleSlug | RoleSlug[]): boolean => {

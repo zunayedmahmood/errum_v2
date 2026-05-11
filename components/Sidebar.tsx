@@ -52,7 +52,14 @@ interface SidebarProps {
 export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
   const pathname = usePathname();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const { isRole, isSuperAdmin, isLoading } = useAuth();
+  const authContext = useAuth();
+  
+  // Destructure with defaults to prevent runtime errors if context is partially missing
+  const { 
+    isRole = () => false, 
+    isSuperAdmin = false, 
+    isLoading = true 
+  } = authContext || {};
 
   const canAccessHref = (href: string) => {
     if (isSuperAdmin) return true;
