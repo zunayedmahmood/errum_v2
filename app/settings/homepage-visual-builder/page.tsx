@@ -4,21 +4,16 @@ import React, { useState, useEffect, useCallback } from "react";
 import { 
   Settings, 
   Menu, 
-  Layout, 
   Save, 
-  Eye, 
   Smartphone, 
   Monitor, 
   ChevronRight,
   MousePointer2,
   X,
-  Palette,
-  Type,
   Move,
-  Plus,
+  Sliders,
   ArrowUp,
-  ArrowDown,
-  Sliders
+  ArrowDown
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Sidebar from "@/components/Sidebar";
@@ -27,19 +22,14 @@ import settingsService, { HomepageSettings } from "@/services/settingsService";
 import categoryService from "@/services/categoryService";
 import collectionService from "@/services/collectionService";
 import catalogService from "@/services/catalogService";
-import { CustomerAuthProvider } from "@/contexts/CustomerAuthContext";
-import { PromotionProvider } from "@/contexts/PromotionContext";
-import { CartProvider } from "@/app/e-commerce/CartContext";
 
-// Import Ecommerce Components for Mimic
-// Navigation is NOT imported here — it calls useCart/useCustomerAuth with router-redirecting
-// logout that would crash in the admin builder context. Use a static placeholder instead.
-import HeroSection from '@/components/ecommerce/HeroSection';
-import AnnouncementTicker from '@/components/ecommerce/AnnouncementTicker';
-import CollectionTiles from '@/components/ecommerce/CollectionTiles';
-import NewArrivals from '@/components/ecommerce/NewArrivals';
-import SubcategoryProductTabs from '@/components/ecommerce/SubcategoryProductTabs';
-import BanneredCollections from '@/components/ecommerce/BanneredCollections';
+// Import Mimic Components for Visual Builder (Pure components, no context/auth/router)
+import MimicHeroSection from './mimic/MimicHeroSection';
+import MimicAnnouncementTicker from './mimic/MimicAnnouncementTicker';
+import MimicCollectionTiles from './mimic/MimicCollectionTiles';
+import MimicNewArrivals from './mimic/MimicNewArrivals';
+import MimicSubcategoryProductTabs from './mimic/MimicSubcategoryProductTabs';
+import MimicBanneredCollections from './mimic/MimicBanneredCollections';
 import { toAbsoluteAssetUrl } from '@/lib/urlUtils';
 
 // Import Sidebar Settings Sub-component
@@ -58,7 +48,7 @@ const SECTION_NAMES: Record<string, string> = {
 };
 
 export default function HomepageVisualBuilder() {
-  const { darkMode, setDarkMode } = useTheme();
+  const { darkMode } = useTheme();
   
   // Layout State
   const [adminSidebarOpen, setAdminSidebarOpen] = useState(false);
@@ -377,15 +367,10 @@ export default function HomepageVisualBuilder() {
           <div className={`transition-all duration-500 bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden ${viewport === 'mobile' ? 'w-[375px] h-[750px]' : 'w-full max-w-6xl'}`}>
              <div className="h-full overflow-y-auto relative scrollbar-hide">
               {previewSettings && (
-                <CustomerAuthProvider>
-                  <PromotionProvider>
-                    <CartProvider>
-                    <div className="homepage-mimic relative overflow-hidden">
-                       <SectionWrapper id="ticker" active={activeSection === 'ticker'} onSelect={() => selectSection('ticker')} title="Ticker">
-
-
+                <div className="homepage-mimic relative overflow-hidden">
+                    <SectionWrapper id="ticker" active={activeSection === 'ticker'} onSelect={() => selectSection('ticker')} title="Ticker">
                     {previewSettings.ticker.enabled && (
-                      <AnnouncementTicker {...previewSettings.ticker} />
+                      <MimicAnnouncementTicker {...previewSettings.ticker} />
                     )}
                   </SectionWrapper>
                   <PreviewNavbar />
@@ -393,7 +378,7 @@ export default function HomepageVisualBuilder() {
                     switch (sectionKey) {
                       case 'hero': return (
                         <SectionWrapper key="hero" id="hero" active={activeSection === 'hero'} onSelect={() => selectSection('hero')} title="Hero">
-                          <HeroSection 
+                          <MimicHeroSection 
                             {...previewSettings.hero}
                             images={previewSettings.hero.images.map((img: any) => ({ ...img, url: toAbsoluteAssetUrl(img.url) }))} 
                           />
@@ -401,32 +386,29 @@ export default function HomepageVisualBuilder() {
                       );
                       case 'featured_collections': return (
                         <SectionWrapper key="featured_collections" id="featured_collections" active={activeSection === 'featured_collections'} onSelect={() => selectSection('featured_collections')} title="Collections">
-                          {previewSettings.collections.length > 0 && <CollectionTiles collections={previewSettings.collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />}
+                          {previewSettings.collections.length > 0 && <MimicCollectionTiles collections={previewSettings.collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />}
                         </SectionWrapper>
                       );
                       case 'new_arrivals': return (
                         <SectionWrapper key="new_arrivals" id="new_arrivals" active={activeSection === 'new_arrivals'} onSelect={() => selectSection('new_arrivals')} title="New Arrivals">
-                          <NewArrivals limit={12} customProducts={[]} />
+                          <MimicNewArrivals limit={12} customProducts={[]} />
                         </SectionWrapper>
                       );
                       case 'bannered_collections': return (
                         <SectionWrapper key="bannered_collections" id="bannered_collections" active={activeSection === 'bannered_collections'} onSelect={() => selectSection('bannered_collections')} title="Banners">
-                          {previewSettings.bannered_collections.length > 0 && <BanneredCollections items={previewSettings.bannered_collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />}
+                          {previewSettings.bannered_collections.length > 0 && <MimicBanneredCollections items={previewSettings.bannered_collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />}
                         </SectionWrapper>
                       );
                       case 'showcase': return (
                         <SectionWrapper key="showcase" id="showcase" active={activeSection === 'showcase'} onSelect={() => selectSection('showcase')} title="Showcase">
-                          {previewSettings.showcase.map((item: any, idx: number) => <SubcategoryProductTabs key={idx} categoryId={item.category_id} subcategoryIds={item.subcategories} />)}
+                          {previewSettings.showcase.map((item: any, idx: number) => <MimicSubcategoryProductTabs key={idx} categoryId={item.category_id} subcategoryIds={item.subcategories} />)}
                         </SectionWrapper>
                       );
                       default: return null;
                     }
                   })}
                 </div>
-                    </CartProvider>
-                  </PromotionProvider>
-            </CustomerAuthProvider>
-          )}
+              )}
             </div>
           </div>
         </div>
@@ -550,8 +532,7 @@ function PreviewNavbar() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <img src="/logo.png" alt="Errum" style={{ height: '28px', width: 'auto' }} />
-        <span style={{ fontWeight: 800, fontSize: '15px', letterSpacing: '0.04em', fontFamily: "'Poppins', sans-serif" }}>ERRUM</span>
+        <div style={{ fontWeight: 800, fontSize: '15px', letterSpacing: '0.04em', fontFamily: "'Poppins', sans-serif" }}>ERRUM</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '13px', fontWeight: 600, color: '#444' }}>
         <span>Shop</span>
