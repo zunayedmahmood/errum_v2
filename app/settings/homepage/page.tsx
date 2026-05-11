@@ -203,7 +203,6 @@ export default function HomepageSettingsPage() {
             formData.append(`new_arrivals[product_ids][${index}]`, String(id));
           });
         }
-        }
       }
 
       // Bannered Collections
