@@ -28,6 +28,7 @@ import categoryService from "@/services/categoryService";
 import collectionService from "@/services/collectionService";
 import catalogService from "@/services/catalogService";
 import { CustomerAuthProvider } from "@/contexts/CustomerAuthContext";
+import { PromotionProvider } from "@/contexts/PromotionContext";
 
 // Import Ecommerce Components for Mimic
 import Navigation from '@/components/ecommerce/Navigation';
@@ -375,8 +376,10 @@ export default function HomepageVisualBuilder() {
              <div className="h-full overflow-y-auto relative scrollbar-hide">
               {previewSettings && (
                 <CustomerAuthProvider>
-                  <div className="homepage-mimic">
-                     <SectionWrapper id="ticker" active={activeSection === 'ticker'} onSelect={() => selectSection('ticker')} title="Ticker">
+                  <PromotionProvider>
+                    <div className="homepage-mimic relative overflow-hidden">
+                       <SectionWrapper id="ticker" active={activeSection === 'ticker'} onSelect={() => selectSection('ticker')} title="Ticker">
+
 
                     {previewSettings.ticker.enabled && (
                       <AnnouncementTicker {...previewSettings.ticker} />
@@ -417,8 +420,9 @@ export default function HomepageVisualBuilder() {
                     }
                   })}
                 </div>
-              </CustomerAuthProvider>
-            )}
+              </PromotionProvider>
+            </CustomerAuthProvider>
+          )}
             </div>
           </div>
         </div>
@@ -530,7 +534,12 @@ export default function HomepageVisualBuilder() {
 function SectionWrapper({ children, id, active, onSelect, title }: { children: React.ReactNode, id: string, active: boolean, onSelect: () => void, title: string }) {
   return (
     <div className={`relative group transition-all duration-500 ${active ? 'ring-4 ring-blue-500 ring-inset shadow-2xl' : ''}`}>
-      <div className={`absolute inset-0 z-10 transition-all duration-300 pointer-events-none ${active ? 'bg-blue-500/5' : 'group-hover:bg-blue-500/5'}`} />
+      {/* Click-to-select overlay that blocks underlying navigation */}
+      <div 
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(); }}
+        className={`absolute inset-0 z-20 cursor-pointer transition-all duration-300 ${active ? 'bg-blue-500/5' : 'group-hover:bg-blue-500/5'}`} 
+      />
+      
       <div className={`absolute top-6 right-6 z-30 transition-all duration-300 ${active ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-2 scale-90 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100'}`}>
         <button 
           onClick={(e) => { e.stopPropagation(); onSelect(); }}
@@ -540,7 +549,11 @@ function SectionWrapper({ children, id, active, onSelect, title }: { children: R
           EDIT {title}
         </button>
       </div>
-      {children}
+
+      {/* Actual Content - wrap in div to ensure z-index is lower than overlay */}
+      <div className="relative z-10 pointer-events-none">
+        {children}
+      </div>
     </div>
   );
 }
