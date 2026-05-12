@@ -230,7 +230,7 @@ const BestSellerProducts = memo(function BestSellerProducts() {
                 >
                   <div
                     onClick={() => navigateToProduct(product.variations[0].id)}
-                    className="relative aspect-square overflow-hidden bg-gray-50 cursor-pointer"
+                    className="relative aspect-[3/4] overflow-hidden bg-gray-50 cursor-pointer"
                   >
                     <Image
                       src={product.image || '/images/placeholder-product.jpg'}

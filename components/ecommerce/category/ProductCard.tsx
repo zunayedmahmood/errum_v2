@@ -32,7 +32,7 @@ const ProductCard = memo(function ProductCard({ product, onCartOpen }: ProductCa
       {/* Image area */}
       <div
         onClick={() => navigateToProduct(product.variations[0].id)}
-        className="relative aspect-square overflow-hidden bg-neutral-50 cursor-pointer"
+        className="relative aspect-[3/4] overflow-hidden bg-neutral-50 cursor-pointer"
       >
         {product.image ? (
           <Image

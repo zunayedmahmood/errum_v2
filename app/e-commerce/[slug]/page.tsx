@@ -224,7 +224,7 @@ export default function CategoryPage() {
   const [totalResults, setTotalResults] = useState(0);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isClosingFilters, setIsClosingFilters] = useState(false);
-  
+
   // Notify navigation about mobile sidebar state
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('mobile-sidebar-toggle', { detail: { open: isFiltersOpen } }));
@@ -556,7 +556,7 @@ export default function CategoryPage() {
                 <div className="w-64 h-96 rounded-lg animate-pulse" style={{ background: 'var(--bg-surface)' }}></div>
                 <div className="flex-1 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {[...Array(10)].map((_, i) => (
-                    <div key={i} className="aspect-[2/3] rounded-lg animate-pulse bg-gray-100" />
+                    <div key={i} className="aspect-[3/4] rounded-lg animate-pulse bg-gray-100" />
                   ))}
                 </div>
               </div>
@@ -579,14 +579,14 @@ export default function CategoryPage() {
               <>
                 {heroUrl && (
                   <div className="relative h-[250px] md:h-[400px] overflow-hidden rounded-[30px] md:rounded-[50px] mb-10 shadow-sm border border-[var(--border-default)]">
-                    <img 
-                      src={heroUrl} 
-                      alt={activeCategory?.name} 
+                    <img
+                      src={heroUrl}
+                      alt={activeCategory?.name}
                       className="w-full h-full object-cover"
                     />
                   </div>
                 )}
-                
+
                 <div className="mb-12 text-left ec-anim-fade-up">
                   <h1 className="text-4xl md:text-5xl lg:text-6xl font-light text-[var(--text-primary)] mb-4 tracking-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>
                     {activeCategory?.name || 'Products'}
@@ -653,7 +653,7 @@ export default function CategoryPage() {
                   </div>
                   <h3 className="text-2xl font-light text-[var(--text-primary)] mb-2" style={{ fontFamily: "'Poppins', sans-serif" }}>Nothing here yet</h3>
                   <p className="text-[var(--text-secondary)] mb-8 max-w-xs mx-auto text-sm">We couldn't find any products matching your current filters. Try adjusting them or browse our full collection.</p>
-                  <button 
+                  <button
                     onClick={() => {
                       setSelectedPriceRange('all');
                       handleCategoryChange('all');
@@ -697,8 +697,8 @@ export default function CategoryPage() {
                               key={pageNum}
                               onClick={() => handlePageChange(pageNum)}
                               className={`h-9 w-9 sm:h-10 sm:w-10 rounded-xl text-xs sm:text-sm font-medium transition-all ${currentPage === pageNum
-                                  ? 'bg-[var(--cyan)] text-[var(--text-on-accent)] shadow-lg shadow-cyan/20'
-                                  : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border border-[var(--border-default)] hover:border-[var(--cyan)] hover:text-[var(--cyan)]'
+                                ? 'bg-[var(--cyan)] text-[var(--text-on-accent)] shadow-lg shadow-cyan/20'
+                                : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border border-[var(--border-default)] hover:border-[var(--cyan)] hover:text-[var(--cyan)]'
                                 }`}
                             >
                               {pageNum}
@@ -713,7 +713,7 @@ export default function CategoryPage() {
                         className="px-3 py-2 sm:px-5 sm:py-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-2)] disabled:opacity-20 transition-all text-xs sm:text-sm"
                       >
                         Next
-                      </button>
+                      </button>e
                     </div>
                   )}
                 </>
@@ -728,18 +728,18 @@ export default function CategoryPage() {
       {/* Mobile filter drawer (Bottom Sheet) */}
       {isFiltersOpen && (
         <div className="fixed inset-0 z-[100] xl:hidden flex items-end">
-          <div 
+          <div
             className={`fixed inset-0 bg-black/60 backdrop-blur-md ${isClosingFilters ? 'ec-anim-backdrop-out' : 'ec-anim-backdrop'}`}
             onClick={closeFilters}
           />
           <div className={`relative z-[101] w-full bg-[var(--bg-lifted)] rounded-t-3xl shadow-[var(--shadow-lifted)] flex flex-col max-h-[90vh] ${isClosingFilters ? 'ec-anim-slide-out-down' : 'ec-anim-slide-in-up'}`}>
             {/* Handle bar */}
             <div className="w-12 h-1.5 bg-[var(--border-strong)] rounded-full mx-auto my-3" />
-            
+
             <div className="flex items-center justify-between p-6 pt-2 border-b border-[var(--border-default)]">
               <h2 className="text-xl font-bold text-[var(--text-primary)] uppercase tracking-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>Filters & Sort</h2>
-              <button 
-                onClick={closeFilters} 
+              <button
+                onClick={closeFilters}
                 className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)] transition-all"
               >
                 <X className="h-5 w-5" />
@@ -767,7 +767,7 @@ export default function CategoryPage() {
             </div>
 
             <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[var(--bg-lifted)] via-[var(--bg-lifted)] to-transparent pt-10">
-              <button 
+              <button
                 onClick={closeFilters}
                 className="w-full py-4 rounded-2xl bg-[var(--text-primary)] text-[var(--bg-root)] font-bold shadow-[var(--shadow-lifted)] hover:scale-[1.02] active:scale-[0.98] transition-all"
               >

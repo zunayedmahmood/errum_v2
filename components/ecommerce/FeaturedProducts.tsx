@@ -147,7 +147,7 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({ categoryId, limit =
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 md:gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i}>
-                <div style={{ aspectRatio: '2/3', background: '#f0f0f0', borderRadius: '4px', marginBottom: '8px' }} />
+                <div style={{ aspectRatio: '3/4', background: '#f0f0f0', borderRadius: '4px', marginBottom: '8px' }} />
                 <div style={{ height: '14px', background: '#f0f0f0', borderRadius: '4px', width: '75%', marginBottom: '6px' }} />
                 <div style={{ height: '14px', background: '#f0f0f0', borderRadius: '4px', width: '40%' }} />
               </div>

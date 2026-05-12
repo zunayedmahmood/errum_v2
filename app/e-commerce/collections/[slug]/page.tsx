@@ -88,7 +88,7 @@ export default function CollectionPage() {
               <div className="h-40 md:h-64 rounded-3xl mb-8 bg-gray-100" />
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
                 {[...Array(8)].map((_, i) => (
-                  <div key={i} className="aspect-[2/3] rounded-2xl bg-gray-100" />
+                  <div key={i} className="aspect-[3/4] rounded-2xl bg-gray-100" />
                 ))}
               </div>
             </div>

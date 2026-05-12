@@ -123,7 +123,7 @@ export default function WishlistPage() {
               >
                 <div 
                   onClick={() => handleNavigateToProduct(item.id)}
-                  className="relative aspect-square overflow-hidden cursor-pointer" style={{ background: 'rgba(255,255,255,0.04)' }}
+                  className="relative aspect-[3/4] overflow-hidden cursor-pointer" style={{ background: 'rgba(255,255,255,0.04)' }}
                 >
                   <img
                     src={item.image}

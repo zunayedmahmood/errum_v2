@@ -78,7 +78,7 @@ const PremiumProductCard: React.FC<PremiumProductCardProps> = React.memo(({
       className="ec-anim-fade-up"
     >
       {/* Image Container */}
-      <div style={{ position: 'relative', aspectRatio: '2/3', background: '#f5f5f5', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', aspectRatio: '3/4', background: '#f5f5f5', overflow: 'hidden' }}>
         {/* Loading shimmer */}
         {!isLoaded && !imageErrored && (
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, #f5f5f5 25%, #ebebeb 50%, #f5f5f5 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
