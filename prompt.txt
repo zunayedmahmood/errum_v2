@@ -766,3 +766,26 @@ and a save button to save everything.
 the other button for the generic sidebar will hide the new one (if open)andwe can use that to navigate to any other admin page.
 
 basically, we are trying to create a visual builder for the homepage. 
+
+### price adjustment issue:
+we got this warning from inventory/batch-price-update.
+i'm giving you cosole warnings, 
+the backend route tht it calls,
+the payload and the error.
+
+what i have understood from this:
+when we select all (or some) product (variant) to update the batch selling price/cost price in bulk,
+one or more of them may be out of stock and have no batches.
+4bd1b696-100b9d70ed4e49c1.js?dpl=dpl_3qQEe2z3qU6HGFdYo2BxXo5WnZvC:1 The specified value "5,800.00" cannot be parsed, or is out of range.
+set @ 4bd1b696-100b9d70ed4e49c1.js?dpl=dpl_3qQEe2z3qU6HGFdYo2BxXo5WnZvC:1
+4bd1b696-100b9d70ed4e49c1.js?dpl=dpl_3qQEe2z3qU6HGFdYo2BxXo5WnZvC:1 The specified value "5,800.00" cannot be parsed, or is out of range.
+no @ 4bd1b696-100b9d70ed4e49c1.js?dpl=dpl_3qQEe2z3qU6HGFdYo2BxXo5WnZvC:1
+8The specified value "3,200.00" cannot be parsed, or is out of range
+
+POST https://backend.errumbd.com/api/products/5602/batches/update-price 404 (Not Found)
+Payload: {"sell_price":5800}
+Response: {"success":false,"message":"No batches found for this product"}
+
+so, when the frontend calls https://backend.errumbd.com/api/products/5602/batches/update-price it throws a 404 saying {"success":false,"message":"No batches found for this product"}\
+update the backend to simply give a warning that frontend will show in the toast: "No batch for "Product name"" and for success, the toast stays as is.
+This should solve the issue.

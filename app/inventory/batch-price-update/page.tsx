@@ -239,6 +239,11 @@ export default function BatchPriceUpdatePage() {
       for (const pid of targetIds) {
         const res = await batchService.updateAllBatchPrices(pid, priceNum);
         if (res?.success) {
+          if (res.warning && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('global-toast', {
+              detail: { message: res.message, type: 'warning' }
+            }));
+          }
           totalUpdated += res.data.updated_batches;
           allUpdates = [...allUpdates, ...res.data.updates];
         }
@@ -284,6 +289,11 @@ export default function BatchPriceUpdatePage() {
       for (const pid of targetIds) {
         const res = await batchService.updateAllBatchCostPrices(pid, costNum);
         if (res?.success) {
+          if (res.warning && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('global-toast', {
+              detail: { message: res.message, type: 'warning' }
+            }));
+          }
           totalUpdated += res.data.updated_batches;
           allUpdates = [...allUpdates, ...res.data.updates];
         }

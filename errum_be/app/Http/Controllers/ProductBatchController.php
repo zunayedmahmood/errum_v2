@@ -544,7 +544,7 @@ class ProductBatchController extends Controller
                         'store_name' => $item->store->name ?? 'Unknown',
                         'batch_count' => $item->batch_count,
                         'total_units' => $item->total_units,
-                        'inventory_value' => number_format((float)$item->inventory_value, 2)
+                        'inventory_value' => number_format((float)$item->inventory_value, 2, '.', '')
                     ];
                 });
         }
@@ -608,11 +608,11 @@ class ProductBatchController extends Controller
                 'name' => $batch->store->name,
             ],
             'quantity' => $batch->quantity,
-            'cost_price' => number_format((float)$batch->cost_price, 2),
-            'sell_price' => number_format((float)$batch->sell_price, 2),
+            'cost_price' => number_format((float)$batch->cost_price, 2, '.', ''),
+            'sell_price' => number_format((float)$batch->sell_price, 2, '.', ''),
             'profit_margin' => $batch->calculateProfitMargin() . '%',
-            'total_value' => number_format((float)$batch->getTotalValue(), 2),
-            'sell_value' => number_format((float)$batch->getSellValue(), 2),
+            'total_value' => number_format((float)$batch->getTotalValue(), 2, '.', ''),
+            'sell_value' => number_format((float)$batch->getSellValue(), 2, '.', ''),
             'availability' => $batch->availability,
             'status' => $batch->status,
             'is_active' => $batch->is_active,
@@ -689,9 +689,14 @@ class ProductBatchController extends Controller
 
             if ($batches->isEmpty()) {
                 return response()->json([
-                    'success' => false,
-                    'message' => 'No batches found for this product',
-                ], 404);
+                    'success' => true,
+                    'warning' => true,
+                    'message' => "No batch for \"{$product->name}\"",
+                    'data' => [
+                        'updated_batches' => 0,
+                        'updates' => [],
+                    ]
+                ], 200);
             }
 
             // Store old prices for response
@@ -708,8 +713,8 @@ class ProductBatchController extends Controller
                         'batch_id' => $batch->id,
                         'batch_number' => $batch->batch_number,
                         'store' => $batch->store->name ?? 'N/A',
-                        'old_price' => number_format((float)$oldPrice, 2),
-                        'new_price' => number_format((float)$newSellPrice, 2),
+                        'old_price' => number_format((float)$oldPrice, 2, '.', ''),
+                        'new_price' => number_format((float)$newSellPrice, 2, '.', ''),
                     ];
                 }
 
@@ -722,7 +727,7 @@ class ProductBatchController extends Controller
                         'product_id' => $product->id,
                         'product_name' => $product->name,
                         'product_sku' => $product->sku,
-                        'new_sell_price' => number_format((float)$newSellPrice, 2),
+                        'new_sell_price' => number_format((float)$newSellPrice, 2, '.', ''),
                         'batches_updated' => count($updates),
                         'updates' => $updates,
                     ],
@@ -774,9 +779,14 @@ class ProductBatchController extends Controller
 
             if ($batches->isEmpty()) {
                 return response()->json([
-                    'success' => false,
-                    'message' => 'No batches found for this product',
-                ], 404);
+                    'success' => true,
+                    'warning' => true,
+                    'message' => "No batch for \"{$product->name}\"",
+                    'data' => [
+                        'updated_batches' => 0,
+                        'updates' => [],
+                    ]
+                ], 200);
             }
 
             $updates = [];
@@ -791,8 +801,8 @@ class ProductBatchController extends Controller
                         'batch_id' => $batch->id,
                         'batch_number' => $batch->batch_number,
                         'store' => $batch->store->name ?? 'N/A',
-                        'old_price' => number_format((float)$oldPrice, 2),
-                        'new_price' => number_format((float)$newCostPrice, 2),
+                        'old_price' => number_format((float)$oldPrice, 2, '.', ''),
+                        'new_price' => number_format((float)$newCostPrice, 2, '.', ''),
                     ];
                 }
                 DB::commit();
@@ -804,7 +814,7 @@ class ProductBatchController extends Controller
                         'product_id' => $product->id,
                         'product_name' => $product->name,
                         'product_sku' => $product->sku,
-                        'new_cost_price' => number_format((float)$newCostPrice, 2),
+                        'new_cost_price' => number_format((float)$newCostPrice, 2, '.', ''),
                         'batches_updated' => count($updates),
                         'updates' => $updates,
                     ],
