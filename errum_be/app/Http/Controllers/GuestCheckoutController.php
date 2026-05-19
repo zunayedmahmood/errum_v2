@@ -46,6 +46,7 @@ class GuestCheckoutController extends Controller
                 'customer_name' => 'nullable|string|max:255',
                 'customer_email' => 'nullable|email|max:255',
                 'notes' => 'nullable|string|max:500',
+                'coupon_code' => 'nullable|string|max:50',
             ]);
 
             if ($validator->fails()) {
@@ -73,8 +74,26 @@ class GuestCheckoutController extends Controller
                 // Step 2: Validate products and calculate totals
                 $subtotal = 0;
                 $taxAmount = 0;
+                $totalDiscount = 0;
                 $orderItems = [];
                 $outOfStockItems = [];
+
+                // --- CAMPAIGN AWARENESS ---
+                // Fetch valid, active, automatic public campaigns
+                $publicCampaigns = \App\Models\Promotion::active()
+                    ->public()
+                    ->valid()
+                    ->where('is_automatic', true)
+                    ->get();
+                
+                // Fetch private campaign if provided
+                $privateCampaign = null;
+                if ($request->filled('coupon_code')) {
+                    $privateCampaign = \App\Models\Promotion::active()
+                        ->where('code', $request->coupon_code)
+                        ->valid()
+                        ->first();
+                }
 
                 foreach ($request->items as $item) {
                     $product = Product::find($item['product_id']);
@@ -124,18 +143,72 @@ class GuestCheckoutController extends Controller
                         ], 400);
                     }
                     
-                    $itemTotal = $unitPrice * $item['quantity'];
+                    $itemGrossTotal = $unitPrice * $item['quantity'];
+                    
+                    // --- APPLY CAMPAIGNS ---
+                    $itemDiscount = 0;
+                    
+                    // Format item for promotion logic
+                    $promoItem = [
+                        'product_id' => $product->id,
+                        'category_id' => $product->category_id,
+                        'quantity' => $item['quantity'],
+                        'unit_price' => $unitPrice,
+                    ];
+                    
+                    // Evaluate Public Campaigns
+                    $bestPublicDiscount = 0;
+                    foreach ($publicCampaigns as $campaign) {
+                        if ($campaign->isValid()) {
+                            $isApplicable = empty($campaign->applicable_products) && empty($campaign->applicable_categories);
+                            if (!$isApplicable && !empty($campaign->applicable_products) && in_array($product->id, $campaign->applicable_products)) {
+                                $isApplicable = true;
+                            }
+                            if (!$isApplicable && !empty($campaign->applicable_categories) && in_array($product->category_id, $campaign->applicable_categories)) {
+                                $isApplicable = true;
+                            }
+                            
+                            if ($isApplicable) {
+                                $calcDiscount = $campaign->calculateDiscount($itemGrossTotal, [$promoItem]);
+                                if ($calcDiscount > $bestPublicDiscount) {
+                                    $bestPublicDiscount = $calcDiscount;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Evaluate Private Campaign
+                    $privateDiscount = 0;
+                    if ($privateCampaign && $privateCampaign->isValid()) {
+                         $isApplicable = empty($privateCampaign->applicable_products) && empty($privateCampaign->applicable_categories);
+                         if (!$isApplicable && !empty($privateCampaign->applicable_products) && in_array($product->id, $privateCampaign->applicable_products)) {
+                             $isApplicable = true;
+                         }
+                         if (!$isApplicable && !empty($privateCampaign->applicable_categories) && in_array($product->category_id, $privateCampaign->applicable_categories)) {
+                             $isApplicable = true;
+                         }
+                         
+                         if ($isApplicable) {
+                             $privateDiscount = $privateCampaign->calculateDiscount($itemGrossTotal, [$promoItem]);
+                         }
+                    }
+                    
+                    $itemDiscount = min($bestPublicDiscount + $privateDiscount, $itemGrossTotal);
+                    
+                    $itemTotal = $itemGrossTotal - $itemDiscount;
                     
                     // Extract tax from inclusive price using category/batch tax_percentage
                     // Priority: Category tax > Batch tax
                     $batch = $inStockBatch ?? $anyBatch;
                     $taxPercentage = $batch ? (float) ($batch->tax_percentage ?? 0) : 0;
+                    // Tax calculation is based on the final discounted amount since price is inclusive
                     $itemTax = $taxPercentage > 0 
                         ? round($itemTotal - ($itemTotal / (1 + ($taxPercentage / 100))), 2)
                         : 0;
                     
-                    $subtotal += $itemTotal;
+                    $subtotal += $itemGrossTotal; // Keep subtotal as gross
                     $taxAmount += $itemTax;
+                    $totalDiscount += $itemDiscount;
 
                     $orderItems[] = [
                         'product_id' => $product->id,
@@ -143,6 +216,7 @@ class GuestCheckoutController extends Controller
                         'product_sku' => $product->sku,
                         'quantity' => $item['quantity'],
                         'unit_price' => $unitPrice,
+                        'discount_amount' => $itemDiscount,
                         'tax_amount' => $itemTax,
                         'total_amount' => $itemTotal,
                         'variant_options' => $item['variant_options'] ?? null,
@@ -162,7 +236,7 @@ class GuestCheckoutController extends Controller
                 // Step 3: Calculate charges
                 $deliveryCharge = $this->calculateDeliveryCharge($request->input('delivery_address.city'));
                 // Tax is already extracted from item prices (inclusive)
-                $totalAmount = $subtotal + $deliveryCharge;
+                $totalAmount = ($subtotal - $totalDiscount) + $deliveryCharge;
 
                 // Step 4: Prepare delivery address
                 $deliveryAddress = [
@@ -198,7 +272,7 @@ class GuestCheckoutController extends Controller
                     'payment_method' => $request->payment_method,
                     'subtotal' => $subtotal,
                     'tax_amount' => $taxAmount,
-                    'discount_amount' => 0,
+                    'discount_amount' => $totalDiscount,
                     'shipping_amount' => $deliveryCharge,
                     'total_amount' => $totalAmount,
                     'shipping_address' => $deliveryAddress,
@@ -208,6 +282,7 @@ class GuestCheckoutController extends Controller
                         'checkout_type' => 'guest',
                         'customer_phone' => $request->phone,
                         'customer_provided_name' => $request->customer_name,
+                        'applied_coupon' => $request->coupon_code,
                     ],
                 ]);
 
@@ -220,13 +295,18 @@ class GuestCheckoutController extends Controller
                         'product_sku' => $itemData['product_sku'],
                         'quantity' => $itemData['quantity'],
                         'unit_price' => $itemData['unit_price'],
-                        'tax_amount' => 0,
-                        'discount_amount' => 0,
+                        'tax_amount' => $itemData['tax_amount'],
+                        'discount_amount' => $itemData['discount_amount'],
                         'total_amount' => $itemData['total_amount'],
                     ]);
 
                     // Note: Reservation is automatically handled by OrderItemObserver 
                     // since the order starts with 'pending_assignment' status.
+                }
+                
+                // Record usage for private campaign if it was applied
+                if ($privateCampaign && $privateCampaign->isValid() && $totalDiscount > 0) {
+                    $privateCampaign->recordUsage($order, $customer, $totalDiscount);
                 }
 
                 // Step 7: Handle payment method

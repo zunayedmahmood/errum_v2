@@ -1,4 +1,5 @@
 import axiosInstance from '@/lib/axios';
+import { EcommerceTheme } from '@/lib/ecommerceDesignSystem';
 
 export interface ShowcaseCategory {
   category_id: number;
@@ -6,6 +7,7 @@ export interface ShowcaseCategory {
 }
 
 export interface HomepageSettings {
+  global_theme?: EcommerceTheme;
   ticker: {
     enabled: boolean;
     mode: 'static' | 'moving';
@@ -57,11 +59,22 @@ class SettingsService {
   /**
    * Get homepage settings for public display
    */
-  async getHomepageSettings(group?: 'hero' | 'collections' | 'new_arrivals' | 'showcase' | 'bannered_collections'): Promise<Partial<HomepageSettings>> {
+  async getHomepageSettings(group?: 'hero' | 'collections' | 'new_arrivals' | 'showcase' | 'bannered_collections' | 'global_theme'): Promise<Partial<HomepageSettings>> {
     const response = await axiosInstance.get('/catalog/homepage-settings', {
       params: group ? { group } : {}
     });
     return response.data;
+  }
+
+
+  /**
+   * Get storefront design-system tokens for e-commerce pages.
+   */
+  async getGlobalTheme(): Promise<EcommerceTheme> {
+    const response = await axiosInstance.get('/catalog/homepage-settings', {
+      params: { group: 'global_theme' }
+    });
+    return response.data.global_theme;
   }
 
   /**

@@ -16,6 +16,7 @@ import {
   Palette
 } from "lucide-react";
 import { HomepageSettings } from "@/services/settingsService";
+import { ECOMMERCE_FONT_OPTIONS, EcommerceTheme, normalizeEcommerceTheme } from "@/lib/ecommerceDesignSystem";
 
 interface SidebarSettingsProps {
   settings: HomepageSettings;
@@ -52,6 +53,30 @@ export default function SidebarSettings({
   productSearchQuery,
   setProductSearchQuery,
 }: SidebarSettingsProps) {
+  const theme = normalizeEcommerceTheme(settings.global_theme);
+  const updateTheme = (updates: Partial<EcommerceTheme>) => {
+    setSettings({ ...settings, global_theme: { ...theme, ...updates } });
+  };
+
+  const colorControl = (label: string, key: keyof EcommerceTheme) => (
+    <div>
+      <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={String(theme[key] || '#ffffff').startsWith('#') ? String(theme[key]) : '#ffffff'}
+          onChange={(e) => updateTheme({ [key]: e.target.value } as Partial<EcommerceTheme>)}
+          className="w-10 h-9 rounded-lg cursor-pointer border border-gray-200 dark:border-gray-700 bg-transparent"
+        />
+        <input
+          type="text"
+          value={String(theme[key] || '')}
+          onChange={(e) => updateTheme({ [key]: e.target.value } as Partial<EcommerceTheme>)}
+          className="flex-1 px-2 py-2 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+        />
+      </div>
+    </div>
+  );
 
   // --- HERO HELPERS ---
   const handleAddHeroImage = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,6 +176,136 @@ export default function SidebarSettings({
     setSelectedProductsData(currentData);
     setSettings({ ...settings, new_arrivals: { ...settings.new_arrivals!, product_ids: currentIds } });
   };
+
+
+  const renderGlobalThemeSettings = () => (
+    <div className="space-y-6">
+      <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-900/30">
+        <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed font-medium">
+          These tokens affect only the e-commerce storefront and this preview canvas. Admin pages keep their existing styles.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+          <Palette className="w-4 h-4" /> Site Colours
+        </div>
+        <div className="grid grid-cols-1 gap-3">
+          {colorControl('Page Background', 'color_bg_primary')}
+          {colorControl('Alternate Background', 'color_bg_secondary')}
+          {colorControl('Primary Text', 'color_text_primary')}
+          {colorControl('Secondary Text', 'color_text_secondary')}
+          {colorControl('Accent / Button', 'color_accent')}
+          {colorControl('Accent Text', 'color_accent_text')}
+          {colorControl('Product Card Background', 'color_card_bg')}
+          <div>
+            <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Border Colour</label>
+            <input
+              type="text"
+              value={theme.color_border}
+              onChange={(e) => updateTheme({ color_border: e.target.value })}
+              className="w-full px-2 py-2 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              placeholder="rgba(0,0,0,0.10)"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3 pt-4 border-t border-gray-100 dark:border-gray-800">
+        <div className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+          <Type className="w-4 h-4" /> Typography
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Body Font</label>
+          <select
+            value={theme.font_body}
+            onChange={(e) => updateTheme({ font_body: e.target.value })}
+            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+          >
+            {ECOMMERCE_FONT_OPTIONS.map((font) => <option key={font} value={font}>{font}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Body Weight</label>
+          <select
+            value={theme.font_body_weight}
+            onChange={(e) => updateTheme({ font_body_weight: e.target.value })}
+            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+          >
+            <option value="300">Light</option>
+            <option value="400">Regular</option>
+            <option value="500">Medium</option>
+            <option value="600">SemiBold</option>
+            <option value="700">Bold</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="space-y-3 pt-4 border-t border-gray-100 dark:border-gray-800">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+            <Layout className="w-4 h-4" /> Product Card Shadow
+          </div>
+          <input
+            type="checkbox"
+            checked={theme.card_shadow_enabled}
+            onChange={(e) => updateTheme({ card_shadow_enabled: e.target.checked })}
+            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+          />
+        </div>
+
+        {theme.card_shadow_enabled && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              {(['directional', 'glow'] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => updateTheme({ card_shadow_type: type })}
+                  className={`px-3 py-2 rounded-lg border text-xs font-bold uppercase ${theme.card_shadow_type === type ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 dark:border-gray-700 text-gray-500'}`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Shadow Colour</label>
+              <input
+                type="text"
+                value={theme.card_shadow_color}
+                onChange={(e) => updateTheme({ card_shadow_color: e.target.value })}
+                className="w-full px-2 py-2 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              />
+            </div>
+            {theme.card_shadow_type === 'directional' && (
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Direction</label>
+                <select
+                  value={theme.card_shadow_direction}
+                  onChange={(e) => updateTheme({ card_shadow_direction: e.target.value as EcommerceTheme['card_shadow_direction'] })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
+                  <option value="bottom">Bottom</option>
+                  <option value="bottom-right">Bottom Right</option>
+                  <option value="bottom-left">Bottom Left</option>
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Intensity: {theme.card_shadow_intensity}</label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={theme.card_shadow_intensity}
+                onChange={(e) => updateTheme({ card_shadow_intensity: parseInt(e.target.value) })}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   const renderTickerSettings = () => (
     <div className="space-y-6">
@@ -488,6 +643,7 @@ export default function SidebarSettings({
   );
 
   switch (activeSection) {
+    case 'global_theme': return renderGlobalThemeSettings();
     case 'ticker': return renderTickerSettings();
     case 'hero': return renderHeroSettings();
     case 'featured_collections': return renderCollectionsSettings();

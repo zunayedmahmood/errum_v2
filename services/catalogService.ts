@@ -972,7 +972,7 @@ const catalogService = {
 
   async getProduct(
     productIdentifier: number | string,
-    params?: { include_availability?: boolean }
+    params?: { include_availability?: boolean; hide_cost_price?: boolean }
   ): Promise<ProductDetailResponse> {
     try {
       const response = await api.get(`/catalog/products/${productIdentifier}`, { params });

@@ -17,8 +17,17 @@ class SettingController extends Controller
     {
         $group = $request->query('group');
         $settings = Setting::where('group', 'homepage')->pluck('value', 'key');
+
+        if ($group === 'global_theme') {
+            return response()->json([
+                'global_theme' => $this->getGlobalThemeData(),
+            ]);
+        }
         
         $response = [];
+        if (!$group) {
+            $response['global_theme'] = $this->getGlobalThemeData();
+        }
         $response['section_order'] = $settings->get('homepage_section_order', ['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']);
 
         // 1. Ticker & Hero (The "Immediate" group)
@@ -244,6 +253,7 @@ class SettingController extends Controller
         }
 
         return response()->json([
+            'global_theme' => $this->getGlobalThemeData(),
             'ticker' => array_merge([
                 'enabled' => true,
                 'mode' => 'moving',
@@ -283,6 +293,23 @@ class SettingController extends Controller
     public function updateHomepageSettings(Request $request)
     {
         $validated = $request->validate([
+            'global_theme' => 'nullable|array',
+            'global_theme.color_bg_primary' => 'nullable|string|max:50',
+            'global_theme.color_bg_secondary' => 'nullable|string|max:50',
+            'global_theme.color_text_primary' => 'nullable|string|max:50',
+            'global_theme.color_text_secondary' => 'nullable|string|max:50',
+            'global_theme.color_accent' => 'nullable|string|max:50',
+            'global_theme.color_accent_text' => 'nullable|string|max:50',
+            'global_theme.color_border' => 'nullable|string|max:80',
+            'global_theme.color_card_bg' => 'nullable|string|max:50',
+            'global_theme.font_body' => 'nullable|string|max:80',
+            'global_theme.font_body_weight' => 'nullable|string|max:10',
+            'global_theme.card_shadow_enabled' => 'nullable|string',
+            'global_theme.card_shadow_type' => 'nullable|string|in:glow,directional',
+            'global_theme.card_shadow_color' => 'nullable|string|max:80',
+            'global_theme.card_shadow_direction' => 'nullable|string|in:bottom,bottom-right,bottom-left',
+            'global_theme.card_shadow_intensity' => 'nullable|integer|min:0|max:100',
+
             'ticker' => 'nullable|array',
             'ticker.enabled' => 'nullable|string',
             'ticker.mode' => 'nullable|string|in:static,moving',
@@ -334,6 +361,17 @@ class SettingController extends Controller
             'section_order' => 'nullable|array',
             'section_order.*' => 'string|in:hero,featured_collections,new_arrivals,bannered_collections,showcase',
         ]);
+
+        if ($request->has('global_theme')) {
+            $globalTheme = array_merge($this->globalThemeDefaults(), $validated['global_theme']);
+            $globalTheme['card_shadow_enabled'] = filter_var($globalTheme['card_shadow_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $globalTheme['card_shadow_intensity'] = (int) ($globalTheme['card_shadow_intensity'] ?? 35);
+
+            Setting::updateOrCreate(
+                ['key' => 'global_theme'],
+                ['value' => $globalTheme, 'group' => 'global']
+            );
+        }
 
         if ($request->has('ticker')) {
             $tickerData = $validated['ticker'];
@@ -519,6 +557,40 @@ class SettingController extends Controller
         }
 
         return response()->json(['message' => 'Homepage settings updated successfully']);
+    }
+
+    /**
+     * Default storefront design-system tokens.
+     */
+    private function globalThemeDefaults(): array
+    {
+        return [
+            'color_bg_primary' => '#ffffff',
+            'color_bg_secondary' => '#f5f5f5',
+            'color_text_primary' => '#111111',
+            'color_text_secondary' => '#555555',
+            'color_accent' => '#111111',
+            'color_accent_text' => '#ffffff',
+            'color_border' => 'rgba(0,0,0,0.10)',
+            'color_card_bg' => '#ffffff',
+            'font_body' => 'Poppins',
+            'font_body_weight' => '400',
+            'card_shadow_enabled' => false,
+            'card_shadow_type' => 'directional',
+            'card_shadow_color' => 'rgba(0,0,0,0.12)',
+            'card_shadow_direction' => 'bottom',
+            'card_shadow_intensity' => 35,
+        ];
+    }
+
+    /**
+     * Read the global ecommerce theme without affecting admin UI theme settings.
+     */
+    private function getGlobalThemeData(): array
+    {
+        $stored = Setting::where('key', 'global_theme')->where('group', 'global')->first()?->value ?? [];
+
+        return array_merge($this->globalThemeDefaults(), is_array($stored) ? $stored : []);
     }
 
     /**

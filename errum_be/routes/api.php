@@ -75,6 +75,9 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 Route::post('/guest-checkout', [\App\Http\Controllers\GuestCheckoutController::class, 'checkout']);
 Route::post('/guest-orders/by-phone', [\App\Http\Controllers\GuestCheckoutController::class, 'getOrdersByPhone']);
 
+// LazyChat AI order creation endpoint (public webhook receiver)
+Route::post('/order/create', [\App\Http\Controllers\LazyChatOrderController::class, 'store']);
+
 // ============================================
 // PUBLIC CUSTOMER REGISTRATION
 // Open registration form for customers (no auth required)

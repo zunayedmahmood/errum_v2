@@ -82,7 +82,7 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div className="ec-root min-h-screen" style={{ background: '#ffffff' }}>
+    <div className="ec-root min-h-screen" style={{ background: 'var(--ec-color-bg-primary)' }}>
       {/* 0. Ticker */}
       {loadingHero ? (
         <TickerSkeleton />

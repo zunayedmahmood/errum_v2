@@ -27,6 +27,12 @@ use App\Models\ProductBatch;
 use App\Observers\ProductBatchObserver;
 use App\Models\OrderItem;
 use App\Observers\OrderItemObserver;
+use App\Models\Product;
+use App\Models\ProductImage;
+use App\Models\ReservedProduct;
+use App\Observers\LazyChatProductObserver;
+use App\Observers\LazyChatProductImageObserver;
+use App\Observers\LazyChatReservedProductObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -56,5 +62,8 @@ class AppServiceProvider extends ServiceProvider
         DefectiveProduct::observe(DefectiveProductObserver::class);
         ProductBatch::observe(ProductBatchObserver::class);
         OrderItem::observe(OrderItemObserver::class);
+        Product::observe(LazyChatProductObserver::class);
+        ProductImage::observe(LazyChatProductImageObserver::class);
+        ReservedProduct::observe(LazyChatReservedProductObserver::class);
     }
 }

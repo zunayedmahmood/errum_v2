@@ -7,27 +7,18 @@ import { PromotionProvider } from '@/contexts/PromotionContext';
 import Footer from '@/components/ecommerce/Footer';
 import ScrollToTopOnRouteChange from '@/components/ecommerce/ScrollToTopOnRouteChange';
 import GlobalCartSidebar from '@/components/ecommerce/cart/GlobalCartSidebar';
-
+import EcommerceThemeProvider from '@/components/ecommerce/EcommerceThemeProvider';
 
 export default function EcommerceLayout({ children }: { children: React.ReactNode }) {
   return (
     <CustomerAuthProvider>
       <PromotionProvider>
-        <Suspense fallback={null}>
-          <ScrollToTopOnRouteChange />
-        </Suspense>
+        <EcommerceThemeProvider>
+          <Suspense fallback={null}>
+            <ScrollToTopOnRouteChange />
+          </Suspense>
 
-        <GlobalCartSidebar />
-
-        {/* Clean white e-commerce layout */}
-        <div
-          className="ec-root"
-          style={{
-            minHeight: '100vh',
-            backgroundColor: '#ffffff',
-            position: 'relative',
-          }}
-        >
+          <GlobalCartSidebar />
 
           {/* All page content */}
           <div style={{ position: 'relative', zIndex: 10 }}>
@@ -36,7 +27,7 @@ export default function EcommerceLayout({ children }: { children: React.ReactNod
           <div style={{ position: 'relative', zIndex: 1 }}>
             <Footer />
           </div>
-        </div>
+        </EcommerceThemeProvider>
       </PromotionProvider>
     </CustomerAuthProvider>
   );

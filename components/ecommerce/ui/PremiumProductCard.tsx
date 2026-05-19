@@ -71,14 +71,14 @@ const PremiumProductCard: React.FC<PremiumProductCardProps> = React.memo(({
         display: 'flex',
         flexDirection: 'column',
         cursor: 'pointer',
-        background: '#ffffff',
+        background: 'var(--ec-color-card-bg)',
         animationDelay: `${animDelay}ms`,
         animationFillMode: 'both',
       }}
       className="ec-anim-fade-up"
     >
       {/* Image Container */}
-      <div style={{ position: 'relative', aspectRatio: '3/4', background: '#f5f5f5', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', aspectRatio: '3/4', background: 'var(--ec-color-bg-secondary)', overflow: 'hidden', boxShadow: 'var(--ec-card-shadow)' }}>
         {/* Loading shimmer */}
         {!isLoaded && !imageErrored && (
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, #f5f5f5 25%, #ebebeb 50%, #f5f5f5 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
@@ -110,17 +110,17 @@ const PremiumProductCard: React.FC<PremiumProductCardProps> = React.memo(({
         {/* Badges */}
         <div style={{ position: 'absolute', top: '8px', left: '8px', display: 'flex', flexDirection: 'column', gap: '4px', zIndex: 10 }}>
           {isNew && (
-            <span style={{ background: '#111111', color: '#ffffff', fontSize: '10px', fontWeight: 700, padding: '3px 8px', letterSpacing: '0.05em', fontFamily: "'Poppins', sans-serif" }}>
+            <span style={{ background: 'var(--ec-color-accent)', color: 'var(--ec-color-accent-text)', fontSize: '10px', fontWeight: 700, padding: '3px 8px', letterSpacing: '0.05em', fontFamily: 'var(--ec-font-body)' }}>
               NEW
             </span>
           )}
           {salePromo && salePercent > 0 && (
-            <span style={{ background: '#e02020', color: '#ffffff', fontSize: '10px', fontWeight: 700, padding: '3px 8px', fontFamily: "'Poppins', sans-serif" }}>
+            <span style={{ background: '#e02020', color: 'var(--ec-color-accent-text)', fontSize: '10px', fontWeight: 700, padding: '3px 8px', fontFamily: 'var(--ec-font-body)' }}>
               -{salePercent}%
             </span>
           )}
           {!hasStock && (
-            <span style={{ background: '#f0f0f0', color: '#555555', fontSize: '10px', fontWeight: 700, padding: '3px 8px', fontFamily: "'Poppins', sans-serif" }}>
+            <span style={{ background: '#f0f0f0', color: 'var(--ec-color-text-secondary)', fontSize: '10px', fontWeight: 700, padding: '3px 8px', fontFamily: 'var(--ec-font-body)' }}>
               SOLD OUT
             </span>
           )}
@@ -135,13 +135,13 @@ const PremiumProductCard: React.FC<PremiumProductCardProps> = React.memo(({
               bottom: 0,
               left: 0,
               right: 0,
-              background: '#111111',
+              background: 'var(--ec-color-accent)',
               color: '#ffffff',
               border: 'none',
               padding: '12px',
               fontSize: '11px',
               fontWeight: 700,
-              fontFamily: "'Poppins', sans-serif",
+              fontFamily: 'var(--ec-font-body)',
               textTransform: 'uppercase',
               letterSpacing: '0.10em',
               cursor: 'pointer',
@@ -162,14 +162,14 @@ const PremiumProductCard: React.FC<PremiumProductCardProps> = React.memo(({
       {/* Info */}
       <div style={{ padding: '10px 0', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {categoryName && (
-          <p style={{ fontSize: '10px', color: '#999999', fontFamily: "'Poppins', sans-serif", fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
+          <p style={{ fontSize: '10px', color: 'var(--ec-color-text-secondary)', fontFamily: 'var(--ec-font-body)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
             {categoryName}
           </p>
         )}
         <h3 style={{
           fontSize: compact ? '14px' : '16px',
-          fontFamily: "'Poppins', sans-serif",
-          color: '#111111',
+          fontFamily: 'var(--ec-font-body)',
+          color: 'var(--ec-color-text-primary)',
           lineHeight: 1.3,
           fontWeight: 600,
           margin: 0,
@@ -186,20 +186,20 @@ const PremiumProductCard: React.FC<PremiumProductCardProps> = React.memo(({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
           {salePromo && salePrice !== null ? (
             <>
-              <span style={{ fontSize: '14px', fontWeight: 700, color: '#e02020', fontFamily: "'Poppins', sans-serif" }}>
+              <span style={{ fontSize: '14px', fontWeight: 700, color: '#e02020', fontFamily: 'var(--ec-font-body)' }}>
                 ৳{salePrice.toFixed(0)}
               </span>
-              <span style={{ fontSize: '12px', color: '#999999', textDecoration: 'line-through', fontFamily: "'Poppins', sans-serif" }}>
+              <span style={{ fontSize: '12px', color: 'var(--ec-color-text-secondary)', textDecoration: 'line-through', fontFamily: 'var(--ec-font-body)' }}>
                 ৳{originalPrice.toFixed(0)}
               </span>
             </>
           ) : (
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-              <span style={{ fontSize: '14px', fontWeight: 700, color: '#111111', fontFamily: "'Poppins', sans-serif" }}>
+              <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ec-color-text-primary)', fontFamily: 'var(--ec-font-body)' }}>
                 ৳{minPrice.toLocaleString()}
               </span>
               {hasPriceRange && (
-                <span style={{ fontSize: '12px', color: '#555555', fontFamily: "'Poppins', sans-serif" }}>
+                <span style={{ fontSize: '12px', color: 'var(--ec-color-text-secondary)', fontFamily: 'var(--ec-font-body)' }}>
                   – ৳{maxPrice.toLocaleString()}
                 </span>
               )}

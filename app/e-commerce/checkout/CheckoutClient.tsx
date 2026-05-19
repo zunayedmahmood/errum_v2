@@ -543,6 +543,7 @@ export default function CheckoutClient() {
         ...(guestName.trim() ? { customer_name: guestName.trim() } : {}),
         ...(guestEmail.trim() ? { customer_email: guestEmail.trim() } : {}),
         ...(orderNotes.trim() ? { notes: orderNotes.trim() } : {}),
+        ...(appliedCoupon && couponCode ? { coupon_code: couponCode } : {}),
       };
 
       const resp: any = await guestCheckoutService.checkout(payload as any);

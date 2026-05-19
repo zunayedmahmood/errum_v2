@@ -26,7 +26,7 @@ export default function MimicBanneredCollections({ items }: MimicBanneredCollect
       <img
         src={item.image}
         alt={item.title}
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectCover: 'cover', transition: 'transform 0.7s' }}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.7s' }}
         className="group-hover:scale-110"
       />
       

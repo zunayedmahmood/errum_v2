@@ -507,7 +507,7 @@ export default function ProductDetailPage() {
         setLoading(true);
         setError(null);
 
-        const response: ProductDetailResponse = await catalogService.getProduct(productId, { include_availability: false });
+        const response: ProductDetailResponse = await catalogService.getProduct(productId, { include_availability: false, hide_cost_price: true });
         const mainProduct = response.product;
 
         setProduct(mainProduct);
@@ -718,7 +718,7 @@ export default function ProductDetailPage() {
 
     // Background fetch for FULL details (including all images)
     try {
-      const response = await catalogService.getProduct(variant.id, { include_availability: false });
+      const response = await catalogService.getProduct(variant.id, { include_availability: false, hide_cost_price: true });
       if (response?.product) {
         const fullVariant = buildVariantFromAny(response.product);
 

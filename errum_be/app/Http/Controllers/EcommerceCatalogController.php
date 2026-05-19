@@ -401,6 +401,42 @@ class EcommerceCatalogController extends Controller
         ];
     }
 
+    private function shouldHideCostPrice(Request $request): bool
+    {
+        if ($request->boolean('hide_cost_price')) {
+            return true;
+        }
+
+        if ($request->has('include_availability') && !$request->boolean('include_availability')) {
+            return true;
+        }
+
+        $refererPath = parse_url($request->headers->get('referer', ''), PHP_URL_PATH);
+
+        return is_string($refererPath) && str_contains($refererPath, '/e-commerce/');
+    }
+
+    private function removeCostPriceFields($value)
+    {
+        if ($value instanceof \Illuminate\Support\Collection) {
+            return $value->map(function ($item) {
+                return $this->removeCostPriceFields($item);
+            });
+        }
+
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        unset($value['cost_price']);
+
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->removeCostPriceFields($item);
+        }
+
+        return $value;
+    }
+
     /**
      * Consistent empty response (no products / category not found).
      */
@@ -606,6 +642,10 @@ class EcommerceCatalogController extends Controller
                 }
                 return $batchData;
             });
+
+            if ($this->shouldHideCostPrice($request)) {
+                $response = $this->removeCostPriceFields($response);
+            }
 
             return response()->json($response);
 

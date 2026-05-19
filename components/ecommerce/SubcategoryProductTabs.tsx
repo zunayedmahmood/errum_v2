@@ -292,7 +292,7 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
   /* ── skeleton ── */
   if (loadingCats) {
     return (
-      <section style={{ background: '#ffffff', padding: '48px 0', borderTop: '1px solid rgba(0,0,0,0.08)' }}>
+      <section style={{ background: 'var(--ec-color-bg-primary)', padding: '48px 0', borderTop: '1px solid var(--ec-color-border)' }}>
         <div className="ec-container">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '32px' }}>
             <div style={{ height: '1px', width: '48px', background: '#e0e0e0' }} />
@@ -319,24 +319,24 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
 
   /* ── main ── */
   return (
-    <section style={{ background: '#ffffff', padding: '48px 0', borderTop: '1px solid rgba(0,0,0,0.08)' }}>
+    <section style={{ background: 'var(--ec-color-bg-primary)', padding: '48px 0', borderTop: '1px solid var(--ec-color-border)' }}>
       <div className="ec-container">
 
         {/* Section header — reference style */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '24px' }}>
-          <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
+          <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: 'var(--ec-color-accent)' }} />
           <h2 style={{
-            fontFamily: "'Poppins', sans-serif",
+            fontFamily: 'var(--ec-font-body)',
             fontSize: '18px',
             fontWeight: 800,
             textTransform: 'uppercase',
             letterSpacing: '0.15em',
-            color: '#111111',
+            color: 'var(--ec-color-text-primary)',
             margin: 0,
           }}>
             {title ?? (parentLabel ? parentLabel.toUpperCase() : eyebrow?.toUpperCase() ?? 'NEW AND POPULAR')}
           </h2>
-          <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: '#111111' }} />
+          <div style={{ height: '1px', flex: 1, maxWidth: '80px', background: 'var(--ec-color-accent)' }} />
         </div>
 
         {/* Scrollable pill tabs — reference style */}
@@ -351,7 +351,7 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
                 ref={el => { tabRefs.current[cat.id] = el; }}
                 onClick={() => setActiveId(cat.id)}
                 style={{
-                  fontFamily: "'Poppins', sans-serif",
+                  fontFamily: 'var(--ec-font-body)',
                   fontSize: '12px',
                   fontWeight: 700,
                   textTransform: 'uppercase',
@@ -359,9 +359,9 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
                   whiteSpace: 'nowrap',
                   padding: '8px 16px',
                   borderRadius: '4px',
-                  border: activeId === cat.id ? '1.5px solid #111111' : '1.5px solid rgba(0,0,0,0.15)',
-                  background: activeId === cat.id ? '#111111' : '#ffffff',
-                  color: activeId === cat.id ? '#ffffff' : '#555555',
+                  border: activeId === cat.id ? '1.5px solid var(--ec-color-accent)' : '1.5px solid var(--ec-color-border)',
+                  background: activeId === cat.id ? 'var(--ec-color-accent)' : 'var(--ec-color-card-bg)',
+                  color: activeId === cat.id ? 'var(--ec-color-accent-text)' : 'var(--ec-color-text-secondary)',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                   flexShrink: 0,
@@ -414,12 +414,12 @@ const SubcategoryProductTabs: React.FC<SubcategoryProductTabsProps> = ({
               style={{
                 padding: '12px 32px',
                 background: '#ffffff',
-                color: '#111111',
+                color: 'var(--ec-color-text-primary)',
                 border: '1.5px solid #111111',
                 borderRadius: '4px',
                 fontSize: '12px',
                 fontWeight: 700,
-                fontFamily: "'Poppins', sans-serif",
+                fontFamily: 'var(--ec-font-body)',
                 textTransform: 'uppercase',
                 letterSpacing: '0.10em',
                 cursor: 'pointer',

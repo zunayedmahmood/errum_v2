@@ -119,7 +119,7 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8, custom
 
   if (isLoading) {
     return (
-      <section style={{ background: '#ffffff', padding: '48px 0', borderTop: '1px solid rgba(0,0,0,0.08)' }}>
+      <section style={{ background: 'var(--ec-color-bg-primary)', padding: '48px 0', borderTop: '1px solid var(--ec-color-border)' }}>
         <div className="ec-container">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '32px' }}>
             <div style={{ height: '1px', width: '48px', background: '#e0e0e0' }} />
@@ -144,36 +144,36 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({ categoryId, limit = 8, custom
   if (products.length === 0) return null;
 
   return (
-    <section style={{ background: '#ffffff', padding: '48px 0', borderTop: '1px solid rgba(0,0,0,0.08)' }}>
+    <section style={{ background: 'var(--ec-color-bg-primary)', padding: '48px 0', borderTop: '1px solid var(--ec-color-border)' }}>
       <div className="ec-container">
         {/* Section header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ height: '1px', flex: 1, maxWidth: '40px', background: '#111111' }} />
+            <div style={{ height: '1px', flex: 1, maxWidth: '40px', background: 'var(--ec-color-accent)' }} />
             <h2 style={{
-              fontFamily: "'Poppins', sans-serif",
+              fontFamily: 'var(--ec-font-body)',
               fontSize: '18px',
               fontWeight: 800,
               textTransform: 'uppercase',
               letterSpacing: '0.15em',
-              color: '#111111',
+              color: 'var(--ec-color-text-primary)',
               margin: 0,
             }}>
               New Arrivals
             </h2>
-            <div style={{ height: '1px', flex: 1, maxWidth: '40px', background: '#111111' }} />
+            <div style={{ height: '1px', flex: 1, maxWidth: '40px', background: 'var(--ec-color-accent)' }} />
           </div>
           <button
             onClick={() => router.push('/e-commerce/products')}
             style={{
-              fontFamily: "'Poppins', sans-serif",
+              fontFamily: 'var(--ec-font-body)',
               fontSize: '12px',
               fontWeight: 700,
               textTransform: 'uppercase',
               letterSpacing: '0.08em',
-              color: '#111111',
+              color: 'var(--ec-color-text-primary)',
               background: 'none',
-              border: '1.5px solid #111111',
+              border: '1.5px solid var(--ec-color-accent)',
               borderRadius: '4px',
               padding: '8px 16px',
               cursor: 'pointer',

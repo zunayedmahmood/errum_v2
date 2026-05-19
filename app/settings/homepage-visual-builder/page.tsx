@@ -31,12 +31,13 @@ import MimicNewArrivals from './mimic/MimicNewArrivals';
 import MimicSubcategoryProductTabs from './mimic/MimicSubcategoryProductTabs';
 import MimicBanneredCollections from './mimic/MimicBanneredCollections';
 import { toAbsoluteAssetUrl } from '@/lib/urlUtils';
+import { buildEcommerceThemeVars, getEcommerceFontImport, normalizeEcommerceTheme } from '@/lib/ecommerceDesignSystem';
 
 // Import Sidebar Settings Sub-component
 import SidebarSettings from "./SidebarSettings";
 
 // Types
-type SectionKey = 'hero' | 'featured_collections' | 'new_arrivals' | 'bannered_collections' | 'showcase' | 'ticker' | 'layout';
+type SectionKey = 'global_theme' | 'hero' | 'featured_collections' | 'new_arrivals' | 'bannered_collections' | 'showcase' | 'ticker' | 'layout';
 
 const SECTION_NAMES: Record<string, string> = {
   hero: "Hero Slider",
@@ -44,7 +45,8 @@ const SECTION_NAMES: Record<string, string> = {
   new_arrivals: "New Arrivals",
   bannered_collections: "Bannered Collections",
   showcase: "Category Showcase",
-  ticker: "Announcement Ticker"
+  ticker: "Announcement Ticker",
+  global_theme: "Global Theme"
 };
 
 export default function HomepageVisualBuilder() {
@@ -89,6 +91,7 @@ export default function HomepageVisualBuilder() {
       // Normalize settings
       const normalized: HomepageSettings = {
         ...settingsData,
+        global_theme: normalizeEcommerceTheme(settingsData.global_theme),
         ticker: {
           enabled: settingsData.ticker?.enabled ?? true,
           mode: settingsData.ticker?.mode ?? 'moving',
@@ -226,6 +229,11 @@ export default function HomepageVisualBuilder() {
       setSaving(true);
       const formData = new FormData();
 
+      // Global Theme
+      Object.entries(normalizeEcommerceTheme(settings.global_theme)).forEach(([key, value]) => {
+        formData.append(`global_theme[${key}]`, String(value));
+      });
+
       // Ticker
       formData.append("ticker[enabled]", settings.ticker.enabled ? "1" : "0");
       formData.append("ticker[mode]", settings.ticker.mode || "moving");
@@ -319,6 +327,9 @@ export default function HomepageVisualBuilder() {
 
   if (loading) return <div className="h-screen flex items-center justify-center dark:bg-gray-900 dark:text-white">Loading Visual Builder...</div>;
 
+  const previewThemeVars = buildEcommerceThemeVars(previewSettings?.global_theme);
+  const previewFontImport = getEcommerceFontImport(previewSettings?.global_theme);
+
   return (
     <div className={`flex h-screen overflow-hidden ${darkMode ? 'dark' : ''}`}>
       {/* 1. Admin Sidebar */}
@@ -367,7 +378,9 @@ export default function HomepageVisualBuilder() {
           <div className={`transition-all duration-500 bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden ${viewport === 'mobile' ? 'w-[375px] h-[750px]' : 'w-full max-w-6xl'}`}>
              <div className="h-full overflow-y-auto relative scrollbar-hide">
               {previewSettings && (
-                <div className="homepage-mimic relative overflow-hidden">
+                <>
+                  <style dangerouslySetInnerHTML={{ __html: previewFontImport }} />
+                  <div className="homepage-mimic ec-root relative overflow-hidden" style={previewThemeVars}>
                     <SectionWrapper id="ticker" active={activeSection === 'ticker'} onSelect={() => selectSection('ticker')} title="Ticker">
                     {previewSettings.ticker.enabled && (
                       <MimicAnnouncementTicker {...previewSettings.ticker} />
@@ -408,6 +421,7 @@ export default function HomepageVisualBuilder() {
                     }
                   })}
                 </div>
+                </>
               )}
             </div>
           </div>
@@ -432,7 +446,7 @@ export default function HomepageVisualBuilder() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-gray-400 uppercase px-2 mb-2 block tracking-widest">Available Sections</label>
-                {(['layout', 'ticker', 'hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase'] as SectionKey[]).map((key) => (
+                {(['global_theme', 'layout', 'ticker', 'hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase'] as SectionKey[]).map((key) => (
                    <button 
                     key={key}
                     onClick={() => selectSection(key)}
@@ -521,8 +535,8 @@ function PreviewNavbar() {
   return (
     <nav
       style={{
-        background: '#ffffff',
-        borderBottom: '1px solid rgba(0,0,0,0.10)',
+        background: 'var(--ec-color-card-bg)',
+        borderBottom: '1px solid var(--ec-color-border)',
         height: '56px',
         display: 'flex',
         alignItems: 'center',
@@ -532,14 +546,14 @@ function PreviewNavbar() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <div style={{ fontWeight: 800, fontSize: '15px', letterSpacing: '0.04em', fontFamily: "'Poppins', sans-serif" }}>ERRUM</div>
+        <div style={{ fontWeight: 800, fontSize: '15px', letterSpacing: '0.04em', fontFamily: 'var(--ec-font-body)', color: 'var(--ec-color-text-primary)' }}>ERRUM</div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '13px', fontWeight: 600, color: '#444' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '13px', fontWeight: 600, color: 'var(--ec-color-text-secondary)' }}>
         <span>Shop</span>
         <span>New Arrivals</span>
         <span>Collections</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', color: '#444' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', color: 'var(--ec-color-text-secondary)' }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>

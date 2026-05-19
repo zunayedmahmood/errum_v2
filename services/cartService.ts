@@ -310,7 +310,7 @@ class CartService {
       // Guest cart (localStorage)
       if (!hasCustomerToken()) {
         const storage = safeParseGuestCart();
-        const productDetail = await catalogService.getProduct(payload.product_id);
+        const productDetail = await catalogService.getProduct(payload.product_id, { hide_cost_price: true });
         const productSnapshot = normalizeCartProductFromCatalog(productDetail.product);
 
         const vKey = variantKey(payload.variant_options || null);

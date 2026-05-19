@@ -137,18 +137,18 @@ const Navbar = () => {
           visibility: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 'hidden' : 'visible',
           transform: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 'translateY(100%)' : 'translateY(0)',
           transition: 'all 0.4s cubic-bezier(0.32, 0.72, 0, 1)',
-          background: '#ffffff',
-          borderTop: '1px solid rgba(0,0,0,0.10)',
+          background: 'var(--ec-color-card-bg)',
+          borderTop: '1px solid var(--ec-color-border)',
           height: '64px',
           boxShadow: '0 -4px 16px rgba(0,0,0,0.12)',
         }}
       >
         {/* Brand/Home */}
         <Link href="/e-commerce"
-          style={{ flex: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', textDecoration: 'none', color: '#111111' }}
+          style={{ flex: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', textDecoration: 'none', color: 'var(--ec-color-text-primary)' }}
         >
           <img src="/logo.png" alt="" style={{ height: '22px', width: 'auto' }} />
-          <span style={{ fontSize: '13px', fontWeight: 800, fontFamily: "'Poppins', sans-serif", letterSpacing: '0.04em' }}>ERRUM</span>
+          <span style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'var(--ec-font-body)', letterSpacing: '0.04em' }}>ERRUM</span>
         </Link>
 
         {/* Search */}
@@ -161,13 +161,13 @@ const Navbar = () => {
 
         {/* New Arrivals / Center */}
         <Link href="/e-commerce/products"
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: '#111111', transition: 'color 0.15s', position: 'relative' }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: 'var(--ec-color-text-primary)', transition: 'color 0.15s', position: 'relative' }}
         >
           <div style={{
             width: '48px',
             height: '48px',
             borderRadius: '50%',
-            background: '#111111',
+            background: 'var(--ec-color-accent)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -175,7 +175,7 @@ const Navbar = () => {
             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             flexShrink: 0,
           }}>
-            <Sparkles style={{ width: '22px', height: '22px', color: '#ffffff' }} />
+            <Sparkles style={{ width: '22px', height: '22px', color: 'var(--ec-color-accent-text)' }} />
           </div>
           <span style={{ fontSize: '13px', fontWeight: isNewArrival ? 800 : 700, color: isNewArrival ? '#111111' : '#777777' }}>New</span>
         </Link>
@@ -183,7 +183,7 @@ const Navbar = () => {
         {/* Cart */}
         <button
           onClick={() => setIsCartOpen(true)}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', background: 'none', border: 'none', cursor: 'pointer', color: '#777777', position: 'relative', transition: 'color 0.15s' }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ec-color-text-secondary)', position: 'relative', transition: 'color 0.15s' }}
         >
           <div style={{ position: 'relative' }}>
             <ShoppingCart style={{ width: '22px', height: '22px', strokeWidth: 2 }} />
@@ -198,8 +198,8 @@ const Navbar = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: '999px',
-                background: '#111111',
-                color: '#ffffff',
+                background: 'var(--ec-color-accent)',
+                color: 'var(--ec-color-accent-text)',
                 fontSize: '10px',
                 fontWeight: 800,
                 padding: '0 4px',
@@ -215,7 +215,7 @@ const Navbar = () => {
         {/* Categories */}
         <button
           onClick={() => setIsCategorySidebarOpen(true)}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', background: 'none', border: 'none', cursor: 'pointer', color: '#777777', position: 'relative', transition: 'color 0.15s' }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ec-color-text-secondary)', position: 'relative', transition: 'color 0.15s' }}
         >
           <Menu style={{ width: '22px', height: '22px', strokeWidth: 2 }} />
           <span style={{ fontSize: '13px', fontWeight: 700 }}>Categories</span>

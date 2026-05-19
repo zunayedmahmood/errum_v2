@@ -1,0 +1,201 @@
+{
+  "group_identity": {
+    "sku": "COSRX-CLN-GENTLE",
+    "base_name": "Cosrx Salicylic Acid Daily Gentle Cleanser",
+    "mother_product_id": 2930,
+    "total_variants": 2
+  },
+  "base_details": {
+    "name": "Cosrx Salicylic Acid Daily Gentle Cleanser",
+    "brand": "Cosrx",
+    "description": "<p>A salicylic acid daily gentle cleanser that helps reduce breakouts and promotes clear skin.</p><p>Ideal for all skin types including sensitive. It gently removes impurities and excess sebum while fighting acnes and blemishes, leaving skin soft and smooth without the stripping feeling.</p>",
+    "short_summary": "Gentle BHA cleanser for clear, smooth skin.",
+    "weight": 0.25,
+    "dimensions": {
+      "length": "5.00",
+      "width": "5.00",
+      "height": "15.00",
+      "unit": "cm"
+    },
+    "tags": ["skincare", "k-beauty", "cleanser", "bha", "acne-prone"],
+    "is_archived": false,
+    "created_at": "2025-10-20T08:30:00Z",
+    "updated_at": "2026-05-13T10:00:00Z"
+  },
+  "category_hierarchy": [
+    {
+      "id": 5,
+      "title": "Skincare",
+      "slug": "skincare",
+      "path": "5",
+      "level": 0
+    },
+    {
+      "id": 12,
+      "title": "Cleansers",
+      "slug": "cleansers",
+      "path": "5/12",
+      "level": 1
+    }
+  ],
+  "vendor": {
+    "id": 101,
+    "business_name": "K-Beauty Distro Ltd.",
+    "contact_name": "Min-ho Lee",
+    "email": "supply@kbeauty.co.kr",
+    "phone": "+82-2-1234-5678"
+  },
+  "global_inventory_stats": {
+    "total_physical_stock": 135,
+    "reserved_stock": 15,
+    "available_stock": 120,
+    "stock_status": "in_stock"
+  },
+  "common_attributes": [
+    {
+      "field_id": 1,
+      "name": "Skin Type",
+      "value": ["Oily", "Combination", "Acne-prone"],
+      "type": "checkbox"
+    },
+    {
+      "field_id": 2,
+      "name": "Active Ingredient",
+      "value": "Salicylic Acid 0.5%",
+      "type": "text"
+    }
+  ],
+  "merged_media": [
+    {
+      "id": 5001,
+      "url": "https://backend.errumbd.com/storage/products/cosrx-cleanser-front.jpg",
+      "alt_text": "Cosrx Cleanser Front View",
+      "is_primary": true,
+      "sort_order": 1
+    },
+    {
+      "id": 5002,
+      "url": "https://backend.errumbd.com/storage/products/cosrx-cleanser-texture.jpg",
+      "alt_text": "Cosrx Cleanser Texture",
+      "is_primary": false,
+      "sort_order": 2
+    }
+  ],
+  "variations": [
+    {
+      "id": 2930,
+      "variation_suffix": "150ml",
+      "sku": "COSRX-CLN-GENTLE-150",
+      "attributes": [
+        {
+          "name": "Size",
+          "value": "150ml"
+        }
+      ],
+      "pricing": {
+        "selling_price": "1250.00",
+        "cost_price": "750.00",
+        "tax_percentage": "5.00",
+        "tax_mode": "inclusive",
+        "base_price": "1190.48",
+        "tax_amount": "59.52",
+        "currency": "BDT",
+        "profit_margin_percentage": 66.67
+      },
+      "inventory": {
+        "total_stock": 85,
+        "available_stock": 75,
+        "reserved_stock": 10,
+        "low_stock_threshold": 20
+      },
+      "batches": [
+        {
+          "id": 801,
+          "batch_number": "BATCH-20251101-A9B8C7",
+          "quantity": 50,
+          "store": {
+            "id": 1,
+            "name": "Dhaka Main Branch",
+            "location": "Banani"
+          },
+          "manufactured_date": "2025-10-01",
+          "expiry_date": "2027-10-01",
+          "status": "available",
+          "days_until_expiry": 506
+        },
+        {
+          "id": 802,
+          "batch_number": "BATCH-20251115-D1E2F3",
+          "quantity": 35,
+          "store": {
+            "id": 2,
+            "name": "Chattogram Branch",
+            "location": "GEC Circle"
+          },
+          "manufactured_date": "2025-10-15",
+          "expiry_date": "2027-10-15",
+          "status": "available"
+        }
+      ],
+      "barcodes": [
+        {
+          "id": 12001,
+          "barcode": "8809416470001",
+          "current_status": "in_stock",
+          "last_movement": "2025-11-05"
+        }
+      ],
+      "images": [
+        {
+          "id": 5001,
+          "url": "https://backend.errumbd.com/storage/products/cosrx-cleanser-front.jpg"
+        }
+      ]
+    },
+    {
+      "id": 2931,
+      "variation_suffix": "50ml (Travel Size)",
+      "sku": "COSRX-CLN-GENTLE-50",
+      "attributes": [
+        {
+          "name": "Size",
+          "value": "50ml"
+        }
+      ],
+      "pricing": {
+        "selling_price": "599.00",
+        "cost_price": "350.00",
+        "tax_percentage": "5.00",
+        "tax_mode": "inclusive",
+        "base_price": "570.48",
+        "tax_amount": "28.52",
+        "currency": "BDT"
+      },
+      "inventory": {
+        "total_stock": 50,
+        "available_stock": 45,
+        "reserved_stock": 5
+      },
+      "batches": [
+        {
+          "id": 805,
+          "batch_number": "BATCH-20251201-X0Y0Z0",
+          "quantity": 50,
+          "store": {
+            "id": 1,
+            "name": "Dhaka Main Branch"
+          },
+          "expiry_date": "2027-12-01",
+          "status": "available"
+        }
+      ],
+      "barcodes": [
+        {
+          "id": 12050,
+          "barcode": "8809416470050",
+          "current_status": "in_stock"
+        }
+      ]
+    }
+  ]
+}
