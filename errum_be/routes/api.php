@@ -78,6 +78,12 @@ Route::post('/guest-orders/by-phone', [\App\Http\Controllers\GuestCheckoutContro
 // LazyChat AI order creation endpoint (public webhook receiver)
 Route::post('/order/create', [\App\Http\Controllers\LazyChatOrderController::class, 'store']);
 
+// LazyChat integration test endpoints (disabled unless LAZYCHAT_TEST_ENABLED=true)
+Route::prefix('lazychat/test')->group(function () {
+    Route::post('/product-webhooks', [\App\Http\Controllers\LazyChatTestController::class, 'productWebhooks']);
+    Route::get('/logs/{runId}', [\App\Http\Controllers\LazyChatTestController::class, 'logs']);
+});
+
 // ============================================
 // PUBLIC CUSTOMER REGISTRATION
 // Open registration form for customers (no auth required)

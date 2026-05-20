@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Errum LazyChat Integration Test Runner</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #f6f7fb; color: #111827; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 28px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 18px; box-shadow: 0 12px 36px rgba(15, 23, 42, .06); padding: 22px; margin-bottom: 18px; }
+    h1 { margin: 0 0 8px; font-size: 26px; }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    p { color: #4b5563; line-height: 1.55; }
+    label { display: block; font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 6px; }
+    input { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 12px; padding: 11px 12px; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    button { border: 0; border-radius: 12px; padding: 12px 16px; font-weight: 800; cursor: pointer; background: #111827; color: #fff; }
+    button.secondary { background: #2563eb; }
+    button.ghost { background: #eef2ff; color: #3730a3; }
+    button:disabled { opacity: .55; cursor: wait; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0b1020; color: #d1e7ff; border-radius: 14px; padding: 16px; max-height: 520px; overflow: auto; font-size: 12px; line-height: 1.45; }
+    .status { padding: 10px 12px; border-radius: 12px; background: #f3f4f6; margin-top: 12px; font-weight: 700; }
+    .ok { color: #047857; }
+    .bad { color: #b91c1c; }
+    .muted { color: #6b7280; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border-bottom: 1px solid #e5e7eb; text-align: left; padding: 9px; vertical-align: top; }
+    th { background: #f9fafb; }
+    code { background: #f3f4f6; padding: 2px 5px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Errum LazyChat Integration Test Runner</h1>
+      <p>
+        This page creates two LazyChat test orders through <code>/api/order/create</code>, then runs a backend product webhook scenario that triggers Errum's real Product/ProductBatch/ProductImage/ReservedProduct observers.
+      </p>
+      <p class="muted">
+        Product webhook testing requires <code>LAZYCHAT_TEST_ENABLED=true</code>. If <code>LAZYCHAT_TEST_TOKEN</code> is set, paste it below.
+      </p>
+      <div class="grid">
+        <div>
+          <label for="baseUrl">Backend base URL</label>
+          <input id="baseUrl" placeholder="https://backend.errumbd.com" />
+        </div>
+        <div>
+          <label for="testToken">LazyChat test token (optional)</label>
+          <input id="testToken" placeholder="Only required if LAZYCHAT_TEST_TOKEN is set" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="runOrders" class="secondary">Create 2 LazyChat Test Orders</button>
+        <button id="runWebhooks">Run Product Webhook Scenario</button>
+        <button id="runAll" class="ghost">Run Full Test</button>
+        <button id="clear" class="ghost">Clear Output</button>
+      </div>
+      <div id="status" class="status">Ready.</div>
+    </div>
+
+    <div class="card">
+      <h2>Webhook Logs</h2>
+      <div id="logsTable" class="muted">No webhook logs yet.</div>
+    </div>
+
+    <div class="card">
+      <h2>Raw Output</h2>
+      <pre id="output">[]</pre>
+    </div>
+  </div>
+
+  <script>
+    const productA = {
+      id: 654,
+      name: "Jordan 4 Retro Canyon Purple (1:1)-43",
+      sku: "189853940",
+      price: 8000,
+      image: "https://backend.errumbd.com/storage/products/657/1778747602_GGkRNgzBH2.webp",
+      fallbackIds: [654, 651, 652, 653, 655, 657]
+    };
+
+    const productB = {
+      id: 5841,
+      name: "Errum Cotton Half Shirt - Sage Green-M",
+      sku: "314662182",
+      price: 1550,
+      image: "https://backend.errumbd.com/storage/products/5844/1778944052_sbeopZBNBk.webp",
+      fallbackIds: [5841, 5842, 5843, 5844, 654, 651, 652, 653, 655, 657]
+    };
+
+    const output = document.getElementById('output');
+    const statusBox = document.getElementById('status');
+    const logsTable = document.getElementById('logsTable');
+    const buttons = [...document.querySelectorAll('button')];
+    const results = [];
+
+    document.getElementById('baseUrl').value = window.location.origin && window.location.protocol.startsWith('http')
+      ? window.location.origin
+      : 'https://backend.errumbd.com';
+
+    function baseUrl() {
+      return document.getElementById('baseUrl').value.replace(/\/$/, '');
+    }
+
+    function headers() {
+      const token = document.getElementById('testToken').value.trim();
+      const h = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+      if (token) {
+        h.Authorization = `Bearer ${token}`;
+        h['X-LazyChat-Test-Token'] = token;
+      }
+      return h;
+    }
+
+    function setBusy(busy, message) {
+      buttons.forEach(btn => btn.disabled = busy);
+      statusBox.textContent = message || (busy ? 'Running...' : 'Ready.');
+    }
+
+    function appendResult(label, data) {
+      results.push({ label, at: new Date().toISOString(), data });
+      output.textContent = JSON.stringify(results, null, 2);
+    }
+
+    async function postJson(path, body) {
+      const res = await fetch(`${baseUrl()}${path}`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(body)
+      });
+
+      let json;
+      try { json = await res.json(); } catch (e) { json = { raw: await res.text() }; }
+      return { ok: res.ok, status: res.status, body: json };
+    }
+
+    async function getJson(path) {
+      const res = await fetch(`${baseUrl()}${path}`, {
+        method: 'GET',
+        headers: headers()
+      });
+
+      let json;
+      try { json = await res.json(); } catch (e) { json = { raw: await res.text() }; }
+      return { ok: res.ok, status: res.status, body: json };
+    }
+
+    async function resolveOrderProduct(product, label) {
+      const ids = product.fallbackIds && product.fallbackIds.length ? product.fallbackIds : [product.id];
+
+      for (const id of ids) {
+        const response = await getJson(`/api/catalog/products/${id}?hide_cost_price=true&include_availability=false`);
+        const resolved = response.body?.data?.product || response.body?.data;
+
+        if (response.ok && resolved?.id) {
+          const picked = {
+            id: resolved.id,
+            name: resolved.name || product.name,
+            sku: resolved.sku || product.sku,
+            price: Number(resolved.selling_price || resolved.price || product.price || 0),
+            image: resolved.images?.[0]?.url || product.image
+          };
+
+          if (Number(id) !== Number(product.id)) {
+            appendResult(`${label}: fallback product resolved`, {
+              requested_product_id: product.id,
+              used_product_id: picked.id,
+              reason: `Product ${product.id} was not available in this backend database/catalog. Using a valid product from the supplied JSON variants/fallback list.`
+            });
+          }
+
+          return picked;
+        }
+      }
+
+      appendResult(`${label}: product preflight warning`, {
+        requested_product_id: product.id,
+        fallback_ids_checked: ids,
+        warning: 'Could not verify any candidate product through /api/catalog/products/{id}. Trying the original payload anyway.'
+      });
+
+      return product;
+    }
+
+    function orderPayload(product, index) {
+      const now = Date.now();
+      return {
+        id: `LC-HTML-TEST-${now}-${index}`,
+        deliveryCharge: "0",
+        contact: {
+          name: `LazyChat Test Customer ${index}`,
+          phone: `0170000${String(now).slice(-5)}${index}`.slice(0, 11),
+          address: "LazyChat Test Address, Dhaka"
+        },
+        total_price: product.price,
+        note: "This order was placed by the LazyChat integration HTML test runner. Please review/reconfirm before processing.",
+        payment_method: "cash_on_delivery",
+        payment_status: "unpaid",
+        line_items: [
+          {
+            product_id: String(product.id),
+            sku: product.sku,
+            variation_id: String(product.id),
+            name: product.name,
+            price: product.price,
+            quantity: 1,
+            image: product.image
+          }
+        ]
+      };
+    }
+
+    async function runOrders() {
+      setBusy(true, 'Resolving products and creating two LazyChat test orders...');
+
+      const resolvedA = await resolveOrderProduct(productA, 'Order test 1');
+      const first = await postJson('/api/order/create', orderPayload(resolvedA, 1));
+      appendResult(`Order test 1: product ${resolvedA.id}`, first);
+
+      const resolvedB = await resolveOrderProduct(productB, 'Order test 2');
+      const second = await postJson('/api/order/create', orderPayload(resolvedB, 2));
+      appendResult(`Order test 2: product ${resolvedB.id}`, second);
+
+      const ok = first.ok && second.ok;
+      statusBox.innerHTML = ok
+        ? '<span class="ok">Order test completed successfully.</span>'
+        : '<span class="bad">Order test finished with errors. Check raw output.</span>';
+      setBusy(false, statusBox.textContent);
+      return { first, second, resolvedA, resolvedB };
+    }
+
+    async function runWebhooks() {
+      setBusy(true, 'Running product webhook scenario...');
+      const runId = `LC-HTML-${Date.now()}`;
+      const result = await postJson('/api/lazychat/test/product-webhooks', { run_id: runId });
+      appendResult('Product webhook scenario', result);
+      renderLogs(result.body?.data?.webhook_logs || []);
+
+      statusBox.innerHTML = result.ok && result.body?.success
+        ? '<span class="ok">Webhook scenario completed. Check log table.</span>'
+        : '<span class="bad">Webhook scenario failed or is disabled. Check raw output.</span>';
+      setBusy(false, statusBox.textContent);
+      return result;
+    }
+
+    function renderLogs(logs) {
+      if (!logs.length) {
+        logsTable.textContent = 'No webhook logs returned.';
+        return;
+      }
+
+      const rows = logs.map(log => `
+        <tr>
+          <td>${escapeHtml(log.step_key || '')}</td>
+          <td>${escapeHtml(log.topic || '')}</td>
+          <td>${escapeHtml(String(log.http_status || log.phase || ''))}</td>
+          <td>${log.ok ? '<span class="ok">yes</span>' : '<span class="bad">no</span>'}</td>
+          <td>${escapeHtml(log.observer || log.expected_observer || '')}<br><span class="muted">${escapeHtml(log.model || '')}</span></td>
+          <td>${escapeHtml(log.response_body || log.error || '')}</td>
+        </tr>
+      `).join('');
+
+      logsTable.innerHTML = `
+        <table>
+          <thead>
+            <tr><th>Step</th><th>Topic</th><th>Status</th><th>OK</th><th>Observer / Model</th><th>LazyChat output / error</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    document.getElementById('runOrders').addEventListener('click', async () => {
+      try { await runOrders(); } catch (e) { appendResult('Order test error', String(e.stack || e)); setBusy(false, 'Order test failed.'); }
+    });
+
+    document.getElementById('runWebhooks').addEventListener('click', async () => {
+      try { await runWebhooks(); } catch (e) { appendResult('Webhook test error', String(e.stack || e)); setBusy(false, 'Webhook test failed.'); }
+    });
+
+    document.getElementById('runAll').addEventListener('click', async () => {
+      try {
+        await runOrders();
+        await runWebhooks();
+      } catch (e) {
+        appendResult('Full test error', String(e.stack || e));
+        setBusy(false, 'Full test failed.');
+      }
+    });
+
+    document.getElementById('clear').addEventListener('click', () => {
+      results.length = 0;
+      output.textContent = '[]';
+      logsTable.textContent = 'No webhook logs yet.';
+      statusBox.textContent = 'Ready.';
+    });
+  </script>
+</body>
+</html>

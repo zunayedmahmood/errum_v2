@@ -14,4 +14,9 @@ return [
         'url' => env('LAZYCHAT_PRODUCT_DELETE_URL', 'https://flow.lazychat.io/api/exec/flows/6a02dcadf00b1c2c40678385/FXfUG5jBNVc0'),
         'token' => env('LAZYCHAT_PRODUCT_DELETE_TOKEN', '1aa94467884b59614d01236a76bdfa11996d4726191dd2a043fdae1c89001671'),
     ],
+
+    'testing' => [
+        'enabled' => env('LAZYCHAT_TEST_ENABLED', false),
+        'token' => env('LAZYCHAT_TEST_TOKEN'),
+    ],
 ];

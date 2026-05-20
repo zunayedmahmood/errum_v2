@@ -207,7 +207,7 @@ Example body:
 }
 ```
 
-For product delete/archive, Errum sends only the product ID.
+For product delete, Errum sends only the product ID.
 
 Endpoint:
 
@@ -367,7 +367,7 @@ Covered flows:
 LazyChat sends order creation requests to Errum using this public endpoint:
 
 ```txt
-POST /api/order/create
+POST https://backend.errumbd.com/api/order/create
 ```
 
 Controller:
@@ -401,7 +401,7 @@ Example request from LazyChat:
       "name": "Cosrx Salicylic Acid Daily Gentle Cleanser (50ml)",
       "price": 599,
       "quantity": 2,
-      "image": "https://example.com/image.jpg"
+      "image": "https://backend.errumbd.com/storage/products/748/1778742446_rhGxNQ9R2d.jpg"
     }
   ]
 }
