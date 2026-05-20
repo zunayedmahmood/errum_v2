@@ -282,11 +282,11 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     setSoldAtPrices(prev => ({ ...prev, [itemId]: price }));
   };
 
-  const parseFloatValue = (value: any) => {
+  function parseFloatValue(value: any) {
     if (value == null) return 0;
     const n = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
     return isNaN(n) ? 0 : n;
-  };
+  }
 
   const calculateTotals = () => {
     const orderSubtotal = order.items.reduce((sum, item) => {
