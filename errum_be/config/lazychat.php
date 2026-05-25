@@ -18,5 +18,10 @@ return [
     'testing' => [
         'enabled' => env('LAZYCHAT_TEST_ENABLED', false),
         'token' => env('LAZYCHAT_TEST_TOKEN'),
+        'auth' => [
+            'email' => env('LAZYCHAT_TEST_LOGIN_EMAIL', 'mueedibnesami.anoy@gmail.com'),
+            'password' => env('LAZYCHAT_TEST_LOGIN_PASSWORD', '12345678'),
+            'token_cache_path' => env('LAZYCHAT_TEST_TOKEN_CACHE_PATH', 'lazychat-test-auth.json'),
+        ],
     ],
 ];

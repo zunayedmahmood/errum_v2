@@ -6,26 +6,109 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductBatch;
 use App\Models\ProductImage;
+use App\Models\ProductBarcode;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\Store;
 use App\Models\Vendor;
 use App\Services\LazyChat\LazyChatWebhookTestContext;
 use App\Services\LazyChat\LazyChatWebhookTestLogger;
+use App\Services\LazyChat\LazyChatTestAuth;
+use App\Services\LazyChat\ProductPayloadBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Throwable;
 
 class LazyChatTestController extends Controller
 {
+    public function login(Request $request): JsonResponse
+    {
+        $authError = $this->authorizeTestRequest($request);
+        if ($authError) {
+            return $authError;
+        }
+
+        try {
+            $auth = app(LazyChatTestAuth::class);
+            $tokenData = $auth->ensureToken(true);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'LazyChat test login token saved successfully.',
+                'data' => $auth->safeSummary($tokenData),
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'LazyChat test login failed.',
+                'error' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function downloadProducts(Request $request, ProductPayloadBuilder $payloadBuilder)
+    {
+        $authError = $this->authorizeTestRequest($request);
+        if ($authError) {
+            return $authError;
+        }
+
+        $fileName = 'lazychat-products-' . now()->format('Ymd-His') . '.json';
+
+        return response()->streamDownload(function () use ($payloadBuilder) {
+            $first = true;
+            echo "[\n";
+
+            Product::orderBy('id')->chunkById(100, function ($products) use (&$first, $payloadBuilder) {
+                foreach ($products as $product) {
+                    if (!$first) {
+                        echo ",\n";
+                    }
+
+                    echo json_encode(
+                        $payloadBuilder->build($product),
+                        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                    );
+
+                    $first = false;
+                }
+            });
+
+            echo "\n]\n";
+        }, $fileName, [
+            'Content-Type' => 'application/json',
+        ]);
+    }
+
     public function productWebhooks(Request $request): JsonResponse
     {
         $authError = $this->authorizeTestRequest($request);
         if ($authError) {
             return $authError;
         }
+
+        $testAuth = app(LazyChatTestAuth::class);
+        $authSummary = null;
+        $employeeId = null;
+
+        try {
+            $authSummary = $testAuth->safeSummary($testAuth->ensureToken());
+            $employee = $testAuth->employee();
+            if ($employee) {
+                Auth::guard('api')->setUser($employee);
+                $employeeId = $employee->id;
+            }
+        } catch (Throwable $e) {
+            $authSummary = [
+                'token_saved' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+
+        $employeeId = $employeeId ?: DB::table('employees')->value('id');
 
         $runId = $request->input('run_id') ?: 'LC-TEST-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(5));
         $sku = 'LC-TEST-' . Str::upper(Str::random(8));
@@ -35,6 +118,7 @@ class LazyChatTestController extends Controller
         $batch = null;
         $image = null;
         $po = null;
+        $barcode = null;
 
         $category = $this->testCategory();
         $vendor = $this->testVendor();
@@ -141,6 +225,50 @@ class LazyChatTestController extends Controller
             ];
         });
 
+        $this->runStep($steps, $runId, 'social_commerce_package_stock_deduction', 'Decrease stock like social-commerce/package order packing', [
+            'controller' => 'OrderController@complete / social-commerce package equivalent',
+            'expected_model' => ProductBatch::class,
+            'expected_observer' => 'App\\Observers\\ProductBatchObserver',
+        ], function () use (&$batch) {
+            $batch->removeStock(1);
+
+            return [
+                'batch_id' => $batch->id,
+                'quantity_after_package_deduction' => $batch->fresh()->quantity,
+            ];
+        });
+
+        $this->runStep($steps, $runId, 'pos_sale_stock_and_barcode_update', 'Decrease stock and update barcode like a POS sale', [
+            'controller' => 'POS sale / OrderController@complete equivalent',
+            'expected_model' => ProductBatch::class . ' + ' . ProductBarcode::class,
+            'expected_observer' => 'App\\Observers\\ProductBatchObserver + App\\Observers\\LazyChatProductBarcodeObserver',
+        ], function () use (&$batch, &$product, &$barcode, $store) {
+            $barcode = ProductBarcode::create([
+                'product_id' => $product->id,
+                'batch_id' => $batch->id,
+                'type' => 'CODE128',
+                'is_primary' => false,
+                'is_active' => true,
+                'generated_at' => now(),
+                'current_store_id' => $store->id,
+                'current_status' => 'in_shop',
+                'location_updated_at' => now(),
+                'location_metadata' => ['source' => 'lazychat_pos_sale_test'],
+            ]);
+
+            $batch->removeStock(1);
+            $barcode->updateLocation($store->id, 'with_customer', ['source' => 'lazychat_pos_sale_test'], false);
+            $barcode->update(['is_active' => false]);
+
+            return [
+                'batch_id' => $batch->id,
+                'barcode_id' => $barcode->id,
+                'barcode_status' => $barcode->fresh()->current_status,
+                'barcode_active' => (bool) $barcode->fresh()->is_active,
+                'quantity_after_pos_sale' => $batch->fresh()->quantity,
+            ];
+        });
+
         $this->runStep($steps, $runId, 'image_create', 'Create product image row', [
             'controller' => 'ProductImageController@upload equivalent',
             'expected_model' => ProductImage::class,
@@ -239,11 +367,18 @@ class LazyChatTestController extends Controller
             'controller' => 'PurchaseOrderController@receive / PurchaseOrder::markAsReceived',
             'expected_model' => ProductBatch::class,
             'expected_observer' => 'App\\Observers\\ProductBatchObserver',
-        ], function () use (&$po, &$product, $vendor, $warehouse, $runId) {
+        ], function () use (&$po, &$product, $vendor, $warehouse, $runId, $employeeId) {
+            if (!$employeeId) {
+                throw new \RuntimeException('No employee ID was available for PO receiving test.');
+            }
+
             $po = PurchaseOrder::create([
                 'po_number' => PurchaseOrder::generatePONumber(),
                 'vendor_id' => $vendor->id,
                 'store_id' => $warehouse->id,
+                'created_by' => $employeeId,
+                'approved_by' => $employeeId,
+                'approved_at' => now(),
                 'order_date' => now()->format('Y-m-d'),
                 'expected_delivery_date' => now()->format('Y-m-d'),
                 'status' => 'approved',
@@ -316,11 +451,17 @@ class LazyChatTestController extends Controller
 
         $logs = LazyChatWebhookTestLogger::read($runId);
 
+        $stepsPassed = collect($steps)->every(fn ($step) => $step['success'] === true);
+        $webhooksPassed = count($logs) > 0 && collect($logs)->every(fn ($log) => ($log['ok'] ?? false) === true);
+
         return response()->json([
-            'success' => collect($steps)->every(fn ($step) => $step['success'] === true),
+            'success' => $stepsPassed && $webhooksPassed,
             'message' => 'LazyChat product webhook test run completed.',
             'data' => [
                 'run_id' => $runId,
+                'auth' => $authSummary,
+                'steps_passed' => $stepsPassed,
+                'webhooks_passed' => $webhooksPassed,
                 'test_sku' => $sku,
                 'created_product_id' => $product?->id,
                 'created_variant_id' => $variant?->id,

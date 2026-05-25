@@ -52,6 +52,8 @@
         </div>
       </div>
       <div class="actions">
+        <button id="loginTest" class="ghost">Login & Save Test Token</button>
+        <button id="downloadProducts" class="ghost">Download Products</button>
         <button id="runOrders" class="secondary">Create 2 LazyChat Test Orders</button>
         <button id="runWebhooks">Run Product Webhook Scenario</button>
         <button id="runAll" class="ghost">Run Full Test</button>
@@ -147,6 +149,56 @@
       return { ok: res.ok, status: res.status, body: json };
     }
 
+    async function getBlob(path) {
+      const res = await fetch(`${baseUrl()}${path}`, {
+        method: 'GET',
+        headers: headers()
+      });
+
+      const text = await res.text();
+      return { ok: res.ok, status: res.status, text };
+    }
+
+    async function loginAndSaveToken() {
+      setBusy(true, 'Logging in and saving test token on the backend...');
+      const result = await postJson('/api/lazychat/test/login', {});
+      appendResult('LazyChat test login', result);
+      statusBox.innerHTML = result.ok && result.body?.success
+        ? '<span class="ok">Login token saved. Product webhooks will include Errum auth headers.</span>'
+        : '<span class="bad">Login failed. Check raw output.</span>';
+      setBusy(false, statusBox.textContent);
+      return result;
+    }
+
+    async function downloadProducts() {
+      setBusy(true, 'Preparing LazyChat product JSON download...');
+      const result = await getBlob('/api/lazychat/test/products-download');
+
+      if (!result.ok) {
+        let body = result.text;
+        try { body = JSON.parse(result.text); } catch (e) {}
+        appendResult('Download Products failed', { ok: false, status: result.status, body });
+        setBusy(false, 'Download failed. Check raw output.');
+        return result;
+      }
+
+      const blob = new Blob([result.text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lazychat-products-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      let count = null;
+      try { count = JSON.parse(result.text).length; } catch (e) {}
+      appendResult('Download Products', { ok: true, status: result.status, product_count: count });
+      setBusy(false, 'Product JSON downloaded.');
+      return result;
+    }
+
     async function resolveOrderProduct(product, label) {
       const ids = product.fallbackIds && product.fallbackIds.length ? product.fallbackIds : [product.id];
 
@@ -238,9 +290,10 @@
       appendResult('Product webhook scenario', result);
       renderLogs(result.body?.data?.webhook_logs || []);
 
+      const webhooksPassed = result.body?.data?.webhooks_passed;
       statusBox.innerHTML = result.ok && result.body?.success
-        ? '<span class="ok">Webhook scenario completed. Check log table.</span>'
-        : '<span class="bad">Webhook scenario failed or is disabled. Check raw output.</span>';
+        ? '<span class="ok">Webhook scenario completed. Steps and LazyChat responses passed.</span>'
+        : `<span class="bad">Webhook scenario finished but ${webhooksPassed === false ? 'one or more LazyChat responses failed internally' : 'failed or is disabled'}. Check raw output.</span>`;
       setBusy(false, statusBox.textContent);
       return result;
     }
@@ -258,7 +311,7 @@
           <td>${escapeHtml(String(log.http_status || log.phase || ''))}</td>
           <td>${log.ok ? '<span class="ok">yes</span>' : '<span class="bad">no</span>'}</td>
           <td>${escapeHtml(log.observer || log.expected_observer || '')}<br><span class="muted">${escapeHtml(log.model || '')}</span></td>
-          <td>${escapeHtml(log.response_body || log.error || '')}</td>
+          <td>${escapeHtml(log.lazychat_inner_error || log.response_body || log.error || '')}</td>
         </tr>
       `).join('');
 
@@ -281,6 +334,14 @@
         .replaceAll("'", '&#039;');
     }
 
+    document.getElementById('loginTest').addEventListener('click', async () => {
+      try { await loginAndSaveToken(); } catch (e) { appendResult('Login test error', String(e.stack || e)); setBusy(false, 'Login failed.'); }
+    });
+
+    document.getElementById('downloadProducts').addEventListener('click', async () => {
+      try { await downloadProducts(); } catch (e) { appendResult('Download Products error', String(e.stack || e)); setBusy(false, 'Download failed.'); }
+    });
+
     document.getElementById('runOrders').addEventListener('click', async () => {
       try { await runOrders(); } catch (e) { appendResult('Order test error', String(e.stack || e)); setBusy(false, 'Order test failed.'); }
     });
@@ -291,6 +352,7 @@
 
     document.getElementById('runAll').addEventListener('click', async () => {
       try {
+        await loginAndSaveToken();
         await runOrders();
         await runWebhooks();
       } catch (e) {

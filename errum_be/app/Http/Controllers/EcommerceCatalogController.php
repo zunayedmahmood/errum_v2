@@ -97,27 +97,38 @@ class EcommerceCatalogController extends Controller
             ->where('products.is_archived', false)
             ->select([
                 'products.id',
+                'products.name',
                 'products.base_name',
                 'products.created_at',
                 DB::raw('MIN(product_batches.sell_price) AS min_batch_price'),
                 // We keep category_id in select/groupby because it's often needed for further filtering/grouping
                 'products.category_id', 
             ])
-            ->groupBy('products.id', 'products.base_name', 'products.created_at', 'products.category_id');
+            ->groupBy('products.id', 'products.name', 'products.base_name', 'products.created_at', 'products.category_id');
 
         if ($categoryIds !== null) {
             $q->whereIn('products.category_id', $categoryIds);
         }
 
         if ($search) {
-            $terms = explode(' ', $search);
-            $q->where(function ($sq) use ($terms) {
-                foreach ($terms as $term) {
+            $normalized = $this->normalizeString($search);
+            $terms = explode(' ', $normalized);
+            $brandStopWords = [
+                'the', 'a', 'an', 'by', 'x', 'de', 'la', 'le', 'and', 'with', 'for', 'of', 'in', 'low', 'high', 'mid', '1'
+            ];
+            // Filter out stop words unless all are stop words
+            $nonStopTerms = array_filter($terms, function ($term) use ($brandStopWords) {
+                return !in_array($term, $brandStopWords);
+            });
+            $termsToUse = !empty($nonStopTerms) ? $nonStopTerms : $terms;
+
+            $q->where(function ($sq) use ($termsToUse) {
+                foreach ($termsToUse as $term) {
                     $term = trim($term);
                     if (empty($term)) continue;
                     $like = '%' . addslashes($term) . '%';
                     
-                    $sq->where(function ($wordQ) use ($like) {
+                    $sq->orWhere(function ($wordQ) use ($like) {
                         $wordQ->where('products.name',              'like', $like)
                            ->orWhere('products.base_name',       'like', $like)
                            ->orWhere('products.sku',             'like', $like)
@@ -187,29 +198,43 @@ class EcommerceCatalogController extends Controller
             ->mergeBindings($baseQ)
             ->select([
                 'base_name',
+                DB::raw('MAX(name)            AS name'),
                 DB::raw('MIN(min_batch_price) AS group_min_price'),
                 DB::raw('MAX(created_at)      AS latest_created_at'),
             ])
             ->groupBy('base_name');
 
-        // Sorting groups
-        if ($sortBy === 'price_asc') {
-            $groupQ->orderBy('group_min_price', 'asc');
-        } elseif ($sortBy === 'price_desc') {
-            $groupQ->orderBy('group_min_price', 'desc');
-        } elseif ($sortBy === 'name') {
-            $groupQ->orderBy('base_name', 'asc');
+        if ($search) {
+            $allGroups = $groupQ->get()->all();
+            
+            $rankedGroups = $this->scoreAndRankProducts($allGroups, $search);
+            
+            $totalGroups = count($rankedGroups);
+            
+            $offset = ($page - 1) * $perPage;
+            $pagedRanked = array_slice($rankedGroups, $offset, $perPage);
+            
+            $baseNames = collect($pagedRanked)->pluck('base_name')->filter()->values();
         } else {
-            $groupQ->orderBy('latest_created_at', 'desc');
+            // Sorting groups
+            if ($sortBy === 'price_asc') {
+                $groupQ->orderBy('group_min_price', 'asc');
+            } elseif ($sortBy === 'price_desc') {
+                $groupQ->orderBy('group_min_price', 'desc');
+            } elseif ($sortBy === 'name') {
+                $groupQ->orderBy('base_name', 'asc');
+            } else {
+                $groupQ->orderBy('latest_created_at', 'desc');
+            }
+
+            // Count groups safely
+            $totalGroupsRaw = DB::select("select count(*) as aggregate from (" . $groupQ->toSql() . ") AS gq", $groupQ->getBindings());
+            $totalGroups = $totalGroupsRaw[0]->aggregate ?? 0;
+
+            // Paginate groups
+            $pagedGroups = $groupQ->offset(($page - 1) * $perPage)->limit($perPage)->get();
+            $baseNames   = $pagedGroups->pluck('base_name')->filter()->values();
         }
-
-        // Count groups safely
-        $totalGroupsRaw = DB::select("select count(*) as aggregate from (" . $groupQ->toSql() . ") AS gq", $groupQ->getBindings());
-        $totalGroups = $totalGroupsRaw[0]->aggregate ?? 0;
-
-        // Paginate groups
-        $pagedGroups = $groupQ->offset(($page - 1) * $perPage)->limit($perPage)->get();
-        $baseNames   = $pagedGroups->pluck('base_name')->filter()->values();
 
         if ($baseNames->isEmpty()) {
             return $this->emptyResponse($request, $perPage, $categorySlug, $categoryId, $minPrice, $maxPrice, $search, $sortBy, true);
@@ -308,22 +333,35 @@ class EcommerceCatalogController extends Controller
         $page  = max(1, (int) $request->get('page', 1));
         $baseQ = $this->buildFilterQuery($categoryIds, $minPrice, $maxPrice, $sortBy, $search, $inStock);
 
-        if ($sortBy === 'price_asc') {
-            $baseQ->orderBy('min_batch_price', 'asc');
-        } elseif ($sortBy === 'price_desc') {
-            $baseQ->orderBy('min_batch_price', 'desc');
-        } elseif ($sortBy === 'name') {
-            $baseQ->orderBy('products.name', $sortOrder === 'asc' ? 'asc' : 'desc');
+        if ($search) {
+            $allCandidates = $baseQ->get()->all();
+            
+            $ranked = $this->scoreAndRankProducts($allCandidates, $search);
+            
+            $total = count($ranked);
+            
+            $offset = ($page - 1) * $perPage;
+            $pagedRanked = array_slice($ranked, $offset, $perPage);
+            
+            $productIds = collect($pagedRanked)->pluck('id');
         } else {
-            $baseQ->orderBy('products.created_at', 'desc');
+            if ($sortBy === 'price_asc') {
+                $baseQ->orderBy('min_batch_price', 'asc');
+            } elseif ($sortBy === 'price_desc') {
+                $baseQ->orderBy('min_batch_price', 'desc');
+            } elseif ($sortBy === 'name') {
+                $baseQ->orderBy('products.name', $sortOrder === 'asc' ? 'asc' : 'desc');
+            } else {
+                $baseQ->orderBy('products.created_at', 'desc');
+            }
+
+            // Count safely
+            $totalRaw = DB::select("select count(*) as aggregate from (" . $baseQ->toSql() . ") AS pq", $baseQ->getBindings());
+            $total    = $totalRaw[0]->aggregate ?? 0;
+
+            $rows       = $baseQ->offset(($page - 1) * $perPage)->limit($perPage)->get();
+            $productIds = $rows->pluck('id');
         }
-
-        // Count safely
-        $totalRaw = DB::select("select count(*) as aggregate from (" . $baseQ->toSql() . ") AS pq", $baseQ->getBindings());
-        $total    = $totalRaw[0]->aggregate ?? 0;
-
-        $rows       = $baseQ->offset(($page - 1) * $perPage)->limit($perPage)->get();
-        $productIds = $rows->pluck('id');
 
         $products = Product::with(['images', 'category', 'batches.store'])
             ->whereIn('id', $productIds)
@@ -1267,5 +1305,182 @@ class EcommerceCatalogController extends Controller
             ->pluck('id');
 
         return $ids->merge($descendantIds)->unique()->values()->all();
+    }
+
+    private function normalizeString(string $string): string
+    {
+        $str = mb_strtolower($string, 'UTF-8');
+        $str = str_replace(['/', '-', '_', '&', ':'], ' ', $str);
+        $str = str_replace(['(', ')', '.'], '', $str);
+        $str = preg_replace('/\s+/', ' ', $str);
+        return trim($str);
+    }
+
+    private function getQueryTokenTypes(array $rawQueryTokens, array $normalizedQueryTokens): array
+    {
+        $types = [];
+        $brandStopWords = [
+            'the', 'a', 'an', 'by', 'x', 'de', 'la', 'le', 'and', 'with', 'for', 'of', 'in', 'low', 'high', 'mid', '1'
+        ];
+        $commonModelCodes = [
+            'og', 'sp', 'se', 'gs', 'tr', 'sb', 'unc', 'lv', 'ap'
+        ];
+
+        for ($i = 0; $i < count($normalizedQueryTokens); $i++) {
+            $token = $normalizedQueryTokens[$i];
+            $rawToken = $rawQueryTokens[$i] ?? '';
+
+            if (preg_match('/^\d/', $token)) {
+                $types[$token] = 'numeric';
+            } elseif (
+                preg_match('/^[A-Z]{2,4}$/', $rawToken) || 
+                in_array($token, $commonModelCodes)
+            ) {
+                $types[$token] = 'model_code';
+            } elseif (in_array($token, $brandStopWords)) {
+                $types[$token] = 'stop_word';
+            } else {
+                $types[$token] = 'normal';
+            }
+        }
+        return $types;
+    }
+
+    private function scoreAndRankProducts(array $candidates, string $search): array
+    {
+        $normalizedQuery = $this->normalizeString($search);
+        if ($normalizedQuery === '') {
+            return $candidates;
+        }
+        $normalizedQueryTokens = explode(' ', $normalizedQuery);
+        
+        // Step 5 edge case: check minimum query length
+        if (mb_strlen($normalizedQuery) <= 2) {
+            $filtered = [];
+            foreach ($candidates as $cand) {
+                $candObj = (object) $cand;
+                $baseName = $candObj->base_name ?? '';
+                $normalizedBaseName = $this->normalizeString($baseName);
+                if (str_starts_with($normalizedBaseName, $normalizedQuery)) {
+                    $candArray = (array) $cand;
+                    $candArray['total_score'] = 1;
+                    $filtered[] = $candArray;
+                }
+            }
+            usort($filtered, function ($a, $b) {
+                return strcasecmp($a['base_name'] ?? '', $b['base_name'] ?? '');
+            });
+            return $filtered;
+        }
+
+        // Collapse spaces in original search to get raw tokens (preserving case)
+        $rawQueryCollapsed = preg_replace('/\s+/', ' ', trim($search));
+        $rawQueryTokens = explode(' ', $rawQueryCollapsed);
+        
+        // Step 2: Identify Token Types
+        $queryTokenTypes = $this->getQueryTokenTypes($rawQueryTokens, $normalizedQueryTokens);
+        
+        // Pre-process and score each candidate
+        $scored = [];
+        foreach ($candidates as $cand) {
+            $candObj = (object) $cand;
+            $baseName = $candObj->base_name ?? '';
+            $fullName = $candObj->name ?? '';
+            
+            $normalizedBaseName = $this->normalizeString($baseName);
+            $normalizedFullName = $this->normalizeString($fullName);
+            
+            $candidateTokens = explode(' ', $normalizedBaseName);
+            
+            // Step 3 & 4: Compute score
+            $scoreA = 0;
+            foreach ($normalizedQueryTokens as $qToken) {
+                if (in_array($qToken, $candidateTokens)) {
+                    $type = $queryTokenTypes[$qToken] ?? 'normal';
+                    if ($type === 'numeric') {
+                        $scoreA += 3;
+                    } elseif ($type === 'model_code') {
+                        $scoreA += 2;
+                    } elseif ($type === 'normal') {
+                        $scoreA += 1;
+                    }
+                }
+            }
+            
+            $scoreB = 0;
+            foreach ($normalizedQueryTokens as $qToken) {
+                if (($queryTokenTypes[$qToken] ?? '') === 'numeric') {
+                    if (!in_array($qToken, $candidateTokens)) {
+                        $scoreB -= 5;
+                    }
+                }
+            }
+            
+            $scoreC = 0;
+            $maxLen = min(4, count($normalizedQueryTokens), count($candidateTokens));
+            for ($i = 0; $i < $maxLen; $i++) {
+                if ($normalizedQueryTokens[$i] === $candidateTokens[$i]) {
+                    $scoreC += 1;
+                }
+            }
+            
+            $scoreD = 0;
+            if ($normalizedBaseName !== '') {
+                if ($normalizedQuery === $normalizedBaseName) {
+                    $scoreD = 20;
+                } elseif (str_starts_with($normalizedBaseName, $normalizedQuery)) {
+                    $scoreD = 10;
+                } elseif (str_starts_with($normalizedQuery, $normalizedBaseName)) {
+                    $scoreD = 5;
+                }
+            }
+            
+            $scoreExactPhrase = 0;
+            if (str_contains($normalizedFullName, $normalizedQuery)) {
+                $scoreExactPhrase = 15;
+            }
+            
+            $totalScore = $scoreA + $scoreB + $scoreC + $scoreD + $scoreExactPhrase;
+            
+            $candArray = (array) $cand;
+            $candArray['total_score'] = $totalScore;
+            $candArray['score_a'] = $scoreA;
+            $scored[] = $candArray;
+        }
+        
+        // Step 5: Filter out zero and below
+        $filtered = [];
+        foreach ($scored as $item) {
+            if ($item['total_score'] > 0) {
+                $filtered[] = $item;
+            }
+        }
+        
+        // Exception for single token
+        if (empty($filtered) && count($normalizedQueryTokens) === 1) {
+            foreach ($scored as $item) {
+                if ($item['score_a'] > 0) {
+                    $filtered[] = $item;
+                }
+            }
+            // Sort by raw overlap descending, then by base_name ascending
+            usort($filtered, function ($a, $b) {
+                if ($b['score_a'] !== $a['score_a']) {
+                    return $b['score_a'] <=> $a['score_a'];
+                }
+                return strcasecmp($a['base_name'] ?? '', $b['base_name'] ?? '');
+            });
+            return $filtered;
+        }
+        
+        // Step 6: Sort
+        usort($filtered, function ($a, $b) {
+            if ($b['total_score'] !== $a['total_score']) {
+                return $b['total_score'] <=> $a['total_score'];
+            }
+            return strcasecmp($a['base_name'] ?? '', $b['base_name'] ?? '');
+        });
+        
+        return $filtered;
     }
 }

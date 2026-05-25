@@ -30,9 +30,11 @@ use App\Observers\OrderItemObserver;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ReservedProduct;
+use App\Models\ProductBarcode;
 use App\Observers\LazyChatProductObserver;
 use App\Observers\LazyChatProductImageObserver;
 use App\Observers\LazyChatReservedProductObserver;
+use App\Observers\LazyChatProductBarcodeObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -65,5 +67,6 @@ class AppServiceProvider extends ServiceProvider
         Product::observe(LazyChatProductObserver::class);
         ProductImage::observe(LazyChatProductImageObserver::class);
         ReservedProduct::observe(LazyChatReservedProductObserver::class);
+        ProductBarcode::observe(LazyChatProductBarcodeObserver::class);
     }
 }

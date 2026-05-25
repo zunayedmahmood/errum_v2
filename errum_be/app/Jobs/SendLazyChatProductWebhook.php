@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Product;
 use App\Services\LazyChat\ProductPayloadBuilder;
 use App\Services\LazyChat\LazyChatWebhookTestLogger;
+use App\Services\LazyChat\LazyChatTestAuth;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -87,15 +88,18 @@ class SendLazyChatProductWebhook implements ShouldQueue
 
         $response = Http::timeout((int) config('lazychat.timeout', 5))
             ->withToken($token)
-            ->withHeaders(['X-Webhook-Topic' => $this->topic])
+            ->withHeaders(array_merge(['X-Webhook-Topic' => $this->topic], $this->testAuthHeaders()))
             ->post($url, $payload);
 
+        $innerError = $this->detectInnerError($response->json());
+
         $this->logTestResult([
-            'ok' => $response->successful(),
+            'ok' => $response->successful() && !$innerError,
             'phase' => 'sent',
             'endpoint' => $url,
             'http_status' => $response->status(),
             'response_body' => $this->truncate($response->body()),
+            'lazychat_inner_error' => $innerError,
             'payload_summary' => $this->summarizePayload($payload),
         ]);
 
@@ -127,15 +131,18 @@ class SendLazyChatProductWebhook implements ShouldQueue
 
         $response = Http::timeout((int) config('lazychat.timeout', 5))
             ->withToken($token)
-            ->withHeaders(['X-Webhook-Topic' => 'product/delete'])
+            ->withHeaders(array_merge(['X-Webhook-Topic' => 'product/delete'], $this->testAuthHeaders()))
             ->post($url, ['product_id' => $this->productId]);
 
+        $innerError = $this->detectInnerError($response->json());
+
         $this->logTestResult([
-            'ok' => $response->successful(),
+            'ok' => $response->successful() && !$innerError,
             'phase' => 'sent',
             'endpoint' => $url,
             'http_status' => $response->status(),
             'response_body' => $this->truncate($response->body()),
+            'lazychat_inner_error' => $innerError,
             'payload_summary' => [
                 'product_id' => $this->productId,
             ],
@@ -148,6 +155,67 @@ class SendLazyChatProductWebhook implements ShouldQueue
                 'body' => $response->body(),
             ]);
         }
+    }
+
+
+    private function testAuthHeaders(): array
+    {
+        if (empty($this->meta['run_id']) || !config('lazychat.testing.enabled')) {
+            return [];
+        }
+
+        try {
+            return app(LazyChatTestAuth::class)->headers();
+        } catch (Throwable $e) {
+            Log::warning('Could not attach Errum test auth token to LazyChat webhook.', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    private function detectInnerError($value): ?string
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $found = $this->findInnerError($value);
+
+        return $found ? $this->truncate($found, 500) : null;
+    }
+
+    private function findInnerError(array $value, string $path = ''): ?string
+    {
+        if (array_key_exists('success', $value) && $value['success'] === false) {
+            $message = $value['error']['message'] ?? $value['message'] ?? json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            return trim($path . ' ' . (string) $message);
+        }
+
+        if (isset($value['error'])) {
+            if (is_array($value['error'])) {
+                $message = $value['error']['message'] ?? $value['error']['code'] ?? null;
+                if ($message) {
+                    return trim($path . ' ' . (string) $message);
+                }
+            }
+
+            if (is_string($value['error'])) {
+                return trim($path . ' ' . $value['error']);
+            }
+        }
+
+        foreach ($value as $key => $child) {
+            if (is_array($child)) {
+                $found = $this->findInnerError($child, $path === '' ? (string) $key : $path . '.' . $key);
+                if ($found) {
+                    return $found;
+                }
+            }
+        }
+
+        return null;
     }
 
     private function logTestResult(array $result): void
