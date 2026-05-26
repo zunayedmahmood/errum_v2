@@ -1150,14 +1150,9 @@ export default function AddEditProductPage({
           custom_fields: customFields,
         };
 
-        // Backward-compatible: always provide name. If we have a suffix, also provide base_name + variation_suffix.
-        if (suffix) {
-          updatePayload.base_name = baseName;
-          updatePayload.variation_suffix = suffix;
-          updatePayload.name = `${baseName}${suffix}`;
-        } else {
-          updatePayload.name = baseName;
-        }
+        updatePayload.base_name = baseName;
+        updatePayload.variation_suffix = suffix;
+        updatePayload.name = suffix ? `${baseName}${suffix}` : baseName;
 
         await productService.update(parseInt(productId!), updatePayload);
 

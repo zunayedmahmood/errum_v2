@@ -420,6 +420,8 @@ class ProductController extends Controller
             'brand' => 'nullable|string|max:255',
             'sku' => 'sometimes|string', // SKU not unique - supports variations
             'name' => 'sometimes|string|max:255',
+            'base_name' => 'sometimes|string|max:255',
+            'variation_suffix' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'custom_fields' => 'nullable|array',
             'custom_fields.*.field_id' => 'required|exists:fields,id|distinct', // Prevent duplicate field_ids
@@ -435,6 +437,8 @@ class ProductController extends Controller
                 'brand' => $validated['brand'] ?? $product->brand,
                 'sku' => $validated['sku'] ?? $product->sku,
                 'name' => $validated['name'] ?? $product->name,
+                'base_name' => $validated['base_name'] ?? $product->base_name,
+                'variation_suffix' => array_key_exists('variation_suffix', $validated) ? $validated['variation_suffix'] : $product->variation_suffix,
                 'description' => $validated['description'] ?? $product->description,
             ]);
 
