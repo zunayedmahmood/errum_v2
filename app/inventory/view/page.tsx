@@ -1,18 +1,32 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { useTheme } from "@/contexts/ThemeContext";
-import { AlertCircle, ChevronDown, ChevronUp, Package, Search } from 'lucide-react';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useTheme } from '@/contexts/ThemeContext';
+import {
+  AlertTriangle,
+  ArrowRightLeft,
+  Boxes,
+  Building2,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  Package,
+  RefreshCw,
+  Search,
+  ShoppingCart,
+  Truck,
+} from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
-import inventoryService, { GlobalInventoryItem, Store as StoreBreakdown } from '@/services/inventoryService';
-import productService from '@/services/productService';
-import categoryService from '@/services/categoryService';
-import productImageService from '@/services/productImageService';
-import defectiveProductService, { type DefectiveProduct } from '@/services/defectiveProductService';
-import ExportInventoryButton from '@/components/inventory/ExportInventoryButton';
 import CategoryTreeSelector from '@/components/product/CategoryTreeSelector';
+import categoryService from '@/services/categoryService';
+import inventoryService, {
+  InventoryDatePreset,
+  InventoryOverviewItem,
+  InventoryOverviewResponse,
+  InventoryOverviewStoreRow,
+  InventoryStockStatus,
+} from '@/services/inventoryService';
 
 interface Category {
   id: number;
@@ -20,915 +34,583 @@ interface Category {
   name?: string;
   slug?: string;
   parent_id?: number;
+  children?: Category[];
 }
 
-interface ProductVariation {
-  productId: number;
-  category_id?: number;
-  category_name?: string;
-  subcategory_name?: string;
-  variation_suffix?: string;
-  quantity: number;
-  availableQuantity: number;
-  reservedQuantity: number;
-  stores: StoreBreakdown[];
+type ExpandedStoreKey = `${string}:${number}`;
+
+const DATE_PRESETS: Array<{ value: InventoryDatePreset; label: string }> = [
+  { value: '365', label: 'Last 1 year' },
+  { value: '90', label: 'Last 90 days' },
+  { value: '30', label: 'Last 30 days' },
+  { value: '7', label: 'Last 7 days' },
+  { value: 'today', label: 'Today' },
+  { value: 'custom', label: 'Custom range' },
+];
+
+const nf = new Intl.NumberFormat('en-US');
+
+const number = (value: number | null | undefined, digits = 0) => {
+  const n = Number(value || 0);
+  return nf.format(digits > 0 ? Number(n.toFixed(digits)) : Math.round(n));
+};
+
+const money = (value: number | null | undefined) => `BDT ${number(value || 0)}`;
+
+const formatDate = (value?: string | null) => {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const daysText = (value?: number | null) => {
+  if (value === null || value === undefined) return 'No sales';
+  if (value > 3650) return 'Very high';
+  return `${number(value, 1)} days`;
+};
+
+function getStatusLabel(status: InventoryStockStatus) {
+  switch (status) {
+    case 'out_of_stock': return 'Out of stock';
+    case 'no_stock': return 'No stock';
+    case 'low': return 'Low stock';
+    case 'high': return 'High stock';
+    case 'slow_moving': return 'Slow moving';
+    default: return 'Normal';
+  }
 }
 
-interface GroupedProduct {
-  groupKey: string; // stable unique key (SKU, or NO-SKU-{product_id})
-  sku: string; // display SKU (may be 'NO-SKU')
-  productName: string;
-  totalStock: number;
-  totalAvailable: number;
-  totalReserved: number;
-  variations: ProductVariation[];
-  expanded: boolean;
-  productIds: number[];
-
-  // Extra panel counts (defective/used) merged client-side
-  extraTotal: number;
-  extraDefective: number;
-  extraUsed: number;
+function getStatusClasses(status: InventoryStockStatus) {
+  switch (status) {
+    case 'out_of_stock':
+      return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200 border-red-200 dark:border-red-800';
+    case 'low':
+      return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200 border-orange-200 dark:border-orange-800';
+    case 'high':
+      return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200 border-blue-200 dark:border-blue-800';
+    case 'slow_moving':
+      return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200 border-purple-200 dark:border-purple-800';
+    case 'no_stock':
+      return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600';
+    default:
+      return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800';
+  }
 }
 
-type ExtraCounts = { total: number; used: number; defective: number };
-
-type RateLimitState = { active: boolean; lastAt?: number; message?: string };
-
-function ViewInventoryPageContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
-  const isUpdatingUrlRef = useRef(false);
-
-  const { darkMode, setDarkMode } = useTheme();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [groupedProducts, setGroupedProducts] = useState<GroupedProduct[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [visibleCount, setVisibleCount] = useState(50);
-  const [viewMode, setViewMode] = useState<'all' | 'category'>('all');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
-
-  const getFlatCategories = (cats: any[]) => {
-    const flat: any[] = [];
-    const flatten = (items: any[]) => {
-      items.forEach(item => {
-        if (!flat.some(f => f.id === item.id)) {
-          flat.push(item);
-        }
-        if (item.children && Array.isArray(item.children)) {
-          flatten(item.children);
-        }
-      });
-    };
-    
-    // First flatten based on children arrays if they exist (Tree mode)
-    if (cats.some(c => c.children && c.children.length > 0)) {
-       flatten(cats);
-    } else {
-       // Fallback for flat list mode: manually build tree relationships
-       const roots = cats.filter(c => !c.parent_id);
-       roots.forEach(root => {
-         flat.push(root);
-         const addChildren = (parentId: number) => {
-           cats.filter(c => c.parent_id === parentId).forEach(child => {
-             if (!flat.some(f => f.id === child.id)) {
-               flat.push(child);
-               addChildren(child.id);
-             }
-           });
-         };
-         addChildren(root.id);
-       });
-       // Catch any orphans
-       cats.forEach(c => {
-         if (!flat.some(f => f.id === c.id)) flat.push(c);
-       });
-    }
-    
-    return flat;
-  };
-
-  const flatCategories = useMemo(() => getFlatCategories(categories), [categories]);
-
-  // product meta + image caches (loaded lazily for visible items)
-  const [productMetaById, setProductMetaById] = useState<Record<number, any>>({});
-  const [productImageById, setProductImageById] = useState<Record<number, string>>({});
-
-  // extra stock counts (defective/used)
-  const [extraMap, setExtraMap] = useState<Map<number, ExtraCounts>>(new Map());
-
-  // Store names for dynamic columns
-  const [allStores, setAllStores] = useState<{ id: number; name: string }[]>([]);
-
-  // rate limit banner
-  const [rateLimit, setRateLimit] = useState<RateLimitState>({ active: false });
-
-  const metaCacheRef = useRef<Record<number, any>>({});
-  const imageCacheRef = useRef<Record<number, string>>({});
-  const inFlightRef = useRef<Set<number>>(new Set());
-
-  const updateQueryParams = useCallback(
-    (updates: Record<string, string | null | undefined>, historyMode: 'replace' | 'push' = 'replace') => {
-      const params = new URLSearchParams(searchParams.toString());
-      Object.entries(updates).forEach(([key, value]) => {
-        if (value === null || value === undefined || value === '') params.delete(key);
-        else params.set(key, value);
-      });
-
-      const qs = params.toString();
-      const nextUrl = qs ? `${pathname}?${qs}` : pathname;
-      isUpdatingUrlRef.current = true;
-      if (historyMode === 'push') router.push(nextUrl);
-      else router.replace(nextUrl);
-    },
-    [router, pathname, searchParams]
+function StatusBadge({ status }: { status: InventoryStockStatus }) {
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-black ${getStatusClasses(status)}`}>
+      {getStatusLabel(status)}
+    </span>
   );
-
-  useEffect(() => {
-    metaCacheRef.current = productMetaById;
-  }, [productMetaById]);
-
-  useEffect(() => {
-    imageCacheRef.current = productImageById;
-  }, [productImageById]);
-
-  // Sync URL params -> local state (supports refresh + browser back/forward)
-  useEffect(() => {
-    if (isUpdatingUrlRef.current) {
-      isUpdatingUrlRef.current = false;
-      return;
-    }
-
-    const q = searchParams.get('q') ?? '';
-    const limitRaw = Number(searchParams.get('limit') ?? '50');
-    const safeLimit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 50;
-
-    setSearchTerm(q);
-    setVisibleCount(safeLimit);
-  }, [searchParams]);
-
-  useEffect(() => {
-    fetchInventory();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, selectedCategoryId]);
-
-  // --- Same approach as GalleryPage: normalize image paths to absolute URLs ---
-  const getBaseUrl = () => {
-    // Example: NEXT_PUBLIC_API_URL = https://backend.errumbd.com/api
-    // We need base = https://backend.errumbd.com
-    const api = process.env.NEXT_PUBLIC_API_URL || '';
-    return api ? api.replace(/\/api\/?$/, '') : '';
-  };
-
-  const normalizeImageUrl = (url?: string | null) => {
-    if (!url) return '/placeholder-image.jpg';
-
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
-
-    const baseUrl = getBaseUrl();
-
-    // backend often returns /storage/....
-    if (url.startsWith('/storage')) return `${baseUrl}${url}`;
-
-    // if it already starts with "/", treat as site-relative
-    if (url.startsWith('/')) return url;
-
-    // otherwise treat as filename stored in product-images
-    if (!baseUrl) return `/storage/product-images/${url}`; // best-effort fallback
-    return `${baseUrl}/storage/product-images/${url}`;
-  };
-
-  const getCategoryName = (categoryId: number, catsToSearch: Category[]): string => {
-    const category = catsToSearch.find(c => c.id === categoryId);
-    if (!category) return 'Uncategorized';
-
-    if (category.parent_id) {
-      const parent = catsToSearch.find(c => c.id === category.parent_id);
-      return parent ? `${parent.title} / ${category.title}` : category.title;
-    }
-
-    return category.title;
-  };
-
-  // -------------------- Extra panel (defective/used) --------------------
-  const ACTIVE_EXTRA_STATUSES: Array<DefectiveProduct['status']> = [
-    'identified',
-    'inspected',
-    'available_for_sale',
-  ];
-
-  const isUsedItem = (desc?: string) => (desc || '').toUpperCase().includes('USED_ITEM');
-
-  const fetchAllActiveExtraItems = async (): Promise<DefectiveProduct[]> => {
-    const per_page = 200;
-    const all: DefectiveProduct[] = [];
-
-    for (const status of ACTIVE_EXTRA_STATUSES) {
-      let page = 1;
-      while (true) {
-        const res: any = await defectiveProductService.getAll({ status, per_page, page });
-
-        const paginator = res?.data;
-        const rows: DefectiveProduct[] = Array.isArray(paginator)
-          ? paginator
-          : (paginator?.data || []);
-
-        all.push(...rows);
-
-        if (Array.isArray(paginator)) break;
-
-        const current = paginator?.current_page ?? page;
-        const last = paginator?.last_page ?? page;
-        if (current >= last || rows.length === 0) break;
-        page += 1;
-      }
-    }
-
-    return all;
-  };
-
-  const buildExtraMapByProduct = (items: DefectiveProduct[]) => {
-    const map = new Map<number, ExtraCounts>();
-
-    for (const d of items) {
-      const pid = d.product_id;
-      if (!pid) continue;
-
-      const entry = map.get(pid) || { total: 0, used: 0, defective: 0 };
-      entry.total += 1;
-
-      if (isUsedItem(d.defect_description)) entry.used += 1;
-      else entry.defective += 1;
-
-      map.set(pid, entry);
-    }
-
-    return map;
-  };
-
-  // -------------------- Helpers for product meta + images --------------------
-  const getCustomFieldValue = (product: any, titles: string[]): string | undefined => {
-    const list = product?.custom_fields || [];
-    const lower = titles.map(t => t.toLowerCase());
-    const found = list.find((f: any) => lower.includes(String(f?.field_title || '').toLowerCase()));
-    const v = found?.value;
-    if (v === null || v === undefined) return undefined;
-    return String(v);
-  };
-
-  const pickImageFromProductMeta = (product: any): string | undefined => {
-    if (!product) return undefined;
-
-    // 1) custom field image
-    const cfImage = getCustomFieldValue(product, ['image']);
-    if (cfImage) return cfImage;
-
-    // 2) product.images (if present)
-    const imgs = Array.isArray(product?.images) ? product.images : [];
-    if (imgs.length > 0) {
-      const active = imgs.filter((img: any) => img?.is_active !== false);
-      active.sort((a: any, b: any) => {
-        if (a.is_primary && !b.is_primary) return -1;
-        if (!a.is_primary && b.is_primary) return 1;
-        return (a.sort_order || 0) - (b.sort_order || 0);
-      });
-      const u = active[0]?.image_url || active[0]?.image_path;
-      if (u) return String(u);
-    }
-
-    return undefined;
-  };
-
-  const getColorSizeForProductId = (productId: number) => {
-    const meta = metaCacheRef.current[productId];
-    const color = getCustomFieldValue(meta, ['color', 'colour']);
-    const size = getCustomFieldValue(meta, ['size']);
-    return {
-      color: color && color !== 'Default' ? color : undefined,
-      size: size && size !== 'One Size' ? size : undefined,
-    };
-  };
-
-  const getCategoryPaths = (categoryId: number | undefined, catsToSearch: Category[]): { category: string; subcategory: string } => {
-    if (!categoryId) return { category: 'Uncategorized', subcategory: '-' };
-    const cat = catsToSearch.find(c => c.id === categoryId);
-    if (!cat) return { category: 'Uncategorized', subcategory: '-' };
-
-    if (cat.parent_id) {
-      const parent = catsToSearch.find(c => c.id === cat.parent_id);
-      return {
-        category: parent ? parent.title : cat.title,
-        subcategory: parent ? cat.title : '-',
-      };
-    }
-
-    return { category: cat.title, subcategory: '-' };
-  };
-
-  const getVariationSuffix = (productId: number) => {
-    const { color, size } = getColorSizeForProductId(productId);
-    const parts = [];
-    if (color) parts.push(color);
-    if (size) parts.push(size);
-    return parts.join(' / ') || 'Default';
-  };
-
-  const getImageForProductId = (productId: number) => {
-    const meta = metaCacheRef.current[productId];
-
-    const cfOrMeta = pickImageFromProductMeta(meta);
-    if (cfOrMeta) return normalizeImageUrl(cfOrMeta);
-
-    const cached = imageCacheRef.current[productId];
-    if (cached) return normalizeImageUrl(cached);
-
-    return '/placeholder-image.jpg';
-  };
-
-  const getCategoryForGroup = (g: GroupedProduct) => {
-    for (const pid of g.productIds) {
-      const meta = metaCacheRef.current[pid];
-      if (meta?.category_id) return getCategoryName(meta.category_id, flatCategories);
-    }
-    return 'Uncategorized';
-  };
-
-  const getHeroImageForGroup = (g: GroupedProduct) => {
-    for (const pid of g.productIds) {
-      const img = getImageForProductId(pid);
-      if (img && img !== '/placeholder-image.jpg') return img;
-    }
-    // fallback: first pid
-    return getImageForProductId(g.productIds[0]);
-  };
-
-  // -------------------- Retry + rate limiting --------------------
-  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-  const getHttpStatus = (err: any): number | undefined => {
-    return err?.response?.status ?? err?.status;
-  };
-
-  const withRetry = async <T,>(fn: () => Promise<T>, opts?: { attempts?: number; baseDelayMs?: number }): Promise<T> => {
-    const attempts = opts?.attempts ?? 3;
-    const baseDelayMs = opts?.baseDelayMs ?? 400;
-
-    let lastErr: any;
-    for (let i = 0; i < attempts; i++) {
-      try {
-        const res = await fn();
-
-        // clear banner after successful call (soft)
-        if (rateLimit.active) {
-          setRateLimit(prev => ({ ...prev, active: false }));
-        }
-
-        return res;
-      } catch (err: any) {
-        lastErr = err;
-        const status = getHttpStatus(err);
-
-        // Only retry for rate limit & transient
-        const retryable = status === 429 || (status && status >= 500);
-        if (!retryable || i === attempts - 1) break;
-
-        const is429 = status === 429;
-        if (is429) {
-          setRateLimit({
-            active: true,
-            lastAt: Date.now(),
-            message: 'HTTP 429 (Too Many Requests). Slowing down image/product loading…'
-          });
-        }
-
-        const jitter = Math.floor(Math.random() * 200);
-        const delay = (is429 ? 800 : baseDelayMs) * Math.pow(2, i) + jitter;
-        await sleep(delay);
-      }
-    }
-
-    throw lastErr;
-  };
-
-  const enrichProduct = async (productId: number) => {
-    // Meta already cached
-    if (metaCacheRef.current[productId]) return;
-
-    // Avoid duplicate in-flight
-    if (inFlightRef.current.has(productId)) return;
-    inFlightRef.current.add(productId);
-
-    try {
-      const meta = await withRetry(() => productService.getById(productId), { attempts: 3, baseDelayMs: 350 });
-      setProductMetaById(prev => ({ ...prev, [productId]: meta }));
-
-      // Try to pick image from meta first
-      let img = pickImageFromProductMeta(meta);
-
-      // If still missing, hit the dedicated primary-image endpoint (only then)
-      if (!img) {
-        try {
-          const primary = await withRetry(() => productImageService.getPrimaryImage(productId), { attempts: 2, baseDelayMs: 500 });
-          const u = (primary as any)?.image_url || (primary as any)?.image_path;
-          if (u) img = String(u);
-        } catch {
-          // ignore
-        }
-      }
-
-      if (img) {
-        setProductImageById(prev => ({ ...prev, [productId]: normalizeImageUrl(img) }));
-      }
-    } catch (e) {
-      // Keep placeholder; we'll try again later when item is visible again
-      console.warn('Failed to enrich product', productId, e);
-    } finally {
-      inFlightRef.current.delete(productId);
-    }
-  };
-
-  // -------------------- Grouping --------------------
-  const buildGroupsFromInventory = (inventoryItems: GlobalInventoryItem[]): GroupedProduct[] => {
-    const groups: Record<string, GroupedProduct> = {};
-
-    for (const item of inventoryItems) {
-      const displaySku = item.sku || 'NO-SKU';
-      const groupKey = item.sku ? item.sku : `NO-SKU-${item.product_id}`;
-
-      if (!groups[groupKey]) {
-        groups[groupKey] = {
-          groupKey,
-          sku: displaySku,
-          productName: item.base_name || item.product_name || 'Unnamed Product',
-          totalStock: 0,
-          totalAvailable: 0,
-          totalReserved: 0,
-          variations: [],
-          expanded: false,
-          productIds: [],
-          extraTotal: 0,
-          extraDefective: 0,
-          extraUsed: 0,
-        };
-      }
-
-      const g = groups[groupKey];
-      const qty = Number(item.total_quantity || 0);
-      const avail = Number(item.available_quantity || 0);
-      const res = Number(item.reserved_quantity || 0);
-
-      g.totalStock += qty;
-      g.totalAvailable += avail;
-      g.totalReserved += res;
-
-      if (item.product_id && !g.productIds.includes(item.product_id)) {
-        g.productIds.push(item.product_id);
-      }
-
-      const existing = g.variations.find(v => v.productId === item.product_id);
-      if (!existing) {
-        g.variations.push({
-          productId: item.product_id,
-          category_id: item.category_id,
-          category_name: item.category_name,
-          subcategory_name: item.subcategory_name,
-          variation_suffix: item.variation_suffix,
-          quantity: qty,
-          availableQuantity: avail,
-          reservedQuantity: res,
-          stores: Array.isArray(item.stores) ? [...item.stores] : [],
-        });
-      } else {
-        existing.quantity += qty;
-        existing.availableQuantity += avail;
-        existing.reservedQuantity += res;
-
-        // merge store breakdowns
-        for (const s of item.stores || []) {
-          const hit = existing.stores.find(x => x.store_id === s.store_id);
-          if (hit) {
-            hit.quantity += s.quantity;
-            hit.batches_count = (hit.batches_count || 0) + (s.batches_count || 0);
-          } else {
-            existing.stores.push({ ...s });
-          }
-        }
-      }
-    }
-
-    return Object.values(groups).sort((a, b) => {
-      return (a.productName || '').localeCompare(b.productName || '');
-    });
-  };
-
-  const fetchInventory = async () => {
-    try {
-      setLoading(true);
-
-      const [categoriesData, inventoryResponse] = await Promise.all([
-        categoryService.getTree(true),
-        inventoryService.getGlobalInventory({ 
-          skipStoreScope: true,
-          category_id: viewMode === 'category' ? (selectedCategoryId || undefined) : undefined
-        }),
-      ]);
-
-      // Handle tree response or fallback to flat list
-      let parsedCategories = [];
-      if (Array.isArray(categoriesData)) {
-        parsedCategories = categoriesData;
-      } else if ((categoriesData as any)?.data) {
-        parsedCategories = (categoriesData as any).data;
-      }
-      
-      setCategories(parsedCategories);
-
-      const inventoryData = (inventoryResponse as any)?.data || [];
-
-      // Extract unique stores for table headers
-      const storeMap = new Map<number, string>();
-      inventoryData.forEach((item: any) => {
-        if (Array.isArray(item.stores)) {
-          item.stores.forEach((s: any) => {
-            if (s.store_id && s.store_name) {
-              storeMap.set(s.store_id, s.store_name);
-            }
-          });
-        }
-      });
-      const storesList = Array.from(storeMap.entries())
-        .map(([id, name]) => ({ id, name }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      setAllStores(storesList);
-
-      // ✅ Build groups ONLY from inventory endpoint (no product list fetch)
-      const grouped = buildGroupsFromInventory(inventoryData);
-      setGroupedProducts(grouped);
-
-      // ✅ Show UI fast
-      setLoading(false);
-
-      // ✅ Load extra counts in background (won't block inventory list)
-      (async () => {
-        try {
-          const extraItems = await fetchAllActiveExtraItems();
-          setExtraMap(buildExtraMapByProduct(extraItems));
-        } catch (e) {
-          console.warn('Failed to load extra (defective/used) counts', e);
-        }
-      })();
-    } catch (error) {
-      console.error('Error fetching inventory data:', error);
-      setLoading(false);
-    }
-  };
-
-  const toggleExpand = (groupKey: string) => {
-    setGroupedProducts(prev => prev.map(item => (
-      item.groupKey === groupKey ? { ...item, expanded: !item.expanded } : item
-    )));
-  };
-
-  // -------------------- Derived lists --------------------
-  const groupsWithExtras = useMemo(() => {
-    if (!extraMap || extraMap.size === 0) return groupedProducts;
-
-    return groupedProducts.map(g => {
-      let total = 0;
-      let used = 0;
-      let defective = 0;
-
-      for (const pid of g.productIds) {
-        const ex = extraMap.get(pid);
-        if (!ex) continue;
-        total += ex.total;
-        used += ex.used;
-        defective += ex.defective;
-      }
-
-      return { ...g, extraTotal: total, extraUsed: used, extraDefective: defective };
-    });
-  }, [groupedProducts, extraMap]);
-
-  const filteredProducts = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
-    if (!q) return groupsWithExtras;
-
-    return groupsWithExtras.filter(item => {
-      const nameHit = (item.productName || '').toLowerCase().includes(q);
-      const skuHit = (item.sku || '').toLowerCase().includes(q);
-      const categoryHit = getCategoryForGroup(item).toLowerCase().includes(q);
-      return nameHit || skuHit || categoryHit;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupsWithExtras, searchTerm, categories, productMetaById]);
-
-  const visibleProducts = useMemo(() => {
-    return filteredProducts.slice(0, visibleCount);
-  }, [filteredProducts, visibleCount]);
-
-  const visibleProductIds = useMemo(() => {
-    const ids: number[] = [];
-    for (const g of visibleProducts) {
-      for (const pid of g.productIds) ids.push(pid);
-    }
-    return Array.from(new Set(ids.filter(Boolean)));
-  }, [visibleProducts]);
-
-  // Lazy-load product meta/images for visible items (with concurrency cap)
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      const targets = visibleProductIds.filter(pid => !metaCacheRef.current[pid]);
-      if (targets.length === 0) return;
-
-      const CONCURRENCY = 3;
-      let idx = 0;
-
-      const worker = async () => {
-        while (!cancelled) {
-          const pid = targets[idx++];
-          if (!pid) break;
-          try {
-            await enrichProduct(pid);
-          } catch {
-            // ignore
-          }
-        }
-      };
-
-      const workers = Array.from({ length: Math.min(CONCURRENCY, targets.length) }, () => worker());
-      await Promise.all(workers);
-    };
-
-    run().catch(() => void 0);
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleProductIds]);
-
-  const handleSearchChange = (value: string) => {
-    setSearchTerm(value);
-    setVisibleCount(50);
-    updateQueryParams({ q: value || null, limit: '50' });
-  };
-
-  const handleLoadMore = () => {
-    const next = visibleCount + 50;
-    setVisibleCount(next);
-    updateQueryParams({ limit: String(next) }, 'push');
-  };
-
-  // -------------------- UI --------------------
-  if (loading) {
-    return (
-      <div className={darkMode ? 'dark' : ''}>
-        <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-          <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Header
-              darkMode={darkMode}
-              setDarkMode={setDarkMode}
-              toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-            />
-            <main className="flex-1 overflow-auto p-6 flex items-center justify-center">
-              <div className="text-center">
-                <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mb-4"></div>
-                <p className="text-gray-500 dark:text-gray-400">Loading inventory...</p>
-              </div>
-            </main>
+}
+
+function MetricCard({ icon: Icon, label, value, hint }: { icon: any; label: string; value: string | number; hint?: string }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+          <p className="mt-1 text-2xl font-black text-gray-900 dark:text-white">{value}</p>
+          {hint && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
+        </div>
+        <div className="rounded-xl bg-gray-100 p-2 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StoreSummaryCard({ store, isExpanded, onToggle }: { store: InventoryOverviewStoreRow; isExpanded: boolean; onToggle: () => void }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button type="button" onClick={onToggle} className="flex min-w-[200px] items-center gap-2 text-left">
+          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <div>
+            <p className="font-black text-gray-900 dark:text-white">{store.store_name}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{store.po_count} PO · {store.batch_count} batch</p>
+          </div>
+        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={store.stock_status} />
+          <span className="rounded-lg bg-white px-2.5 py-1 text-sm font-black text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white">
+            Stock: {number(store.current_stock)}
+          </span>
+          <span className="rounded-lg bg-white px-2.5 py-1 text-sm font-bold text-gray-700 shadow-sm dark:bg-gray-800 dark:text-gray-200">
+            Sold: {number(store.total_sell)}
+          </span>
+          <span className="rounded-lg bg-white px-2.5 py-1 text-sm font-bold text-gray-700 shadow-sm dark:bg-gray-800 dark:text-gray-200">
+            Cover: {daysText(store.days_of_cover)}
+          </span>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+            <MiniMetric label="Purchase" value={store.total_purchase} />
+            <MiniMetric label="Sell" value={store.total_sell} />
+            <MiniMetric label="Dispatch Out" value={store.total_dispatch_out} />
+            <MiniMetric label="Dispatch Receive" value={store.total_dispatch_received} />
+            <MiniMetric label="Defect" value={store.total_defect} />
+            <MiniMetric label="Velocity/day" value={number(store.velocity_per_day, 3)} />
+            <MiniMetric label="Stock value" value={money(store.stock_value)} />
+            <MiniMetric label="Revenue" value={money(store.sales_revenue)} />
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-100 text-xs uppercase text-gray-600 dark:bg-gray-900 dark:text-gray-400">
+                <tr>
+                  <th className="px-3 py-2 text-left">PO</th>
+                  <th className="px-3 py-2 text-left">Batch</th>
+                  <th className="px-3 py-2 text-right">Purchased</th>
+                  <th className="px-3 py-2 text-right">Remaining</th>
+                  <th className="px-3 py-2 text-right">Sold</th>
+                  <th className="px-3 py-2 text-right">Sell-through</th>
+                  <th className="px-3 py-2 text-right">Velocity/day</th>
+                  <th className="px-3 py-2 text-left">Received</th>
+                  <th className="px-3 py-2 text-left">Vendor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {store.batches.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-3 py-6 text-center text-gray-500 dark:text-gray-400">
+                      No PO/batch rows found in this selected date range.
+                    </td>
+                  </tr>
+                ) : (
+                  store.batches.map((batch) => (
+                    <tr key={batch.batch_id} className="text-gray-800 dark:text-gray-200">
+                      <td className="px-3 py-2 font-bold">{batch.po_number || 'Manual/Direct'}</td>
+                      <td className="px-3 py-2">{batch.batch_number}</td>
+                      <td className="px-3 py-2 text-right">{number(batch.original_qty)}</td>
+                      <td className="px-3 py-2 text-right font-black">{number(batch.remaining_stock)}</td>
+                      <td className="px-3 py-2 text-right">{number(batch.units_sold)}</td>
+                      <td className="px-3 py-2 text-right">{number(batch.sell_through_pct, 1)}%</td>
+                      <td className="px-3 py-2 text-right">{number(batch.velocity_per_day, 3)}</td>
+                      <td className="px-3 py-2">{formatDate(batch.po_received_date || batch.po_order_date || batch.batch_created_at)}</td>
+                      <td className="px-3 py-2">{batch.vendor_name || '-'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="mt-1 text-sm font-black text-gray-900 dark:text-white">{value}</p>
+    </div>
+  );
+}
+
+function RecommendationBox({ item }: { item: InventoryOverviewItem }) {
+  const rec = item.movement_recommendation;
+  if (!rec) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300">
+        No transfer recommendation for this product in the selected period.
       </div>
     );
   }
+
+  return (
+    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+      <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-blue-900 dark:text-blue-100">
+        <ArrowRightLeft className="h-4 w-4" />
+        Move {number(rec.suggested_quantity)} unit(s) from {rec.from_store_name} to {rec.to_store_name}
+        <span className="rounded-full bg-white px-2 py-0.5 text-xs uppercase text-blue-700 dark:bg-blue-950 dark:text-blue-200">
+          {rec.urgency}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-blue-800 dark:text-blue-200">{rec.reason}</p>
+    </div>
+  );
+}
+
+function ViewInventoryPageContent() {
+  const { darkMode, setDarkMode } = useTheme();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [datePreset, setDatePreset] = useState<InventoryDatePreset>('365');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [draftSearch, setDraftSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
+  const [data, setData] = useState<InventoryOverviewResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
+  const [expandedStores, setExpandedStores] = useState<Set<ExpandedStoreKey>>(new Set());
+
+
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res: any = await categoryService.getTree(true);
+      setCategories(Array.isArray(res) ? res : (res?.data || []));
+    } catch (e) {
+      console.warn('Failed to load categories', e);
+    }
+  }, []);
+
+  const fetchOverview = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await inventoryService.getInventoryOverview({
+        date_preset: datePreset,
+        start_date: datePreset === 'custom' ? startDate || undefined : undefined,
+        end_date: datePreset === 'custom' ? endDate || undefined : undefined,
+        category_id: selectedCategoryId || undefined,
+        search: appliedSearch || undefined,
+        page,
+        per_page: perPage,
+        skipStoreScope: true,
+      });
+      setData(res.data);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || e?.message || 'Failed to load inventory overview.');
+    } finally {
+      setLoading(false);
+    }
+  }, [datePreset, startDate, endDate, selectedCategoryId, appliedSearch, page, perPage]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
+
+  useEffect(() => {
+    fetchOverview();
+  }, [fetchOverview]);
+
+  const toggleProduct = (key: string) => {
+    setExpandedProducts((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleStore = (groupKey: string, storeId: number) => {
+    const key = `${groupKey}:${storeId}` as ExpandedStoreKey;
+    setExpandedStores((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const resetToFirstPage = () => setPage(1);
+
+  const summary = data?.summary;
+  const products = data?.items || [];
 
   return (
     <div className={darkMode ? 'dark' : ''}>
       <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
         <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header
-            darkMode={darkMode}
-            setDarkMode={setDarkMode}
-            toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Header darkMode={darkMode} setDarkMode={setDarkMode} toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
 
           <main className="flex-1 overflow-auto p-6">
-            <div className="flex justify-between items-start mb-6 text-base">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                  Inventory Overview
-                </h1>
-                <p className="text-gray-600 dark:text-gray-400">
-                  View all products and their stock levels across outlets
+                <h1 className="text-2xl font-black text-gray-900 dark:text-white">Inventory Intelligence View</h1>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  Date-filtered PO, batch, sales, dispatch, defect, velocity and store movement recommendation in one place.
                 </p>
+                {data?.filters && (
+                  <p className="mt-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    Movement period: {formatDate(data.filters.start_date)} to {formatDate(data.filters.end_date)} · Current stock is latest live stock.
+                  </p>
+                )}
               </div>
-              <ExportInventoryButton 
-                categories={flatCategories} 
-                allStores={allStores} 
-                selectedCategoryId={viewMode === 'category' ? selectedCategoryId : null}
-              />
+
+              <button
+                type="button"
+                onClick={fetchOverview}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-800 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
             </div>
 
-            <div className="flex flex-wrap gap-4 mb-4">
-              <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
-                <label className="text-xs font-bold text-gray-500 uppercase px-1">View Mode</label>
-                <select
-                  value={viewMode}
-                  onChange={(e) => {
-                    setViewMode(e.target.value as 'all' | 'category');
-                    if (e.target.value === 'all') setSelectedCategoryId(null);
-                  }}
-                  className="w-full p-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
-                >
-                  <option value="all" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">Current Stock (All Products)</option>
-                  <option value="category" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">Category-wise Stock</option>
-                </select>
-              </div>
+            <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+                <div className="lg:col-span-2">
+                  <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Date</label>
+                  <select
+                    value={datePreset}
+                    onChange={(e) => {
+                      setDatePreset(e.target.value as InventoryDatePreset);
+                      resetToFirstPage();
+                    }}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  >
+                    {DATE_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
+                  </select>
+                </div>
 
-              {viewMode === 'category' && (
-                <div className="flex-1 min-w-[300px]">
+                {datePreset === 'custom' && (
+                  <>
+                    <div className="lg:col-span-2">
+                      <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Start</label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => { setStartDate(e.target.value); resetToFirstPage(); }}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div className="lg:col-span-2">
+                      <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">End</label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => { setEndDate(e.target.value); resetToFirstPage(); }}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div className={datePreset === 'custom' ? 'lg:col-span-3' : 'lg:col-span-4'}>
                   <CategoryTreeSelector
                     categories={categories as any}
                     selectedCategoryId={selectedCategoryId ? String(selectedCategoryId) : ''}
-                    onSelect={(id) => setSelectedCategoryId(id ? Number(id) : null)}
-                    label="Filter by Category"
+                    onSelect={(id) => { setSelectedCategoryId(id ? Number(id) : null); resetToFirstPage(); }}
+                    label="Category"
                     required={false}
-                    placeholder="-- All Categories --"
+                    placeholder="All categories"
                     showSelectedInfo={false}
                     allowClear={true}
-                    clearText="-- All Categories --"
+                    clearText="All categories"
                   />
                 </div>
-              )}
-            </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by product name, SKU or category"
-                  value={searchTerm}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <div className="lg:col-span-3">
+                  <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Search</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      value={draftSearch}
+                      onChange={(e) => setDraftSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          setAppliedSearch(draftSearch.trim());
+                          resetToFirstPage();
+                        }
+                      }}
+                      placeholder="Product, SKU, variation"
+                      className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-end gap-2 lg:col-span-1">
+                  <button
+                    type="button"
+                    onClick={() => { setAppliedSearch(draftSearch.trim()); resetToFirstPage(); }}
+                    className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-black text-white hover:bg-blue-700"
+                  >
+                    Apply
+                  </button>
+                </div>
               </div>
             </div>
 
-            {rateLimit.active && (
-              <div className="mb-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-amber-700 dark:text-amber-300 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">Rate limit detected</p>
-                    <p className="text-sm text-amber-800 dark:text-amber-200">
-                      {rateLimit.message || 'HTTP 429 (Too Many Requests). Slowing down requests and retrying automatically…'}
-                    </p>
-                  </div>
-                </div>
+            {summary && (
+              <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
+                <MetricCard icon={Package} label="Products" value={number(summary.total_products)} hint={`${number(summary.page_products)} on page`} />
+                <MetricCard icon={Boxes} label="Current Stock" value={number(summary.total_current_stock)} />
+                <MetricCard icon={ShoppingCart} label="Sold" value={number(summary.total_sell)} hint="In selected period" />
+                <MetricCard icon={CalendarDays} label="Purchased" value={number(summary.total_purchase)} hint="PO received/ordered" />
+                <MetricCard icon={Truck} label="Dispatch Out" value={number(summary.total_dispatch_out)} />
+                <MetricCard icon={Building2} label="Dispatch Receive" value={number(summary.total_dispatch_received)} />
+                <MetricCard icon={AlertTriangle} label="Low Stock" value={number(summary.low_stock_count)} />
+                <MetricCard icon={ArrowRightLeft} label="Suggestions" value={number(summary.recommendation_count)} />
               </div>
             )}
 
-            <div className="space-y-4">
-              {filteredProducts.length === 0 ? (
-                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-12 text-center">
-                  <Package className="w-16 h-16 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
-                  <p className="text-gray-600 dark:text-gray-400">No inventory items found</p>
+            {error && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+                {error}
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-4 dark:border-gray-700">
+                <div>
+                  <p className="text-sm font-black text-gray-900 dark:text-white">Product-wise stock intelligence</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Expand a product, then expand any store to see purchase/sell/dispatch/defect and batch/PO details.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Rows</span>
+                  <select
+                    value={perPage}
+                    onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="flex items-center justify-center p-16 text-gray-500 dark:text-gray-400">
+                  <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> Loading inventory intelligence...
+                </div>
+              ) : products.length === 0 ? (
+                <div className="p-16 text-center text-gray-500 dark:text-gray-400">
+                  <Package className="mx-auto mb-3 h-12 w-12 opacity-60" />
+                  No products found for this filter.
                 </div>
               ) : (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
-                  <div className="overflow-x-auto max-h-[calc(100vh-320px)] scrollbar-thin">
-                    <table className="w-full border-collapse border border-gray-200 dark:border-gray-700 text-base font-medium">
-                      <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-20">
-                        <tr className="border-b border-gray-200 dark:border-gray-700">
-                          <th className="p-3 text-left font-bold text-gray-700 dark:text-gray-300 sticky left-0 bg-gray-50 dark:bg-gray-900 z-30 border-r border-gray-200 dark:border-gray-700">SKU</th>
-                          <th className="p-3 text-left font-bold text-gray-700 dark:text-gray-300 min-w-[250px] border-r border-gray-200 dark:border-gray-700">Product Name</th>
-                          <th className="p-3 text-left font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Category</th>
-                          <th className="p-3 text-left font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Subcategory</th>
-                          <th className="p-3 text-left font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Variation</th>
-                          
-                          {allStores.map(store => (
-                            <th key={store.id} className="p-3 text-center font-bold text-gray-700 dark:text-gray-300 whitespace-normal break-words max-w-[100px] leading-tight border-r border-gray-200 dark:border-gray-700">
-                              {store.name}
-                            </th>
-                          ))}
-                          
-                          <th className="p-3 text-center font-bold text-blue-700 dark:text-blue-300 bg-blue-50/50 dark:bg-blue-900/20 border-r border-gray-200 dark:border-gray-700">Available</th>
-                          <th className="p-3 text-center font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Physical</th>
-                          <th className="p-3 text-center font-bold text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700">Reserved</th>
-                          <th className="p-3 text-center font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50/50 dark:bg-emerald-900/20 border-r border-gray-200 dark:border-gray-700">SKU Total</th>
-                          <th className="p-3 text-left font-bold text-gray-700 dark:text-gray-300">Defective or Used</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white dark:bg-gray-800">
-                        {visibleProducts.map((group) => (
-                          group.variations.map((variation, vIdx) => {
-                            const pid = variation.productId;
-                            const paths = getCategoryPaths(variation.category_id, flatCategories);
-                            const category = variation.category_name || paths.category;
-                            const subcategory = variation.subcategory_name || paths.subcategory;
-                            const suffix = variation.variation_suffix || getVariationSuffix(pid);
-                            const extra = extraMap?.get(pid);
-                            const rowSpan = group.variations.length;
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-600 dark:bg-gray-900 dark:text-gray-400">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Product</th>
+                        <th className="px-4 py-3 text-left">Category</th>
+                        <th className="px-4 py-3 text-right">Stock</th>
+                        <th className="px-4 py-3 text-right">PO/Batch</th>
+                        <th className="px-4 py-3 text-right">Purchase</th>
+                        <th className="px-4 py-3 text-right">Sell</th>
+                        <th className="px-4 py-3 text-right">Dispatch</th>
+                        <th className="px-4 py-3 text-right">Defect</th>
+                        <th className="px-4 py-3 text-right">Velocity</th>
+                        <th className="px-4 py-3 text-left">Health</th>
+                        <th className="px-4 py-3 text-left">Recommendation</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {products.map((item) => {
+                        const expanded = expandedProducts.has(item.group_key);
+                        return (
+                          <tr key={item.group_key} className="align-top">
+                            <td colSpan={11} className="p-0">
+                              <div className="grid grid-cols-[minmax(260px,1.4fr)_minmax(140px,.8fr)_90px_90px_90px_90px_100px_80px_90px_120px_minmax(220px,1fr)] items-center gap-0 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900/30">
+                                <button type="button" onClick={() => toggleProduct(item.group_key)} className="flex items-start gap-2 text-left">
+                                  {expanded ? <ChevronDown className="mt-1 h-4 w-4 text-gray-500" /> : <ChevronRight className="mt-1 h-4 w-4 text-gray-500" />}
+                                  <div>
+                                    <p className="font-black text-gray-900 dark:text-white">{item.product_name}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">SKU: {item.sku} · {item.variations.length} variation(s)</p>
+                                  </div>
+                                </button>
+                                <div className="text-gray-700 dark:text-gray-300">
+                                  <p className="font-bold">{item.category_name || 'Uncategorized'}</p>
+                                  <p className="text-xs text-gray-500">{item.subcategory_name || '-'}</p>
+                                </div>
+                                <Cell value={number(item.current_stock)} strong />
+                                <Cell value={`${number(item.po_count)} / ${number(item.batch_count)}`} />
+                                <Cell value={number(item.total_purchase)} />
+                                <Cell value={number(item.total_sell)} />
+                                <Cell value={`${number(item.total_dispatch_out)} / ${number(item.total_dispatch_received)}`} />
+                                <Cell value={number(item.total_defect)} />
+                                <Cell value={number(item.velocity_per_day, 3)} />
+                                <div><StatusBadge status={item.stock_status} /></div>
+                                <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                  {item.movement_recommendation
+                                    ? `Move ${number(item.movement_recommendation.suggested_quantity)}: ${item.movement_recommendation.from_store_name} → ${item.movement_recommendation.to_store_name}`
+                                    : 'No move needed'}
+                                </div>
+                              </div>
 
-                            return (
-                              <tr
-                                key={pid}
-                                className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors"
-                              >
-                                {vIdx === 0 && (
-                                  <>
-                                    <td rowSpan={rowSpan} className="p-3 font-bold text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800 z-10 border-r border-gray-200 dark:border-gray-700 align-top">
-                                      {group.sku}
-                                    </td>
-                                    <td rowSpan={rowSpan} className="p-3 text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700 align-top whitespace-normal break-words max-w-[200px] leading-tight">
-                                      {group.productName}
-                                    </td>
-                                    <td rowSpan={rowSpan} className="p-3 text-gray-600 dark:text-gray-400 border-r border-gray-200 dark:border-gray-700 align-top">
-                                      {category}
-                                    </td>
-                                    <td rowSpan={rowSpan} className="p-3 text-gray-600 dark:text-gray-400 border-r border-gray-200 dark:border-gray-700 align-top">
-                                      {subcategory}
-                                    </td>
-                                  </>
-                                )}
-                                
-                                <td className="p-3 border-r border-gray-200 dark:border-gray-700">
-                                  <span className="inline-flex items-center px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-bold">
-                                    {suffix}
-                                  </span>
-                                </td>
+                              {expanded && (
+                                <div className="space-y-4 border-t border-gray-100 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-900/30">
+                                  <RecommendationBox item={item} />
 
-                                {allStores.map(store => {
-                                  const storeStock = variation.stores.find(s => s.store_id === store.id);
-                                  return (
-                                    <td key={store.id} className="p-3 text-center border-r border-gray-200 dark:border-gray-700">
-                                      {storeStock ? (
-                                        <span className="font-bold text-gray-900 dark:text-white">{storeStock.quantity}</span>
-                                      ) : (
-                                        <span className="text-gray-300 dark:text-gray-600">-</span>
-                                      )}
-                                    </td>
-                                  );
-                                })}
+                                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+                                    <MiniMetric label="Available" value={number(item.available_stock)} />
+                                    <MiniMetric label="Reserved" value={number(item.reserved_stock)} />
+                                    <MiniMetric label="Stock cover" value={daysText(item.days_of_cover)} />
+                                    <MiniMetric label="Stock value" value={money(item.stock_value)} />
+                                    <MiniMetric label="Stores" value={item.stores.length} />
+                                    <MiniMetric label="Variations" value={item.variations.length} />
+                                    <MiniMetric label="PO count" value={item.po_count} />
+                                    <MiniMetric label="Batch count" value={item.batch_count} />
+                                  </div>
 
-                                <td className="p-3 text-center bg-blue-50/20 dark:bg-blue-900/5 border-r border-gray-200 dark:border-gray-700">
-                                  <span className="font-bold text-blue-600 dark:text-blue-400">
-                                    {variation.availableQuantity}
-                                  </span>
-                                </td>
-                                <td className="p-3 text-center font-bold text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-700">
-                                  {variation.quantity}
-                                </td>
-                                <td className="p-3 text-center text-amber-600 dark:text-amber-500 border-r border-gray-200 dark:border-gray-700">
-                                  {variation.reservedQuantity > 0 ? variation.reservedQuantity : '-'}
-                                </td>
-
-                                {vIdx === 0 && (
-                                  <td rowSpan={rowSpan} className="p-3 text-center bg-emerald-50/20 dark:bg-emerald-900/5 border-r border-gray-200 dark:border-gray-700 align-middle">
-                                    <span className="font-black text-emerald-600 dark:text-emerald-400">{group.totalStock}</span>
-                                  </td>
-                                )}
-
-                                <td className="p-3 border-r border-gray-200 dark:border-gray-700">
-                                  {extra ? (
-                                    <div className="flex flex-col gap-1 min-w-[100px]">
-                                      {extra.defective > 0 && (
-                                        <span className="text-xs font-black text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded uppercase">Def: {extra.defective}</span>
-                                      )}
-                                      {extra.used > 0 && (
-                                        <span className="text-xs font-black text-purple-600 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded uppercase">Used: {extra.used}</span>
-                                      )}
+                                  <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+                                    <p className="mb-2 text-sm font-black text-gray-900 dark:text-white">Variation stock</p>
+                                    <div className="flex flex-wrap gap-2">
+                                      {item.variations.map((variation) => (
+                                        <span key={variation.product_id} className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-bold text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                                          {variation.variation_suffix || 'Default'}: {number(variation.current_stock)} stock
+                                        </span>
+                                      ))}
                                     </div>
-                                  ) : '-'}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                                  </div>
+
+                                  <div className="space-y-3">
+                                    {item.stores.map((store) => {
+                                      const storeKey = `${item.group_key}:${store.store_id}` as ExpandedStoreKey;
+                                      return (
+                                        <StoreSummaryCard
+                                          key={storeKey}
+                                          store={store}
+                                          isExpanded={expandedStores.has(storeKey)}
+                                          onToggle={() => toggleStore(item.group_key, store.store_id)}
+                                        />
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
 
-              {filteredProducts.length > visibleCount && (
-                <div className="flex justify-center pt-2">
-                  <button
-                    onClick={handleLoadMore}
-                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                  >
-                    Load more ({Math.min(50, filteredProducts.length - visibleCount)} more)
-                  </button>
+              {data && data.last_page > 1 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 p-4 dark:border-gray-700">
+                  <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">
+                    Page {data.page} of {data.last_page} · {number(data.total)} product groups
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={page <= 1 || loading}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-white"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={page >= data.last_page || loading}
+                      onClick={() => setPage((p) => Math.min(data.last_page, p + 1))}
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-white"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -939,15 +621,17 @@ function ViewInventoryPageContent() {
   );
 }
 
+function Cell({ value, strong = false }: { value: string | number; strong?: boolean }) {
+  return (
+    <div className={`text-right ${strong ? 'font-black text-gray-900 dark:text-white' : 'font-bold text-gray-700 dark:text-gray-300'}`}>
+      {value}
+    </div>
+  );
+}
+
 export default function ViewInventoryPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-sm text-gray-600 dark:text-gray-300">Loading inventory view...</div>
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-600 dark:bg-gray-900 dark:text-gray-300">Loading inventory view...</div>}>
       <ViewInventoryPageContent />
     </Suspense>
   );

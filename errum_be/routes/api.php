@@ -190,6 +190,7 @@ Route::prefix('catalog')->group(function () {
         Route::get('/stock-aging', [InventoryController::class, 'getStockAging']);
         // Stock Intelligence (best sellers, slow movers, rebalancing predictor)
         Route::get('/intelligence', [StockIntelligenceController::class, 'index']);
+        Route::get('/intelligence/overview', [StockIntelligenceController::class, 'overview']);
     });
 });
 
@@ -383,6 +384,7 @@ Route::middleware('auth:api')->group(function () {
     
     Route::get('/intelligence', [StockIntelligenceController::class, 'index']);
     Route::get('/intelligence/batch-report', [StockIntelligenceController::class, 'batchReport']); // ← ADD THIS
+    Route::get('/intelligence/overview', [StockIntelligenceController::class, 'overview']);
 });
 
     // Store Fulfillment (Store Employee) - Dashboard & Barcode Scanning

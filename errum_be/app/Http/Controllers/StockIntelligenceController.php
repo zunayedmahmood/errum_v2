@@ -401,6 +401,801 @@ class StockIntelligenceController extends Controller
         ]);
     }
 
+
+    // =========================================================================
+    // 3. Combined inventory view intelligence
+    // GET /api/inventory/intelligence/overview
+    //   ?date_preset=365|90|30|7|today|custom
+    //   ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD   (used for custom or explicit range)
+    //   ?category_id=&search=&page=&per_page=
+    //
+    // Date range affects movement counts (purchase/sell/dispatch/defect/velocity).
+    // Current stock always reflects the latest stock state.
+    // =========================================================================
+    public function overview(Request $request)
+    {
+        try {
+            [$from, $to, $periodDays, $datePreset] = $this->resolveOverviewDateRange($request);
+
+            $search  = trim((string) $request->query('search', ''));
+            $perPage = min(100, max(10, (int) $request->query('per_page', 50)));
+            $page    = max(1, (int) $request->query('page', 1));
+
+            $productQuery = DB::table('products as p')
+                ->leftJoin('categories as c', 'p.category_id', '=', 'c.id')
+                ->leftJoin('categories as pc', 'c.parent_id', '=', 'pc.id')
+                ->whereNull('p.deleted_at')
+                ->where('p.is_archived', false)
+                ->select([
+                    'p.id as product_id',
+                    'p.sku',
+                    'p.name as product_name',
+                    'p.base_name',
+                    'p.variation_suffix',
+                    'p.category_id',
+                    DB::raw("CASE WHEN pc.id IS NOT NULL THEN pc.title ELSE COALESCE(c.title, 'Uncategorized') END as category_name"),
+                    DB::raw("CASE WHEN pc.id IS NOT NULL THEN c.title ELSE '-' END as subcategory_name"),
+                ]);
+
+            if ($request->filled('category_id')) {
+                $categoryId = (int) $request->query('category_id');
+                $categoryIds = [$categoryId];
+                try {
+                    $category = \App\Models\Category::find($categoryId);
+                    if ($category && method_exists($category, 'descendants')) {
+                        $categoryIds = $category->descendants()->pluck('id')->push($category->id)->unique()->values()->toArray();
+                    }
+                } catch (\Throwable $e) {
+                    // Fallback to the selected category only.
+                }
+                $productQuery->whereIn('p.category_id', $categoryIds);
+            }
+
+            if ($search !== '') {
+                $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
+                $productQuery->where(function ($q) use ($like) {
+                    $q->where('p.name', 'like', $like)
+                        ->orWhere('p.base_name', 'like', $like)
+                        ->orWhere('p.variation_suffix', 'like', $like)
+                        ->orWhere('p.sku', 'like', $like);
+                });
+            }
+
+            $products = $productQuery
+                ->orderByRaw('COALESCE(p.base_name, p.name) asc')
+                ->orderBy('p.variation_suffix')
+                ->get();
+
+            if ($products->isEmpty()) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'filters' => [
+                            'date_preset' => $datePreset,
+                            'start_date' => $from->toDateString(),
+                            'end_date' => $to->toDateString(),
+                            'period_days' => $periodDays,
+                        ],
+                        'summary' => $this->emptyOverviewSummary(),
+                        'stores' => [],
+                        'items' => [],
+                        'total' => 0,
+                        'page' => $page,
+                        'per_page' => $perPage,
+                        'last_page' => 1,
+                    ],
+                ]);
+            }
+
+            $groupedProducts = $products->groupBy(function ($p) {
+                return $p->sku ? (string) $p->sku : 'NO-SKU-' . $p->product_id;
+            })->sortBy(function ($group) {
+                $first = $group->first();
+                return strtolower($first->base_name ?: $first->product_name ?: '');
+            });
+
+            $totalGroups = $groupedProducts->count();
+            $lastPage = max(1, (int) ceil($totalGroups / $perPage));
+            $pageGroups = $groupedProducts->slice(($page - 1) * $perPage, $perPage);
+            $pageProductIds = $pageGroups->flatten(1)->pluck('product_id')->unique()->filter()->values()->toArray();
+
+            if (empty($pageProductIds)) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'filters' => [
+                            'date_preset' => $datePreset,
+                            'start_date' => $from->toDateString(),
+                            'end_date' => $to->toDateString(),
+                            'period_days' => $periodDays,
+                        ],
+                        'summary' => $this->emptyOverviewSummary(),
+                        'stores' => [],
+                        'items' => [],
+                        'total' => $totalGroups,
+                        'page' => $page,
+                        'per_page' => $perPage,
+                        'last_page' => $lastPage,
+                    ],
+                ]);
+            }
+
+            $stores = DB::table('stores')
+                ->select('id', 'name', 'store_code', 'address')
+                ->orderBy('name')
+                ->get()
+                ->keyBy('id');
+
+            $currentStock = $this->overviewCurrentStock($pageProductIds);
+            $reserved = DB::table('reserved_products')
+                ->whereIn('product_id', $pageProductIds)
+                ->select('product_id', 'reserved_inventory', 'available_inventory')
+                ->get()
+                ->keyBy('product_id');
+
+            $purchases = $this->overviewPurchases($pageProductIds, $from, $to);
+            $sales = $this->overviewSales($pageProductIds, $from, $to);
+            $dispatchOut = $this->overviewDispatchOut($pageProductIds, $from, $to);
+            $dispatchReceived = $this->overviewDispatchReceived($pageProductIds, $from, $to);
+            $defects = $this->overviewDefects($pageProductIds, $from, $to);
+            $batches = $this->overviewBatchDetails($pageProductIds, $from, $to);
+
+            $allStoreIds = collect()
+                ->merge($stores->keys())
+                ->merge($this->nestedMetricStoreIds($currentStock))
+                ->merge($this->nestedMetricStoreIds($purchases))
+                ->merge($this->nestedMetricStoreIds($sales))
+                ->merge($this->nestedMetricStoreIds($dispatchOut))
+                ->merge($this->nestedMetricStoreIds($dispatchReceived))
+                ->merge($this->nestedMetricStoreIds($defects))
+                ->unique()
+                ->filter()
+                ->values();
+
+            $items = [];
+            $summary = $this->emptyOverviewSummary();
+
+            foreach ($pageGroups as $groupKey => $groupProducts) {
+                $first = $groupProducts->first();
+                $groupProductIds = $groupProducts->pluck('product_id')->unique()->values()->toArray();
+
+                $groupStoreRows = [];
+                $groupBatches = $batches->whereIn('product_id', $groupProductIds);
+
+                foreach ($allStoreIds as $storeIdRaw) {
+                    $storeId = (int) $storeIdRaw;
+                    $store = $stores->get($storeId);
+
+                    $physicalStock = 0;
+                    $stockValue = 0.0;
+                    $currentBatchCount = 0;
+                    $purchaseQty = 0;
+                    $soldQty = 0;
+                    $salesRevenue = 0.0;
+                    $dispatchOutQty = 0;
+                    $dispatchReceivedQty = 0;
+                    $defectQty = 0;
+                    $poNumbers = [];
+
+                    foreach ($groupProductIds as $pid) {
+                        $stockRow = $currentStock[$pid][$storeId] ?? null;
+                        if ($stockRow) {
+                            $physicalStock += (int) $stockRow['physical_stock'];
+                            $stockValue += (float) $stockRow['stock_value'];
+                            $currentBatchCount += (int) $stockRow['batches_count'];
+                        }
+
+                        $purchaseRow = $purchases[$pid][$storeId] ?? null;
+                        if ($purchaseRow) {
+                            $purchaseQty += (int) $purchaseRow['total_purchase'];
+                            foreach ($purchaseRow['po_numbers'] as $poNo) $poNumbers[$poNo] = true;
+                        }
+
+                        $salesRow = $sales[$pid][$storeId] ?? null;
+                        if ($salesRow) {
+                            $soldQty += (int) $salesRow['total_sell'];
+                            $salesRevenue += (float) $salesRow['sales_revenue'];
+                        }
+
+                        $outRow = $dispatchOut[$pid][$storeId] ?? null;
+                        if ($outRow) $dispatchOutQty += (int) $outRow['total_dispatch_out'];
+
+                        $receiveRow = $dispatchReceived[$pid][$storeId] ?? null;
+                        if ($receiveRow) $dispatchReceivedQty += (int) $receiveRow['total_dispatch_received'];
+
+                        $defectRow = $defects[$pid][$storeId] ?? null;
+                        if ($defectRow) $defectQty += (int) $defectRow['total_defect'];
+                    }
+
+                    $storeBatches = $groupBatches->where('store_id', $storeId)->values();
+                    foreach ($storeBatches as $b) {
+                        if (!empty($b['po_number'])) $poNumbers[$b['po_number']] = true;
+                    }
+
+                    if (
+                        $physicalStock === 0 && $purchaseQty === 0 && $soldQty === 0 &&
+                        $dispatchOutQty === 0 && $dispatchReceivedQty === 0 && $defectQty === 0 &&
+                        $storeBatches->isEmpty()
+                    ) {
+                        continue;
+                    }
+
+                    $velocity = $periodDays > 0 ? round($soldQty / $periodDays, 4) : 0.0;
+                    $daysOfCover = $velocity > 0 ? round($physicalStock / $velocity, 1) : null;
+                    $status = $this->overviewStockStatus($physicalStock, $velocity, $daysOfCover, $soldQty);
+
+                    $groupStoreRows[] = [
+                        'store_id' => $storeId,
+                        'store_name' => $store->name ?? ('Store ' . $storeId),
+                        'store_code' => $store->store_code ?? null,
+                        'current_stock' => $physicalStock,
+                        'stock_value' => round($stockValue, 2),
+                        'batch_count' => max($currentBatchCount, $storeBatches->count()),
+                        'po_count' => count($poNumbers),
+                        'total_purchase' => $purchaseQty,
+                        'total_sell' => $soldQty,
+                        'sales_revenue' => round($salesRevenue, 2),
+                        'total_dispatch_out' => $dispatchOutQty,
+                        'total_dispatch_received' => $dispatchReceivedQty,
+                        'total_defect' => $defectQty,
+                        'velocity_per_day' => $velocity,
+                        'days_of_cover' => $daysOfCover,
+                        'stock_status' => $status,
+                        'batches' => $storeBatches->toArray(),
+                    ];
+                }
+
+                $groupStoreRows = collect($groupStoreRows)->sortBy('store_name')->values()->toArray();
+
+                $totalPhysical = array_sum(array_column($groupStoreRows, 'current_stock'));
+                $totalPurchase = array_sum(array_column($groupStoreRows, 'total_purchase'));
+                $totalSold = array_sum(array_column($groupStoreRows, 'total_sell'));
+                $totalDispatchOut = array_sum(array_column($groupStoreRows, 'total_dispatch_out'));
+                $totalDispatchReceived = array_sum(array_column($groupStoreRows, 'total_dispatch_received'));
+                $totalDefect = array_sum(array_column($groupStoreRows, 'total_defect'));
+                $totalStockValue = array_sum(array_column($groupStoreRows, 'stock_value'));
+                $totalVelocity = $periodDays > 0 ? round($totalSold / $periodDays, 4) : 0.0;
+                $totalReserved = 0;
+                $totalAvailableFromReserved = 0;
+                foreach ($groupProductIds as $pid) {
+                    $reservedRow = $reserved->get($pid);
+                    $totalReserved += $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
+                    $totalAvailableFromReserved += $reservedRow ? (int) $reservedRow->available_inventory : 0;
+                }
+                $totalAvailable = $totalAvailableFromReserved > 0 ? $totalAvailableFromReserved : max(0, $totalPhysical - $totalReserved);
+                $totalDaysCover = $totalVelocity > 0 ? round($totalPhysical / $totalVelocity, 1) : null;
+                $groupStatus = $this->overviewProductStatus($groupStoreRows, $totalPhysical, $totalVelocity, $totalDaysCover);
+                $movementRecommendation = $this->overviewMovementRecommendation($groupStoreRows, $periodDays);
+
+                $variations = $groupProducts->map(function ($p) use ($currentStock, $reserved) {
+                    $productId = (int) $p->product_id;
+                    $physical = 0;
+                    $stores = [];
+                    if (isset($currentStock[$productId])) {
+                        foreach ($currentStock[$productId] as $sid => $row) {
+                            $physical += (int) $row['physical_stock'];
+                            $stores[] = [
+                                'store_id' => (int) $sid,
+                                'store_name' => $row['store_name'],
+                                'quantity' => (int) $row['physical_stock'],
+                                'batches_count' => (int) $row['batches_count'],
+                            ];
+                        }
+                    }
+                    $reservedRow = $reserved->get($productId);
+                    $reservedQty = $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
+                    $availableQty = $reservedRow ? (int) $reservedRow->available_inventory : max(0, $physical - $reservedQty);
+
+                    return [
+                        'product_id' => $productId,
+                        'product_name' => $p->product_name,
+                        'variation_suffix' => $p->variation_suffix ?: trim(str_replace((string) $p->base_name, '', (string) $p->product_name)),
+                        'current_stock' => $physical,
+                        'available_stock' => $availableQty,
+                        'reserved_stock' => $reservedQty,
+                        'stores' => $stores,
+                    ];
+                })->values()->toArray();
+
+                $groupPoCount = $groupBatches->pluck('po_number')->filter()->unique()->count();
+                $groupBatchCount = $groupBatches->pluck('batch_id')->unique()->count();
+
+                $summary['total_current_stock'] += $totalPhysical;
+                $summary['total_available_stock'] += $totalAvailable;
+                $summary['total_reserved_stock'] += $totalReserved;
+                $summary['total_purchase'] += $totalPurchase;
+                $summary['total_sell'] += $totalSold;
+                $summary['total_dispatch_out'] += $totalDispatchOut;
+                $summary['total_dispatch_received'] += $totalDispatchReceived;
+                $summary['total_defect'] += $totalDefect;
+                $summary['total_stock_value'] += $totalStockValue;
+                if ($groupStatus === 'low' || $groupStatus === 'out_of_stock') $summary['low_stock_count'] += 1;
+                if ($groupStatus === 'high' || $groupStatus === 'slow_moving') $summary['high_stock_count'] += 1;
+                if (!empty($movementRecommendation)) $summary['recommendation_count'] += 1;
+
+                $items[] = [
+                    'group_key' => (string) $groupKey,
+                    'sku' => $first->sku ?: 'NO-SKU',
+                    'product_name' => $first->base_name ?: $first->product_name,
+                    'category_id' => $first->category_id,
+                    'category_name' => $first->category_name,
+                    'subcategory_name' => $first->subcategory_name,
+                    'current_stock' => $totalPhysical,
+                    'available_stock' => $totalAvailable,
+                    'reserved_stock' => $totalReserved,
+                    'total_purchase' => $totalPurchase,
+                    'total_sell' => $totalSold,
+                    'total_dispatch_out' => $totalDispatchOut,
+                    'total_dispatch_received' => $totalDispatchReceived,
+                    'total_defect' => $totalDefect,
+                    'po_count' => $groupPoCount,
+                    'batch_count' => $groupBatchCount,
+                    'velocity_per_day' => $totalVelocity,
+                    'days_of_cover' => $totalDaysCover,
+                    'stock_status' => $groupStatus,
+                    'stock_value' => round($totalStockValue, 2),
+                    'movement_recommendation' => $movementRecommendation,
+                    'stores' => $groupStoreRows,
+                    'variations' => $variations,
+                ];
+            }
+
+            $summary['total_products'] = $totalGroups;
+            $summary['page_products'] = count($items);
+            $summary['total_stock_value'] = round($summary['total_stock_value'], 2);
+            $summary['generated_at'] = Carbon::now()->toIso8601String();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'filters' => [
+                        'date_preset' => $datePreset,
+                        'start_date' => $from->toDateString(),
+                        'end_date' => $to->toDateString(),
+                        'period_days' => $periodDays,
+                    ],
+                    'summary' => $summary,
+                    'stores' => $stores->values()->map(fn($s) => [
+                        'id' => (int) $s->id,
+                        'name' => $s->name,
+                        'store_code' => $s->store_code ?? null,
+                    ])->toArray(),
+                    'items' => $items,
+                    'total' => $totalGroups,
+                    'page' => $page,
+                    'per_page' => $perPage,
+                    'last_page' => $lastPage,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to build inventory overview: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function resolveOverviewDateRange(Request $request): array
+    {
+        $preset = (string) $request->query('date_preset', '365');
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $from = Carbon::parse($request->query('start_date'))->startOfDay();
+            $to = Carbon::parse($request->query('end_date'))->endOfDay();
+            if ($from->greaterThan($to)) {
+                [$from, $to] = [$to->copy()->startOfDay(), $from->copy()->endOfDay()];
+            }
+            $days = max(1, $from->diffInDays($to) + 1);
+            return [$from, $to, $days, $preset === 'custom' ? 'custom' : 'custom'];
+        }
+
+        $now = Carbon::now();
+        switch ($preset) {
+            case 'today':
+                $from = $now->copy()->startOfDay();
+                $to = $now->copy()->endOfDay();
+                break;
+            case '7':
+            case '30':
+            case '90':
+            case '365':
+                $days = (int) $preset;
+                $from = $now->copy()->subDays($days - 1)->startOfDay();
+                $to = $now->copy()->endOfDay();
+                break;
+            default:
+                $preset = '365';
+                $from = $now->copy()->subDays(364)->startOfDay();
+                $to = $now->copy()->endOfDay();
+                break;
+        }
+
+        $days = max(1, $from->diffInDays($to) + 1);
+        return [$from, $to, $days, $preset];
+    }
+
+    private function emptyOverviewSummary(): array
+    {
+        return [
+            'total_products' => 0,
+            'page_products' => 0,
+            'total_current_stock' => 0,
+            'total_available_stock' => 0,
+            'total_reserved_stock' => 0,
+            'total_purchase' => 0,
+            'total_sell' => 0,
+            'total_dispatch_out' => 0,
+            'total_dispatch_received' => 0,
+            'total_defect' => 0,
+            'total_stock_value' => 0,
+            'low_stock_count' => 0,
+            'high_stock_count' => 0,
+            'recommendation_count' => 0,
+            'generated_at' => null,
+        ];
+    }
+
+    private function nestedMetricStoreIds(array $map): array
+    {
+        $ids = [];
+        foreach ($map as $byStore) {
+            foreach (array_keys($byStore) as $sid) $ids[] = (int) $sid;
+        }
+        return $ids;
+    }
+
+    private function overviewCurrentStock(array $productIds): array
+    {
+        if (empty($productIds)) return [];
+
+        $rows = DB::table('product_batches as pb')
+            ->join('products as p', 'pb.product_id', '=', 'p.id')
+            ->join('stores as s', 'pb.store_id', '=', 's.id')
+            ->whereNull('p.deleted_at')
+            ->where('pb.is_active', true)
+            ->where('pb.quantity', '>', 0)
+            ->whereIn('pb.product_id', $productIds)
+            ->select([
+                'pb.product_id',
+                'pb.store_id',
+                's.name as store_name',
+                DB::raw('SUM(pb.quantity) as physical_stock'),
+                DB::raw('COUNT(DISTINCT pb.id) as batches_count'),
+                DB::raw('SUM(pb.quantity * pb.cost_price) as stock_value'),
+            ])
+            ->groupBy('pb.product_id', 'pb.store_id', 's.name')
+            ->get();
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int) $r->product_id][(int) $r->store_id] = [
+                'store_name' => $r->store_name,
+                'physical_stock' => (int) $r->physical_stock,
+                'batches_count' => (int) $r->batches_count,
+                'stock_value' => round((float) $r->stock_value, 2),
+            ];
+        }
+        return $map;
+    }
+
+    private function overviewPurchases(array $productIds, Carbon $from, Carbon $to): array
+    {
+        if (empty($productIds)) return [];
+
+        $rows = DB::table('purchase_order_items as poi')
+            ->join('purchase_orders as po', 'poi.purchase_order_id', '=', 'po.id')
+            ->leftJoin('product_batches as pb', 'poi.product_batch_id', '=', 'pb.id')
+            ->whereIn('poi.product_id', $productIds)
+            ->whereNotIn('po.status', ['draft', 'cancelled', 'returned'])
+            ->whereBetween(DB::raw('COALESCE(po.actual_delivery_date, po.order_date, po.created_at)'), [$from, $to])
+            ->select([
+                'poi.product_id',
+                DB::raw('COALESCE(pb.store_id, po.store_id) as store_id'),
+                DB::raw('SUM(CASE WHEN poi.quantity_received > 0 THEN poi.quantity_received ELSE poi.quantity_ordered END) as total_purchase'),
+                DB::raw('COUNT(DISTINCT po.id) as po_count'),
+                DB::raw('GROUP_CONCAT(DISTINCT po.po_number ORDER BY po.po_number SEPARATOR ", ") as po_numbers'),
+            ])
+            ->groupBy('poi.product_id', DB::raw('COALESCE(pb.store_id, po.store_id)'))
+            ->get();
+
+        $map = [];
+        foreach ($rows as $r) {
+            $poNumbers = array_values(array_filter(array_map('trim', explode(',', (string) $r->po_numbers))));
+            $map[(int) $r->product_id][(int) $r->store_id] = [
+                'total_purchase' => (int) $r->total_purchase,
+                'po_count' => (int) $r->po_count,
+                'po_numbers' => $poNumbers,
+            ];
+        }
+        return $map;
+    }
+
+    private function overviewSales(array $productIds, Carbon $from, Carbon $to): array
+    {
+        if (empty($productIds)) return [];
+
+        $rows = DB::table('order_items as oi')
+            ->join('orders as o', 'oi.order_id', '=', 'o.id')
+            ->whereIn('oi.product_id', $productIds)
+            ->whereNull('o.deleted_at')
+            ->whereNotIn('o.status', ['cancelled', 'refunded'])
+            ->whereBetween('o.order_date', [$from, $to])
+            ->select([
+                'oi.product_id',
+                DB::raw('COALESCE(oi.store_id, o.store_id) as store_id'),
+                DB::raw('SUM(oi.quantity) as total_sell'),
+                DB::raw('SUM(oi.total_amount) as sales_revenue'),
+                DB::raw('COUNT(DISTINCT o.id) as order_count'),
+            ])
+            ->groupBy('oi.product_id', DB::raw('COALESCE(oi.store_id, o.store_id)'))
+            ->get();
+
+        $map = [];
+        foreach ($rows as $r) {
+            if (!$r->store_id) continue;
+            $map[(int) $r->product_id][(int) $r->store_id] = [
+                'total_sell' => (int) $r->total_sell,
+                'sales_revenue' => round((float) $r->sales_revenue, 2),
+                'order_count' => (int) $r->order_count,
+            ];
+        }
+        return $map;
+    }
+
+    private function overviewDispatchOut(array $productIds, Carbon $from, Carbon $to): array
+    {
+        if (empty($productIds)) return [];
+
+        $rows = DB::table('product_dispatch_items as pdi')
+            ->join('product_dispatches as pd', 'pdi.product_dispatch_id', '=', 'pd.id')
+            ->join('product_batches as pb', 'pdi.product_batch_id', '=', 'pb.id')
+            ->whereIn('pb.product_id', $productIds)
+            ->whereNotIn('pd.status', ['cancelled'])
+            ->whereBetween('pd.dispatch_date', [$from, $to])
+            ->select([
+                'pb.product_id',
+                'pd.source_store_id as store_id',
+                DB::raw('SUM(pdi.quantity) as total_dispatch_out'),
+            ])
+            ->groupBy('pb.product_id', 'pd.source_store_id')
+            ->get();
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int) $r->product_id][(int) $r->store_id] = ['total_dispatch_out' => (int) $r->total_dispatch_out];
+        }
+        return $map;
+    }
+
+    private function overviewDispatchReceived(array $productIds, Carbon $from, Carbon $to): array
+    {
+        if (empty($productIds)) return [];
+
+        $rows = DB::table('product_dispatch_items as pdi')
+            ->join('product_dispatches as pd', 'pdi.product_dispatch_id', '=', 'pd.id')
+            ->join('product_batches as pb', 'pdi.product_batch_id', '=', 'pb.id')
+            ->whereIn('pb.product_id', $productIds)
+            ->whereNotIn('pd.status', ['cancelled'])
+            ->whereBetween(DB::raw('COALESCE(pd.actual_delivery_date, pd.dispatch_date)'), [$from, $to])
+            ->select([
+                'pb.product_id',
+                'pd.destination_store_id as store_id',
+                DB::raw("SUM(COALESCE(pdi.received_quantity, CASE WHEN pdi.status = 'received' OR pd.status = 'delivered' THEN pdi.quantity ELSE 0 END)) as total_dispatch_received"),
+            ])
+            ->groupBy('pb.product_id', 'pd.destination_store_id')
+            ->get();
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int) $r->product_id][(int) $r->store_id] = ['total_dispatch_received' => (int) $r->total_dispatch_received];
+        }
+        return $map;
+    }
+
+    private function overviewDefects(array $productIds, Carbon $from, Carbon $to): array
+    {
+        if (empty($productIds)) return [];
+
+        $rows = DB::table('defective_products as dp')
+            ->whereNull('dp.deleted_at')
+            ->whereIn('dp.product_id', $productIds)
+            ->whereBetween(DB::raw('COALESCE(dp.identified_at, dp.created_at)'), [$from, $to])
+            ->select([
+                'dp.product_id',
+                'dp.store_id',
+                DB::raw('COUNT(*) as total_defect'),
+            ])
+            ->groupBy('dp.product_id', 'dp.store_id')
+            ->get();
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int) $r->product_id][(int) $r->store_id] = ['total_defect' => (int) $r->total_defect];
+        }
+        return $map;
+    }
+
+    private function overviewBatchDetails(array $productIds, Carbon $from, Carbon $to): Collection
+    {
+        if (empty($productIds)) return collect();
+
+        $rows = DB::table('product_batches as pb')
+            ->join('products as p', 'pb.product_id', '=', 'p.id')
+            ->join('stores as s', 'pb.store_id', '=', 's.id')
+            ->leftJoin('purchase_order_items as poi', 'poi.product_batch_id', '=', 'pb.id')
+            ->leftJoin('purchase_orders as po', 'poi.purchase_order_id', '=', 'po.id')
+            ->leftJoin('vendors as v', 'po.vendor_id', '=', 'v.id')
+            ->whereNull('p.deleted_at')
+            ->where('pb.is_active', true)
+            ->whereIn('pb.product_id', $productIds)
+            ->where(function ($q) use ($from, $to) {
+                $q->whereBetween('pb.created_at', [$from, $to])
+                    ->orWhereBetween('po.order_date', [$from, $to])
+                    ->orWhereBetween('po.actual_delivery_date', [$from, $to]);
+            })
+            ->select([
+                'pb.id as batch_id',
+                'pb.batch_number',
+                'pb.product_id',
+                'p.name as product_name',
+                'p.sku as product_sku',
+                'pb.store_id',
+                's.name as store_name',
+                'pb.quantity as remaining_stock',
+                'pb.cost_price',
+                'pb.sell_price',
+                'pb.created_at as batch_created_at',
+                'po.id as po_id',
+                'po.po_number',
+                'po.order_date as po_order_date',
+                'po.actual_delivery_date as po_received_date',
+                'po.status as po_status',
+                'v.name as vendor_name',
+                'poi.quantity_ordered',
+                'poi.quantity_received as po_qty_received',
+            ])
+            ->orderByDesc(DB::raw('COALESCE(po.actual_delivery_date, po.order_date, pb.created_at)'))
+            ->limit(2000)
+            ->get();
+
+        if ($rows->isEmpty()) return collect();
+
+        $batchIds = $rows->pluck('batch_id')->unique()->values()->toArray();
+
+        $salesPerBatch = DB::table('order_items as oi')
+            ->join('orders as o', 'oi.order_id', '=', 'o.id')
+            ->whereNull('o.deleted_at')
+            ->whereNotIn('o.status', ['cancelled', 'refunded'])
+            ->whereIn('oi.product_batch_id', $batchIds)
+            ->whereBetween('o.order_date', [$from, $to])
+            ->select([
+                'oi.product_batch_id as batch_id',
+                DB::raw('SUM(oi.quantity) as units_sold'),
+                DB::raw('SUM(oi.total_amount) as revenue'),
+                DB::raw('COUNT(DISTINCT o.id) as order_count'),
+            ])
+            ->groupBy('oi.product_batch_id')
+            ->get()
+            ->keyBy('batch_id');
+
+        return $rows->map(function ($batch) use ($salesPerBatch, $from) {
+            $sales = $salesPerBatch->get($batch->batch_id);
+            $unitsSold = $sales ? (int) $sales->units_sold : 0;
+            $originalQty = $batch->po_qty_received ?: ((int) $batch->remaining_stock + $unitsSold);
+            $receivedAt = $batch->po_received_date ?: $batch->batch_created_at;
+            $daysSinceReceived = $receivedAt ? Carbon::parse($receivedAt)->diffInDays(Carbon::now()) : null;
+            $velocity = $daysSinceReceived && $daysSinceReceived > 0 ? round($unitsSold / $daysSinceReceived, 4) : 0.0;
+            $daysOfStock = $velocity > 0 ? round(((int) $batch->remaining_stock) / $velocity, 1) : null;
+
+            return [
+                'batch_id' => (int) $batch->batch_id,
+                'batch_number' => $batch->batch_number,
+                'product_id' => (int) $batch->product_id,
+                'product_name' => $batch->product_name,
+                'product_sku' => $batch->product_sku,
+                'store_id' => (int) $batch->store_id,
+                'store_name' => $batch->store_name,
+                'po_id' => $batch->po_id ? (int) $batch->po_id : null,
+                'po_number' => $batch->po_number,
+                'po_order_date' => $batch->po_order_date,
+                'po_received_date' => $batch->po_received_date,
+                'po_status' => $batch->po_status,
+                'vendor_name' => $batch->vendor_name,
+                'original_qty' => (int) $originalQty,
+                'remaining_stock' => (int) $batch->remaining_stock,
+                'cost_price' => round((float) $batch->cost_price, 2),
+                'sell_price' => round((float) $batch->sell_price, 2),
+                'units_sold' => $unitsSold,
+                'order_count' => $sales ? (int) $sales->order_count : 0,
+                'revenue' => $sales ? round((float) $sales->revenue, 2) : 0.0,
+                'sell_through_pct' => $originalQty > 0 ? round(($unitsSold / $originalQty) * 100, 1) : 0.0,
+                'days_since_received' => $daysSinceReceived,
+                'velocity_per_day' => $velocity,
+                'days_of_stock' => $daysOfStock,
+                'stock_value' => round(((int) $batch->remaining_stock) * (float) $batch->cost_price, 2),
+            ];
+        })->values();
+    }
+
+    private function overviewStockStatus(int $stock, float $velocity, ?float $daysOfCover, int $soldQty): string
+    {
+        if ($stock <= 0 && $soldQty > 0) return 'out_of_stock';
+        if ($stock <= 0) return 'no_stock';
+        if ($velocity <= 0) return 'slow_moving';
+        if ($daysOfCover !== null && $daysOfCover < 15) return 'low';
+        if ($daysOfCover !== null && $daysOfCover > 60) return 'high';
+        return 'normal';
+    }
+
+    private function overviewProductStatus(array $stores, int $stock, float $velocity, ?float $daysOfCover): string
+    {
+        if ($stock <= 0 && $velocity > 0) return 'out_of_stock';
+        if (collect($stores)->contains(fn($s) => in_array($s['stock_status'], ['low', 'out_of_stock'], true))) return 'low';
+        if ($stock > 0 && $velocity <= 0) return 'slow_moving';
+        if (collect($stores)->contains(fn($s) => in_array($s['stock_status'], ['high', 'slow_moving'], true))) return 'high';
+        return 'normal';
+    }
+
+    private function overviewMovementRecommendation(array $stores, int $periodDays): ?array
+    {
+        if (count($stores) < 2) return null;
+
+        $targetCoverDays = 30;
+        $donorKeepDays = 30;
+        $lowStores = [];
+        $highStores = [];
+
+        foreach ($stores as $store) {
+            $stock = (int) $store['current_stock'];
+            $velocity = (float) $store['velocity_per_day'];
+            $days = $store['days_of_cover'];
+
+            if ($velocity > 0 && ($days === null || $days < 15)) {
+                $targetStock = (int) ceil($velocity * $targetCoverDays);
+                $need = max(1, $targetStock - $stock);
+                $lowStores[] = array_merge($store, ['need_qty' => $need]);
+            }
+
+            if ($stock > 0) {
+                $keep = $velocity > 0 ? (int) ceil($velocity * $donorKeepDays) : 0;
+                $excess = max(0, $stock - $keep);
+                if ($excess > 0 && ($velocity == 0.0 || $days === null || $days > 45)) {
+                    $highStores[] = array_merge($store, ['excess_qty' => $excess]);
+                }
+            }
+        }
+
+        if (empty($lowStores) || empty($highStores)) return null;
+
+        usort($lowStores, fn($a, $b) => $b['need_qty'] <=> $a['need_qty']);
+        usort($highStores, fn($a, $b) => $b['excess_qty'] <=> $a['excess_qty']);
+
+        $receiver = $lowStores[0];
+        foreach ($highStores as $donor) {
+            if ((int) $donor['store_id'] === (int) $receiver['store_id']) continue;
+            $qty = min((int) $donor['excess_qty'], (int) $receiver['need_qty']);
+            if ($qty < 1) continue;
+
+            $urgency = $receiver['stock_status'] === 'out_of_stock' ? 'urgent' : ((float) $receiver['days_of_cover'] < 7 ? 'high' : 'medium');
+            return [
+                'type' => 'store_transfer',
+                'urgency' => $urgency,
+                'from_store_id' => (int) $donor['store_id'],
+                'from_store_name' => $donor['store_name'],
+                'from_store_stock' => (int) $donor['current_stock'],
+                'from_store_days_of_cover' => $donor['days_of_cover'],
+                'to_store_id' => (int) $receiver['store_id'],
+                'to_store_name' => $receiver['store_name'],
+                'to_store_stock' => (int) $receiver['current_stock'],
+                'to_store_days_of_cover' => $receiver['days_of_cover'],
+                'suggested_quantity' => $qty,
+                'reason' => "{$receiver['store_name']} has low cover while {$donor['store_name']} has excess/slow stock.",
+            ];
+        }
+
+        return null;
+    }
+
     // =========================================================================
     // Private helpers for endpoint 1 (product-level)
     // =========================================================================
