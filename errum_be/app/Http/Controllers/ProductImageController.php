@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Support\ImageOptimizer;
 
 class ProductImageController extends Controller
 {
@@ -100,11 +101,9 @@ class ProductImageController extends Controller
 
         DB::beginTransaction();
         try {
-            // Handle file upload
+            // Store a compressed WebP copy and a lightweight thumbnail for faster edit-page loading.
             $image = $request->file('image');
-            $extension = Str::lower($image->getClientOriginalExtension());
-            $imageName = time() . '_' . Str::random(10) . '.' . $extension;
-            $imagePath = $image->storeAs('products/' . $productId, $imageName, 'public');
+            $imagePath = ImageOptimizer::storeOptimized($image, 'products/' . $productId);
 
             // Create image record
             $productImage = ProductImage::create([
@@ -141,8 +140,8 @@ class ProductImageController extends Controller
             DB::rollBack();
             
             // Delete uploaded file if database operation failed
-            if (isset($imagePath) && Storage::disk('public')->exists($imagePath)) {
-                Storage::disk('public')->delete($imagePath);
+            if (isset($imagePath)) {
+                ImageOptimizer::deleteImageAndThumbnailIfUnused($imagePath);
             }
 
             return response()->json([
@@ -175,6 +174,7 @@ class ProductImageController extends Controller
         DB::beginTransaction();
         try {
             $uploadedImages = [];
+            $uploadedPaths = [];
             $images = $request->file('images');
             $altTexts = $request->input('alt_texts', []);
 
@@ -182,9 +182,12 @@ class ProductImageController extends Controller
             $maxSortOrder = ProductImage::byProduct($productId)->max('sort_order') ?? 0;
 
             foreach ($images as $index => $image) {
-                $extension = Str::lower($image->getClientOriginalExtension());
-                $imageName = time() . '_' . Str::random(10) . '.' . $extension;
-                $imagePath = $image->storeAs('products/' . $productId, $imageName, 'public');
+                $imagePath = ImageOptimizer::storeOptimized(
+                    $image,
+                    'products/' . $productId,
+                    time() . '_' . $index . '_' . Str::random(10)
+                );
+                $uploadedPaths[] = $imagePath;
 
                 $productImage = ProductImage::create([
                     'product_id' => $productId,
@@ -215,12 +218,10 @@ class ProductImageController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            // Clean up uploaded files
-            if (isset($uploadedImages)) {
-                foreach ($uploadedImages as $img) {
-                    if (Storage::disk('public')->exists($img->image_path)) {
-                        Storage::disk('public')->delete($img->image_path);
-                    }
+            // Clean up any files written before the failure.
+            if (isset($uploadedPaths)) {
+                foreach ($uploadedPaths as $path) {
+                    ImageOptimizer::deleteImageAndThumbnailIfUnused($path);
                 }
             }
 
@@ -359,7 +360,7 @@ class ProductImageController extends Controller
                     ->exists();
                 
                 if (!$otherUsage) {
-                    Storage::disk('public')->delete($image->image_path);
+                    ImageOptimizer::deleteImageAndThumbnailIfUnused($image->image_path);
                 }
             }
 
@@ -414,7 +415,7 @@ class ProductImageController extends Controller
                         ->exists();
                         
                     if (!$otherUsage) {
-                        Storage::disk('public')->delete($image->image_path);
+                        ImageOptimizer::deleteImageAndThumbnailIfUnused($image->image_path);
                     }
                 }
                 $image->delete();

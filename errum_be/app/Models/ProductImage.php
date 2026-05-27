@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Storage;
+use App\Support\ImageOptimizer;
 
 class ProductImage extends Model
 {
@@ -26,7 +27,7 @@ class ProductImage extends Model
         'sort_order' => 'integer',
     ];
 
-    protected $appends = ['image_url'];
+    protected $appends = ['image_url', 'thumbnail_url'];
 
     public function product(): BelongsTo
     {
@@ -58,6 +59,21 @@ class ProductImage extends Model
         return $this->image_path ? rtrim(config('app.url'), '/') . '/storage/' . ltrim($this->image_path, '/') : null;
     }
 
+    public function getThumbnailUrlAttribute()
+    {
+        if (!$this->image_path) {
+            return null;
+        }
+
+        $thumbnailPath = ImageOptimizer::thumbnailPathFor($this->image_path);
+
+        if ($thumbnailPath && Storage::disk('public')->exists($thumbnailPath)) {
+            return rtrim(config('app.url'), '/') . '/storage/' . ltrim($thumbnailPath, '/');
+        }
+
+        return $this->image_url;
+    }
+
     public function makePrimary()
     {
         // Remove primary status from other images of this product
@@ -72,8 +88,14 @@ class ProductImage extends Model
 
     public function deleteImage()
     {
-        if ($this->image_path && Storage::disk('public')->exists($this->image_path)) {
-            Storage::disk('public')->delete($this->image_path);
+        if ($this->image_path) {
+            $otherUsage = static::where('image_path', $this->image_path)
+                ->where('id', '!=', $this->id)
+                ->exists();
+
+            if (!$otherUsage) {
+                ImageOptimizer::deleteImageAndThumbnailIfUnused($this->image_path);
+            }
         }
 
         return $this->delete();

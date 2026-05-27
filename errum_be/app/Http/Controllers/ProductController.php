@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use App\Support\ImageOptimizer;
 
 class ProductController extends Controller
 {
@@ -1040,12 +1041,15 @@ class ProductController extends Controller
 
         DB::beginTransaction();
         try {
-            // 1. Process and upload new files first so we have all paths
+            // 1. Process and upload new files first so we have all paths.
+            // New uploads are optimized to WebP and get thumbnails for faster edit-page rendering.
             $uploadedNewPaths = [];
             foreach ($newFiles as $idx => $file) {
-                $extension = Str::lower($file->getClientOriginalExtension());
-                $imageName = time() . '_' . $idx . '_' . Str::random(5) . '.' . $extension;
-                $imagePath = $file->storeAs('products/sku-' . $sku, $imageName, 'public');
+                $imagePath = ImageOptimizer::storeOptimized(
+                    $file,
+                    'products/sku-' . $sku,
+                    time() . '_' . $idx . '_' . Str::random(8)
+                );
                 $uploadedPaths[] = $imagePath;
                 $uploadedNewPaths[$idx] = $imagePath;
             }
@@ -1067,39 +1071,50 @@ class ProductController extends Controller
                 $allImagePaths = array_merge($existingPaths, array_values($uploadedNewPaths));
             }
 
-            // 3. Delete old image records and files (if not in use)
-            foreach ($skuProducts as $skuProduct) {
-                $existingImages = ProductImage::where('product_id', $skuProduct->id)->get();
-                foreach ($existingImages as $img) {
-                    // Only delete file if it's NOT in our new set AND not used by ANY other product
-                    if (!in_array($img->image_path, $allImagePaths)) {
-                        $otherUsage = ProductImage::where('image_path', $img->image_path)
-                            ->whereNotIn('product_id', $skuProductIds)
-                            ->exists();
-                        
-                        if (!$otherUsage && Storage::disk('public')->exists($img->image_path)) {
-                            Storage::disk('public')->delete($img->image_path);
-                        }
-                    }
-                    $img->delete();
+            // 3. Delete old image records in one query, and remove unused files only once per path.
+            $oldImages = ProductImage::whereIn('product_id', $skuProductIds)->get(['id', 'product_id', 'image_path']);
+            $pathsToMaybeDelete = $oldImages
+                ->pluck('image_path')
+                ->filter()
+                ->reject(fn ($path) => in_array($path, $allImagePaths, true))
+                ->unique()
+                ->values();
+
+            ProductImage::whereIn('product_id', $skuProductIds)->delete();
+
+            foreach ($pathsToMaybeDelete as $path) {
+                $otherUsage = ProductImage::where('image_path', $path)
+                    ->whereNotIn('product_id', $skuProductIds)
+                    ->exists();
+
+                if (!$otherUsage) {
+                    ImageOptimizer::deleteImageAndThumbnailIfUnused($path);
                 }
             }
 
-            // 4. Persist the new sequence for every variant
+            // 4. Persist the new sequence for every variant using bulk insert.
+            $now = now();
+            $rows = [];
             foreach ($allImagePaths as $idx => $path) {
                 $isPrimary = ($idx === $primaryIndex);
                 $altText   = $altTexts[$idx] ?? null;
-                
+
                 foreach ($skuProducts as $skuProduct) {
-                    ProductImage::create([
+                    $rows[] = [
                         'product_id' => $skuProduct->id,
                         'image_path' => $path,
-                        'alt_text'   => $altText ?? $skuProduct->name,
+                        'alt_text'   => $altText ?: $skuProduct->name,
                         'is_primary' => $isPrimary,
                         'sort_order' => $idx,
                         'is_active'  => true,
-                    ]);
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
                 }
+            }
+
+            foreach (array_chunk($rows, 500) as $chunk) {
+                ProductImage::insert($chunk);
             }
 
             DB::commit();
@@ -1113,9 +1128,7 @@ class ProductController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             foreach ($uploadedPaths as $path) {
-                if (Storage::disk('public')->exists($path)) {
-                    Storage::disk('public')->delete($path);
-                }
+                ImageOptimizer::deleteImageAndThumbnailIfUnused($path);
             }
 
             \Log::error('SKU Image Sync Failed: ' . $e->getMessage(), [

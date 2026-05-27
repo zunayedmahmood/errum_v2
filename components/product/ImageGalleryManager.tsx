@@ -8,6 +8,7 @@ interface ProductImage {
   id?: number;
   image_path: string;
   image_url: string;
+  thumbnail_url?: string | null;
   alt_text?: string;
   is_primary: boolean;
   sort_order: number;
@@ -18,6 +19,9 @@ interface ImageItem {
   id?: number;
   file?: File;
   preview: string;
+  image_path?: string;
+  image_url?: string;
+  thumbnail_url?: string | null;
   alt_text: string;
   is_primary: boolean;
   sort_order: number;
@@ -42,12 +46,75 @@ export default function ImageGalleryManager({
   disableAutoUpload = false,
 }: ImageGalleryManagerProps) {
   const [images, setImages] = useState<ImageItem[]>([]);
-  
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingImages, setIsLoadingImages] = useState(false);
+
+  const buildStorageUrl = useCallback((path?: string | null) => {
+    if (!path) return '';
+
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || '';
+    let normalizedPath = path;
+
+    if (normalizedPath.startsWith('http')) {
+      return normalizedPath;
+    }
+
+    if (normalizedPath.startsWith('/storage/')) {
+      return `${baseUrl}${normalizedPath}`;
+    }
+
+    if (normalizedPath.startsWith('storage/')) {
+      return `${baseUrl}/${normalizedPath}`;
+    }
+
+    return `${baseUrl}/storage/${normalizedPath}`;
+  }, []);
+
+  const notifyChange = useCallback(
+    (updatedImages: ImageItem[]) => {
+      setImages(updatedImages);
+      onImagesChange?.(updatedImages);
+    },
+    [onImagesChange]
+  );
+
+  const loadExistingImages = useCallback(async () => {
+    if (!productId) return;
+
+    setIsLoadingImages(true);
+    try {
+      const fetchedImages = await productImageService.getProductImages(productId);
+
+      const mappedImages = fetchedImages
+        .filter((img) => img.is_active)
+        .sort((a, b) => {
+          if (a.is_primary && !b.is_primary) return -1;
+          if (!a.is_primary && b.is_primary) return 1;
+          return (a.sort_order || 0) - (b.sort_order || 0);
+        })
+        .map((img) => ({
+          id: img.id,
+          preview: buildStorageUrl(img.thumbnail_url || img.image_url || img.image_path),
+          image_path: img.image_path,
+          image_url: img.image_url,
+          thumbnail_url: img.thumbnail_url,
+          alt_text: img.alt_text || '',
+          is_primary: img.is_primary,
+          sort_order: img.sort_order,
+          uploaded: true,
+        }));
+
+      notifyChange(mappedImages);
+    } catch (err: any) {
+      console.error('Failed to load existing images:', err);
+      setError('Failed to load existing images');
+    } finally {
+      setIsLoadingImages(false);
+    }
+  }, [buildStorageUrl, notifyChange, productId]);
 
   // Fetch existing images when productId changes
   useEffect(() => {
@@ -57,87 +124,20 @@ export default function ImageGalleryManager({
       // Use prop images if no productId (for backward compatibility)
       const mappedImages = existingImages.map((img, index) => ({
         id: img.id,
-        preview: img.image_url,
+        preview: buildStorageUrl(img.thumbnail_url || img.image_url || img.image_path),
+        image_path: img.image_path,
+        image_url: img.image_url,
+        thumbnail_url: img.thumbnail_url,
         alt_text: img.alt_text || '',
         is_primary: img.is_primary,
         sort_order: img.sort_order || index,
         uploaded: true,
       }));
-      setImages(mappedImages);
+      notifyChange(mappedImages);
+    } else {
+      notifyChange([]);
     }
   }, [productId]);
-
-  const loadExistingImages = async () => {
-    if (!productId) return;
-    
-    setIsLoadingImages(true);
-    try {
-      const fetchedImages = await productImageService.getProductImages(productId);
-      
-      // Process images with proper URL construction (matching Gallery page)
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || '';
-      console.log('ImageGalleryManager - Base URL:', baseUrl);
-      
-      const mappedImages = fetchedImages
-        .filter(img => img.is_active)
-        .sort((a, b) => {
-          if (a.is_primary && !b.is_primary) return -1;
-          if (!a.is_primary && b.is_primary) return 1;
-          return (a.sort_order || 0) - (b.sort_order || 0);
-        })
-        .map((img) => {
-          // Get the image path from image_url or image_path
-          let imagePath = img.image_url || img.image_path || '';
-          console.log('ImageGalleryManager - Original path:', imagePath);
-          
-          let fullUrl = imagePath;
-
-          // If it's not already a full URL
-          if (imagePath && !imagePath.startsWith('http')) {
-            // If it starts with /storage/, use it as is (Laravel's public symlink)
-            if (imagePath.startsWith('/storage/')) {
-              fullUrl = `${baseUrl}${imagePath}`;
-            } 
-            // If it starts with storage/ (without leading slash)
-            else if (imagePath.startsWith('storage/')) {
-              fullUrl = `${baseUrl}/${imagePath}`;
-            }
-            // If it's just a filename or relative path
-            else {
-              fullUrl = `${baseUrl}/storage/${imagePath}`;
-            }
-          }
-
-          console.log('ImageGalleryManager - Constructed URL:', fullUrl);
-
-          return {
-            id: img.id,
-            preview: fullUrl,
-            alt_text: img.alt_text || '',
-            is_primary: img.is_primary,
-            sort_order: img.sort_order,
-            uploaded: true,
-          };
-        });
-      
-      console.log('ImageGalleryManager - Final mapped images:', mappedImages);
-      setImages(mappedImages);
-      onImagesChange?.(mappedImages);
-    } catch (err: any) {
-      console.error('Failed to load existing images:', err);
-      setError('Failed to load existing images');
-    } finally {
-      setIsLoadingImages(false);
-    }
-  };
-
-  const notifyChange = useCallback(
-    (updatedImages: ImageItem[]) => {
-      setImages(updatedImages);
-      onImagesChange?.(updatedImages);
-    },
-    [onImagesChange]
-  );
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -162,78 +162,65 @@ export default function ImageGalleryManager({
       validFiles.push(file);
     }
 
-    // Create preview URLs
-    const newImages: ImageItem[] = validFiles.map((file, index) => ({
-      file,
-      preview: productImageService.createPreviewUrl(file),
-      alt_text: '',
-      is_primary: images.length === 0 && index === 0,
-      sort_order: images.length + index,
-      uploaded: false,
-    }));
+    // Build small previews sequentially to avoid freezing weaker devices.
+    const newImages: ImageItem[] = [];
+    for (let index = 0; index < validFiles.length; index++) {
+      const file = validFiles[index];
+      const preview = await productImageService.createOptimizedPreviewUrl(file);
+      newImages.push({
+        file,
+        preview,
+        alt_text: '',
+        is_primary: images.length === 0 && index === 0,
+        sort_order: images.length + index,
+        uploaded: false,
+      });
+    }
+
+    const baseImages = images;
 
     // If productId exists and auto-upload is not disabled, upload immediately
     if (productId && !disableAutoUpload) {
       setUploading(true);
-      
-      // Add placeholders to the UI immediately so user sees progress
-      notifyChange([...images, ...newImages]);
+      notifyChange([...baseImages, ...newImages]);
+
+      const successfulUploads: ImageItem[] = [];
 
       try {
-        const uploadPromises = newImages.map(async (imageItem) => {
-          if (!imageItem.file) return null;
-          
+        // Upload one image at a time. This is slower than Promise.all on very fast internet,
+        // but much more stable on shared hosting and low-powered devices.
+        for (const imageItem of newImages) {
+          if (!imageItem.file) continue;
+
           try {
-            const uploadedImage = await productImageService.uploadImage(
-              productId,
-              imageItem.file,
-              {
-                alt_text: imageItem.alt_text,
-                is_primary: imageItem.is_primary,
-                sort_order: imageItem.sort_order,
-              }
-            );
+            const uploadedImage = await productImageService.uploadImage(productId, imageItem.file, {
+              alt_text: imageItem.alt_text,
+              is_primary: imageItem.is_primary,
+              sort_order: imageItem.sort_order,
+            });
 
-            // Construct proper URL for the uploaded image
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || '';
-            let imagePath = uploadedImage.image_url || uploadedImage.image_path || '';
-            let fullUrl = imagePath;
+            productImageService.revokePreviewUrl(imageItem.preview);
 
-            if (imagePath && !imagePath.startsWith('http')) {
-              if (imagePath.startsWith('/storage/')) {
-                fullUrl = `${baseUrl}${imagePath}`;
-              } else if (imagePath.startsWith('storage/')) {
-                fullUrl = `${baseUrl}/${imagePath}`;
-              } else {
-                fullUrl = `${baseUrl}/storage/${imagePath}`;
-              }
-            }
-
-            return {
+            successfulUploads.push({
               id: uploadedImage.id,
-              preview: fullUrl,
+              preview: buildStorageUrl(
+                uploadedImage.thumbnail_url || uploadedImage.image_url || uploadedImage.image_path
+              ),
+              image_path: uploadedImage.image_path,
+              image_url: uploadedImage.image_url,
+              thumbnail_url: uploadedImage.thumbnail_url,
               alt_text: uploadedImage.alt_text || '',
               is_primary: uploadedImage.is_primary,
               sort_order: uploadedImage.sort_order,
               uploaded: true,
-            };
+            });
           } catch (err) {
             console.error(`Failed to upload ${imageItem.file.name}:`, err);
-            return null;
           }
-        });
+        }
 
-        const results = await Promise.all(uploadPromises);
-        const successfulUploads = results.filter((img): img is ImageItem => img !== null);
+        notifyChange([...baseImages, ...successfulUploads]);
 
-        // Update with final results (replacing placeholders)
-        // Note: This logic is slightly simplified; in a production app we'd match 
-        // placeholders by preview URL to replace them accurately.
-        // For now, we'll just refresh the whole list by removing failed placeholders.
-        const currentImages = images; // Images that were already there
-        const finalImages = [...currentImages, ...successfulUploads];
-        notifyChange(finalImages);
-        
         if (successfulUploads.length < newImages.length) {
           setError(`Failed to upload ${newImages.length - successfulUploads.length} image(s)`);
         }
@@ -243,8 +230,8 @@ export default function ImageGalleryManager({
         setUploading(false);
       }
     } else {
-      // Just add to state if no productId (will upload on product creation)
-      notifyChange([...images, ...newImages]);
+      // Just add to state if no productId or SKU-wide sync mode is enabled.
+      notifyChange([...baseImages, ...newImages]);
     }
   };
 
@@ -253,7 +240,7 @@ export default function ImageGalleryManager({
       e.preventDefault();
       handleFileSelect(e.dataTransfer.files);
     },
-    [images, maxImages, productId]
+    [images, maxImages, productId, disableAutoUpload]
   );
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -273,16 +260,16 @@ export default function ImageGalleryManager({
       }
     }
 
-    // Revoke preview URL if it's a local file
+    // Revoke preview URL if it's a local file/blob preview
     if (!imageItem.uploaded && imageItem.file) {
       productImageService.revokePreviewUrl(imageItem.preview);
     }
 
     const updatedImages = images.filter((_, i) => i !== index);
-    
+
     // Reorder sort_order for remaining images.
     // Only promote the first image to primary if NO other image already holds that flag.
-    const remainingHasPrimary = updatedImages.some(img => img.is_primary);
+    const remainingHasPrimary = updatedImages.some((img) => img.is_primary);
     const reorderedImages = updatedImages.map((img, idx) => ({
       ...img,
       sort_order: idx,
@@ -313,21 +300,24 @@ export default function ImageGalleryManager({
     notifyChange(updatedImages);
   };
 
-  const updateAltText = async (index: number, altText: string) => {
-    const imageItem = images[index];
-
-    // If image is uploaded, update on server
-    if (imageItem.uploaded && imageItem.id && productId) {
-      try {
-        await productImageService.updateImage(imageItem.id, { alt_text: altText });
-      } catch (err: any) {
-        console.error('Failed to update alt text:', err);
-      }
-    }
-
+  const updateAltTextLocal = (index: number, altText: string) => {
     const updatedImages = [...images];
     updatedImages[index] = { ...updatedImages[index], alt_text: altText };
     notifyChange(updatedImages);
+  };
+
+  const saveAltText = async (index: number) => {
+    const imageItem = images[index];
+
+    // Save to server only when the user leaves the input, not on every keystroke.
+    if (imageItem?.uploaded && imageItem.id && productId) {
+      try {
+        await productImageService.updateImage(imageItem.id, { alt_text: imageItem.alt_text });
+      } catch (err: any) {
+        console.error('Failed to update alt text:', err);
+        setError('Failed to save alt text');
+      }
+    }
   };
 
   // Drag and Drop Reordering
@@ -424,9 +414,7 @@ export default function ImageGalleryManager({
               {uploading ? (
                 <>
                   <Loader2 className="w-10 h-10 text-gray-400 animate-spin" />
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Uploading images...
-                  </p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Uploading images...</p>
                 </>
               ) : (
                 <>
@@ -464,7 +452,7 @@ export default function ImageGalleryManager({
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {images.map((image, index) => (
               <div
-                key={image.id || index}
+                key={image.id || image.preview || index}
                 draggable={allowReorder}
                 onDragStart={() => handleDragStart(index)}
                 onDragEnter={() => handleDragEnter(index)}
@@ -473,9 +461,7 @@ export default function ImageGalleryManager({
                   image.is_primary
                     ? 'border-yellow-400 dark:border-yellow-500'
                     : 'border-gray-200 dark:border-gray-700'
-                } ${draggedIndex === index ? 'opacity-50' : ''} ${
-                  allowReorder ? 'cursor-move' : ''
-                }`}
+                } ${draggedIndex === index ? 'opacity-50' : ''} ${allowReorder ? 'cursor-move' : ''}`}
               >
                 {/* Image */}
                 <div className="aspect-square bg-gray-100 dark:bg-gray-800">
@@ -483,6 +469,8 @@ export default function ImageGalleryManager({
                     src={image.preview}
                     alt={image.alt_text || `Product image ${index + 1}`}
                     className="w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                     onError={(e) => {
                       console.error('Image failed to load:', image.preview);
                       if (!e.currentTarget.src.includes('/placeholder-image.jpg')) {
@@ -535,7 +523,8 @@ export default function ImageGalleryManager({
                     type="text"
                     placeholder="Alt text (optional)"
                     value={image.alt_text}
-                    onChange={(e) => updateAltText(index, e.target.value)}
+                    onChange={(e) => updateAltTextLocal(index, e.target.value)}
+                    onBlur={() => saveAltText(index)}
                     className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400"
                   />
                 </div>

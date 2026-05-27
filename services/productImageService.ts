@@ -6,6 +6,7 @@ export interface ProductImage {
   product_id: number;
   image_path: string;
   image_url: string;
+  thumbnail_url?: string | null;
   alt_text?: string;
   is_primary: boolean;
   sort_order: number;
@@ -363,17 +364,81 @@ class ProductImageService {
   }
 
   /**
-   * Create image preview URL from File
+   * Create image preview URL from File.
    */
   createPreviewUrl(file: File): string {
     return URL.createObjectURL(file);
   }
 
   /**
+   * Create a lightweight browser-side preview so the edit grid does not
+   * repeatedly decode full camera-size images on weaker devices.
+   */
+  async createOptimizedPreviewUrl(file: File, maxDimension = 420): Promise<string> {
+    if (typeof window === 'undefined' || file.type === 'image/gif') {
+      return this.createPreviewUrl(file);
+    }
+
+    const sourceUrl = URL.createObjectURL(file);
+
+    return new Promise((resolve) => {
+      const image = new Image();
+
+      image.onload = () => {
+        try {
+          const width = image.naturalWidth || image.width;
+          const height = image.naturalHeight || image.height;
+
+          if (!width || !height) {
+            resolve(sourceUrl);
+            return;
+          }
+
+          const ratio = Math.min(maxDimension / width, maxDimension / height, 1);
+          const targetWidth = Math.max(1, Math.round(width * ratio));
+          const targetHeight = Math.max(1, Math.round(height * ratio));
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(sourceUrl);
+            return;
+          }
+
+          ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+          canvas.toBlob(
+            (blob) => {
+              URL.revokeObjectURL(sourceUrl);
+              resolve(blob ? URL.createObjectURL(blob) : this.createPreviewUrl(file));
+            },
+            'image/webp',
+            0.76
+          );
+        } catch (error) {
+          console.warn('Preview optimization failed, using original preview.', error);
+          resolve(sourceUrl);
+        }
+      };
+
+      image.onerror = () => {
+        resolve(sourceUrl);
+      };
+
+      image.src = sourceUrl;
+    });
+  }
+
+  /**
    * Revoke preview URL to free memory
    */
   revokePreviewUrl(url: string): void {
-    URL.revokeObjectURL(url);
+    if (url.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
+    }
   }
 }
 
