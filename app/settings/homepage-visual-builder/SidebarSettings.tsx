@@ -648,6 +648,11 @@ export default function SidebarSettings({
     case 'hero': return renderHeroSettings();
     case 'featured_collections': return renderCollectionsSettings();
     case 'new_arrivals': return renderNewArrivalsSettings();
+    case 'promotion_banners': return (
+      <div className="space-y-3">
+        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">Promotion banners are configured from the classic Homepage Configuration page because they need the full promotions list and backend image upload controls.</p>
+      </div>
+    );
     case 'bannered_collections': return renderBanneredSettings();
     case 'showcase': return renderShowcaseSettings();
     default: return null;

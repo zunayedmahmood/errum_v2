@@ -30,6 +30,7 @@ import MimicCollectionTiles from './mimic/MimicCollectionTiles';
 import MimicNewArrivals from './mimic/MimicNewArrivals';
 import MimicSubcategoryProductTabs from './mimic/MimicSubcategoryProductTabs';
 import MimicBanneredCollections from './mimic/MimicBanneredCollections';
+import PromotionBanners from '@/components/ecommerce/PromotionBanners';
 import { toAbsoluteAssetUrl } from '@/lib/urlUtils';
 import { buildEcommerceThemeVars, getEcommerceFontImport, normalizeEcommerceTheme } from '@/lib/ecommerceDesignSystem';
 
@@ -37,16 +38,27 @@ import { buildEcommerceThemeVars, getEcommerceFontImport, normalizeEcommerceThem
 import SidebarSettings from "./SidebarSettings";
 
 // Types
-type SectionKey = 'global_theme' | 'hero' | 'featured_collections' | 'new_arrivals' | 'bannered_collections' | 'showcase' | 'ticker' | 'layout';
+type SectionKey = 'global_theme' | 'hero' | 'featured_collections' | 'new_arrivals' | 'promotion_banners' | 'bannered_collections' | 'showcase' | 'ticker' | 'layout';
 
 const SECTION_NAMES: Record<string, string> = {
   hero: "Hero Slider",
   featured_collections: "Featured Collections",
   new_arrivals: "New Arrivals",
+  promotion_banners: "Promotion Banners",
   bannered_collections: "Bannered Collections",
   showcase: "Category Showcase",
   ticker: "Announcement Ticker",
   global_theme: "Global Theme"
+};
+
+const DEFAULT_SECTION_ORDER = ['hero', 'featured_collections', 'new_arrivals', 'promotion_banners', 'bannered_collections', 'showcase'];
+
+const normalizeSectionOrder = (order?: string[]) => {
+  const current = Array.isArray(order) ? order : [];
+  const allowed = new Set(DEFAULT_SECTION_ORDER);
+  const cleaned = current.filter(section => allowed.has(section));
+  const missing = DEFAULT_SECTION_ORDER.filter(section => !cleaned.includes(section));
+  return [...cleaned, ...missing];
 };
 
 export default function HomepageVisualBuilder() {
@@ -127,7 +139,15 @@ export default function HomepageVisualBuilder() {
           ...col,
           show_text: col.show_text ?? true
         })),
-        section_order: settingsData.section_order || ['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']
+        promotion_banners: {
+          enabled: settingsData.promotion_banners?.enabled ?? false,
+          items: (settingsData.promotion_banners?.items || []).slice(0, 3).map((item: any) => ({
+            ...item,
+            promotion_id: Number(item.promotion_id || item.promotion?.id || 0),
+            timer_enabled: item.timer_enabled ?? false
+          }))
+        },
+        section_order: normalizeSectionOrder(settingsData.section_order)
       };
 
       setSettings(normalized);
@@ -291,6 +311,27 @@ export default function HomepageVisualBuilder() {
       if (settings.new_arrivals?.product_ids.length === 0) formData.append("new_arrivals[product_ids]", "");
       else settings.new_arrivals?.product_ids.forEach((id, index) => formData.append(`new_arrivals[product_ids][${index}]`, String(id)));
 
+      // Promotion Banners (preserve if present in this builder)
+      if (settings.promotion_banners) {
+        formData.append("promotion_banners_enabled", settings.promotion_banners.enabled ? "1" : "0");
+        const promotionMeta: any[] = [];
+        let promotionFileIndex = 0;
+        (settings.promotion_banners.items || []).slice(0, 3).forEach((item: any) => {
+          const itemMeta: any = { promotion_id: Number(item.promotion_id), timer_enabled: item.timer_enabled ? "1" : "0" };
+          if (item.new_image_file) {
+            itemMeta.image_type = 'new';
+            itemMeta.fileIndex = promotionFileIndex;
+            formData.append(`promotion_banners_images[${promotionFileIndex}]`, item.new_image_file);
+            promotionFileIndex++;
+          } else if (item.override_image) {
+            itemMeta.image_type = 'existing';
+            itemMeta.override_image = item.override_image;
+          } else itemMeta.image_type = 'none';
+          promotionMeta.push(itemMeta);
+        });
+        formData.append("promotion_banners_meta", JSON.stringify(promotionMeta));
+      }
+
       // Bannered Collections
       if (settings.bannered_collections) {
         const banneredMeta: any[] = [];
@@ -407,6 +448,13 @@ export default function HomepageVisualBuilder() {
                           <MimicNewArrivals limit={12} customProducts={[]} />
                         </SectionWrapper>
                       );
+                      case 'promotion_banners': return (
+                        <SectionWrapper key="promotion_banners" id="promotion_banners" active={activeSection === 'promotion_banners'} onSelect={() => selectSection('promotion_banners')} title="Promotion Banners">
+                          {previewSettings.promotion_banners?.enabled && previewSettings.promotion_banners.items?.length > 0 && (
+                            <PromotionBanners items={previewSettings.promotion_banners.items.map((item: any) => ({ ...item, image: toAbsoluteAssetUrl(item.image || item.override_image?.url) })) as any} />
+                          )}
+                        </SectionWrapper>
+                      );
                       case 'bannered_collections': return (
                         <SectionWrapper key="bannered_collections" id="bannered_collections" active={activeSection === 'bannered_collections'} onSelect={() => selectSection('bannered_collections')} title="Banners">
                           {previewSettings.bannered_collections.length > 0 && <MimicBanneredCollections items={previewSettings.bannered_collections.map((c: any) => ({ ...c, image: toAbsoluteAssetUrl(c.image) })) as any} />}
@@ -446,7 +494,7 @@ export default function HomepageVisualBuilder() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-gray-400 uppercase px-2 mb-2 block tracking-widest">Available Sections</label>
-                {(['global_theme', 'layout', 'ticker', 'hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase'] as SectionKey[]).map((key) => (
+                {(['global_theme', 'layout', 'ticker', 'hero', 'featured_collections', 'new_arrivals', 'promotion_banners', 'bannered_collections', 'showcase'] as SectionKey[]).map((key) => (
                    <button 
                     key={key}
                     onClick={() => selectSection(key)}

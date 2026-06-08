@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Setting;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Promotion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -28,7 +29,7 @@ class SettingController extends Controller
         if (!$group) {
             $response['global_theme'] = $this->getGlobalThemeData();
         }
-        $response['section_order'] = $settings->get('homepage_section_order', ['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']);
+        $response['section_order'] = $this->normalizeHomepageSectionOrder($settings->get('homepage_section_order', ['hero', 'featured_collections', 'new_arrivals', 'promotion_banners', 'bannered_collections', 'showcase']));
 
         // 1. Ticker & Hero (The "Immediate" group)
         if (!$group || $group === 'hero') {
@@ -221,6 +222,16 @@ class SettingController extends Controller
             $response['bannered_collections'] = $banneredResponse;
         }
 
+        // 6. Promotion Banners
+        if (!$group || $group === 'promotion_banners') {
+            $promotionBannersSetting = array_merge([
+                'enabled' => false,
+                'items' => [],
+            ], $settings->get('homepage_promotion_banners', []));
+
+            $response['promotion_banners'] = $this->formatPromotionBannersForResponse($promotionBannersSetting, true);
+        }
+
         return response()->json($response);
     }
 
@@ -282,7 +293,11 @@ class SettingController extends Controller
             'collections' => $settings->get('homepage_collections', []),
             'showcase' => $settings->get('homepage_showcase', []),
             'bannered_collections' => $settings->get('homepage_bannered_collections', []),
-            'section_order' => $settings->get('homepage_section_order', ['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']),
+            'promotion_banners' => $this->formatPromotionBannersForResponse(array_merge([
+                'enabled' => false,
+                'items' => [],
+            ], $settings->get('homepage_promotion_banners', [])), false),
+            'section_order' => $this->normalizeHomepageSectionOrder($settings->get('homepage_section_order', ['hero', 'featured_collections', 'new_arrivals', 'promotion_banners', 'bannered_collections', 'showcase'])),
             'new_arrivals' => $newArrivals
         ]);
     }
@@ -358,8 +373,13 @@ class SettingController extends Controller
             'bannered_collections_images.*' => 'nullable|image|max:5120',
             'bannered_collections_meta' => 'nullable|string',
 
+            'promotion_banners_enabled' => 'nullable|string',
+            'promotion_banners_images' => 'nullable|array',
+            'promotion_banners_images.*' => 'nullable|image|max:5120',
+            'promotion_banners_meta' => 'nullable|string',
+
             'section_order' => 'nullable|array',
-            'section_order.*' => 'string|in:hero,featured_collections,new_arrivals,bannered_collections,showcase',
+            'section_order.*' => 'string|in:hero,featured_collections,new_arrivals,promotion_banners,bannered_collections,showcase',
         ]);
 
         if ($request->has('global_theme')) {
@@ -468,6 +488,61 @@ class SettingController extends Controller
             );
         }
 
+        if ($request->has('promotion_banners_meta') || $request->has('promotion_banners_enabled')) {
+            $currentPromotionBanners = Setting::where('key', 'homepage_promotion_banners')->first()?->value ?? ['enabled' => false, 'items' => []];
+            $meta = json_decode($request->input('promotion_banners_meta', '[]'), true);
+            if (!is_array($meta)) {
+                $meta = [];
+            }
+
+            $newPromotionBanners = [
+                'enabled' => filter_var($request->input('promotion_banners_enabled', $currentPromotionBanners['enabled'] ?? false), FILTER_VALIDATE_BOOLEAN),
+                'items' => [],
+            ];
+            $uploadedFiles = $request->file('promotion_banners_images') ?? [];
+
+            $meta = array_slice($meta, 0, 3);
+            foreach ($meta as $item) {
+                $promotionId = (int) ($item['promotion_id'] ?? 0);
+                if ($promotionId <= 0 || !Promotion::whereKey($promotionId)->exists()) {
+                    continue;
+                }
+
+                $bannerItem = [
+                    'promotion_id' => $promotionId,
+                    'timer_enabled' => filter_var($item['timer_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                ];
+
+                $imageType = $item['image_type'] ?? 'none';
+                if ($imageType === 'existing') {
+                    $bannerItem['override_image'] = $item['override_image'] ?? null;
+                } elseif ($imageType === 'new' && isset($uploadedFiles[$item['fileIndex']])) {
+                    $file = $uploadedFiles[$item['fileIndex']];
+                    $path = $file->store('homepage/promotion-banners', 'public');
+                    $bannerItem['override_image'] = [
+                        'url' => rtrim(config('app.url'), '/') . '/storage/' . ltrim($path, '/'),
+                        'path' => $path,
+                    ];
+                } else {
+                    $bannerItem['override_image'] = null;
+                }
+
+                $newPromotionBanners['items'][] = $bannerItem;
+            }
+
+            $oldPaths = collect($currentPromotionBanners['items'] ?? [])->pluck('override_image.path')->filter()->toArray();
+            $newPaths = collect($newPromotionBanners['items'])->pluck('override_image.path')->filter()->toArray();
+            $toDelete = array_diff($oldPaths, $newPaths);
+            foreach ($toDelete as $path) {
+                Storage::disk('public')->delete($path);
+            }
+
+            Setting::updateOrCreate(
+                ['key' => 'homepage_promotion_banners'],
+                ['value' => $newPromotionBanners, 'group' => 'homepage']
+            );
+        }
+
         if ($request->has('hero_images') || $request->has('hero_images_meta') || $request->has('hero_title') || $request->has('hero_show_title') || $request->has('hero_text_position') || $request->has('hero_transition_type')) {
             $currentHero = Setting::where('key', 'homepage_hero')->first()?->value ?? [];
             
@@ -557,6 +632,106 @@ class SettingController extends Controller
         }
 
         return response()->json(['message' => 'Homepage settings updated successfully']);
+    }
+
+    private function defaultHomepageSectionOrder(): array
+    {
+        return ['hero', 'featured_collections', 'new_arrivals', 'promotion_banners', 'bannered_collections', 'showcase'];
+    }
+
+    private function normalizeHomepageSectionOrder($order): array
+    {
+        $default = $this->defaultHomepageSectionOrder();
+        $current = is_array($order) ? $order : [];
+        $cleaned = array_values(array_filter($current, fn ($section) => in_array($section, $default, true)));
+
+        foreach ($default as $section) {
+            if (!in_array($section, $cleaned, true)) {
+                $cleaned[] = $section;
+            }
+        }
+
+        return $cleaned;
+    }
+
+    /**
+     * Format configured promotion banners for admin and public storefront responses.
+     */
+    private function formatPromotionBannersForResponse(array $setting, bool $storefront = false): array
+    {
+        $enabled = filter_var($setting['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $items = array_slice($setting['items'] ?? [], 0, 3);
+
+        if (empty($items)) {
+            return [
+                'enabled' => $enabled,
+                'items' => [],
+            ];
+        }
+
+        $promotionIds = collect($items)->pluck('promotion_id')->filter()->unique()->values()->all();
+        $query = Promotion::query()->whereIn('id', $promotionIds);
+
+        if ($storefront) {
+            $query->where('is_active', true)
+                ->where('is_public', true)
+                ->where('start_date', '<=', now())
+                ->where(function ($q) {
+                    $q->whereNull('end_date')->orWhere('end_date', '>=', now());
+                })
+                ->where(function ($q) {
+                    $q->whereNull('usage_limit')->orWhereColumn('usage_count', '<', 'usage_limit');
+                });
+        }
+
+        $promotions = $query->get([
+            'id',
+            'code',
+            'name',
+            'description',
+            'type',
+            'discount_value',
+            'start_date',
+            'end_date',
+            'is_active',
+            'is_public',
+        ])->keyBy('id');
+
+        $formattedItems = [];
+        foreach ($items as $item) {
+            $promotionId = (int) ($item['promotion_id'] ?? 0);
+            if (!$promotionId || !isset($promotions[$promotionId])) {
+                continue;
+            }
+
+            $promotion = $promotions[$promotionId];
+            $overrideImage = $item['override_image'] ?? null;
+            $imageUrl = $overrideImage['url'] ?? null;
+
+            $formattedItems[] = [
+                'promotion_id' => $promotion->id,
+                'timer_enabled' => filter_var($item['timer_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                'image' => $imageUrl ?: '/images/placeholder-product.jpg',
+                'override_image' => $overrideImage,
+                'promotion' => [
+                    'id' => $promotion->id,
+                    'code' => $promotion->code,
+                    'name' => $promotion->name,
+                    'description' => $promotion->description,
+                    'type' => $promotion->type,
+                    'discount_value' => $promotion->discount_value,
+                    'start_date' => optional($promotion->start_date)->toISOString(),
+                    'end_date' => optional($promotion->end_date)->toISOString(),
+                    'is_active' => (bool) $promotion->is_active,
+                    'is_public' => (bool) $promotion->is_public,
+                ],
+            ];
+        }
+
+        return [
+            'enabled' => $enabled,
+            'items' => $enabled || !$storefront ? $formattedItems : [],
+        ];
     }
 
     /**

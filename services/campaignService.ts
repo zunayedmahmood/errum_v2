@@ -141,6 +141,10 @@ const campaignService = {
     is_automatic?: boolean;
     is_active?: boolean;
     valid_only?: boolean;
+    is_public?: boolean;
+    per_page?: number;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
   }) {
     const response = await axiosInstance.get('/promotions', { params });
     return response.data;

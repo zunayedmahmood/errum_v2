@@ -7,6 +7,7 @@ import { Save, Plus, Trash2, ArrowUp, ArrowDown, Search, X } from "lucide-react"
 import { toast } from "react-hot-toast";
 import catalogService from "@/services/catalogService";
 import collectionService from "@/services/collectionService";
+import campaignService from "@/services/campaignService";
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -15,14 +16,26 @@ const SECTION_NAMES: Record<string, string> = {
   hero: "Hero Slider",
   featured_collections: "Featured Collections",
   new_arrivals: "New Arrivals",
+  promotion_banners: "Promotion Banners",
   bannered_collections: "Bannered Categories/Collection",
   showcase: "Category Showcase"
+};
+
+const DEFAULT_SECTION_ORDER = ['hero', 'featured_collections', 'new_arrivals', 'promotion_banners', 'bannered_collections', 'showcase'];
+
+const normalizeSectionOrder = (order?: string[]) => {
+  const current = Array.isArray(order) ? order : [];
+  const allowed = new Set(DEFAULT_SECTION_ORDER);
+  const cleaned = current.filter(section => allowed.has(section));
+  const missing = DEFAULT_SECTION_ORDER.filter(section => !cleaned.includes(section));
+  return [...cleaned, ...missing];
 };
 
 export default function HomepageSettingsPage() {
   const [settings, setSettings] = useState<HomepageSettings | null>(null);
   const [flatCategories, setFlatCategories] = useState<{ id: number; title: string }[]>([]);
   const [availableCollections, setAvailableCollections] = useState<{ id: number; name: string }[]>([]);
+  const [availablePromotions, setAvailablePromotions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [heroImages, setHeroImages] = useState<{
@@ -49,10 +62,11 @@ export default function HomepageSettingsPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [settingsData, categoryTree, collectionsData] = await Promise.all([
+      const [settingsData, categoryTree, collectionsData, promotionsData] = await Promise.all([
         settingsService.getAdminHomepageSettings(),
         categoryService.getTree(true),
-        collectionService.getAll({ per_page: 100 })
+        collectionService.getAll({ per_page: 100 }),
+        campaignService.getCampaigns({ per_page: 100, sort_by: 'end_date', sort_order: 'asc' })
       ]);
 
       // Normalize settings to prevent "length of undefined" errors
@@ -93,7 +107,15 @@ export default function HomepageSettingsPage() {
           ...col,
           show_text: col.show_text ?? true
         })),
-        section_order: settingsData.section_order || ['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']
+        promotion_banners: {
+          enabled: settingsData.promotion_banners?.enabled ?? false,
+          items: (settingsData.promotion_banners?.items || []).slice(0, 3).map((item: any) => ({
+            ...item,
+            promotion_id: Number(item.promotion_id || item.promotion?.id || 0),
+            timer_enabled: item.timer_enabled ?? false
+          }))
+        },
+        section_order: normalizeSectionOrder(settingsData.section_order)
       };
 
       if (settingsData.new_arrivals?.products) {
@@ -124,6 +146,13 @@ export default function HomepageSettingsPage() {
       };
       setFlatCategories(flatten(categoryTree));
       setAvailableCollections(Array.isArray(collectionsData.data) ? collectionsData.data : []);
+      setAvailablePromotions(
+        Array.isArray((promotionsData as any)?.data?.data)
+          ? (promotionsData as any).data.data
+          : Array.isArray((promotionsData as any)?.data)
+            ? (promotionsData as any).data
+            : []
+      );
     } catch (error) {
       console.error("Failed to load settings:", error);
       toast.error("Failed to load settings");
@@ -212,6 +241,36 @@ export default function HomepageSettingsPage() {
             formData.append(`new_arrivals[product_ids][${index}]`, String(id));
           });
         }
+      }
+
+      // Promotion Banners
+      if (settings.promotion_banners) {
+        formData.append("promotion_banners_enabled", settings.promotion_banners.enabled ? "1" : "0");
+        const promotionMeta: any[] = [];
+        let promotionFileIndex = 0;
+
+        (settings.promotion_banners.items || []).slice(0, 3).forEach((item: any) => {
+          const itemMeta: any = {
+            promotion_id: Number(item.promotion_id),
+            timer_enabled: item.timer_enabled ? "1" : "0",
+          };
+
+          if (item.new_image_file) {
+            itemMeta.image_type = 'new';
+            itemMeta.fileIndex = promotionFileIndex;
+            formData.append(`promotion_banners_images[${promotionFileIndex}]`, item.new_image_file);
+            promotionFileIndex++;
+          } else if (item.override_image) {
+            itemMeta.image_type = 'existing';
+            itemMeta.override_image = item.override_image;
+          } else {
+            itemMeta.image_type = 'none';
+          }
+
+          promotionMeta.push(itemMeta);
+        });
+
+        formData.append("promotion_banners_meta", JSON.stringify(promotionMeta));
       }
 
       // Bannered Collections
@@ -456,6 +515,70 @@ export default function HomepageSettingsPage() {
       new_image_preview: URL.createObjectURL(file)
     });
     e.target.value = ''; // reset
+  };
+
+  // Promotion Banner Helpers
+  const addPromotionBanner = () => {
+    if (!settings) return;
+    if ((settings.promotion_banners?.items || []).length >= 3) {
+      toast.error("You can add up to 3 promotion banners");
+      return;
+    }
+
+    const firstPromotionId = availablePromotions[0]?.id || 0;
+    setSettings({
+      ...settings,
+      promotion_banners: {
+        enabled: settings.promotion_banners?.enabled ?? true,
+        items: [
+          ...(settings.promotion_banners?.items || []),
+          { promotion_id: firstPromotionId, timer_enabled: true, override_image: null }
+        ]
+      }
+    });
+  };
+
+  const removePromotionBanner = (index: number) => {
+    if (!settings) return;
+    const items = [...(settings.promotion_banners?.items || [])];
+    items.splice(index, 1);
+    setSettings({ ...settings, promotion_banners: { enabled: settings.promotion_banners?.enabled ?? false, items } });
+  };
+
+  const updatePromotionBanner = (index: number, updates: any) => {
+    if (!settings) return;
+    const items = (settings.promotion_banners?.items || []).map((item, i) =>
+      i === index ? { ...item, ...updates } : item
+    );
+    setSettings({ ...settings, promotion_banners: { enabled: settings.promotion_banners?.enabled ?? false, items } });
+  };
+
+  const movePromotionBanner = (index: number, direction: 'up' | 'down') => {
+    if (!settings) return;
+    const items = [...(settings.promotion_banners?.items || [])];
+    if (direction === 'up' && index > 0) {
+      [items[index - 1], items[index]] = [items[index], items[index - 1]];
+    } else if (direction === 'down' && index < items.length - 1) {
+      [items[index + 1], items[index]] = [items[index], items[index + 1]];
+    }
+    setSettings({ ...settings, promotion_banners: { enabled: settings.promotion_banners?.enabled ?? false, items } });
+  };
+
+  const handlePromotionBannerImageUpload = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    updatePromotionBanner(index, {
+      new_image_file: file,
+      new_image_preview: URL.createObjectURL(file)
+    });
+    e.target.value = '';
+  };
+
+  const getPromotionLabel = (promotion: any) => {
+    if (!promotion) return "Unknown promotion";
+    const code = promotion.code ? ` (${promotion.code})` : "";
+    return `${promotion.name}${code}`;
   };
 
   const moveSection = (index: number, direction: 'up' | 'down') => {
@@ -1305,6 +1428,126 @@ export default function HomepageSettingsPage() {
                       </div>
                     </div>
                   )}
+                </section>
+
+                {/* Promotion Banners Section */}
+                <section className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mt-8">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Promotion Banners</h2>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Add 1-3 image-only banners, each linked to an existing promotion. Timer text is generated from the selected promotion end date.</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.promotion_banners?.enabled ?? false}
+                          onChange={(e) => setSettings({
+                            ...settings,
+                            promotion_banners: {
+                              enabled: e.target.checked,
+                              items: settings.promotion_banners?.items || []
+                            }
+                          })}
+                          className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                        Enable
+                      </label>
+                      <button
+                        onClick={addPromotionBanner}
+                        disabled={(settings.promotion_banners?.items || []).length >= 3 || availablePromotions.length === 0}
+                        className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Banner
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {availablePromotions.length === 0 && (
+                      <p className="text-amber-600 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/40 rounded-lg p-3">No promotions found. Create a promotion first from the promotions page.</p>
+                    )}
+                    {(settings.promotion_banners?.items || []).length === 0 && (
+                      <p className="text-gray-500 dark:text-gray-400 italic text-sm text-center py-8 border-2 border-dashed border-gray-100 dark:border-gray-700 rounded-xl">No promotion banners added.</p>
+                    )}
+                    {settings.promotion_banners?.items?.map((item: any, idx) => {
+                      const selectedPromotion = availablePromotions.find(p => Number(p.id) === Number(item.promotion_id)) || item.promotion;
+                      return (
+                        <div key={idx} className="flex gap-4 items-start p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                          <div className="flex flex-col gap-1 mt-1">
+                            <button onClick={() => movePromotionBanner(idx, 'up')} disabled={idx === 0} className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-30">
+                              <ArrowUp className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => movePromotionBanner(idx, 'down')} disabled={idx === (settings.promotion_banners?.items || []).length - 1} className="p-1 text-gray-400 hover:text-blue-600 disabled:opacity-30">
+                              <ArrowDown className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="md:col-span-2 space-y-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Promotion</label>
+                                <select
+                                  value={item.promotion_id || 0}
+                                  onChange={(e) => updatePromotionBanner(idx, { promotion_id: parseInt(e.target.value, 10) })}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                                >
+                                  <option value={0} disabled>Select a promotion</option>
+                                  {availablePromotions.map(promotion => (
+                                    <option key={promotion.id} value={promotion.id}>{getPromotionLabel(promotion)}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={item.timer_enabled ?? false}
+                                  onChange={(e) => updatePromotionBanner(idx, { timer_enabled: e.target.checked })}
+                                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                />
+                                Show timer for this banner
+                              </label>
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400">Selected: {selectedPromotion ? getPromotionLabel(selectedPromotion) : 'No promotion selected'} {selectedPromotion?.end_date ? `• Ends ${new Date(selectedPromotion.end_date).toLocaleString()}` : '• No end date'}</p>
+                            </div>
+
+                            <div className="md:col-span-1">
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Banner Image</label>
+                              <div className="relative group aspect-video bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
+                                {(item.new_image_preview || item.override_image?.url || item.image) ? (
+                                  <img src={item.new_image_preview || item.override_image?.url || item.image} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                                    <Plus className="w-6 h-6 mb-1" />
+                                    <span className="text-[10px]">Click to upload</span>
+                                  </div>
+                                )}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => handlePromotionBannerImageUpload(idx, e)}
+                                  className="absolute inset-0 opacity-0 cursor-pointer"
+                                />
+                                {(item.new_image_preview || item.override_image?.url || item.image) && (
+                                  <button
+                                    onClick={() => updatePromotionBanner(idx, { new_image_file: null, new_image_preview: null, override_image: null, image: null })}
+                                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                              <p className="mt-1 text-[10px] text-gray-400">Required. Stored in backend public storage and served through /storage.</p>
+                            </div>
+                          </div>
+
+                          <button onClick={() => removePromotionBanner(idx)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg mt-5 transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </section>
 
                 {/* Bannered Collections Section */}

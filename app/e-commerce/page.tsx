@@ -25,6 +25,9 @@ const SubcategoryProductTabs = dynamic(() => import('@/components/ecommerce/Subc
 const BanneredCollections = dynamic(() => import('@/components/ecommerce/BanneredCollections'), {
   loading: () => <SectionSkeleton height="400px" />
 });
+const PromotionBanners = dynamic(() => import('@/components/ecommerce/PromotionBanners'), {
+  loading: () => <SectionSkeleton height="400px" />
+});
 
 import SectionReveal from '@/components/ecommerce/SectionReveal';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
@@ -37,7 +40,8 @@ export default function HomePage() {
   const [collections, setCollections] = useState<any[] | null>(null);
   const [newArrivals, setNewArrivals] = useState<any | null>(null);
   const [banneredCollections, setBanneredCollections] = useState<any[] | null>(null);
-  const [sectionOrder, setSectionOrder] = useState<string[]>(['hero', 'featured_collections', 'new_arrivals', 'bannered_collections', 'showcase']);
+  const [promotionBanners, setPromotionBanners] = useState<any | null>(null);
+  const [sectionOrder, setSectionOrder] = useState<string[]>(['hero', 'featured_collections', 'new_arrivals', 'promotion_banners', 'bannered_collections', 'showcase']);
   const [showcase, setShowcase] = useState<any[] | null>(null);
   
   // Track individual loading states for granular control
@@ -75,7 +79,12 @@ export default function HomePage() {
       setBanneredCollections(data.bannered_collections || []);
     }).catch(err => console.error('Failed to load bannered collections:', err));
 
-    // 6. Fetch Showcase (Priority 3)
+    // 6. Fetch Promotion Banners (Priority 2)
+    settingsService.getHomepageSettings('promotion_banners').then(data => {
+      setPromotionBanners(data.promotion_banners || { enabled: false, items: [] });
+    }).catch(err => console.error('Failed to load promotion banners:', err));
+
+    // 7. Fetch Showcase (Priority 3)
     settingsService.getHomepageSettings('showcase').then(data => {
       setShowcase(data.showcase || []);
     }).catch(err => console.error('Failed to load showcase:', err));
@@ -148,6 +157,21 @@ export default function HomePage() {
                   <SectionReveal>
                     <NewArrivals limit={12} customProducts={newArrivals.products} />
                   </SectionReveal>
+                )}
+              </React.Fragment>
+            );
+
+          case 'promotion_banners':
+            return (
+              <React.Fragment key="promotion_banners">
+                {promotionBanners === null ? (
+                  <SectionSkeleton height="400px" />
+                ) : (
+                  promotionBanners.enabled && promotionBanners.items?.length > 0 && (
+                    <SectionReveal>
+                      <PromotionBanners items={promotionBanners.items.map((item: any) => ({ ...item, image: toAbsoluteAssetUrl(item.image) })) as any} />
+                    </SectionReveal>
+                  )
                 )}
               </React.Fragment>
             );

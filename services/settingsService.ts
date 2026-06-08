@@ -6,6 +6,27 @@ export interface ShowcaseCategory {
   subcategories: number[];
 }
 
+export interface HomepagePromotionBannerItem {
+  promotion_id: number;
+  timer_enabled: boolean;
+  image?: string;
+  override_image?: { url: string; path?: string } | null;
+  promotion?: {
+    id: number;
+    code?: string;
+    name: string;
+    description?: string | null;
+    type?: string;
+    discount_value?: number | string;
+    start_date?: string | null;
+    end_date?: string | null;
+    is_active?: boolean;
+    is_public?: boolean;
+  };
+  new_image_file?: File | null;
+  new_image_preview?: string | null;
+}
+
 export interface HomepageSettings {
   global_theme?: EcommerceTheme;
   ticker: {
@@ -52,6 +73,10 @@ export interface HomepageSettings {
     override_image?: { url: string; path?: string };
     href?: string;
   }[];
+  promotion_banners?: {
+    enabled: boolean;
+    items: HomepagePromotionBannerItem[];
+  };
   section_order?: string[];
 }
 
@@ -59,7 +84,7 @@ class SettingsService {
   /**
    * Get homepage settings for public display
    */
-  async getHomepageSettings(group?: 'hero' | 'collections' | 'new_arrivals' | 'showcase' | 'bannered_collections' | 'global_theme'): Promise<Partial<HomepageSettings>> {
+  async getHomepageSettings(group?: 'hero' | 'collections' | 'new_arrivals' | 'showcase' | 'bannered_collections' | 'promotion_banners' | 'global_theme'): Promise<Partial<HomepageSettings>> {
     const response = await axiosInstance.get('/catalog/homepage-settings', {
       params: group ? { group } : {}
     });

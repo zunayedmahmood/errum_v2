@@ -861,7 +861,7 @@ class StockIntelligenceController extends Controller
                 's.name as store_name',
                 DB::raw('SUM(pb.quantity) as physical_stock'),
                 DB::raw('COUNT(DISTINCT pb.id) as batches_count'),
-                DB::raw('SUM(pb.quantity * pb.cost_price) as stock_value'),
+                DB::raw('SUM(pb.quantity * pb.sell_price) as stock_value'),
             ])
             ->groupBy('pb.product_id', 'pb.store_id', 's.name')
             ->get();
@@ -1112,7 +1112,7 @@ class StockIntelligenceController extends Controller
                 'days_since_received' => $daysSinceReceived,
                 'velocity_per_day' => $velocity,
                 'days_of_stock' => $daysOfStock,
-                'stock_value' => round(((int) $batch->remaining_stock) * (float) $batch->cost_price, 2),
+                'stock_value' => round(((int) $batch->remaining_stock) * (float) $batch->sell_price, 2),
             ];
         })->values();
     }
