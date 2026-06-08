@@ -443,7 +443,10 @@ function posReceiptBody(order: any) {
     ${sanitizedNotes ? `<div class="note">Note: ${escapeHtml(sanitizedNotes)}</div>` : ''}
 
     <div class="policy">
-      Items sold cannot be returned but may only be exchanged in their unworn condition with tags and original receipt within 7 days. Discount &amp; Offer items cannot be exchanged.
+      <div>Note: Return / Exchange / Refund Available Within 7 Days</div>
+      <div>Product have to be 100% intact, fresh and unused. Must bring the memo.</div>
+      <div>No query will be accepted after 7 days of purchase</div>
+      <div>(Discount &amp; Offer Items cannot be returned.Only exchanged within 3days)</div>
     </div>
 
     <div class="footer">

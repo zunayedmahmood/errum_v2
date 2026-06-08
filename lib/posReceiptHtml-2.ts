@@ -294,8 +294,8 @@ function posReceiptBody(order: any) {
       const displayUnitValue = hasUnitPrice
         ? Number(it.unitPrice || 0)
         : qtyNum > 0
-        ? Number(it.lineTotal || 0) / qtyNum
-        : Number(it.lineTotal || 0);
+          ? Number(it.lineTotal || 0) / qtyNum
+          : Number(it.lineTotal || 0);
 
       const displayAmount = qtyNum > 0 ? displayUnitValue * qtyNum : Number(it.lineTotal || 0);
 
@@ -340,15 +340,15 @@ function posReceiptBody(order: any) {
         <table class="totals payment-details">
           <tbody>
             ${paymentRows
-              .map(
-                (p) => `<tr><td>${escapeHtml(p.label)}</td><td class="right">${escapeHtml(money(p.amount))}</td></tr>`
-              )
-              .join('')}
+        .map(
+          (p) => `<tr><td>${escapeHtml(p.label)}</td><td class="right">${escapeHtml(money(p.amount))}</td></tr>`
+        )
+        .join('')}
             ${paymentMap.OTHERS
-              .map(
-                (p) => `<tr><td>${escapeHtml(p.name)}</td><td class="right">${escapeHtml(money(p.amount))}</td></tr>`
-              )
-              .join('')}
+        .map(
+          (p) => `<tr><td>${escapeHtml(p.name)}</td><td class="right">${escapeHtml(money(p.amount))}</td></tr>`
+        )
+        .join('')}
           </tbody>
         </table>
       </div>`
@@ -374,8 +374,8 @@ function posReceiptBody(order: any) {
       <div><span class="lbl">Phone:</span> ${escapeHtml(r.customerPhone || 'WALK-IN')}</div>
       ${r.salesBy ? `<div><span class="lbl">Sales By:</span> ${escapeHtml(r.salesBy)}</div>` : ''}
       ${Array.isArray(r.customerAddressLines) && r.customerAddressLines.length > 0
-        ? `<div><span class="lbl">Address:</span> ${escapeHtml(r.customerAddressLines.join(', '))}</div>`
-        : ''}
+      ? `<div><span class="lbl">Address:</span> ${escapeHtml(r.customerAddressLines.join(', '))}</div>`
+      : ''}
     </div>
 
     <div class="dash"></div>
@@ -417,7 +417,10 @@ function posReceiptBody(order: any) {
     ${r.notes ? `<div class="note">Note: ${escapeHtml(r.notes)}</div>` : ''}
 
     <div class="policy">
-      Items sold cannot be returned but may only be exchanged in their unworn condition with tags and original receipt within 7 days. Discount &amp; Offer items cannot be exchanged.
+      <div>Note: Return / Exchange / Refund Available Within 7 Days</div>
+      <div>Product have to be 100% intact, fresh and unused. Must bring the memo.</div>
+      <div>No query will be accepted after 7 days of purchase</div>
+      <div>(Discount &amp; Offer Items cannot be returned.Only exchanged within 3days)</div>
     </div>
 
     <div class="footer">

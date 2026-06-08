@@ -157,7 +157,7 @@ function StoreSummaryCard({ store, isExpanded, onToggle }: { store: InventoryOve
             <MiniMetric label="Dispatch Receive" value={store.total_dispatch_received} />
             <MiniMetric label="Defect" value={store.total_defect} />
             <MiniMetric label="Velocity/day" value={number(store.velocity_per_day, 3)} />
-            <MiniMetric label="Stock value" value={money(store.stock_value)} />
+            <MiniMetric label="Retail stock value" value={money(store.stock_value)} />
             <MiniMetric label="Revenue" value={money(store.sales_revenue)} />
           </div>
 
@@ -546,7 +546,7 @@ function ViewInventoryPageContent() {
                                     <MiniMetric label="Available" value={number(item.available_stock)} />
                                     <MiniMetric label="Reserved" value={number(item.reserved_stock)} />
                                     <MiniMetric label="Stock cover" value={daysText(item.days_of_cover)} />
-                                    <MiniMetric label="Stock value" value={money(item.stock_value)} />
+                                    <MiniMetric label="Retail stock value" value={money(item.stock_value)} />
                                     <MiniMetric label="Stores" value={item.stores.length} />
                                     <MiniMetric label="Variations" value={item.variations.length} />
                                     <MiniMetric label="PO count" value={item.po_count} />
