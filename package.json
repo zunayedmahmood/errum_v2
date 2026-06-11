@@ -31,7 +31,7 @@
     "react": "19.1.0",
     "react-barcode": "^1.6.1",
     "react-dom": "19.1.0",
-    "react-hot-toast": "^2.5.2",
+    "react-hot-toast": "^2.6.0",
     "react-to-print": "^3.1.1",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.13",

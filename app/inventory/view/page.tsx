@@ -558,7 +558,7 @@ function ViewInventoryPageContent() {
                                     <div className="flex flex-wrap gap-2">
                                       {item.variations.map((variation) => (
                                         <span key={variation.product_id} className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-bold text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                                          {variation.variation_suffix || 'Default'}: {number(variation.current_stock)} stock
+                                          {variation.variation_suffix || 'Default'}: {number(variation.current_stock)} stock {number(variation.reserved_stock)} reserved
                                         </span>
                                       ))}
                                     </div>

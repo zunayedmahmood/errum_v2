@@ -12,6 +12,7 @@ use App\Models\ReservedProduct;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
 use App\Traits\DatabaseAgnosticSearch;
+use App\Services\InventoryReservationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -446,14 +447,21 @@ class EcommerceOrderController extends Controller
             DB::beginTransaction();
 
             try {
+                // Release reserved stock before changing status to cancelled.
+                // OrderItemObserver only handles item create/update/delete, not order status changes.
+                $reservationRelease = app(InventoryReservationService::class)
+                    ->releaseForCancelledOrder($order->loadMissing('items'));
+
                 // Update order status
                 $order->update([
                     'status' => 'cancelled',
                     'cancelled_at' => now(),
                     'cancellation_reason' => 'Customer cancellation',
+                    'metadata' => array_merge($order->metadata ?? [], [
+                        'cancelled_by_customer' => auth('customer')->id(),
+                        'reservation_release_on_cancel' => $reservationRelease,
+                    ]),
                 ]);
-
-                // OrderObserver handles reservation release on cancellation
 
                 DB::commit();
 
