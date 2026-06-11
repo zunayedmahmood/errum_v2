@@ -44,7 +44,7 @@ class SettingController extends Controller
                     'NEW SEASON ARRIVALS NOW LIVE',
                     'SAME DAY DELIVERY IN DHAKA CITY',
                 ],
-            ], $settings->get('homepage_ticker', []));
+            ], $this->settingArray($settings->get('homepage_ticker')));
 
             $response['hero'] = array_merge([
                 'images' => [
@@ -58,7 +58,7 @@ class SettingController extends Controller
                 'text_color' => '#ffffff',
                 'font_size' => 84,
                 'transition_type' => 'fade',
-            ], $settings->get('homepage_hero', []));
+            ], $this->settingArray($settings->get('homepage_hero')));
         }
 
         // 2. New Arrivals
@@ -66,7 +66,9 @@ class SettingController extends Controller
             $newArrivalsSetting = array_merge([
                 'enabled' => false,
                 'product_ids' => [],
-            ], $settings->get('homepage_new_arrivals', []));
+            ], $this->settingArray($settings->get('homepage_new_arrivals')));
+
+            $newArrivalsSetting['product_ids'] = $this->arrayValue($newArrivalsSetting['product_ids'] ?? []);
 
             if ($newArrivalsSetting['enabled'] && !empty($newArrivalsSetting['product_ids'])) {
                 $productIds = $newArrivalsSetting['product_ids'];
@@ -116,7 +118,7 @@ class SettingController extends Controller
 
         // 3. Collections
         if (!$group || $group === 'collections') {
-            $collectionsSetting = $settings->get('homepage_collections', []);
+            $collectionsSetting = $this->settingArray($settings->get('homepage_collections'));
             $collectionsResponse = [];
             
             if (!empty($collectionsSetting)) {
@@ -168,12 +170,12 @@ class SettingController extends Controller
 
         // 4. Showcase
         if (!$group || $group === 'showcase') {
-            $response['showcase'] = $settings->get('homepage_showcase');
+            $response['showcase'] = $this->settingArray($settings->get('homepage_showcase'));
         }
 
         // 5. Bannered Collections
         if (!$group || $group === 'bannered_collections') {
-            $banneredSetting = $settings->get('homepage_bannered_collections', []);
+            $banneredSetting = $this->settingArray($settings->get('homepage_bannered_collections'));
             $banneredResponse = [];
             
             if (!empty($banneredSetting)) {
@@ -227,7 +229,7 @@ class SettingController extends Controller
             $promotionBannersSetting = array_merge([
                 'enabled' => false,
                 'items' => [],
-            ], $settings->get('homepage_promotion_banners', []));
+            ], $this->settingArray($settings->get('homepage_promotion_banners')));
 
             $response['promotion_banners'] = $this->formatPromotionBannersForResponse($promotionBannersSetting, true);
         }
@@ -245,7 +247,9 @@ class SettingController extends Controller
         $newArrivals = array_merge([
             'enabled' => false,
             'product_ids' => [],
-        ], $settings->get('homepage_new_arrivals', []));
+        ], $this->settingArray($settings->get('homepage_new_arrivals')));
+
+        $newArrivals['product_ids'] = $this->arrayValue($newArrivals['product_ids'] ?? []);
 
         if (!empty($newArrivals['product_ids'])) {
             $ids = $newArrivals['product_ids'];
@@ -276,7 +280,7 @@ class SettingController extends Controller
                     'NEW SEASON ARRIVALS NOW LIVE',
                     'SAME DAY DELIVERY IN DHAKA CITY',
                 ],
-            ], $settings->get('homepage_ticker', [])),
+            ], $this->settingArray($settings->get('homepage_ticker'))),
             'hero' => array_merge([
                 'images' => [
                     ['url' => '/e-commerce-hero.jpg', 'path' => null]
@@ -289,14 +293,14 @@ class SettingController extends Controller
                 'text_color' => '#ffffff',
                 'font_size' => 84,
                 'transition_type' => 'fade',
-            ], $settings->get('homepage_hero', [])),
-            'collections' => $settings->get('homepage_collections', []),
-            'showcase' => $settings->get('homepage_showcase', []),
-            'bannered_collections' => $settings->get('homepage_bannered_collections', []),
+            ], $this->settingArray($settings->get('homepage_hero'))),
+            'collections' => $this->settingArray($settings->get('homepage_collections')),
+            'showcase' => $this->settingArray($settings->get('homepage_showcase')),
+            'bannered_collections' => $this->settingArray($settings->get('homepage_bannered_collections')),
             'promotion_banners' => $this->formatPromotionBannersForResponse(array_merge([
                 'enabled' => false,
                 'items' => [],
-            ], $settings->get('homepage_promotion_banners', [])), false),
+            ], $this->settingArray($settings->get('homepage_promotion_banners'))), false),
             'section_order' => $this->normalizeHomepageSectionOrder($settings->get('homepage_section_order', ['hero', 'featured_collections', 'new_arrivals', 'promotion_banners', 'bannered_collections', 'showcase'])),
             'new_arrivals' => $newArrivals
         ]);
@@ -383,7 +387,7 @@ class SettingController extends Controller
         ]);
 
         if ($request->has('global_theme')) {
-            $globalTheme = array_merge($this->globalThemeDefaults(), $validated['global_theme']);
+            $globalTheme = array_merge($this->globalThemeDefaults(), $this->validatedArray($validated, 'global_theme'));
             $globalTheme['card_shadow_enabled'] = filter_var($globalTheme['card_shadow_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $globalTheme['card_shadow_intensity'] = (int) ($globalTheme['card_shadow_intensity'] ?? 35);
 
@@ -406,12 +410,13 @@ class SettingController extends Controller
         }
 
         if ($request->has('collections')) {
-            $collectionsData = $validated['collections'];
+            $collectionsData = $this->validatedArray($validated, 'collections');
             foreach ($collectionsData as &$col) {
                 if (isset($col['show_text'])) {
                     $col['show_text'] = filter_var($col['show_text'], FILTER_VALIDATE_BOOLEAN);
                 }
             }
+            unset($col);
             Setting::updateOrCreate(
                 ['key' => 'homepage_collections'],
                 ['value' => $collectionsData, 'group' => 'homepage']
@@ -421,15 +426,17 @@ class SettingController extends Controller
         if ($request->has('showcase')) {
             Setting::updateOrCreate(
                 ['key' => 'homepage_showcase'],
-                ['value' => $validated['showcase'], 'group' => 'homepage']
+                ['value' => $this->validatedArray($validated, 'showcase'), 'group' => 'homepage']
             );
         }
 
         if ($request->has('new_arrivals')) {
-            $newArrivalsData = $validated['new_arrivals'];
-            if (isset($newArrivalsData['enabled'])) {
-                $newArrivalsData['enabled'] = filter_var($newArrivalsData['enabled'], FILTER_VALIDATE_BOOLEAN);
-            }
+            $newArrivalsData = $this->validatedArray($validated, 'new_arrivals');
+            $newArrivalsData['enabled'] = filter_var($newArrivalsData['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $newArrivalsData['product_ids'] = array_values(array_filter(
+                $this->arrayValue($newArrivalsData['product_ids'] ?? []),
+                fn ($id) => $id !== null && $id !== ''
+            ));
             Setting::updateOrCreate(
                 ['key' => 'homepage_new_arrivals'],
                 ['value' => $newArrivalsData, 'group' => 'homepage']
@@ -439,17 +446,20 @@ class SettingController extends Controller
         if ($request->has('section_order')) {
             Setting::updateOrCreate(
                 ['key' => 'homepage_section_order'],
-                ['value' => $validated['section_order'], 'group' => 'homepage']
+                ['value' => $this->normalizeHomepageSectionOrder($this->validatedArray($validated, 'section_order')), 'group' => 'homepage']
             );
         }
 
         if ($request->has('bannered_collections_meta')) {
-            $currentBannered = Setting::where('key', 'homepage_bannered_collections')->first()?->value ?? [];
-            $meta = json_decode($request->input('bannered_collections_meta'), true);
+            $currentBannered = $this->settingArray(Setting::where('key', 'homepage_bannered_collections')->first()?->value);
+            $meta = $this->jsonArrayInput($request, 'bannered_collections_meta');
             $newBannered = [];
-            $uploadedFiles = $request->file('bannered_collections_images') ?? [];
+            $uploadedFiles = $this->arrayValue($request->file('bannered_collections_images') ?? []);
 
             foreach ($meta as $index => $item) {
+                if (!is_array($item) || empty($item['id']) || empty($item['type'])) {
+                    continue;
+                }
                 $banneredItem = [
                     'id' => (int) $item['id'],
                     'type' => $item['type'],
@@ -458,16 +468,17 @@ class SettingController extends Controller
                     'show_text' => filter_var($item['show_text'] ?? true, FILTER_VALIDATE_BOOLEAN),
                 ];
 
-                if ($item['image_type'] === 'existing') {
+                $imageType = $item['image_type'] ?? 'none';
+                if ($imageType === 'existing') {
                     $banneredItem['override_image'] = $item['override_image'] ?? null;
-                } elseif ($item['image_type'] === 'new' && isset($uploadedFiles[$item['fileIndex']])) {
+                } elseif ($imageType === 'new' && isset($item['fileIndex'], $uploadedFiles[$item['fileIndex']])) {
                     $file = $uploadedFiles[$item['fileIndex']];
                     $path = $file->store('homepage/bannered', 'public');
                     $banneredItem['override_image'] = [
                         'url' => rtrim(config('app.url'), '/') . '/storage/' . ltrim($path, '/'),
                         'path' => $path
                     ];
-                } elseif ($item['image_type'] === 'none') {
+                } else {
                     $banneredItem['override_image'] = null;
                 }
 
@@ -489,20 +500,24 @@ class SettingController extends Controller
         }
 
         if ($request->has('promotion_banners_meta') || $request->has('promotion_banners_enabled')) {
-            $currentPromotionBanners = Setting::where('key', 'homepage_promotion_banners')->first()?->value ?? ['enabled' => false, 'items' => []];
-            $meta = json_decode($request->input('promotion_banners_meta', '[]'), true);
-            if (!is_array($meta)) {
-                $meta = [];
-            }
+            $currentPromotionBanners = array_merge(
+                ['enabled' => false, 'items' => []],
+                $this->settingArray(Setting::where('key', 'homepage_promotion_banners')->first()?->value)
+            );
+            $currentPromotionBanners['items'] = $this->arrayValue($currentPromotionBanners['items'] ?? []);
+            $meta = $this->jsonArrayInput($request, 'promotion_banners_meta');
 
             $newPromotionBanners = [
                 'enabled' => filter_var($request->input('promotion_banners_enabled', $currentPromotionBanners['enabled'] ?? false), FILTER_VALIDATE_BOOLEAN),
                 'items' => [],
             ];
-            $uploadedFiles = $request->file('promotion_banners_images') ?? [];
+            $uploadedFiles = $this->arrayValue($request->file('promotion_banners_images') ?? []);
 
             $meta = array_slice($meta, 0, 3);
             foreach ($meta as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
                 $promotionId = (int) ($item['promotion_id'] ?? 0);
                 if ($promotionId <= 0 || !Promotion::whereKey($promotionId)->exists()) {
                     continue;
@@ -516,7 +531,7 @@ class SettingController extends Controller
                 $imageType = $item['image_type'] ?? 'none';
                 if ($imageType === 'existing') {
                     $bannerItem['override_image'] = $item['override_image'] ?? null;
-                } elseif ($imageType === 'new' && isset($uploadedFiles[$item['fileIndex']])) {
+                } elseif ($imageType === 'new' && isset($item['fileIndex'], $uploadedFiles[$item['fileIndex']])) {
                     $file = $uploadedFiles[$item['fileIndex']];
                     $path = $file->store('homepage/promotion-banners', 'public');
                     $bannerItem['override_image'] = [
@@ -544,23 +559,26 @@ class SettingController extends Controller
         }
 
         if ($request->has('hero_images') || $request->has('hero_images_meta') || $request->has('hero_title') || $request->has('hero_show_title') || $request->has('hero_text_position') || $request->has('hero_transition_type')) {
-            $currentHero = Setting::where('key', 'homepage_hero')->first()?->value ?? [];
+            $currentHero = $this->settingArray(Setting::where('key', 'homepage_hero')->first()?->value);
             
             // Handle multiple hero images
             if ($request->has('hero_images_meta')) {
-                $meta = json_decode($request->input('hero_images_meta'), true);
+                $meta = $this->jsonArrayInput($request, 'hero_images_meta');
                 $newImages = [];
                 
                 // Track files by index
-                $uploadedFiles = $request->file('hero_images') ?? [];
+                $uploadedFiles = $this->arrayValue($request->file('hero_images') ?? []);
                 
                 foreach ($meta as $item) {
+                    if (!is_array($item) || empty($item['type'])) {
+                        continue;
+                    }
                     if ($item['type'] === 'existing') {
                         $newImages[] = [
                             'url' => $item['url'],
                             'path' => $item['path'] ?? null
                         ];
-                    } elseif ($item['type'] === 'new' && isset($uploadedFiles[$item['fileIndex']])) {
+                    } elseif ($item['type'] === 'new' && isset($item['fileIndex'], $uploadedFiles[$item['fileIndex']])) {
                         $file = $uploadedFiles[$item['fileIndex']];
                         $path = $file->store('homepage', 'public');
                         $newImages[] = [
@@ -634,6 +652,28 @@ class SettingController extends Controller
         return response()->json(['message' => 'Homepage settings updated successfully']);
     }
 
+    private function arrayValue($value): array
+    {
+        return is_array($value) ? $value : [];
+    }
+
+    private function settingArray($value, array $default = []): array
+    {
+        return is_array($value) ? $value : $default;
+    }
+
+    private function validatedArray(array $validated, string $key): array
+    {
+        return isset($validated[$key]) && is_array($validated[$key]) ? $validated[$key] : [];
+    }
+
+    private function jsonArrayInput(Request $request, string $key): array
+    {
+        $decoded = json_decode($request->input($key, '[]') ?: '[]', true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
     private function defaultHomepageSectionOrder(): array
     {
         return ['hero', 'featured_collections', 'new_arrivals', 'promotion_banners', 'bannered_collections', 'showcase'];
@@ -660,7 +700,7 @@ class SettingController extends Controller
     private function formatPromotionBannersForResponse(array $setting, bool $storefront = false): array
     {
         $enabled = filter_var($setting['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        $items = array_slice($setting['items'] ?? [], 0, 3);
+        $items = array_slice($this->arrayValue($setting['items'] ?? []), 0, 3);
 
         if (empty($items)) {
             return [
@@ -765,7 +805,7 @@ class SettingController extends Controller
     {
         $stored = Setting::where('key', 'global_theme')->where('group', 'global')->first()?->value ?? [];
 
-        return array_merge($this->globalThemeDefaults(), is_array($stored) ? $stored : []);
+        return array_merge($this->globalThemeDefaults(), $this->settingArray($stored));
     }
 
     /**

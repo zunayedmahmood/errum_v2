@@ -101,7 +101,7 @@ class ProductImageController extends Controller
 
         DB::beginTransaction();
         try {
-            // Store a compressed WebP copy and a lightweight thumbnail for faster edit-page loading.
+            // Store the original uploaded file without compression/conversion.
             $image = $request->file('image');
             $imagePath = ImageOptimizer::storeOptimized($image, 'products/' . $productId);
 

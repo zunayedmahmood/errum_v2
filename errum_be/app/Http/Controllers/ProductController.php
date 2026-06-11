@@ -1042,7 +1042,7 @@ class ProductController extends Controller
         DB::beginTransaction();
         try {
             // 1. Process and upload new files first so we have all paths.
-            // New uploads are optimized to WebP and get thumbnails for faster edit-page rendering.
+            // New uploads are stored as original files without compression/conversion.
             $uploadedNewPaths = [];
             foreach ($newFiles as $idx => $file) {
                 $imagePath = ImageOptimizer::storeOptimized(

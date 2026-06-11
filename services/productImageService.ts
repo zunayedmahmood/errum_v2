@@ -371,65 +371,11 @@ class ProductImageService {
   }
 
   /**
-   * Create a lightweight browser-side preview so the edit grid does not
-   * repeatedly decode full camera-size images on weaker devices.
+   * Return a direct browser preview URL without resizing or WebP conversion.
+   * The method name is kept for compatibility with existing components.
    */
-  async createOptimizedPreviewUrl(file: File, maxDimension = 420): Promise<string> {
-    if (typeof window === 'undefined' || file.type === 'image/gif') {
-      return this.createPreviewUrl(file);
-    }
-
-    const sourceUrl = URL.createObjectURL(file);
-
-    return new Promise((resolve) => {
-      const image = new Image();
-
-      image.onload = () => {
-        try {
-          const width = image.naturalWidth || image.width;
-          const height = image.naturalHeight || image.height;
-
-          if (!width || !height) {
-            resolve(sourceUrl);
-            return;
-          }
-
-          const ratio = Math.min(maxDimension / width, maxDimension / height, 1);
-          const targetWidth = Math.max(1, Math.round(width * ratio));
-          const targetHeight = Math.max(1, Math.round(height * ratio));
-
-          const canvas = document.createElement('canvas');
-          canvas.width = targetWidth;
-          canvas.height = targetHeight;
-
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            resolve(sourceUrl);
-            return;
-          }
-
-          ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
-
-          canvas.toBlob(
-            (blob) => {
-              URL.revokeObjectURL(sourceUrl);
-              resolve(blob ? URL.createObjectURL(blob) : this.createPreviewUrl(file));
-            },
-            'image/webp',
-            0.76
-          );
-        } catch (error) {
-          console.warn('Preview optimization failed, using original preview.', error);
-          resolve(sourceUrl);
-        }
-      };
-
-      image.onerror = () => {
-        resolve(sourceUrl);
-      };
-
-      image.src = sourceUrl;
-    });
+  async createOptimizedPreviewUrl(file: File, _maxDimension = 420): Promise<string> {
+    return this.createPreviewUrl(file);
   }
 
   /**
