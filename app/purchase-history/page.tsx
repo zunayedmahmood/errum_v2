@@ -93,6 +93,7 @@ export default function PurchaseHistoryPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStore, setSelectedStore] = useState('');
+  const [exactDate, setExactDate] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
@@ -131,7 +132,7 @@ export default function PurchaseHistoryPage() {
   // Fetch orders when relevant filters change
   useEffect(() => {
     fetchOrders();
-  }, [selectedStore, startDate, endDate, searchTerm]);
+  }, [selectedStore, exactDate, startDate, endDate, searchTerm]);
 
   const fetchOrders = async () => {
     try {
@@ -150,8 +151,12 @@ export default function PurchaseHistoryPage() {
       }
 
       if (searchTerm) filters.search = searchTerm;
-      if (startDate) filters.date_from = startDate;
-      if (endDate) filters.date_to = endDate;
+      if (exactDate) {
+        filters.exact_date = exactDate;
+      } else {
+        if (startDate) filters.date_from = startDate;
+        if (endDate) filters.date_to = endDate;
+      }
 
       const result = await orderService.getAll(filters);
       setOrders(result.data);
@@ -606,22 +611,84 @@ export default function PurchaseHistoryPage() {
     }
   };
 
+  const formatDateInputValue = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const extractOrderDateOnly = (value?: string | null) => {
+    if (!value) return '';
+
+    const directMatch = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+    if (directMatch) return directMatch[1];
+
+    const parsed = new Date(String(value).replace(' ', 'T'));
+    if (Number.isNaN(parsed.getTime())) return '';
+
+    return formatDateInputValue(parsed);
+  };
+
+  const getEffectiveDateRange = () => {
+    if (exactDate) {
+      return { from: exactDate, to: exactDate };
+    }
+
+    if (startDate && endDate && startDate > endDate) {
+      return { from: endDate, to: startDate };
+    }
+
+    return { from: startDate, to: endDate };
+  };
+
+  const handleExactDateChange = (value: string) => {
+    setExactDate(value);
+    setStartDate(value);
+    setEndDate(value);
+  };
+
+  const handleStartDateChange = (value: string) => {
+    setExactDate('');
+    setStartDate(value);
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setExactDate('');
+    setEndDate(value);
+  };
+
+  const handleTodayFilter = () => {
+    handleExactDateChange(formatDateInputValue(new Date()));
+  };
+
+  const clearDateFilters = () => {
+    setExactDate('');
+    setStartDate('');
+    setEndDate('');
+  };
+
   const getStoreName = (storeId: number) => {
     const store = stores.find(s => s.id === storeId);
     return store ? `${store.name} - ${store.location}` : 'Unknown Store';
   };
 
   const filteredOrders = orders.filter(order => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
     const matchesSearch =
-      order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customer?.phone?.includes(searchTerm);
+      !normalizedSearch ||
+      String(order.order_number || '').toLowerCase().includes(normalizedSearch) ||
+      String(order.customer?.name || '').toLowerCase().includes(normalizedSearch) ||
+      String(order.customer?.phone || '').includes(searchTerm.trim());
 
-    const matchesStore = !selectedStore || order.store.id === parseInt(selectedStore);
+    const matchesStore =
+      !selectedStore ||
+      String(order.store?.id || '') === String(selectedStore);
 
-    const orderDate = new Date(order.created_at);
-    const matchesStartDate = !startDate || orderDate >= new Date(startDate);
-    const matchesEndDate = !endDate || orderDate <= new Date(endDate);
+    const orderDate = extractOrderDateOnly(order.order_date || order.created_at);
+    const { from, to } = getEffectiveDateRange();
+    const matchesStartDate = !from || (orderDate && orderDate >= from);
+    const matchesEndDate = !to || (orderDate && orderDate <= to);
 
     return matchesSearch && matchesStore && matchesStartDate && matchesEndDate;
   });
@@ -678,7 +745,7 @@ export default function PurchaseHistoryPage() {
               </div>
 
               <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-500 uppercase px-1">Search</label>
                     <div className="relative">
@@ -728,11 +795,21 @@ export default function PurchaseHistoryPage() {
                   )}
 
                   <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase px-1">Exact Date</label>
+                    <input
+                      type="date"
+                      value={exactDate}
+                      onChange={(e) => handleExactDateChange(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-500 uppercase px-1">From</label>
                     <input
                       type="date"
                       value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
+                      onChange={(e) => handleStartDateChange(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
@@ -742,9 +819,35 @@ export default function PurchaseHistoryPage() {
                     <input
                       type="date"
                       value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
+                      onChange={(e) => handleEndDateChange(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
+                  </div>
+
+                  <div className="flex flex-col gap-1 md:col-span-2 xl:col-span-5">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase px-1">Date Actions</label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={handleTodayFilter}
+                        className="px-3 py-2 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearDateFilters}
+                        disabled={!exactDate && !startDate && !endDate}
+                        className="px-3 py-2 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Clear Date Filter
+                      </button>
+                      {(exactDate || startDate || endDate) && (
+                        <span className="self-center text-xs text-gray-500 dark:text-gray-400">
+                          Showing order dates {getEffectiveDateRange().from || 'beginning'} to {getEffectiveDateRange().to || 'latest'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

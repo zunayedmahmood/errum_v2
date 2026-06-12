@@ -148,6 +148,7 @@ export interface OrderFilters {
   store_id?: number;
   customer_id?: number;
   created_by?: number;
+  exact_date?: string;
   date_from?: string;
   date_to?: string;
   search?: string;
