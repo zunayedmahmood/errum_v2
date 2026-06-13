@@ -62,20 +62,26 @@ class LazyChatTestController extends Controller
             $first = true;
             echo "[\n";
 
-            Product::orderBy('id')->chunkById(100, function ($products) use (&$first, $payloadBuilder) {
-                foreach ($products as $product) {
-                    if (!$first) {
-                        echo ",\n";
+            Product::query()
+                ->select('sku')
+                ->whereNotNull('sku')
+                ->where('sku', '!=', '')
+                ->distinct()
+                ->orderBy('sku')
+                ->chunk(100, function ($skuRows) use (&$first, $payloadBuilder) {
+                    foreach ($skuRows as $row) {
+                        if (!$first) {
+                            echo ",\n";
+                        }
+
+                        echo json_encode(
+                            $payloadBuilder->buildForSku((string) $row->sku),
+                            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                        );
+
+                        $first = false;
                     }
-
-                    echo json_encode(
-                        $payloadBuilder->build($product),
-                        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-                    );
-
-                    $first = false;
-                }
-            });
+                });
 
             echo "\n]\n";
         }, $fileName, [
@@ -332,7 +338,7 @@ class LazyChatTestController extends Controller
         $this->runStep($steps, $runId, 'sync_images_across_sku', 'Sync image across all products sharing the SKU', [
             'controller' => 'ProductController@syncSkuImages',
             'expected_model' => ProductImage::class,
-            'expected_observer' => 'App\\Observers\\LazyChatProductImageObserver',
+            'expected_observer' => 'ProductController manual SKU sync dispatch',
         ], function () use (&$product, &$image) {
             $request = Request::create('/api/products/' . $product->id . '/sync-sku-images', 'POST', [
                 'existing_paths' => [$image->image_path],
@@ -450,9 +456,11 @@ class LazyChatTestController extends Controller
         });
 
         $logs = LazyChatWebhookTestLogger::read($runId);
+        $webhookContract = $this->validateWebhookContract($logs, $steps, $sku, $product?->id, $variant?->id);
 
         $stepsPassed = collect($steps)->every(fn ($step) => $step['success'] === true);
-        $webhooksPassed = count($logs) > 0 && collect($logs)->every(fn ($log) => ($log['ok'] ?? false) === true);
+        $webhookTransportPassed = count($logs) > 0 && collect($logs)->every(fn ($log) => ($log['ok'] ?? false) === true);
+        $webhooksPassed = $webhookTransportPassed && $webhookContract['passed'];
 
         return response()->json([
             'success' => $stepsPassed && $webhooksPassed,
@@ -462,6 +470,9 @@ class LazyChatTestController extends Controller
                 'auth' => $authSummary,
                 'steps_passed' => $stepsPassed,
                 'webhooks_passed' => $webhooksPassed,
+                'webhook_transport_passed' => $webhookTransportPassed,
+                'webhook_contract_passed' => $webhookContract['passed'],
+                'webhook_contract_errors' => $webhookContract['errors'],
                 'test_sku' => $sku,
                 'created_product_id' => $product?->id,
                 'created_variant_id' => $variant?->id,
@@ -516,6 +527,90 @@ class LazyChatTestController extends Controller
         } finally {
             LazyChatWebhookTestContext::clear();
         }
+    }
+
+    private function validateWebhookContract(array $logs, array $steps, string $sku, ?int $productId, ?int $variantId): array
+    {
+        $errors = [];
+        $logsByStep = collect($logs)->groupBy(fn ($log) => $log['step_key'] ?? '__missing_step__');
+
+        foreach ($steps as $step) {
+            if (($step['success'] ?? false) !== true) {
+                continue;
+            }
+
+            $stepKey = $step['key'] ?? null;
+            if (!$stepKey) {
+                continue;
+            }
+
+            if (!$logsByStep->has($stepKey)) {
+                $errors[] = "No LazyChat webhook log was captured for successful step: {$stepKey}.";
+            }
+        }
+
+        foreach ($logs as $index => $log) {
+            $topic = (string) ($log['topic'] ?? '');
+            if ($topic === '' || strpos($topic, 'product/') !== 0) {
+                continue;
+            }
+
+            $stepKey = (string) ($log['step_key'] ?? 'unknown_step');
+            $summary = $log['payload_summary'] ?? null;
+
+            if (!is_array($summary)) {
+                $errors[] = "Webhook log #{$index} ({$stepKey}) has no payload_summary.";
+                continue;
+            }
+
+            if (($summary['contract_shape_ok'] ?? false) !== true) {
+                $errors[] = "Webhook log #{$index} ({$stepKey}) does not follow the SKU payload contract: top-level sku plus variants array.";
+            }
+
+            if (($summary['sku'] ?? null) !== $sku) {
+                $errors[] = "Webhook log #{$index} ({$stepKey}) used SKU " . (($summary['sku'] ?? null) ?: 'NULL') . " instead of expected {$sku}.";
+            }
+
+            if ((int) ($summary['variant_count'] ?? 0) < 1) {
+                $errors[] = "Webhook log #{$index} ({$stepKey}) did not include any variants.";
+            }
+
+            $variantIds = array_map('intval', is_array($summary['variant_ids'] ?? null) ? $summary['variant_ids'] : []);
+
+            if ($productId && !in_array((int) $productId, $variantIds, true)) {
+                $errors[] = "Webhook log #{$index} ({$stepKey}) is missing the original product ID {$productId} in variants.";
+            }
+
+            if ($variantId && in_array($stepKey, [
+                'variant_create_size_add',
+                'sync_images_across_sku',
+                'product_name_update',
+                'po_receiving',
+                'archive_product',
+                'delete_variant',
+            ], true) && !in_array((int) $variantId, $variantIds, true)) {
+                $errors[] = "Webhook log #{$index} ({$stepKey}) is missing the added variation product ID {$variantId} in variants.";
+            }
+
+            if ($variantId && $stepKey === 'delete_variant') {
+                $deletedIds = array_map('intval', is_array($summary['deleted_variant_ids'] ?? null) ? $summary['deleted_variant_ids'] : []);
+                if (!in_array((int) $variantId, $deletedIds, true)) {
+                    $errors[] = "Delete-variant webhook did not mark variation product ID {$variantId} as deleted.";
+                }
+            }
+
+            if ($productId && $stepKey === 'archive_product') {
+                $archivedIds = array_map('intval', is_array($summary['archived_variant_ids'] ?? null) ? $summary['archived_variant_ids'] : []);
+                if (!in_array((int) $productId, $archivedIds, true)) {
+                    $errors[] = "Archive-product webhook did not mark product ID {$productId} as archived.";
+                }
+            }
+        }
+
+        return [
+            'passed' => empty($errors),
+            'errors' => $errors,
+        ];
     }
 
     private function authorizeTestRequest(Request $request): ?JsonResponse

@@ -40,11 +40,6 @@ class SendLazyChatProductWebhook implements ShouldQueue
         }
 
         try {
-            if ($this->topic === 'product/delete') {
-                $this->sendDeleteWebhook();
-                return;
-            }
-
             $product = Product::withTrashed()->find($this->productId);
 
             if (!$product) {
@@ -52,6 +47,9 @@ class SendLazyChatProductWebhook implements ShouldQueue
                 return;
             }
 
+            // Product delete is also synced as a SKU-level payload when the
+            // soft-deleted row can still be resolved. This lets LazyChat replace
+            // its whole SKU variant list with Errum's current source of truth.
             $payload = $payloadBuilder->build($product);
             $this->sendUpsertWebhook($payload);
         } catch (Throwable $e) {
@@ -233,16 +231,46 @@ class SendLazyChatProductWebhook implements ShouldQueue
 
     private function summarizePayload(array $payload): array
     {
+        $variants = isset($payload['variants']) && is_array($payload['variants'])
+            ? $payload['variants']
+            : [];
+
+        $variantIds = array_values(array_filter(array_map(
+            fn ($variant) => is_array($variant) ? ($variant['id'] ?? null) : null,
+            $variants
+        ), fn ($id) => $id !== null));
+
+        $deletedVariantIds = array_values(array_filter(array_map(
+            fn ($variant) => is_array($variant) && !empty($variant['is_deleted']) ? ($variant['id'] ?? null) : null,
+            $variants
+        ), fn ($id) => $id !== null));
+
+        $archivedVariantIds = array_values(array_filter(array_map(
+            fn ($variant) => is_array($variant) && !empty($variant['is_archived']) ? ($variant['id'] ?? null) : null,
+            $variants
+        ), fn ($id) => $id !== null));
+
         return [
-            'id' => $payload['id'] ?? null,
+            'contract_shape_ok' => isset($payload['sku']) && is_array($payload['variants'] ?? null),
             'sku' => $payload['sku'] ?? null,
+            'changed_product_id' => $payload['changed_product_id'] ?? null,
             'name' => $payload['name'] ?? null,
             'price' => $payload['price'] ?? null,
             'available_inventory' => $payload['available_inventory'] ?? null,
             'in_stock' => $payload['in_stock'] ?? null,
-            'is_archived' => $payload['is_archived'] ?? null,
-            'image_count' => isset($payload['images']) && is_array($payload['images']) ? count($payload['images']) : null,
-            'batch_count' => isset($payload['batches']) && is_array($payload['batches']) ? count($payload['batches']) : null,
+            'variant_count' => count($variants),
+            'active_variant_count' => $payload['active_variant_count'] ?? null,
+            'variant_ids' => $variantIds,
+            'deleted_variant_ids' => $deletedVariantIds,
+            'archived_variant_ids' => $archivedVariantIds,
+            'image_count' => array_sum(array_map(
+                fn ($variant) => is_array($variant) && isset($variant['images']) && is_array($variant['images']) ? count($variant['images']) : 0,
+                $variants
+            )),
+            'batch_count' => array_sum(array_map(
+                fn ($variant) => is_array($variant) && isset($variant['batches']) && is_array($variant['batches']) ? count($variant['batches']) : 0,
+                $variants
+            )),
         ];
     }
 

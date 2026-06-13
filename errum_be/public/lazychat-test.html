@@ -194,7 +194,7 @@
 
       let count = null;
       try { count = JSON.parse(result.text).length; } catch (e) {}
-      appendResult('Download Products', { ok: true, status: result.status, product_count: count });
+      appendResult('Download Products', { ok: true, status: result.status, sku_group_count: count });
       setBusy(false, 'Product JSON downloaded.');
       return result;
     }
@@ -291,9 +291,10 @@
       renderLogs(result.body?.data?.webhook_logs || []);
 
       const webhooksPassed = result.body?.data?.webhooks_passed;
+      const contractPassed = result.body?.data?.webhook_contract_passed;
       statusBox.innerHTML = result.ok && result.body?.success
-        ? '<span class="ok">Webhook scenario completed. Steps and LazyChat responses passed.</span>'
-        : `<span class="bad">Webhook scenario finished but ${webhooksPassed === false ? 'one or more LazyChat responses failed internally' : 'failed or is disabled'}. Check raw output.</span>`;
+        ? '<span class="ok">Webhook scenario completed. Transport and SKU payload contract passed.</span>'
+        : `<span class="bad">Webhook scenario finished but ${contractPassed === false ? 'the SKU payload contract failed' : (webhooksPassed === false ? 'one or more LazyChat responses failed internally' : 'failed or is disabled')}. Check raw output.</span>`;
       setBusy(false, statusBox.textContent);
       return result;
     }
@@ -311,14 +312,20 @@
           <td>${escapeHtml(String(log.http_status || log.phase || ''))}</td>
           <td>${log.ok ? '<span class="ok">yes</span>' : '<span class="bad">no</span>'}</td>
           <td>${escapeHtml(log.observer || log.expected_observer || '')}<br><span class="muted">${escapeHtml(log.model || '')}</span></td>
-          <td>${escapeHtml(log.lazychat_inner_error || log.response_body || log.error || '')}</td>
+          <td>
+            <div><strong>SKU:</strong> ${escapeHtml(log.payload_summary?.sku || '')}</div>
+            <div><strong>Contract:</strong> ${log.payload_summary?.contract_shape_ok ? '<span class="ok">ok</span>' : '<span class="bad">bad</span>'}</div>
+            <div><strong>Variants:</strong> ${escapeHtml(log.payload_summary?.variant_count ?? '')}</div>
+            <div class="muted">${escapeHtml((log.payload_summary?.variant_ids || []).join(', '))}</div>
+            <div>${escapeHtml(log.lazychat_inner_error || log.response_body || log.error || '')}</div>
+          </td>
         </tr>
       `).join('');
 
       logsTable.innerHTML = `
         <table>
           <thead>
-            <tr><th>Step</th><th>Topic</th><th>Status</th><th>OK</th><th>Observer / Model</th><th>LazyChat output / error</th></tr>
+            <tr><th>Step</th><th>Topic</th><th>Status</th><th>OK</th><th>Observer / Model</th><th>SKU contract / LazyChat output</th></tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>

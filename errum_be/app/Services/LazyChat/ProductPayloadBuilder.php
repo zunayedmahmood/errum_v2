@@ -4,22 +4,168 @@ namespace App\Services\LazyChat;
 
 use App\Models\Product;
 use App\Models\ProductBatch;
-use App\Models\ReservedProduct;
 
 class ProductPayloadBuilder
 {
+    /**
+     * Build the LazyChat product payload at SKU level.
+     *
+     * LazyChat treats one SKU as one catalog product, while Errum stores every
+     * size/color/etc. option as a separate Product row under the same SKU.
+     * Therefore any change to one Product row must sync the entire SKU family.
+     */
     public function build(Product $product): array
     {
-        $product = $product->fresh([
-            'category',
-            'vendor',
-            'images' => function ($query) {
-                $query->active()->ordered();
-            },
-            'batches.store',
-            'barcodes',
-            'reservedProduct',
-        ]) ?? $product;
+        $product = Product::withTrashed()->find($product->id) ?? $product;
+
+        if (empty($product->sku)) {
+            return $this->buildSingleVariantFallback($product);
+        }
+
+        return $this->buildForSku((string) $product->sku, $product);
+    }
+
+    public function buildForSku(string $sku, ?Product $changedProduct = null): array
+    {
+        $variants = Product::withTrashed()
+            ->with([
+                'category',
+                'vendor',
+                'images' => function ($query) {
+                    $query->active()->ordered();
+                },
+                'batches.store',
+                'barcodes',
+                'reservedProduct',
+            ])
+            ->where('sku', $sku)
+            ->orderBy('id')
+            ->get();
+
+        if ($variants->isEmpty() && $changedProduct) {
+            $variants = collect([$this->freshVariant($changedProduct)]);
+        }
+
+        $variantPayloads = $variants
+            ->map(fn (Product $variant) => $this->buildVariantPayload($variant))
+            ->values();
+
+        $activeVariantPayloads = $variantPayloads
+            ->filter(fn (array $variant) => !($variant['is_deleted'] ?? false) && !($variant['is_archived'] ?? false));
+
+        $referenceVariant = $variants
+            ->first(fn (Product $variant) => !$variant->trashed() && !$variant->is_archived)
+            ?? $variants->first();
+
+        $lowestPrice = $activeVariantPayloads
+            ->pluck('selling_price')
+            ->filter(fn ($price) => $price !== null)
+            ->min();
+
+        $highestPrice = $activeVariantPayloads
+            ->pluck('selling_price')
+            ->filter(fn ($price) => $price !== null)
+            ->max();
+
+        $availableInventory = (int) $activeVariantPayloads->sum('available_inventory');
+        $totalPhysicalStock = (int) $variantPayloads->sum('stock_quantity');
+        $reservedInventory = (int) $variantPayloads->sum('reserved_inventory');
+        $latestUpdatedAt = $variantPayloads->pluck('updated_at')->filter()->sort()->last();
+
+        return [
+            'sku' => $sku,
+            'changed_product_id' => $changedProduct?->id,
+            'base_name' => $referenceVariant?->base_name ?: $referenceVariant?->name,
+            'name' => $referenceVariant?->base_name ?: $referenceVariant?->name,
+            'brand' => $referenceVariant?->brand,
+            'category' => $referenceVariant?->category ? [
+                'id' => $referenceVariant->category->id,
+                'title' => $referenceVariant->category->title,
+                'slug' => $referenceVariant->category->slug,
+            ] : null,
+            'vendor' => $referenceVariant?->vendor ? [
+                'id' => $referenceVariant->vendor->id,
+                'name' => $referenceVariant->vendor->name,
+            ] : null,
+            'price' => $lowestPrice !== null ? (float) $lowestPrice : null,
+            'selling_price' => $lowestPrice !== null ? (float) $lowestPrice : null,
+            'lowest_variant_price' => $lowestPrice !== null ? (float) $lowestPrice : null,
+            'highest_variant_price' => $highestPrice !== null ? (float) $highestPrice : null,
+            'stock_quantity' => $totalPhysicalStock,
+            'reserved_inventory' => $reservedInventory,
+            'available_inventory' => $availableInventory,
+            'in_stock' => $availableInventory > 0,
+            'variant_count' => $variantPayloads->count(),
+            'active_variant_count' => $activeVariantPayloads->count(),
+            'deleted_variant_ids' => $variantPayloads
+                ->filter(fn (array $variant) => (bool) ($variant['is_deleted'] ?? false))
+                ->pluck('id')
+                ->values()
+                ->all(),
+            'archived_variant_ids' => $variantPayloads
+                ->filter(fn (array $variant) => (bool) ($variant['is_archived'] ?? false))
+                ->pluck('id')
+                ->values()
+                ->all(),
+            'variants' => $variantPayloads->all(),
+            'updated_at' => $latestUpdatedAt,
+        ];
+    }
+
+    public function priceForOrder(Product $product): ?float
+    {
+        $batch = ProductBatch::where('product_id', $product->id)
+            ->where('is_active', true)
+            ->where('availability', true)
+            ->where('quantity', '>', 0)
+            ->orderBy('sell_price', 'asc')
+            ->first();
+
+        return $batch ? (float) $batch->sell_price : null;
+    }
+
+    public function batchForOrder(Product $product): ?ProductBatch
+    {
+        return ProductBatch::where('product_id', $product->id)
+            ->where('is_active', true)
+            ->where('availability', true)
+            ->where('quantity', '>', 0)
+            ->orderBy('sell_price', 'asc')
+            ->first();
+    }
+
+    private function buildSingleVariantFallback(Product $product): array
+    {
+        $variantPayload = $this->buildVariantPayload($this->freshVariant($product));
+
+        return [
+            'sku' => $variantPayload['sku'],
+            'changed_product_id' => $variantPayload['id'],
+            'base_name' => $variantPayload['base_name'],
+            'name' => $variantPayload['base_name'] ?: $variantPayload['name'],
+            'brand' => $variantPayload['brand'],
+            'category' => $variantPayload['category'],
+            'vendor' => $variantPayload['vendor'],
+            'price' => $variantPayload['price'],
+            'selling_price' => $variantPayload['selling_price'],
+            'lowest_variant_price' => $variantPayload['selling_price'],
+            'highest_variant_price' => $variantPayload['selling_price'],
+            'stock_quantity' => $variantPayload['stock_quantity'],
+            'reserved_inventory' => $variantPayload['reserved_inventory'],
+            'available_inventory' => $variantPayload['available_inventory'],
+            'in_stock' => (bool) $variantPayload['in_stock'],
+            'variant_count' => 1,
+            'active_variant_count' => (!$variantPayload['is_deleted'] && !$variantPayload['is_archived']) ? 1 : 0,
+            'deleted_variant_ids' => $variantPayload['is_deleted'] ? [$variantPayload['id']] : [],
+            'archived_variant_ids' => $variantPayload['is_archived'] ? [$variantPayload['id']] : [],
+            'variants' => [$variantPayload],
+            'updated_at' => $variantPayload['updated_at'],
+        ];
+    }
+
+    private function buildVariantPayload(Product $product): array
+    {
+        $product = $this->freshVariant($product);
 
         $activeBatches = $product->batches
             ->where('is_active', true);
@@ -40,6 +186,7 @@ class ProductPayloadBuilder
             : max(0, $totalPhysicalStock - $reservedStock);
 
         $sellingPrice = $lowestBatch ? (float) $lowestBatch->sell_price : null;
+        $isDeleted = method_exists($product, 'trashed') ? (bool) $product->trashed() : false;
 
         return [
             'id' => $product->id,
@@ -67,12 +214,12 @@ class ProductPayloadBuilder
             'stock_quantity' => $totalPhysicalStock,
             'reserved_inventory' => $reservedStock,
             'available_inventory' => $availableStock,
-            'in_stock' => $availableStock > 0 && !$product->is_archived,
+            'in_stock' => $availableStock > 0 && !$product->is_archived && !$isDeleted,
             'stock' => [
                 'total_physical_stock' => $totalPhysicalStock,
                 'reserved_stock' => $reservedStock,
                 'available_stock' => $availableStock,
-                'in_stock' => $availableStock > 0 && !$product->is_archived,
+                'in_stock' => $availableStock > 0 && !$product->is_archived && !$isDeleted,
             ],
             'branch_stock' => $this->buildBranchStock($activeBatches),
             'images' => $product->images->map(function ($image) {
@@ -113,31 +260,27 @@ class ProductPayloadBuilder
                     ];
                 })->values()->all(),
             'is_archived' => (bool) $product->is_archived,
+            'is_deleted' => $isDeleted,
+            'deleted_at' => optional($product->deleted_at)->toIso8601String(),
             'created_at' => optional($product->created_at)->toIso8601String(),
             'updated_at' => optional($product->updated_at)->toIso8601String(),
         ];
     }
 
-    public function priceForOrder(Product $product): ?float
+    private function freshVariant(Product $product): Product
     {
-        $batch = ProductBatch::where('product_id', $product->id)
-            ->where('is_active', true)
-            ->where('availability', true)
-            ->where('quantity', '>', 0)
-            ->orderBy('sell_price', 'asc')
-            ->first();
-
-        return $batch ? (float) $batch->sell_price : null;
-    }
-
-    public function batchForOrder(Product $product): ?ProductBatch
-    {
-        return ProductBatch::where('product_id', $product->id)
-            ->where('is_active', true)
-            ->where('availability', true)
-            ->where('quantity', '>', 0)
-            ->orderBy('sell_price', 'asc')
-            ->first();
+        return Product::withTrashed()
+            ->with([
+                'category',
+                'vendor',
+                'images' => function ($query) {
+                    $query->active()->ordered();
+                },
+                'batches.store',
+                'barcodes',
+                'reservedProduct',
+            ])
+            ->find($product->id) ?? $product;
     }
 
     private function buildBranchStock($activeBatches): array

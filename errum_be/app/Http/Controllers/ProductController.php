@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use App\Support\ImageOptimizer;
+use App\Jobs\SendLazyChatProductWebhook;
+use App\Services\LazyChat\LazyChatWebhookTestContext;
+use Throwable;
 
 class ProductController extends Controller
 {
@@ -1119,6 +1122,8 @@ class ProductController extends Controller
 
             DB::commit();
 
+            $this->dispatchLazyChatSkuUpdate($product->id, 'sync_sku_images');
+
             return response()->json([
                 'success'          => true,
                 'message'          => 'Images synced successfully across ' . count($skuProductIds) . ' variants.',
@@ -1141,6 +1146,33 @@ class ProductController extends Controller
                 'success' => false,
                 'message' => 'Failed to sync SKU images: ' . $e->getMessage(),
             ], 500);
+        }
+    }
+
+    private function dispatchLazyChatSkuUpdate(int $productId, string $event): void
+    {
+        $meta = LazyChatWebhookTestContext::meta([
+            'model' => ProductImage::class,
+            'observer' => self::class,
+            'model_event' => $event,
+        ]);
+
+        try {
+            if (LazyChatWebhookTestContext::isActive()) {
+                SendLazyChatProductWebhook::dispatchSync($productId, 'product/update', $meta);
+                return;
+            }
+
+            $dispatch = SendLazyChatProductWebhook::dispatch($productId, 'product/update', $meta);
+            if (method_exists($dispatch, 'afterCommit')) {
+                $dispatch->afterCommit();
+            }
+        } catch (Throwable $e) {
+            \Log::warning('Could not dispatch LazyChat SKU image sync webhook job.', [
+                'product_id' => $productId,
+                'event' => $event,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
