@@ -36,6 +36,13 @@ export default function CategoryListItem({
   // Check both children and all_children
   const subcategories = category.children || category.all_children || [];
   const hasSubcategories = subcategories && subcategories.length > 0;
+  const countNestedSubcategories = (cats: Category[] = []): number =>
+    cats.reduce((sum, child) => {
+      const childSubcategories = child.children || child.all_children || [];
+      return sum + 1 + countNestedSubcategories(childSubcategories);
+    }, 0);
+  const directSubcategoryCount = subcategories.length;
+  const nestedSubcategoryCount = countNestedSubcategories(subcategories);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -87,11 +94,16 @@ export default function CategoryListItem({
           <span className="text-xs text-gray-500 dark:text-gray-400">/{category.slug}</span>
         </div>
 
-        {hasSubcategories && (
+        <div className="flex flex-col items-end gap-1">
           <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
-            {subcategories.length} subcategories
+            {directSubcategoryCount} direct subcategories
           </span>
-        )}
+          {nestedSubcategoryCount !== directSubcategoryCount && (
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">
+              {nestedSubcategoryCount} total nested
+            </span>
+          )}
+        </div>
 
         {hasAnyAction && (
           <div className="relative" ref={dropdownRef}>

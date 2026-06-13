@@ -204,6 +204,7 @@ export default function POSPage() {
   const [customerName, setCustomerName] = useState('');
   const [mobileNo, setMobileNo] = useState('');
   const [address, setAddress] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
 
   // ✅ Customer lookup (existing customer by phone + last purchase)
   const customerLookup = useCustomerLookup({ debounceMs: 500, minLength: 6 });
@@ -255,6 +256,7 @@ export default function POSPage() {
 
   // Payment
   const [transportCost, setTransportCost] = useState(0);
+  const [orderDiscountAmount, setOrderDiscountAmount] = useState(0);
   const [cashPaid, setCashPaid] = useState(0);
   const [cardPaid, setCardPaid] = useState(0);
   const [bkashPaid, setBkashPaid] = useState(0);
@@ -604,9 +606,18 @@ export default function POSPage() {
 
   // ============ CALCULATIONS ============
 
+  // Gross and discount values are intentionally separated:
+  // - itemDiscountTotal lives on order_items.discount_amount
+  // - orderLevelDiscount lives on orders.discount_amount
+  // This prevents double-discounting when the order is later processed or edited.
   const subtotal = useMemo(() => totaledCart.reduce((sum, item) => sum + item.amount, 0), [totaledCart]);
-  const totalDiscount = useMemo(() => totaledCart.reduce((sum, item) => sum + item.discount, 0), [totaledCart]);
-  const total = useMemo(() => subtotal + transportCost, [subtotal, transportCost]);
+  const itemDiscountTotal = useMemo(() => totaledCart.reduce((sum, item) => sum + item.discount, 0), [totaledCart]);
+  const orderLevelDiscount = useMemo(() => {
+    const raw = Number(orderDiscountAmount) || 0;
+    return Math.min(Math.max(raw, 0), subtotal);
+  }, [orderDiscountAmount, subtotal]);
+  const totalDiscount = useMemo(() => itemDiscountTotal + orderLevelDiscount, [itemDiscountTotal, orderLevelDiscount]);
+  const total = useMemo(() => Math.max(0, subtotal - orderLevelDiscount + transportCost), [subtotal, orderLevelDiscount, transportCost]);
 
   // Installment amount (ceil to 2 decimals so collected amount is not less than required per installment)
   const installmentAmount = useMemo(() => {
@@ -681,7 +692,7 @@ export default function POSPage() {
       console.log('📦 PREPARING ORDER');
       console.log('Cart items:', cart.length);
       console.log('Defective items:', cart.filter((i) => i.isDefective).length);
-      console.log('Total (product cost):', total.toFixed(2));
+      console.log('Total after item/order discounts:', total.toFixed(2));
       console.log('Total paid:', totalPaid.toFixed(2));
       console.log('Change to return:', change.toFixed(2));
       console.log('═══════════════════════════════════');
@@ -785,8 +796,8 @@ export default function POSPage() {
             category: item.serviceCategory,
           })),
 
-        // ✅ FIXED: Add totals correctly
-        discount_amount: totalDiscount,
+        // ✅ Add totals correctly. Order-level discount only; item discounts stay on each item.
+        discount_amount: orderLevelDiscount,
         shipping_amount: transportCost,
 
         // ✅ FIXED: start_date should be undefined instead of null
@@ -800,8 +811,8 @@ export default function POSPage() {
           }
           : {}),
 
-        // ✅ Add notes (customer address only, no auto-generated change note)
-        notes: address || "",
+        // ✅ Dedicated order note. Customer address is saved in customer.address above.
+        notes: orderNotes.trim(),
       };
 
       console.log('═══════════════════════════════════');
@@ -1131,6 +1142,8 @@ export default function POSPage() {
     setCustomerName('');
     setMobileNo('');
     setAddress('');
+    setOrderNotes('');
+    setOrderDiscountAmount(0);
     setCashPaid(0);
     setCardPaid(0);
     setBkashPaid(0);
@@ -1782,7 +1795,7 @@ export default function POSPage() {
                     <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
                       Customer Details (Optional)
                     </h3>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <input
                         type="text"
                         placeholder="Customer Name"
@@ -1806,6 +1819,19 @@ export default function POSPage() {
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
                         className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      />
+                    </div>
+
+                    <div className="mt-3">
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Order Note
+                      </label>
+                      <textarea
+                        value={orderNotes}
+                        onChange={(e) => setOrderNotes(e.target.value)}
+                        placeholder="Optional note for this offline sale"
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm resize-none"
                       />
                     </div>
 
@@ -1940,6 +1966,35 @@ export default function POSPage() {
                       <span className="text-gray-900 dark:text-white font-medium">
                         ৳{subtotal.toFixed(2)}
                       </span>
+                    </div>
+
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-700 dark:text-gray-300">
+                        Item Discount
+                      </span>
+                      <span className="text-gray-900 dark:text-white font-medium">
+                        ৳{itemDiscountTotal.toFixed(2)}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-700 dark:text-gray-300 mb-1">
+                        Order Discount
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={subtotal}
+                        value={orderDiscountAmount === 0 ? '' : orderDiscountAmount}
+                        placeholder="0"
+                        onChange={(e) => setOrderDiscountAmount(e.target.value === '' ? 0 : Number(e.target.value))}
+                        className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      />
+                      {orderDiscountAmount > subtotal && (
+                        <p className="mt-1 text-[10px] text-amber-600 dark:text-amber-400">
+                          Discount capped at current net subtotal: ৳{subtotal.toFixed(2)}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex justify-between text-sm">

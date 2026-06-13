@@ -694,9 +694,13 @@ class Order extends Model
         $taxAmount = (float) $this->items->sum('tax_amount');
 
         // Older Errum builds sometimes stored item-level discount total in orders.discount_amount.
-        // Treat that legacy value as non-global to avoid double-discounting during edit sync.
+        // New orders mark this field as explicit order-level discount in metadata, so a real
+        // order discount is never hidden just because it equals the item-discount total.
         $storedOrderDiscount = (float) ($this->discount_amount ?? 0);
-        $globalDiscount = abs($storedOrderDiscount - $totalItemDiscount) < 0.01 ? 0.0 : $storedOrderDiscount;
+        $discountRole = $this->metadata['discount_amount_role'] ?? null;
+        $globalDiscount = $discountRole === 'order_level'
+            ? $storedOrderDiscount
+            : (abs($storedOrderDiscount - $totalItemDiscount) < 0.01 ? 0.0 : $storedOrderDiscount);
 
         $this->subtotal = $grossSubtotal;
         $this->tax_amount = $taxAmount;

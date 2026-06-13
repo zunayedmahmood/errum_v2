@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronUp, Trash2, MoreVertical, ArrowRightLeft, RotateCcw, Printer } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Trash2, MoreVertical, ArrowRightLeft, RotateCcw, Printer, Download } from 'lucide-react';
 import { computeMenuPosition } from '@/lib/menuPosition';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -64,6 +64,7 @@ interface PurchaseHistoryOrder {
   total_amount: string;
   paid_amount: string;
   outstanding_amount: string;
+  notes?: string;
   is_installment: boolean;
   order_date: string;
   created_at: string;
@@ -100,6 +101,9 @@ export default function PurchaseHistoryPage() {
   const [loadingDetails, setLoadingDetails] = useState<number | null>(null);
   const [errorDetails, setErrorDetails] = useState<{ [key: number]: string }>({});
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'csv' | 'excel'>('pdf');
+  const [exportScope, setExportScope] = useState<'shown' | 'top500' | 'top600' | 'all'>('shown');
   // Legacy state kept for minimal refactor
   const [userRole, setUserRole] = useState<string>('');
   const [userStoreId, setUserStoreId] = useState<string>('');
@@ -134,31 +138,39 @@ export default function PurchaseHistoryPage() {
     fetchOrders();
   }, [selectedStore, exactDate, startDate, endDate, searchTerm]);
 
+  const buildOrderFilters = (overrides: Partial<OrderFilters> = {}): OrderFilters => {
+    const filters: OrderFilters = {
+      order_type: 'counter',
+      per_page: 50,
+      ...overrides,
+    };
+
+    // Security: Always prioritize scopedStoreId (enforced for non-admins)
+    if (scopedStoreId) {
+      filters.store_id = scopedStoreId;
+    } else if (selectedStore) {
+      // Admins can filter by any store from the dropdown
+      filters.store_id = Number(selectedStore);
+    }
+
+    if (searchTerm.trim()) filters.search = searchTerm.trim();
+    if (exactDate) {
+      filters.exact_date = exactDate;
+      delete filters.date_from;
+      delete filters.date_to;
+    } else {
+      const range = getEffectiveDateRange();
+      if (range.from) filters.date_from = range.from;
+      if (range.to) filters.date_to = range.to;
+    }
+
+    return filters;
+  };
+
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const filters: OrderFilters = {
-        order_type: 'counter',
-        per_page: 50,
-      };
-
-      // Security: Always prioritize scopedStoreId (enforced for non-admins)
-      if (scopedStoreId) {
-        filters.store_id = scopedStoreId;
-      } else if (selectedStore) {
-        // Admins can filter by any store from the dropdown
-        filters.store_id = Number(selectedStore);
-      }
-
-      if (searchTerm) filters.search = searchTerm;
-      if (exactDate) {
-        filters.exact_date = exactDate;
-      } else {
-        if (startDate) filters.date_from = startDate;
-        if (endDate) filters.date_to = endDate;
-      }
-
-      const result = await orderService.getAll(filters);
+      const result = await orderService.getAll(buildOrderFilters({ per_page: 50 }));
       setOrders(result.data);
 
     } catch (error) {
@@ -705,6 +717,138 @@ export default function PurchaseHistoryPage() {
     return sum + (isNaN(amount) ? 0 : amount);
   }, 0);
 
+  const parseMoney = (value: any) => Number(String(value ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+
+  const exportColumns = [
+    'Order #',
+    'Date',
+    'Customer',
+    'Phone',
+    'Sales By',
+    'Store',
+    'Status',
+    'Payment Status',
+    'Subtotal',
+    'Order Discount',
+    'Shipping',
+    'Total',
+    'Paid',
+    'Due',
+    'Order Note',
+  ];
+
+  const toExportRows = (sourceOrders: any[]) => sourceOrders.map((order) => ({
+    'Order #': order.order_number || '',
+    'Date': `${new Date(order.order_date || order.created_at).toLocaleDateString('en-GB')} ${new Date(order.order_date || order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}`,
+    'Customer': order.customer?.name || 'N/A',
+    'Phone': order.customer?.phone || 'N/A',
+    'Sales By': order.salesman?.name || 'N/A',
+    'Store': order.store?.name || '',
+    'Status': order.status || '',
+    'Payment Status': order.payment_status || '',
+    'Subtotal': parseMoney(order.subtotal ?? order.subtotal_amount).toFixed(2),
+    'Order Discount': parseMoney(order.discount_amount).toFixed(2),
+    'Shipping': parseMoney(order.shipping_amount ?? order.shipping_cost).toFixed(2),
+    'Total': parseMoney(order.total_amount).toFixed(2),
+    'Paid': parseMoney(order.paid_amount).toFixed(2),
+    'Due': parseMoney(order.outstanding_amount).toFixed(2),
+    'Order Note': order.notes || '',
+  }));
+
+  const downloadBlob = (content: string, filename: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const escapeCsv = (value: any) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const escapeHtml = (value: any) => String(value ?? '').replace(/[&<>'"]/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;',
+  }[ch] || ch));
+
+  const getExportOrders = async () => {
+    if (exportScope === 'shown') return filteredOrders;
+
+    const limit = exportScope === 'top500' ? 500 : exportScope === 'top600' ? 600 : null;
+    const perPage = limit ? Math.min(limit, 500) : 500;
+    const firstPage = await orderService.getAll(buildOrderFilters({ per_page: perPage, page: 1 }));
+    let collected = [...firstPage.data];
+
+    if (exportScope === 'all') {
+      for (let page = 2; page <= firstPage.last_page; page += 1) {
+        const result = await orderService.getAll(buildOrderFilters({ per_page: perPage, page }));
+        collected = collected.concat(result.data);
+      }
+      return collected;
+    }
+
+    let page = 2;
+    while (limit && collected.length < limit && page <= firstPage.last_page) {
+      const result = await orderService.getAll(buildOrderFilters({ per_page: perPage, page }));
+      collected = collected.concat(result.data);
+      page += 1;
+    }
+
+    return collected.slice(0, limit || collected.length);
+  };
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const sourceOrders = await getExportOrders();
+      const rows = toExportRows(sourceOrders);
+      const range = getEffectiveDateRange();
+      const dateLabel = exactDate || [range.from || 'all', range.to || 'latest'].join('_to_');
+      const filenameBase = `offline-sale-history_${dateLabel}_${new Date().toISOString().slice(0, 10)}`;
+
+      if (rows.length === 0) {
+        alert('No offline sale history rows found for export.');
+        return;
+      }
+
+      if (exportFormat === 'csv') {
+        const csv = [exportColumns.join(','), ...rows.map((row) => exportColumns.map((col) => escapeCsv((row as any)[col])).join(','))].join('\n');
+        downloadBlob(csv, `${filenameBase}.csv`, 'text/csv;charset=utf-8;');
+        return;
+      }
+
+      if (exportFormat === 'excel') {
+        const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td>${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
+        downloadBlob(html, `${filenameBase}.xls`, 'application/vnd.ms-excel;charset=utf-8;');
+        return;
+      }
+
+      const totalExportRevenue = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
+      const pdfHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Offline Sale History</title><style>
+        *{box-sizing:border-box} body{font-family:Inter,Arial,sans-serif;margin:0;padding:24px;background:#f8fafc;color:#111827}.sheet{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:22px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
+        h1{margin:0 0 6px;font-size:24px}.muted{color:#6b7280;font-size:12px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb}.label{font-size:10px;text-transform:uppercase;color:#6b7280;font-weight:700}.value{font-size:18px;font-weight:800;margin-top:4px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#111827;color:white;text-align:left;padding:8px;border:1px solid #111827}td{padding:7px;border:1px solid #e5e7eb;vertical-align:top}tr:nth-child(even){background:#f9fafb}.money{text-align:right;white-space:nowrap}@media print{body{background:white;padding:0}.sheet{box-shadow:none;border:0;border-radius:0}.no-print{display:none}}
+      </style></head><body><div class="sheet"><div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()" style="padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700">Print / Save as PDF</button></div><h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. Filters: ${escapeHtml(range.from || 'beginning')} to ${escapeHtml(range.to || 'latest')}${selectedStore ? `, Store ID ${escapeHtml(selectedStore)}` : ''}${searchTerm ? `, Search ${escapeHtml(searchTerm)}` : ''}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Revenue</div><div class="value">৳${totalExportRevenue.toFixed(2)}</div></div><div class="card"><div class="label">Scope</div><div class="value">${escapeHtml(exportScope)}</div></div></div><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${['Subtotal','Order Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div><script>setTimeout(() => window.print(), 250);</script></body></html>`;
+      const w = window.open('', '_blank', 'width=1200,height=800');
+      if (!w) {
+        alert('Popup blocked. Please allow popups to export PDF.');
+        return;
+      }
+      w.document.open();
+      w.document.write(pdfHtml);
+      w.document.close();
+    } catch (error: any) {
+      console.error('Export failed:', error);
+      alert(error?.message || 'Failed to export offline sale history');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className={darkMode ? 'dark' : ''}>
       <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -716,7 +860,7 @@ export default function PurchaseHistoryPage() {
             <div className="max-w-7xl mx-auto">
               <div className="mb-6">
                 <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white mb-2">
-                  Purchase History
+                  Offline Sale History
                 </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   {userRole === 'branch-manager'
@@ -852,13 +996,62 @@ export default function PurchaseHistoryPage() {
                 </div>
               </div>
 
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
+                <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                  <div>
+                    <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                      <Download className="w-4 h-4" /> Export Offline Sale History
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Export uses the same search, store, and date filters currently applied above.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Format</label>
+                      <select
+                        value={exportFormat}
+                        onChange={(e) => setExportFormat(e.target.value as any)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      >
+                        <option value="pdf">PDF</option>
+                        <option value="csv">CSV</option>
+                        <option value="excel">Excel</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Rows</label>
+                      <select
+                        value={exportScope}
+                        onChange={(e) => setExportScope(e.target.value as any)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      >
+                        <option value="shown">Current shown rows</option>
+                        <option value="top500">Top 500 filtered rows</option>
+                        <option value="top600">Top 600 filtered rows</option>
+                        <option value="all">All filtered rows</option>
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleExport}
+                      disabled={exporting || loading}
+                      className="px-4 py-2 rounded-md bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-semibold hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      {exporting ? 'Exporting...' : 'Export'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {loading ? (
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-12 text-center">
                   <div className="text-gray-500 dark:text-gray-400">Loading orders...</div>
                 </div>
               ) : filteredOrders.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-12 text-center">
-                  <div className="text-gray-500 dark:text-gray-400">No counter orders found</div>
+                  <div className="text-gray-500 dark:text-gray-400">No offline sale orders found</div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -923,6 +1116,12 @@ export default function PurchaseHistoryPage() {
                                   {new Date(order.created_at).toLocaleDateString('en-GB')} {new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
                                 </span>
                               </div>
+                              {order.notes && (
+                                <div className="md:col-span-2 lg:col-span-4 rounded-md bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 px-3 py-2">
+                                  <span className="text-blue-700 dark:text-blue-300 font-medium">Order Note: </span>
+                                  <span className="text-gray-800 dark:text-gray-200">{order.notes}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
 

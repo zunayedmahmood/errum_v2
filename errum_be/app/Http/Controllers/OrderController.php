@@ -86,13 +86,25 @@ class OrderController extends Controller
             $query->where('created_by', $request->created_by);
         }
 
-        // Filter by date range
-        if ($request->filled('date_from')) {
-            $query->where('order_date', '>=', $request->date_from);
-        }
+        // Filter by date range using date-only comparisons.
+        // This makes same-day filters inclusive for every time on that date.
+        if ($request->filled('exact_date')) {
+            $query->whereDate('order_date', $request->exact_date);
+        } else {
+            $dateFrom = $request->input('date_from');
+            $dateTo = $request->input('date_to');
 
-        if ($request->filled('date_to')) {
-            $query->where('order_date', '<=', $request->date_to);
+            if ($dateFrom && $dateTo && $dateFrom > $dateTo) {
+                [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+            }
+
+            if ($dateFrom) {
+                $query->whereDate('order_date', '>=', $dateFrom);
+            }
+
+            if ($dateTo) {
+                $query->whereDate('order_date', '<=', $dateTo);
+            }
         }
 
         // Search by order number or customer name
@@ -385,6 +397,9 @@ class OrderController extends Controller
                 'shipping_amount' => $request->shipping_amount ?? 0,
                 'notes' => $request->notes,
                 'shipping_address' => $request->shipping_address,
+                'metadata' => [
+                    'discount_amount_role' => 'order_level',
+                ],
                 'created_by' => $actorId,
                 'salesman_id' => $salesmanId,
                 'order_date' => now(),
@@ -577,17 +592,21 @@ class OrderController extends Controller
             $orderDiscount = $request->discount_amount ?? 0;
             $shippingAmount = $request->shipping_amount ?? 0;
             
+            $orderDiscount = min(max((float) $orderDiscount, 0), max(0, $subtotal - $totalItemDiscount));
+            $grandDiscount = $totalItemDiscount + $orderDiscount;
+
             if ($taxMode === 'inclusive') {
-                // Inclusive: tax already in subtotal
-                $totalAmount = $subtotal - max($orderDiscount, $totalItemDiscount) + $shippingAmount;
+                // Inclusive: tax already in subtotal. Item discounts and order-level discounts are separate.
+                $totalAmount = max(0, $subtotal - $grandDiscount + $shippingAmount);
             } else {
-                // Exclusive: add tax to subtotal
-                $totalAmount = $subtotal + $taxTotal - max($orderDiscount, $totalItemDiscount) + $shippingAmount;
+                // Exclusive: add tax to subtotal after both discount layers.
+                $totalAmount = max(0, $subtotal + $taxTotal - $grandDiscount + $shippingAmount);
             }
 
             $order->update([
                 'subtotal' => $subtotal,
                 'tax_amount' => $taxTotal,
+                'discount_amount' => $orderDiscount,
                 'total_amount' => $totalAmount,
                 'outstanding_amount' => $totalAmount,
                 'is_preorder' => $hasPreOrderItems,  // Mark order as pre-order if any items lack batches
@@ -737,17 +756,20 @@ class OrderController extends Controller
             if ($request->has('discount_amount')) {
                 $oldDiscount = $order->discount_amount;
                 $order->discount_amount = $request->discount_amount;
+                $order->metadata = array_merge($order->metadata ?? [], [
+                    'discount_amount_role' => 'order_level',
+                ]);
                 
                 $totalItemDiscount = $order->items->sum('discount_amount');
                 $taxTotal = $order->items->sum('tax_amount');
                 $taxMode = config('app.tax_mode', 'inclusive');
 
                 if ($taxMode === 'inclusive') {
-                    $order->total_amount = $order->subtotal - $request->discount_amount - $totalItemDiscount + $order->shipping_amount;
+                    $order->total_amount = max(0, $order->subtotal - $request->discount_amount - $totalItemDiscount + $order->shipping_amount);
                 } else {
-                    $order->total_amount = $order->subtotal + $taxTotal - $request->discount_amount - $totalItemDiscount + $order->shipping_amount;
+                    $order->total_amount = max(0, $order->subtotal + $taxTotal - $request->discount_amount - $totalItemDiscount + $order->shipping_amount);
                 }
-                $order->outstanding_amount = $order->total_amount - $order->paid_amount;
+                $order->outstanding_amount = max(0, $order->total_amount - $order->paid_amount);
             }
 
             if ($request->has('shipping_amount')) {
@@ -759,11 +781,11 @@ class OrderController extends Controller
                 $taxMode = config('app.tax_mode', 'inclusive');
 
                 if ($taxMode === 'inclusive') {
-                    $order->total_amount = $order->subtotal - $order->discount_amount - $totalItemDiscount + $request->shipping_amount;
+                    $order->total_amount = max(0, $order->subtotal - $order->discount_amount - $totalItemDiscount + $request->shipping_amount);
                 } else {
-                    $order->total_amount = $order->subtotal + $taxTotal - $order->discount_amount - $totalItemDiscount + $request->shipping_amount;
+                    $order->total_amount = max(0, $order->subtotal + $taxTotal - $order->discount_amount - $totalItemDiscount + $request->shipping_amount);
                 }
-                $order->outstanding_amount = $order->total_amount - $order->paid_amount;
+                $order->outstanding_amount = max(0, $order->total_amount - $order->paid_amount);
             }
 
             if ($request->has('notes')) {
@@ -1540,13 +1562,25 @@ class OrderController extends Controller
     {
         $query = Order::query();
 
-        // Filter by date range
-        if ($request->filled('date_from')) {
-            $query->where('order_date', '>=', $request->date_from);
-        }
+        // Filter by date range using date-only comparisons.
+        // This makes same-day filters inclusive for every time on that date.
+        if ($request->filled('exact_date')) {
+            $query->whereDate('order_date', $request->exact_date);
+        } else {
+            $dateFrom = $request->input('date_from');
+            $dateTo = $request->input('date_to');
 
-        if ($request->filled('date_to')) {
-            $query->where('order_date', '<=', $request->date_to);
+            if ($dateFrom && $dateTo && $dateFrom > $dateTo) {
+                [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+            }
+
+            if ($dateFrom) {
+                $query->whereDate('order_date', '>=', $dateFrom);
+            }
+
+            if ($dateTo) {
+                $query->whereDate('order_date', '<=', $dateTo);
+            }
         }
 
         // Filter by store
@@ -1632,6 +1666,7 @@ class OrderController extends Controller
             },
             'status' => $order->status,
             'payment_status' => $order->payment_status,
+            'notes' => $order->notes,
             'customer' => [
                 'id' => $order->customer->id,
                 'name' => $order->customer->name,

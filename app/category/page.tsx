@@ -195,6 +195,12 @@ export default function CategoryPageWrapper() {
     }, []);
   };
 
+  const countCategories = (cats: Category[] = []): number =>
+    cats.reduce((sum, cat) => sum + 1 + countCategories(cat.children || cat.all_children || []), 0);
+
+  const totalCategoryCount = countCategories(categories);
+  const rootCategoryCount = categories.length;
+  const totalSubcategoryCount = Math.max(0, totalCategoryCount - rootCategoryCount);
   const filteredCategories = filterCategories(categories, searchQuery);
 
   return (
@@ -241,6 +247,21 @@ export default function CategoryPageWrapper() {
                     className="w-full pl-9 pr-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500"
                   />
                 </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Categories</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{totalCategoryCount}</p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">Parent Categories</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{rootCategoryCount}</p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Subcategories</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{totalSubcategoryCount}</p>
               </div>
             </div>
 
