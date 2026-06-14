@@ -30,7 +30,7 @@ class SendLazyChatProductWebhook implements ShouldQueue
 
     public function handle(ProductPayloadBuilder $payloadBuilder): void
     {
-        if (!config('lazychat.enabled')) {
+        if (!$this->isDryRun() && !config('lazychat.enabled')) {
             $this->logTestResult([
                 'ok' => false,
                 'phase' => 'skipped',
@@ -70,6 +70,19 @@ class SendLazyChatProductWebhook implements ShouldQueue
     private function sendUpsertWebhook(array $payload): void
     {
         $url = config('lazychat.product_upsert.url');
+
+        if ($this->isDryRun()) {
+            $this->logTestResult([
+                'ok' => true,
+                'phase' => 'dry_run',
+                'endpoint' => $url,
+                'http_status' => 'DRY_RUN',
+                'response_body' => 'Dry run only: payload was built and validated locally; no request was sent to LazyChat.',
+                'payload_summary' => $this->summarizePayload($payload),
+            ]);
+            return;
+        }
+
         $token = config('lazychat.product_upsert.token');
 
         if (!$url || !$token) {
@@ -114,6 +127,22 @@ class SendLazyChatProductWebhook implements ShouldQueue
     private function sendDeleteWebhook(): void
     {
         $url = config('lazychat.product_delete.url');
+
+        if ($this->isDryRun()) {
+            $this->logTestResult([
+                'ok' => true,
+                'phase' => 'dry_run',
+                'endpoint' => $url,
+                'http_status' => 'DRY_RUN',
+                'response_body' => 'Dry run only: delete payload was built locally; no request was sent to LazyChat.',
+                'payload_summary' => [
+                    'product_id' => $this->productId,
+                    'dry_run_delete' => true,
+                ],
+            ]);
+            return;
+        }
+
         $token = config('lazychat.product_delete.token');
 
         if (!$url || !$token) {
@@ -155,6 +184,11 @@ class SendLazyChatProductWebhook implements ShouldQueue
         }
     }
 
+
+    private function isDryRun(): bool
+    {
+        return !empty($this->meta['dry_run']);
+    }
 
     private function testAuthHeaders(): array
     {

@@ -24,6 +24,8 @@ use Throwable;
 
 class LazyChatTestController extends Controller
 {
+    private bool $dryRun = false;
+
     public function login(Request $request): JsonResponse
     {
         $authError = $this->authorizeTestRequest($request);
@@ -91,10 +93,13 @@ class LazyChatTestController extends Controller
 
     public function productWebhooks(Request $request): JsonResponse
     {
-        $authError = $this->authorizeTestRequest($request);
+        $authError = $this->authorizeTestRequest($request, true);
         if ($authError) {
             return $authError;
         }
+
+        $dryRun = $request->boolean('dry_run', false);
+        $this->dryRun = $dryRun;
 
         $testAuth = app(LazyChatTestAuth::class);
         $authSummary = null;
@@ -464,9 +469,13 @@ class LazyChatTestController extends Controller
 
         return response()->json([
             'success' => $stepsPassed && $webhooksPassed,
-            'message' => 'LazyChat product webhook test run completed.',
+            'message' => $dryRun
+                ? 'LazyChat product webhook dry-run completed. Payloads were built and logged locally; nothing was sent to LazyChat.'
+                : 'LazyChat product webhook test run completed.',
             'data' => [
                 'run_id' => $runId,
+                'dry_run' => $dryRun,
+                'external_delivery' => !$dryRun,
                 'auth' => $authSummary,
                 'steps_passed' => $stepsPassed,
                 'webhooks_passed' => $webhooksPassed,
@@ -506,6 +515,7 @@ class LazyChatTestController extends Controller
         LazyChatWebhookTestContext::set($runId, array_merge($meta, [
             'step_key' => $key,
             'step_label' => $label,
+            'dry_run' => $this->dryRun,
         ]));
 
         try {
@@ -613,13 +623,17 @@ class LazyChatTestController extends Controller
         ];
     }
 
-    private function authorizeTestRequest(Request $request): ?JsonResponse
+    private function authorizeTestRequest(Request $request, bool $allowDryRunWithoutToken = false): ?JsonResponse
     {
         if (!config('lazychat.testing.enabled')) {
             return response()->json([
                 'success' => false,
                 'message' => 'LazyChat test endpoints are disabled. Set LAZYCHAT_TEST_ENABLED=true to use this runner.',
             ], 403);
+        }
+
+        if ($allowDryRunWithoutToken && $request->boolean('dry_run', false)) {
+            return null;
         }
 
         $expectedToken = config('lazychat.testing.token');

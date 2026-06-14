@@ -774,6 +774,12 @@ export default function POSPage() {
               itemPayload.barcode = item.barcode;
             }
 
+            if (item.isDefective) {
+              itemPayload.is_defective = true;
+              itemPayload.defective_product_id = item.defectId;
+              itemPayload.source = 'defective_resale';
+            }
+
             console.log(`Item ${item.productName}:`, {
               ...itemPayload,
               isDefective: item.isDefective,

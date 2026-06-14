@@ -381,28 +381,47 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
   };
 
   const enqueueBarcodeScan = () => {
-    const value = scanInput.trim();
-    if (!value) return;
+    const rawValue = scanInput.trim();
+    if (!rawValue) return;
 
     if (!formData.source_store_id) {
       setScanError('Select the Source Store first, then scan.');
       return;
     }
 
-    // Clear the input immediately so the next scan doesn't overwrite the previous one.
+    const values = rawValue
+      .split(/[\n,;\t ]+/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+    if (values.length === 0) return;
+
+    // Clear the input immediately so the next scan or manual entry doesn't overwrite the previous one.
     setScanInput('');
 
-    // Prevent duplicates across already-scanned + queued
-    if (scannedSet.has(value) || scanQueueSetRef.current.has(value)) {
-      setScanError('This barcode is already scanned in this dispatch draft.');
-      return;
+    let duplicateFound = false;
+    let queuedAny = false;
+    for (const value of values) {
+      if (scannedSet.has(value) || scanQueueSetRef.current.has(value)) {
+        duplicateFound = true;
+        continue;
+      }
+
+      scanQueueRef.current.push(value);
+      scanQueueSetRef.current.add(value);
+      queuedAny = true;
     }
 
-    setScanError(null);
-    scanQueueRef.current.push(value);
-    scanQueueSetRef.current.add(value);
-    setQueuedScanCount(scanQueueRef.current.length);
-    void processScanQueue();
+    if (duplicateFound) {
+      setScanError('Duplicate barcode skipped. New barcode(s) were still queued.');
+    } else {
+      setScanError(null);
+    }
+
+    if (queuedAny) {
+      setQueuedScanCount(scanQueueRef.current.length);
+      void processScanQueue();
+    }
   };
 
   const removeLastScan = () => {
@@ -644,17 +663,23 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
                         value={scanInput}
                         onChange={(e) => setScanInput(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === 'Tab') {
+                          if (e.key === 'Enter') {
                             e.preventDefault();
                             enqueueBarcodeScan();
                             setTimeout(() => scanInputRef.current?.focus(), 0);
                           }
                         }}
+                        onPaste={() => {
+                          // Manual paste can contain one barcode or many barcodes separated by newline/comma/space.
+                          setTimeout(() => scanInputRef.current?.focus(), 0);
+                        }}
+                        inputMode="text"
+                        autoComplete="off"
                         className={`w-full pl-10 pr-3 py-2 rounded-lg border text-sm transition-all focus:ring-2 focus:ring-indigo-500/20 active:scale-[0.99] ${!formData.source_store_id
                             ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-60'
                             : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-600 focus:border-indigo-500'
                           }`}
-                        placeholder={formData.source_store_id ? 'Scan/Type barcode and press Enter…' : 'Select source store first'}
+                        placeholder={formData.source_store_id ? 'Type or scan barcode, then press Enter or Add…' : 'Select source store first'}
                         disabled={!formData.source_store_id}
                       />
                       {!formData.source_store_id && (
@@ -667,10 +692,10 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
                       type="button"
                       onClick={enqueueBarcodeScan}
                       disabled={!formData.source_store_id || !scanInput.trim()}
-                      className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-lg text-sm flex items-center justify-center"
-                      title="Scan & add"
+                      className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-lg text-sm flex items-center justify-center gap-1"
+                      title="Add typed/scanned barcode"
                     >
-                      <Scan className="w-4 h-4" />
+                      <Plus className="w-4 h-4" /> Add
                     </button>
                   </div>
                   <div className="col-span-3 flex gap-2">

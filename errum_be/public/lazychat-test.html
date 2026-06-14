@@ -36,10 +36,10 @@
     <div class="card">
       <h1>Errum LazyChat Integration Test Runner</h1>
       <p>
-        This page creates two LazyChat test orders through <code>/api/order/create</code>, then runs a backend product webhook scenario that triggers Errum's real Product/ProductBatch/ProductImage/ReservedProduct observers.
+        This page creates two LazyChat test orders through <code>/api/order/create</code>, then runs a <strong>dry-run</strong> backend product webhook scenario that triggers Errum's real Product/ProductBatch/ProductImage/ReservedProduct observers without sending the outbound webhook request to LazyChat.
       </p>
       <p class="muted">
-        Product webhook testing requires <code>LAZYCHAT_TEST_ENABLED=true</code>. If <code>LAZYCHAT_TEST_TOKEN</code> is set, paste it below.
+        Product webhook dry-run only requires <code>LAZYCHAT_TEST_ENABLED=true</code>. It does <strong>not</strong> require a LazyChat test token and it never sends the payload to real LC. Normal Errum product routes are unchanged and will still send real LazyChat webhooks; only this test page sends <code>dry_run=true</code>.
       </p>
       <div class="grid">
         <div>
@@ -47,16 +47,16 @@
           <input id="baseUrl" placeholder="https://backend.errumbd.com" />
         </div>
         <div>
-          <label for="testToken">LazyChat test token (optional)</label>
-          <input id="testToken" placeholder="Only required if LAZYCHAT_TEST_TOKEN is set" />
+          <label for="testToken">LazyChat test token (advanced / optional)</label>
+          <input id="testToken" placeholder="Not needed for Product Webhook Dry-Run" />
         </div>
       </div>
       <div class="actions">
         <button id="loginTest" class="ghost">Login & Save Test Token</button>
         <button id="downloadProducts" class="ghost">Download Products</button>
         <button id="runOrders" class="secondary">Create 2 LazyChat Test Orders</button>
-        <button id="runWebhooks">Run Product Webhook Scenario</button>
-        <button id="runAll" class="ghost">Run Full Test</button>
+        <button id="runWebhooks">Run Product Webhook Dry-Run — No Token</button>
+        <button id="runAll" class="ghost">Run Full Dry Test</button>
         <button id="clear" class="ghost">Clear Output</button>
       </div>
       <div id="status" class="status">Ready.</div>
@@ -284,17 +284,18 @@
     }
 
     async function runWebhooks() {
-      setBusy(true, 'Running product webhook scenario...');
-      const runId = `LC-HTML-${Date.now()}`;
-      const result = await postJson('/api/lazychat/test/product-webhooks', { run_id: runId });
-      appendResult('Product webhook scenario', result);
+      setBusy(true, 'Running token-free product webhook dry-run. This builds payloads and captures logs, but sends nothing to LazyChat...');
+      const runId = `LC-HTML-DRY-${Date.now()}`;
+      const result = await postJson('/api/lazychat/test/product-webhooks', { run_id: runId, dry_run: true });
+      appendResult('Product webhook dry-run scenario', result);
       renderLogs(result.body?.data?.webhook_logs || []);
 
       const webhooksPassed = result.body?.data?.webhooks_passed;
       const contractPassed = result.body?.data?.webhook_contract_passed;
+      const dryRun = result.body?.data?.dry_run === true;
       statusBox.innerHTML = result.ok && result.body?.success
-        ? '<span class="ok">Webhook scenario completed. Transport and SKU payload contract passed.</span>'
-        : `<span class="bad">Webhook scenario finished but ${contractPassed === false ? 'the SKU payload contract failed' : (webhooksPassed === false ? 'one or more LazyChat responses failed internally' : 'failed or is disabled')}. Check raw output.</span>`;
+        ? `<span class="ok">Webhook ${dryRun ? 'dry-run' : 'scenario'} completed. SKU payload contract passed and ${dryRun ? 'no token was required / no external LazyChat request was sent' : 'LazyChat transport passed'}.</span>`
+        : `<span class="bad">Webhook dry-run finished but ${contractPassed === false ? 'the SKU payload contract failed' : (webhooksPassed === false ? 'one or more webhook checks failed internally' : 'failed or is disabled')}. Check raw output.</span>`;
       setBusy(false, statusBox.textContent);
       return result;
     }
@@ -309,12 +310,13 @@
         <tr>
           <td>${escapeHtml(log.step_key || '')}</td>
           <td>${escapeHtml(log.topic || '')}</td>
-          <td>${escapeHtml(String(log.http_status || log.phase || ''))}</td>
+          <td>${escapeHtml(String(log.http_status || log.phase || ''))}<br><span class="muted">${escapeHtml(log.phase || '')}</span></td>
           <td>${log.ok ? '<span class="ok">yes</span>' : '<span class="bad">no</span>'}</td>
           <td>${escapeHtml(log.observer || log.expected_observer || '')}<br><span class="muted">${escapeHtml(log.model || '')}</span></td>
           <td>
             <div><strong>SKU:</strong> ${escapeHtml(log.payload_summary?.sku || '')}</div>
             <div><strong>Contract:</strong> ${log.payload_summary?.contract_shape_ok ? '<span class="ok">ok</span>' : '<span class="bad">bad</span>'}</div>
+            <div><strong>Delivery:</strong> ${log.phase === 'dry_run' ? '<span class="ok">dry-run only</span>' : '<span class="bad">external HTTP</span>'}</div>
             <div><strong>Variants:</strong> ${escapeHtml(log.payload_summary?.variant_count ?? '')}</div>
             <div class="muted">${escapeHtml((log.payload_summary?.variant_ids || []).join(', '))}</div>
             <div>${escapeHtml(log.lazychat_inner_error || log.response_body || log.error || '')}</div>
@@ -359,7 +361,6 @@
 
     document.getElementById('runAll').addEventListener('click', async () => {
       try {
-        await loginAndSaveToken();
         await runOrders();
         await runWebhooks();
       } catch (e) {

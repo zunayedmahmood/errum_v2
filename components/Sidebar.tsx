@@ -12,6 +12,7 @@ import {
   ShoppingCart,
   Image,
   X,
+  Menu,
   AlertTriangle,
   Truck,
   Search,
@@ -45,12 +46,18 @@ type MenuItem =
 // Props
 // ──────────────────────────────
 interface SidebarProps {
-  isOpen: boolean;
-  setIsOpen: (open: boolean) => void;
+  isOpen?: boolean;
+  setIsOpen?: (open: boolean) => void;
 }
 
-export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
+export default function Sidebar({ isOpen: controlledOpen, setIsOpen }: SidebarProps) {
   const pathname = usePathname();
+  const [internalOpen, setInternalOpen] = useState(true);
+  const isOpen = typeof controlledOpen === 'boolean' ? controlledOpen : internalOpen;
+  const setOpen = (open: boolean) => {
+    setInternalOpen(open);
+    setIsOpen?.(open);
+  };
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const authContext = useAuth();
   
@@ -189,43 +196,64 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setIsOpen(false)}
+          onClick={() => setOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 
-          transform transition-transform duration-300 ease-in-out
-          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-          lg:translate-x-0 lg:static lg:z-auto flex flex-col`}
+        className={`fixed inset-y-0 left-0 z-50 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 
+          transform transition-all duration-300 ease-in-out overflow-hidden
+          ${isOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64'}
+          lg:translate-x-0 lg:static lg:z-auto lg:flex-shrink-0 ${isOpen ? 'lg:w-64' : 'lg:w-16'} flex flex-col`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 h-16">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-black dark:bg-white rounded-lg flex items-center justify-center">
-              <span className="text-white dark:text-black font-bold text-xl">E</span>
-            </div>
-            <div>
-              <h1 className="font-semibold text-gray-900 dark:text-white">ERP Admin</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Management Panel</p>
-            </div>
-          </div>
+        <div className={`flex items-center ${isOpen ? 'justify-between p-4' : 'justify-center p-3'} border-b border-gray-200 dark:border-gray-700 h-16`}>
+          {isOpen ? (
+            <>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 bg-black dark:bg-white rounded-lg flex items-center justify-center flex-shrink-0">
+                  <span className="text-white dark:text-black font-bold text-xl">E</span>
+                </div>
+                <div className="min-w-0">
+                  <h1 className="font-semibold text-gray-900 dark:text-white truncate">ERP Admin</h1>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Management Panel</p>
+                </div>
+              </div>
 
-          {/* Close button (mobile only) */}
-          <button
-            onClick={() => setIsOpen(false)}
-            className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+              <button
+                onClick={() => setOpen(false)}
+                className="hidden lg:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Collapse sidebar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <button
+                onClick={() => setOpen(false)}
+                className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setOpen(true)}
+              className="hidden lg:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              title="Expand sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Scrollable Menu */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3">
-          <p className="px-3 mb-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-            Main Menu
-          </p>
+        <nav className={`flex-1 overflow-y-auto py-4 ${isOpen ? 'px-3' : 'px-2'}`}>
+          {isOpen && (
+            <p className="px-3 mb-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Main Menu
+            </p>
+          )}
 
           <ul className="space-y-1">
             {filteredMenuItems.map((item) => {
@@ -245,8 +273,9 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                   {/* Main Item */}
                   {hasSubMenu ? (
                     <button
-                      onClick={() => toggleSubMenu(item.label)}
-                      className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left
+                      onClick={() => isOpen && toggleSubMenu(item.label)}
+                      title={item.label}
+                      className={`w-full flex items-center ${isOpen ? 'justify-between gap-3 px-3' : 'justify-center px-2'} py-2.5 rounded-lg text-sm transition-all text-left
                         ${isActive
                           ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-medium'
                           : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -254,33 +283,36 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                     >
                       <div className="flex items-center gap-3">
                         <Icon className="w-5 h-5 flex-shrink-0" />
-                        <span>{item.label}</span>
+                        {isOpen && <span className="truncate">{item.label}</span>}
                       </div>
-                      <svg
-                        className={`w-4 h-4 transition-transform ${isSubMenuOpen ? 'rotate-90' : ''}`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
+                      {isOpen && (
+                        <svg
+                          className={`w-4 h-4 transition-transform ${isSubMenuOpen ? 'rotate-90' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      )}
                     </button>
                   ) : (
                     <Link
                       href={(item as { href: string }).href}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all
+                      title={item.label}
+                      className={`flex items-center ${isOpen ? 'gap-3 px-3' : 'justify-center px-2'} py-2.5 rounded-lg text-sm transition-all
                         ${isActive
                           ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-medium'
                           : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                         }`}
                     >
                       <Icon className="w-5 h-5 flex-shrink-0" />
-                      <span>{item.label}</span>
+                      {isOpen && <span className="truncate">{item.label}</span>}
                     </Link>
                   )}
 
                   {/* Submenu */}
-                  {hasSubMenu && isSubMenuOpen && (
+                  {hasSubMenu && isOpen && isSubMenuOpen && (
                     <ul className="mt-2 ml-8 space-y-1">
                       {item.subMenu.map((sub) => (
                         <li key={sub.href}>

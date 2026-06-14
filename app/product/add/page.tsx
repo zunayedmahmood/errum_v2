@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Plus, Loader2 } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -47,9 +47,30 @@ export default function AddEditProductPage({
   onSuccess,
 }: AddEditProductPageProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { permissionsResolved, isRole } = useAuth();
   const canAccess = isRole(['super-admin', 'admin', 'online-moderator']);
   const [modeResolved, setModeResolved] = useState(false);
+  const resolveProductListReturnTo = () => {
+    const fromQuery = searchParams.get('returnTo');
+    if (fromQuery && fromQuery.startsWith('/')) return fromQuery;
+
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('productListReturnTo');
+      if (stored && stored.startsWith('/')) return stored;
+    }
+
+    return '/product/list';
+  };
+
+  const goToProductListReturn = () => {
+    const target = resolveProductListReturnTo();
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('productListReturnTo');
+    }
+    router.push(target);
+  };
+
 
   // Read from sessionStorage if props not provided
   const [productId, setProductId] = useState<string | undefined>(propProductId);
@@ -1165,7 +1186,7 @@ export default function AddEditProductPage({
           if (onSuccess) {
             onSuccess();
           } else {
-            router.push('/product/list');
+            goToProductListReturn();
           }
         }, 1500);
       } else {
@@ -1428,7 +1449,7 @@ export default function AddEditProductPage({
           if (onSuccess) {
             onSuccess();
           } else {
-            router.push('/product/list');
+            goToProductListReturn();
           }
         }, 1500);
       }
@@ -1444,7 +1465,7 @@ export default function AddEditProductPage({
     if (onBack) {
       onBack();
     } else {
-      router.push('/product/list');
+      goToProductListReturn();
     }
   };
 

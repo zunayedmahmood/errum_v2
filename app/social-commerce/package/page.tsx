@@ -339,6 +339,12 @@ export default function WarehouseFulfillmentPage() {
     }
   };
 
+
+  const isDefectiveResaleOrderItem = (item: any) => {
+    const name = String(item?.product_name || item?.productName || '').toLowerCase();
+    return name.includes('[defective/used resale]') || name.includes('[defective]');
+  };
+
   const fetchOrderDetails = async (orderId: number) => {
     setIsLoadingDetails(true);
     try {
@@ -349,9 +355,10 @@ export default function WarehouseFulfillmentPage() {
       // Initialize scanned items tracking
       const initialScanned: Record<number, ScannedItemTracking> = {};
       order.items?.forEach((item: any) => {
+        const isDefectResale = isDefectiveResaleOrderItem(item);
         initialScanned[item.id] = {
           required: item.quantity,
-          scanned: [],
+          scanned: isDefectResale ? Array.from({ length: Number(item.quantity || 0) }, () => 'Defective/used resale item — no barcode scan required') : [],
           barcodes: [],
         };
       });
@@ -553,6 +560,7 @@ export default function WarehouseFulfillmentPage() {
 
     // Check if all items are fully scanned
     const allItemsScanned = orderDetails.items?.every((item: any) => {
+      if (isDefectiveResaleOrderItem(item)) return true;
       const scanned = scannedItems[item.id];
       return scanned && scanned.scanned.length === scanned.required;
     });
@@ -562,6 +570,7 @@ export default function WarehouseFulfillmentPage() {
 
       // Show which items are missing (debug)
       const missingItems = orderDetails.items?.filter((item: any) => {
+        if (isDefectiveResaleOrderItem(item)) return false;
         const scanned = scannedItems[item.id];
         return !scanned || scanned.scanned.length < scanned.required;
       });
@@ -576,7 +585,7 @@ export default function WarehouseFulfillmentPage() {
       // Prepare fulfillment payload
       const fulfillments = orderDetails.items.map((item: any) => ({
         order_item_id: item.id,
-        barcodes: scannedItems[item.id].barcodes,
+        barcodes: isDefectiveResaleOrderItem(item) ? [] : scannedItems[item.id].barcodes,
       }));
 
       console.log('📦 Fulfilling order:', orderDetails.order_number);
@@ -623,8 +632,9 @@ export default function WarehouseFulfillmentPage() {
     let total = 0;
 
     orderDetails.items?.forEach((item: any) => {
-      total += Number(item.quantity || 0);
-      scanned += scannedItems[item.id]?.scanned.length || 0;
+      const quantity = Number(item.quantity || 0);
+      total += quantity;
+      scanned += isDefectiveResaleOrderItem(item) ? quantity : (scannedItems[item.id]?.scanned.length || 0);
     });
 
     return {

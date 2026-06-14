@@ -447,9 +447,14 @@ class OrderController extends Controller
             $taxTotal = 0;
             $totalItemDiscount = 0;
             $hasPreOrderItems = false;  // Track if any items don't have batches
+            $defectiveOrderItemIds = [];
+            $defectiveProductIdsByOrderItem = [];
 
             foreach ($request->items as $itemData) {
                 $product = Product::findOrFail($itemData['product_id']);
+                $isDefectiveResale = filter_var($itemData['is_defective'] ?? false, FILTER_VALIDATE_BOOLEAN)
+                    || !empty($itemData['defective_product_id'])
+                    || strtolower((string) ($itemData['source'] ?? '')) === 'defective_resale';
                 
                 // Batch is optional for pre-orders
                 $batch = !empty($itemData['batch_id']) 
@@ -461,8 +466,10 @@ class OrderController extends Controller
                     $hasPreOrderItems = true;
                 }
 
-                // Validate stock availability only if batch exists (not a pre-order)
-                if ($batch) {
+                // Validate stock availability only if batch exists (not a pre-order).
+                // Defective/used resale items are already removed from sellable inventory when marked defective,
+                // so selling them again must not be blocked by normal batch/reserved stock checks.
+                if ($batch && !$isDefectiveResale) {
                     if ($batch->quantity < $itemData['quantity']) {
                         throw new \Exception("Insufficient local stock for {$product->name}. Available: {$batch->quantity}");
                     }
@@ -474,7 +481,7 @@ class OrderController extends Controller
                     if ($globalAvailable < $itemData['quantity']) {
                         throw new \Exception("Cannot sell {$product->name} (Global available inventory: {$globalAvailable}). Stock is reserved for online orders.");
                     }
-                } elseif ($request->order_type === 'social_commerce' && $request->store_id) {
+                } elseif (!$isDefectiveResale && $request->order_type === 'social_commerce' && $request->store_id) {
                     // Check store-level stock for specific store assignment without batch
                     $storeStock = ProductBatch::where('product_id', $product->id)
                         ->where('store_id', $request->store_id)
@@ -517,7 +524,7 @@ class OrderController extends Controller
                         throw new \Exception("Barcode {$itemData['barcode']} has already been sold");
                     }
                     
-                    if ($barcode->is_defective) {
+                    if ($barcode->is_defective && !$isDefectiveResale) {
                         throw new \Exception("Barcode {$itemData['barcode']} is marked as defective");
                     }
                     
@@ -564,7 +571,7 @@ class OrderController extends Controller
                     'product_id' => $product->id,
                     'product_batch_id' => $batch?->id,  // Nullable for pre-orders
                     'product_barcode_id' => $barcodeId,  // NEW: Store barcode if provided
-                    'product_name' => $product->name,
+                    'product_name' => $isDefectiveResale ? $product->name . ' [DEFECTIVE/USED RESALE]' : $product->name,
                     'product_sku' => $product->sku,
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
@@ -573,6 +580,13 @@ class OrderController extends Controller
                     'cogs' => $cogs,
                     'total_amount' => $itemTotal,
                 ]);
+
+                if ($isDefectiveResale) {
+                    $defectiveOrderItemIds[] = $orderItem->id;
+                    if (!empty($itemData['defective_product_id'])) {
+                        $defectiveProductIdsByOrderItem[$orderItem->id] = (int) $itemData['defective_product_id'];
+                    }
+                }
 
                 $subtotal += $itemSubtotal;
                 $taxTotal += $tax;
@@ -603,6 +617,13 @@ class OrderController extends Controller
                 $totalAmount = max(0, $subtotal + $taxTotal - $grandDiscount + $shippingAmount);
             }
 
+            $orderMetadata = is_array($order->metadata ?? null) ? $order->metadata : [];
+            if (!empty($defectiveOrderItemIds)) {
+                $orderMetadata['has_defective_resale_items'] = true;
+                $orderMetadata['defective_order_item_ids'] = array_values(array_unique(array_map('intval', $defectiveOrderItemIds)));
+                $orderMetadata['defective_product_ids_by_order_item'] = $defectiveProductIdsByOrderItem;
+            }
+
             $order->update([
                 'subtotal' => $subtotal,
                 'tax_amount' => $taxTotal,
@@ -610,6 +631,7 @@ class OrderController extends Controller
                 'total_amount' => $totalAmount,
                 'outstanding_amount' => $totalAmount,
                 'is_preorder' => $hasPreOrderItems,  // Mark order as pre-order if any items lack batches
+                'metadata' => $orderMetadata,
             ]);
 
             // Setup installment plan if requested
@@ -928,7 +950,7 @@ class OrderController extends Controller
                     }
 
                     // Validate barcode is not defective
-                    if ($barcode->is_defective) {
+                    if ($barcode->is_defective && !$isDefectiveResale) {
                         throw new \Exception("Barcode {$barcodeValue} is marked as defective");
                     }
 
@@ -1321,15 +1343,21 @@ class OrderController extends Controller
 
         DB::beginTransaction();
         try {
+            $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
+            $defectiveOrderItemIds = array_map('intval', (array) ($metadata['defective_order_item_ids'] ?? []));
+
             // Reduce inventory for each item
             foreach ($order->items as $item) {
                 $batch = $item->batch;
+                $isDefectiveResale = in_array((int) $item->id, $defectiveOrderItemIds, true)
+                    || str_contains(strtolower((string) $item->product_name), '[defective/used resale]')
+                    || str_contains(strtolower((string) $item->product_name), '[defective]');
 
-                if (!$batch) {
+                if (!$batch && !$isDefectiveResale) {
                     throw new \Exception("Batch not found for item {$item->product_name}");
                 }
 
-                if ($batch->quantity < $item->quantity) {
+                if (!$isDefectiveResale && $batch && $batch->quantity < $item->quantity) {
                     throw new \Exception("Insufficient stock for {$item->product_name}. Available: {$batch->quantity}");
                 }
 
@@ -1390,11 +1418,12 @@ class OrderController extends Controller
                 
                 $item->update(['cogs' => round($calculatedCogs, 2)]);
 
-                // Stock deduction is now centralizing here in OrderController@complete
-                // We always deduct now because early deduction was removed from Create and Scan
-                $alreadyDeducted = false; 
+                // Stock deduction is now centralizing here in OrderController@complete.
+                // Defective/used resale items were already removed from inventory when they were marked defective,
+                // so completion must not deduct stock or release normal reservations a second time.
+                $alreadyDeducted = $isDefectiveResale;
                 
-                if (!$alreadyDeducted) {
+                if (!$alreadyDeducted && $batch) {
                     $batch->removeStock($item->quantity);
 
                     // RELEASE RESERVATION concurrently to keep available_stock (Total - Reserved) consistent
@@ -1411,10 +1440,26 @@ class OrderController extends Controller
                         ]);
                     }
                 }
+
+                if ($isDefectiveResale) {
+                    $note = sprintf(
+                        "[%s] Sold %d defective/used resale unit(s) via Order #%s (stock was already removed when marked defective)",
+                        now()->format('Y-m-d H:i:s'),
+                        $item->quantity,
+                        $order->order_number
+                    );
+                    Log::info('Skipped normal stock deduction for defective/used resale item', [
+                        'order_id' => $order->id,
+                        'order_item_id' => $item->id,
+                        'product_id' => $item->product_id,
+                    ]);
+                }
                 
-                $batch->update([
-                    'notes' => ($batch->notes ? $batch->notes . "\n" : '') . $note
-                ]);
+                if ($batch) {
+                    $batch->update([
+                        'notes' => ($batch->notes ? $batch->notes . "\n" : '') . $note
+                    ]);
+                }
             }
 
             // Update order status to confirmed (delivered will be set when shipment is delivered)
@@ -1817,8 +1862,8 @@ class OrderController extends Controller
         $validator = Validator::make($request->all(), [
             'fulfillments' => 'required|array|min:1',
             'fulfillments.*.order_item_id' => 'required|exists:order_items,id',
-            'fulfillments.*.barcodes' => 'required|array|min:1',
-            'fulfillments.*.barcodes.*' => 'required|string|exists:product_barcodes,barcode',
+            'fulfillments.*.barcodes' => 'nullable|array',
+            'fulfillments.*.barcodes.*' => 'nullable|string|exists:product_barcodes,barcode',
         ]);
 
         if ($validator->fails()) {
@@ -1842,7 +1887,21 @@ class OrderController extends Controller
                     throw new \Exception("Order item {$fulfillment['order_item_id']} not found in this order");
                 }
 
-                $barcodes = $fulfillment['barcodes'];
+                $barcodes = $fulfillment['barcodes'] ?? [];
+                $isDefectiveResale = str_contains(strtolower((string) $orderItem->product_name), '[defective/used resale]')
+                    || str_contains(strtolower((string) $orderItem->product_name), '[defective]');
+
+                // Defective/used resale items are fulfilled from the Extra Panel stock bucket.
+                // They do not need normal packing barcode scans because their barcode is not active sellable stock anymore.
+                if ($isDefectiveResale && count($barcodes) === 0) {
+                    $fulfilledItems[] = [
+                        'item_id' => $orderItem->id,
+                        'product_name' => $orderItem->product_name,
+                        'barcodes' => [],
+                        'note' => 'Defective/used resale item fulfilled without normal packing barcode scan',
+                    ];
+                    continue;
+                }
                 
                 // Validate quantity matches
                 if (count($barcodes) !== $orderItem->quantity) {
@@ -1873,7 +1932,7 @@ class OrderController extends Controller
                         throw new \Exception("Barcode {$barcodeValue} has already been sold");
                     }
 
-                    if ($barcode->is_defective) {
+                    if ($barcode->is_defective && !$isDefectiveResale) {
                         throw new \Exception("Barcode {$barcodeValue} is marked as defective");
                     }
 

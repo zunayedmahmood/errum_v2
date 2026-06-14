@@ -620,6 +620,21 @@ export default function ProductPage() {
     }
   };
 
+  const currentListReturnTo = () => {
+    const qs = searchParams.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  };
+
+  const rememberProductListReturn = () => {
+    const returnTo = currentListReturnTo();
+    sessionStorage.setItem('productListReturnTo', returnTo);
+    return returnTo;
+  };
+
+  const pushProductAddWithReturn = (returnTo: string) => {
+    router.push(`/product/add?returnTo=${encodeURIComponent(returnTo)}`);
+  };
+
   const handleEdit = (id: number) => {
     if (!canEditProducts) {
       setToast({ message: "You don't have permission to edit products", type: 'warning' });
@@ -636,7 +651,7 @@ export default function ProductPage() {
     sessionStorage.setItem('editProductId', id.toString());
     sessionStorage.setItem('productMode', 'edit');
 
-    router.push('/product/add');
+    pushProductAddWithReturn(rememberProductListReturn());
   };
 
   const handleView = (id: number) => {
@@ -657,7 +672,7 @@ export default function ProductPage() {
     sessionStorage.removeItem('baseName');
     sessionStorage.removeItem('categoryId');
 
-    router.push('/product/add');
+    pushProductAddWithReturn(rememberProductListReturn());
   };
 
   const handleAddVariation = (group: ProductGroup) => {
@@ -678,7 +693,7 @@ export default function ProductPage() {
     sessionStorage.setItem('baseName', group.baseName);
     sessionStorage.setItem('categoryId', group.category_id.toString());
 
-    router.push('/product/add');
+    pushProductAddWithReturn(rememberProductListReturn());
   };
 
   const handleSelect = (variant: ProductVariant) => {

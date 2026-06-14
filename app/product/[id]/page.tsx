@@ -84,7 +84,14 @@ function ProductDetailPageContent({ params }: ProductDetailPageProps) {
       sessionStorage.setItem('productMode', 'edit');
     }
 
-    router.push('/product/add');
+    const returnTo = searchParams.get('returnTo');
+    if (typeof window !== 'undefined' && returnTo && returnTo.startsWith('/')) {
+      sessionStorage.setItem('productListReturnTo', returnTo);
+    }
+
+    router.push(returnTo && returnTo.startsWith('/')
+      ? `/product/add?returnTo=${encodeURIComponent(returnTo)}`
+      : '/product/add');
   };
 
   const handleDelete = async () => {

@@ -385,6 +385,9 @@ export default function AmountDetailsPage() {
           quantity: Number(item.quantity) || 1,
           unit_price: Number(item.unit_price) || 0,
           discount_amount: Number(item.discount_amount) || 0,
+          is_defective: Boolean(item.is_defective || item.isDefective),
+          defective_product_id: item.defective_product_id || item.defectId || null,
+          source: item.source || (item.is_defective || item.isDefective ? 'defective_resale' : undefined),
         };
       });
 
@@ -509,6 +512,11 @@ export default function AmountDetailsPage() {
             quantity: item.quantity,
             unit_price: item.unit_price,
             discount_amount: item.discount_amount || 0,
+            ...(item.is_defective ? {
+              is_defective: true,
+              defective_product_id: item.defective_product_id,
+              source: item.source || 'defective_resale',
+            } : {}),
             // VAT is inclusive; do not add extra tax
             tax_amount: 0,
           })),

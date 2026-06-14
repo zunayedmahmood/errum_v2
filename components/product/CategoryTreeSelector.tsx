@@ -39,20 +39,23 @@ function TreeNode({ category, selectedCategoryId, onSelect, level }: TreeNodePro
   return (
     <div>
       <div
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+        className={`grid grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
           isSelected
             ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'
             : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white'
         }`}
-        style={{ paddingLeft: `${level * 1.5 + 0.75}rem` }}
+        style={{ paddingLeft: `${level * 1.25 + 0.75}rem` }}
+        onDoubleClick={() => onSelect(String(category.id))}
       >
         {hasChildren ? (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               setIsExpanded(!isExpanded);
             }}
-            className="flex-shrink-0 p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+            className="w-6 h-6 inline-flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+            aria-label={isExpanded ? 'Collapse category' : 'Expand category'}
           >
             {isExpanded ? (
               <ChevronDown className="w-4 h-4" />
@@ -61,11 +64,13 @@ function TreeNode({ category, selectedCategoryId, onSelect, level }: TreeNodePro
             )}
           </button>
         ) : (
-          <div className="w-5" />
+          <div className="w-6 h-6" />
         )}
         <button
+          type="button"
           onClick={() => onSelect(String(category.id))}
-          className="flex-1 text-left text-sm font-medium"
+          className="min-w-0 text-left text-sm font-medium truncate"
+          title={category.title}
         >
           {category.title}
         </button>
@@ -131,7 +136,7 @@ export default function CategoryTreeSelector({
           disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700'
         }`}
       >
-        <span className={selectedCategoryId ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}>
+        <span className={`min-w-0 truncate ${selectedCategoryId ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
           {getSelectedCategoryName()}
         </span>
         <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -143,7 +148,7 @@ export default function CategoryTreeSelector({
              className="fixed inset-0 z-40"
              onClick={() => setIsOpen(false)}
            />
-           <div className="absolute z-50 mt-2 w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-80 overflow-y-auto">
+           <div className="absolute z-50 mt-2 w-full min-w-[18rem] bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-80 overflow-y-auto">
             <div className="p-2">
               {allowClear && (
                 <button

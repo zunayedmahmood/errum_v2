@@ -16,7 +16,7 @@ class OrderItemObserver
         $order = $orderItem->order;
         $reservationStatuses = ['pending_assignment', 'pending', 'assigned_to_store', 'picking', 'processing', 'ready_for_pickup'];
         if ($order && in_array($order->status, $reservationStatuses)) {
-            if ($order->order_type === 'preorder') { // Preorders might not have batch/stock yet
+            if ($order->order_type === 'preorder' || $this->isDefectiveResale($orderItem)) { // Preorders/defect resales don't reserve normal stock
                 return;
             }
             $this->incrementReservation($orderItem->product_id, $orderItem->quantity);
@@ -31,7 +31,7 @@ class OrderItemObserver
         $order = $orderItem->order;
         $reservationStatuses = ['pending_assignment', 'pending', 'assigned_to_store', 'picking', 'processing', 'ready_for_pickup'];
         if ($order && in_array($order->status, $reservationStatuses)) {
-            if ($order->order_type === 'preorder') {
+            if ($order->order_type === 'preorder' || $this->isDefectiveResale($orderItem)) {
                 return;
             }
 
@@ -59,11 +59,17 @@ class OrderItemObserver
         $reservationStatuses = ['pending_assignment', 'pending', 'assigned_to_store', 'picking', 'processing', 'ready_for_pickup'];
         // Check if the order still exists (it might have been deleted too)
         if ($order && in_array($order->status, $reservationStatuses)) {
-            if ($order->order_type === 'preorder') {
+            if ($order->order_type === 'preorder' || $this->isDefectiveResale($orderItem)) {
                 return;
             }
             $this->decrementReservation($orderItem->product_id, $orderItem->quantity);
         }
+    }
+
+    private function isDefectiveResale(OrderItem $orderItem): bool
+    {
+        return str_contains(strtolower((string) $orderItem->product_name), '[defective/used resale]')
+            || str_contains(strtolower((string) $orderItem->product_name), '[defective]');
     }
 
     private function incrementReservation($productId, $quantity): void

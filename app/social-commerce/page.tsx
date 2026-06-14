@@ -999,6 +999,11 @@ export default function SocialCommercePage() {
             amount: item.amount,
             productName: item.productName,
             sku: item.sku || '',
+            ...(item.isDefective ? {
+              is_defective: true,
+              defective_product_id: item.defectId,
+              source: 'defective_resale',
+            } : {}),
           };
         }),
         services: [],
