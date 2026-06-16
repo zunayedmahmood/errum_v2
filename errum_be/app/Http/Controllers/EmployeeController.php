@@ -351,17 +351,40 @@ class EmployeeController extends Controller
         ]);
     }
 
+    /**
+     * Admin/self password change by employee id.
+     *
+     * Security rule:
+     * - super-admin/admin can reset any employee password without knowing the old password.
+     * - non-admin users may only change their own password and must provide current_password.
+     */
     public function changePassword(Request $request, $id)
     {
         $employee = Employee::findOrFail($id);
+        $authUser = auth()->user();
+        $isAdmin = $authUser && method_exists($authUser, 'isGlobal') && $authUser->isGlobal();
+        $isSelf = $authUser && ((int) $authUser->id === (int) $employee->id);
+
+        if (!$isAdmin && !$isSelf) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only admin users can change another employee password.'
+            ], 403);
+        }
 
         $validated = $request->validate([
-            'current_password' => 'required_with:new_password|string',
+            'current_password' => 'nullable|string',
             'new_password' => 'required|string|min:8|confirmed',
         ]);
 
-        // If changing own password, verify current password
-        if ($employee->id == auth()->id() && isset($validated['current_password'])) {
+        if (!$isAdmin) {
+            if (empty($validated['current_password'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Current password is required.'
+                ], 422);
+            }
+
             if (!Hash::check($validated['current_password'], $employee->password)) {
                 return response()->json([
                     'success' => false,
@@ -374,9 +397,51 @@ class EmployeeController extends Controller
             'password' => Hash::make($validated['new_password'])
         ]);
 
+        // Force old sessions to re-login after an admin reset or self-change.
+        $employee->sessions()->active()->update(['revoked_at' => now()]);
+
         return response()->json([
             'success' => true,
             'message' => 'Password changed successfully'
+        ]);
+    }
+
+    /**
+     * Admin-only password reset by employee email.
+     * Used by the admin panel form where admin enters Gmail/email + new password.
+     */
+    public function changePasswordByEmail(Request $request)
+    {
+        $authUser = auth()->user();
+        $isAdmin = $authUser && method_exists($authUser, 'isGlobal') && $authUser->isGlobal();
+
+        if (!$isAdmin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only admin users can reset employee passwords.'
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'email' => 'required|email|exists:employees,email',
+            'new_password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $employee = Employee::where('email', $validated['email'])->firstOrFail();
+        $employee->update([
+            'password' => Hash::make($validated['new_password'])
+        ]);
+
+        $employee->sessions()->active()->update(['revoked_at' => now()]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Employee password reset successfully',
+            'data' => [
+                'employee_id' => $employee->id,
+                'name' => $employee->name,
+                'email' => $employee->email,
+            ]
         ]);
     }
 

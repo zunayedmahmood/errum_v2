@@ -59,7 +59,18 @@ const number = (value: number | null | undefined, digits = 0) => {
   return nf.format(digits > 0 ? Number(n.toFixed(digits)) : Math.round(n));
 };
 
+const formatPcs = (value: number | null | undefined) => `${number(value || 0)} PCS`;
+
 const money = (value: number | null | undefined) => `BDT ${number(value || 0)}`;
+
+const globalAvailableStock = (item: InventoryOverviewItem) =>
+  Number(item.global_available_stock ?? item.current_stock ?? 0);
+
+const physicalStock = (item: InventoryOverviewItem) =>
+  Number(item.physical_stock ?? item.available_stock ?? Math.max(0, globalAvailableStock(item) - Number(item.reserved_stock || 0)));
+
+const variationGlobalAvailableStock = (variation: InventoryOverviewItem['variations'][number]) =>
+  Number(variation.global_available_stock ?? variation.current_stock ?? 0);
 
 const formatDate = (value?: string | null) => {
   if (!value) return '-';
@@ -150,9 +161,37 @@ function variationSummary(item: InventoryOverviewItem) {
   return item.variations
     .map((variation) => {
       const name = variation.variation_suffix || 'Default';
-      return `${name}: ${number(variation.current_stock)} stock, ${number(variation.reserved_stock)} reserved`;
+      return `${name}: ${formatPcs(variationGlobalAvailableStock(variation))}`;
     })
     .join(' | ');
+}
+
+function cleanVariationLabel(label?: string | null) {
+  const text = String(label || '').trim();
+  return text || 'Default';
+}
+
+function VariationStockCell({ item }: { item: InventoryOverviewItem }) {
+  const variations = item.variations || [];
+
+  if (!variations.length) {
+    return <span className="text-gray-400">-</span>;
+  }
+
+  return (
+    <div className="min-w-[180px] overflow-hidden rounded-sm border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+      {variations.map((variation, index) => (
+        <div
+          key={variation.product_id}
+          className={`px-2 py-1 text-center text-[12px] font-bold leading-4 text-gray-800 dark:text-gray-100 ${
+            index % 2 === 0 ? 'bg-gray-100 dark:bg-gray-800' : 'bg-gray-200 dark:bg-gray-700'
+          } ${index > 0 ? 'border-t border-gray-300 dark:border-gray-600' : ''}`}
+        >
+          {cleanVariationLabel(variation.variation_suffix)}: {formatPcs(variationGlobalAvailableStock(variation))}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function recommendationText(item: InventoryOverviewItem) {
@@ -169,9 +208,9 @@ const INVENTORY_CSV_HEADERS = [
   'SKU',
   'Category',
   'Subcategory',
-  'Variation Stock',
-  'Product Stock',
-  'Available',
+  'Variation-suffix',
+  'Global-available',
+  'Physical stock',
   'Reserved',
   'Purchase',
   'Sell',
@@ -226,8 +265,8 @@ function inventoryProductsToCsv(products: InventoryOverviewItem[]) {
       item.category_name || 'Uncategorized',
       item.subcategory_name || '-',
       variationSummary(item),
-      item.current_stock,
-      item.available_stock,
+      globalAvailableStock(item),
+      physicalStock(item),
       item.reserved_stock,
       item.total_purchase,
       item.total_sell,
@@ -323,7 +362,10 @@ function ProductFrozenCell({ item, firstProductRow }: { item: InventoryOverviewI
       <p className="mt-1 text-[11px] font-bold text-gray-500 dark:text-gray-400">SKU: {item.sku || '-'}</p>
       <div className="mt-2 flex flex-wrap gap-1">
         <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-black text-gray-700 dark:bg-gray-700 dark:text-gray-200">
-          {number(item.current_stock)} stock
+          Global: {formatPcs(globalAvailableStock(item))}
+        </span>
+        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-black text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+          Physical: {formatPcs(physicalStock(item))}
         </span>
         <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-black text-gray-700 dark:bg-gray-700 dark:text-gray-200">
           {number(item.variations?.length || 0)} variations
@@ -342,9 +384,9 @@ function InventorySheetTable({ products }: { products: InventoryOverviewItem[] }
             <SheetHeader frozen>Product name</SheetHeader>
             <SheetHeader>Category</SheetHeader>
             <SheetHeader>Subcategory</SheetHeader>
-            <SheetHeader>Variation stock</SheetHeader>
-            <SheetHeader align="right">Product stock</SheetHeader>
-            <SheetHeader align="right">Available</SheetHeader>
+            <SheetHeader>Variation-suffix</SheetHeader>
+            <SheetHeader align="right">Global-available</SheetHeader>
+            <SheetHeader align="right">Physical stock</SheetHeader>
             <SheetHeader align="right">Reserved</SheetHeader>
             <SheetHeader align="right">Purchase</SheetHeader>
             <SheetHeader align="right">Sell</SheetHeader>
@@ -396,10 +438,10 @@ function InventorySheetTable({ products }: { products: InventoryOverviewItem[] }
                   <ProductFrozenCell item={item} firstProductRow={firstProductRow} />
                   <SheetCell className="min-w-[160px]">{item.category_name || 'Uncategorized'}</SheetCell>
                   <SheetCell className="min-w-[160px]">{item.subcategory_name || '-'}</SheetCell>
-                  <SheetCell className="min-w-[360px]">{variationSummary(item)}</SheetCell>
-                  <SheetCell align="right" strong>{number(item.current_stock)}</SheetCell>
-                  <SheetCell align="right">{number(item.available_stock)}</SheetCell>
-                  <SheetCell align="right">{number(item.reserved_stock)}</SheetCell>
+                  <SheetCell className="min-w-[220px] p-1"><VariationStockCell item={item} /></SheetCell>
+                  <SheetCell align="right" strong>{formatPcs(globalAvailableStock(item))}</SheetCell>
+                  <SheetCell align="right" strong>{formatPcs(physicalStock(item))}</SheetCell>
+                  <SheetCell align="right">{formatPcs(item.reserved_stock)}</SheetCell>
                   <SheetCell align="right">{number(item.total_purchase)}</SheetCell>
                   <SheetCell align="right">{number(item.total_sell)}</SheetCell>
                   <SheetCell align="right">{number(item.total_dispatch_out)}</SheetCell>
@@ -570,11 +612,11 @@ function ViewInventoryPageContent() {
               <div>
                 <h1 className="text-2xl font-black text-gray-900 dark:text-white">Inventory Intelligence Sheet</h1>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                  Spreadsheet-style inventory view with product, variation, store, PO, batch, sales, dispatch, defect and movement data in one scrollable grid.
+                  Spreadsheet-style inventory view with product, variation-suffix, global-available stock, physical stock, store, PO, batch, sales, dispatch, defect and movement data in one scrollable grid.
                 </p>
                 {data?.filters && (
                   <p className="mt-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                    Movement period: {formatDate(data.filters.start_date)} to {formatDate(data.filters.end_date)} · Current stock is latest live stock.
+                    Movement period: {formatDate(data.filters.start_date)} to {formatDate(data.filters.end_date)} · Global-available is latest live stock; physical stock is global-available minus reserved.
                   </p>
                 )}
               </div>
@@ -687,7 +729,8 @@ function ViewInventoryPageContent() {
             {summary && (
               <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
                 <MetricCard icon={Package} label="Products" value={number(summary.total_products)} hint={`${number(summary.page_products)} on page`} />
-                <MetricCard icon={Boxes} label="Current Stock" value={number(summary.total_current_stock)} />
+                <MetricCard icon={Boxes} label="Global Available" value={number(summary.total_current_stock)} />
+                <MetricCard icon={Boxes} label="Physical Stock" value={number(summary.total_available_stock)} hint="Global - reserved" />
                 <MetricCard icon={ShoppingCart} label="Sold" value={number(summary.total_sell)} hint="In selected period" />
                 <MetricCard icon={CalendarDays} label="Purchased" value={number(summary.total_purchase)} hint="PO received/ordered" />
                 <MetricCard icon={Truck} label="Dispatch Out" value={number(summary.total_dispatch_out)} />

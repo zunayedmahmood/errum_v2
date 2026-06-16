@@ -414,10 +414,8 @@ function posReceiptBody(order: any) {
 
     ${paymentInfoHtml}
 
-    ${r.notes ? `<div class="note">Note: ${escapeHtml(r.notes)}</div>` : ''}
-
     <div class="policy">
-      <div>Note: Return / Exchange / Refund Available Within 7 Days</div>
+      <div>Return / Exchange / Refund Available Within 7 Days</div>
       <div>Product have to be 100% intact, fresh and unused. Must bring the memo.</div>
       <div>No query will be accepted after 7 days of purchase</div>
       <div>(Discount &amp; Offer Items cannot be returned.Only exchanged within 3days)</div>

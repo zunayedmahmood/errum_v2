@@ -411,6 +411,7 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/by-role/{roleId}', [EmployeeController::class, 'getEmployeesByRole']);
         Route::get('/by-manager/{managerId}', [EmployeeController::class, 'getEmployeesByManager']);
         Route::get('/by-department/{department}', [EmployeeController::class, 'getEmployeesByDepartment']);
+        Route::patch('/password/by-email', [EmployeeController::class, 'changePasswordByEmail']);
 
         Route::prefix('{id}')->group(function () {
             Route::get('/', [EmployeeController::class, 'getEmployee']);

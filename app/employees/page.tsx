@@ -254,13 +254,22 @@ export default function EmployeeManagement() {
             Manage your team members and their information
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          Add Employee
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => router.push('/employees/password')}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            <ShieldCheck className="w-5 h-5" />
+            Password Admin
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Add Employee
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}

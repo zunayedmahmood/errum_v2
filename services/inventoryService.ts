@@ -220,7 +220,13 @@ export interface InventoryOverviewVariation {
   product_id: number;
   product_name: string;
   variation_suffix?: string | null;
+  /** Total live product-batch stock before reservation deduction. */
+  global_available_stock?: number;
+  /** Sellable stock after reservation deduction: global_available_stock - reserved_stock. */
+  physical_stock?: number;
+  /** Backward-compatible alias for global_available_stock. */
   current_stock: number;
+  /** Backward-compatible alias for physical_stock. */
   available_stock: number;
   reserved_stock: number;
   stores: Array<{ store_id: number; store_name: string; quantity: number; batches_count: number }>;
@@ -248,7 +254,13 @@ export interface InventoryOverviewItem {
   category_id?: number | null;
   category_name?: string | null;
   subcategory_name?: string | null;
+  /** Total live product-batch stock before reservation deduction. */
+  global_available_stock?: number;
+  /** Sellable stock after reservation deduction: global_available_stock - reserved_stock. */
+  physical_stock?: number;
+  /** Backward-compatible alias for global_available_stock. */
   current_stock: number;
+  /** Backward-compatible alias for physical_stock. */
   available_stock: number;
   reserved_stock: number;
   total_purchase: number;

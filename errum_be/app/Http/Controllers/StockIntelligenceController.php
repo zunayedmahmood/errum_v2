@@ -647,7 +647,11 @@ class StockIntelligenceController extends Controller
 
                 $groupStoreRows = collect($groupStoreRows)->sortBy('store_name')->values()->toArray();
 
-                $totalPhysical = array_sum(array_column($groupStoreRows, 'current_stock'));
+                // Global-available = latest live product-batch stock before reservation deduction.
+                // Physical stock = global-available - reserved. We calculate this directly
+                // instead of trusting reserved_products.available_inventory, so stale reservation
+                // rows cannot show the wrong sellable stock on inventory/view.
+                $totalGlobalAvailable = array_sum(array_column($groupStoreRows, 'current_stock'));
                 $totalPurchase = array_sum(array_column($groupStoreRows, 'total_purchase'));
                 $totalSold = array_sum(array_column($groupStoreRows, 'total_sell'));
                 $totalDispatchOut = array_sum(array_column($groupStoreRows, 'total_dispatch_out'));
@@ -656,24 +660,22 @@ class StockIntelligenceController extends Controller
                 $totalStockValue = array_sum(array_column($groupStoreRows, 'stock_value'));
                 $totalVelocity = $periodDays > 0 ? round($totalSold / $periodDays, 4) : 0.0;
                 $totalReserved = 0;
-                $totalAvailableFromReserved = 0;
                 foreach ($groupProductIds as $pid) {
                     $reservedRow = $reserved->get($pid);
                     $totalReserved += $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
-                    $totalAvailableFromReserved += $reservedRow ? (int) $reservedRow->available_inventory : 0;
                 }
-                $totalAvailable = $totalAvailableFromReserved > 0 ? $totalAvailableFromReserved : max(0, $totalPhysical - $totalReserved);
-                $totalDaysCover = $totalVelocity > 0 ? round($totalPhysical / $totalVelocity, 1) : null;
-                $groupStatus = $this->overviewProductStatus($groupStoreRows, $totalPhysical, $totalVelocity, $totalDaysCover);
+                $totalPhysicalStock = max(0, $totalGlobalAvailable - $totalReserved);
+                $totalDaysCover = $totalVelocity > 0 ? round($totalPhysicalStock / $totalVelocity, 1) : null;
+                $groupStatus = $this->overviewProductStatus($groupStoreRows, $totalPhysicalStock, $totalVelocity, $totalDaysCover);
                 $movementRecommendation = $this->overviewMovementRecommendation($groupStoreRows, $periodDays);
 
                 $variations = $groupProducts->map(function ($p) use ($currentStock, $reserved) {
                     $productId = (int) $p->product_id;
-                    $physical = 0;
+                    $globalAvailable = 0;
                     $stores = [];
                     if (isset($currentStock[$productId])) {
                         foreach ($currentStock[$productId] as $sid => $row) {
-                            $physical += (int) $row['physical_stock'];
+                            $globalAvailable += (int) $row['physical_stock'];
                             $stores[] = [
                                 'store_id' => (int) $sid,
                                 'store_name' => $row['store_name'],
@@ -684,14 +686,17 @@ class StockIntelligenceController extends Controller
                     }
                     $reservedRow = $reserved->get($productId);
                     $reservedQty = $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
-                    $availableQty = $reservedRow ? (int) $reservedRow->available_inventory : max(0, $physical - $reservedQty);
+                    $physicalQty = max(0, $globalAvailable - $reservedQty);
 
                     return [
                         'product_id' => $productId,
                         'product_name' => $p->product_name,
                         'variation_suffix' => $p->variation_suffix ?: trim(str_replace((string) $p->base_name, '', (string) $p->product_name)),
-                        'current_stock' => $physical,
-                        'available_stock' => $availableQty,
+                        'global_available_stock' => $globalAvailable,
+                        'physical_stock' => $physicalQty,
+                        // Backward-compatible aliases for older frontend builds.
+                        'current_stock' => $globalAvailable,
+                        'available_stock' => $physicalQty,
                         'reserved_stock' => $reservedQty,
                         'stores' => $stores,
                     ];
@@ -700,8 +705,8 @@ class StockIntelligenceController extends Controller
                 $groupPoCount = $groupBatches->pluck('po_number')->filter()->unique()->count();
                 $groupBatchCount = $groupBatches->pluck('batch_id')->unique()->count();
 
-                $summary['total_current_stock'] += $totalPhysical;
-                $summary['total_available_stock'] += $totalAvailable;
+                $summary['total_current_stock'] += $totalGlobalAvailable;
+                $summary['total_available_stock'] += $totalPhysicalStock;
                 $summary['total_reserved_stock'] += $totalReserved;
                 $summary['total_purchase'] += $totalPurchase;
                 $summary['total_sell'] += $totalSold;
@@ -720,8 +725,11 @@ class StockIntelligenceController extends Controller
                     'category_id' => $first->category_id,
                     'category_name' => $first->category_name,
                     'subcategory_name' => $first->subcategory_name,
-                    'current_stock' => $totalPhysical,
-                    'available_stock' => $totalAvailable,
+                    'global_available_stock' => $totalGlobalAvailable,
+                    'physical_stock' => $totalPhysicalStock,
+                    // Backward-compatible aliases for older frontend builds.
+                    'current_stock' => $totalGlobalAvailable,
+                    'available_stock' => $totalPhysicalStock,
                     'reserved_stock' => $totalReserved,
                     'total_purchase' => $totalPurchase,
                     'total_sell' => $totalSold,

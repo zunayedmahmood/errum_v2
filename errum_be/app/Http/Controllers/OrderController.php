@@ -624,12 +624,16 @@ class OrderController extends Controller
                 $orderMetadata['defective_product_ids_by_order_item'] = $defectiveProductIdsByOrderItem;
             }
 
+            $paymentStatus = $totalAmount <= 0 ? 'paid' : 'pending';
+
             $order->update([
                 'subtotal' => $subtotal,
                 'tax_amount' => $taxTotal,
                 'discount_amount' => $orderDiscount,
                 'total_amount' => $totalAmount,
-                'outstanding_amount' => $totalAmount,
+                'paid_amount' => 0,
+                'outstanding_amount' => $totalAmount <= 0 ? 0 : $totalAmount,
+                'payment_status' => $paymentStatus,
                 'is_preorder' => $hasPreOrderItems,  // Mark order as pre-order if any items lack batches
                 'metadata' => $orderMetadata,
             ]);

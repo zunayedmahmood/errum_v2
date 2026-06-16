@@ -291,6 +291,25 @@ class EmployeeService {
   }
 
   /**
+   * Admin-only password reset by employee email
+   */
+  async resetPasswordByEmail(
+    email: string,
+    newPassword: string,
+    newPasswordConfirmation: string
+  ): Promise<ApiResponse<{ employee_id: number; name: string; email: string }>> {
+    const response = await axiosInstance.patch<ApiResponse<{ employee_id: number; name: string; email: string }>>(
+      '/employees/password/by-email',
+      {
+        email,
+        new_password: newPassword,
+        new_password_confirmation: newPasswordConfirmation,
+      }
+    );
+    return response.data;
+  }
+
+  /**
    * Update salary
    */
   async updateSalary(
