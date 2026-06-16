@@ -181,7 +181,7 @@ export default function InventoryReportsPage() {
       <div className="flex min-h-screen bg-gray-50 dark:bg-gray-950">
         <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <Header toggleSidebar={() => setSidebarOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />
+          <Header toggleSidebar={() => setSidebarOpen(!sidebarOpen)} darkMode={darkMode} setDarkMode={setDarkMode} />
           <main className="flex-1 overflow-y-auto">
             <div className="p-4 md:p-6 xl:p-8">
               <div className="mb-8 rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900 md:p-6">

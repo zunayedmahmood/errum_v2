@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Plus, Loader2 } from 'lucide-react';
 import Header from '@/components/Header';
@@ -37,7 +37,24 @@ interface AddEditProductPageProps {
   onSuccess?: () => void;
 }
 
-export default function AddEditProductPage({
+export default function AddEditProductPage(props: AddEditProductPageProps) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-screen bg-gray-50 dark:bg-gray-900 items-center justify-center">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-700 border-t-gray-900 dark:border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-400">Loading product form...</p>
+          </div>
+        </div>
+      }
+    >
+      <AddEditProductPageContent {...props} />
+    </Suspense>
+  );
+}
+
+function AddEditProductPageContent({
   productId: propProductId,
   mode: propMode = 'create',
   baseSku: propBaseSku = '',

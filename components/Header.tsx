@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 interface HeaderProps {
   darkMode: boolean;
   setDarkMode: (value: boolean) => void;
-  toggleSidebar: () => void;
+  toggleSidebar?: () => void;
 }
 
 export default function Header({ darkMode, setDarkMode, toggleSidebar }: HeaderProps) {
@@ -45,12 +45,18 @@ export default function Header({ darkMode, setDarkMode, toggleSidebar }: HeaderP
     <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 flex items-center justify-between h-16 relative">
       {/* Left section */}
       <div className="flex items-center gap-4">
-        <button
-          onClick={toggleSidebar}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded md:hidden"
-        >
-          <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-        </button>
+        {toggleSidebar && (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="inline-flex items-center gap-2 rounded-lg p-2 text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+            title="Toggle sidebar"
+            aria-label="Toggle sidebar"
+          >
+            <Menu className="w-5 h-5" />
+            <span className="hidden text-sm font-semibold lg:inline">Sidebar</span>
+          </button>
+        )}
       </div>
 
       {/* Right section */}

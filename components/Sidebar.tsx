@@ -24,7 +24,7 @@ import {
   FileText,
   Settings,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PAGE_ACCESS } from '@/lib/accessMap';
 // ──────────────────────────────
@@ -48,16 +48,55 @@ type MenuItem =
 interface SidebarProps {
   isOpen?: boolean;
   setIsOpen?: (open: boolean) => void;
+  // Backward-compatible props used by a few older pages in this codebase.
+  toggleSidebar?: () => void;
+  darkMode?: boolean;
 }
 
-export default function Sidebar({ isOpen: controlledOpen, setIsOpen }: SidebarProps) {
+const SIDEBAR_STORAGE_KEY = 'errum-admin-sidebar-open';
+
+export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSidebar }: SidebarProps) {
   const pathname = usePathname();
   const [internalOpen, setInternalOpen] = useState(true);
   const isOpen = typeof controlledOpen === 'boolean' ? controlledOpen : internalOpen;
   const setOpen = (open: boolean) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(open));
+    }
+
     setInternalOpen(open);
-    setIsOpen?.(open);
+
+    if (setIsOpen) {
+      setIsOpen(open);
+      return;
+    }
+
+    // Legacy pages passed only toggleSidebar. Keep those pages working.
+    if (toggleSidebar && open !== isOpen) {
+      toggleSidebar();
+    }
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    if (saved === 'true' || saved === 'false') {
+      setOpen(saved === 'true');
+      return;
+    }
+
+    // Desktop should start expanded, mobile should start hidden until the hamburger is tapped.
+    if (window.matchMedia('(min-width: 1024px)').matches) {
+      setOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof controlledOpen !== 'boolean') return;
+    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(controlledOpen));
+  }, [controlledOpen]);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const authContext = useAuth();
   

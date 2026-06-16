@@ -317,7 +317,7 @@ export default function SummaryPanel() {
     <div className={`min-h-screen flex ${darkMode ? 'dark bg-gray-950' : 'bg-gray-50'}`}>
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
       <div className="flex-1 flex flex-col">
-        <Header toggleSidebar={() => setSidebarOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />
+        <Header toggleSidebar={() => setSidebarOpen(!sidebarOpen)} darkMode={darkMode} setDarkMode={setDarkMode} />
         <main className="flex-1 p-4 md:p-6 max-w-2xl mx-auto w-full">
 
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
