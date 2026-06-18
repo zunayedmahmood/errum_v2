@@ -25,11 +25,12 @@ use Illuminate\Support\Facades\DB;
  * DELETE /api/cash-sheet/owner/{id}
  *
  * ── Displayed cash / bank per branch ────────────────────────────────────────
- *   raw_cash      = order_payments cash methods (counter orders)
- *   raw_bank      = order_payments bank/card/mfs (counter orders)
+ *   raw_cash      = completed cash counter payments, including split payments
+ *   raw_bank      = completed non-cash counter payments (bank/card/MFS), including split payments
  *   salary        = SUM admin_entries salary_setaside for this store+date
+ *   daily_cost    = SUM branch_cost_entries for this store+date
  *   cash_to_bank  = SUM admin_entries cash_to_bank for this store+date
- *   displayed_cash = raw_cash − salary − cash_to_bank
+ *   displayed_cash = raw_cash − salary − daily_cost − cash_to_bank
  *   displayed_bank = raw_bank + cash_to_bank
  *
  * ── Grand totals ─────────────────────────────────────────────────────────────
@@ -92,7 +93,10 @@ class CashSheetController extends Controller
                 $salary       = (float) ($adminData[$storeKey][$date]['salary_setaside'] ?? 0);
                 $cash_to_bank = (float) ($adminData[$storeKey][$date]['cash_to_bank'] ?? 0);
 
-                $disp_cash = max(0, $raw_cash - $salary - $cash_to_bank);
+                // Branch costs are cash expenses for the branch, so they must reduce
+                // the visible cash balance. Example: raw cash ৳350 and branch cost
+                // ৳350 should display cash as ৳0, not ৳350.
+                $disp_cash = max(0, $raw_cash - $salary - $daily_cost - $cash_to_bank);
                 $disp_bank = $raw_bank + $cash_to_bank;
 
                 $branches[] = [
@@ -292,6 +296,7 @@ class CashSheetController extends Controller
     private function loadBranchSales(array $ids, string $from, string $to): array
     {
         $out = [];
+        $excludedPaymentTypes = ['exchange_balance', 'store_credit', 'balance_carryover'];
 
         $rows = DB::table('orders as o')
             ->join('order_payments as op', 'op.order_id', '=', 'o.id')
@@ -299,24 +304,46 @@ class CashSheetController extends Controller
                 'op.store_id',
                 DB::raw('DATE(COALESCE(op.completed_at, o.created_at)) as day'),
                 'o.id as order_id',
-                'o.total_amount'
+                'o.total_amount',
+                'o.metadata',
+                'op.amount as payment_amount',
+                'op.payment_type'
             )
             ->whereIn('op.store_id', $ids)
             ->where('o.order_type', 'counter')
             ->whereNotIn('o.status', ['cancelled', 'refunded'])
+            ->where('op.status', 'completed')
             ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '>=', $from)
             ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '<=', $to)
-            ->groupBy('op.store_id', 'day', 'o.id', 'o.total_amount')
             ->get();
 
-        $grouped = [];
+        $normalOrderAdded = [];
         foreach ($rows as $r) {
             $storeKey = (string) $r->store_id;
             $day = $r->day;
-            $grouped[$storeKey][$day] = ($grouped[$storeKey][$day] ?? 0) + (float) $r->total_amount;
+            $metadata = [];
+            if (!empty($r->metadata)) {
+                $metadata = is_array($r->metadata) ? $r->metadata : (json_decode($r->metadata, true) ?: []);
+            }
+            $isExchangeReplacement = !empty($metadata['is_exchange_replacement']);
+
+            if ($isExchangeReplacement) {
+                // Exchange replacement order value is mostly settled by internal exchange balance.
+                // Cash-sheet sales should only receive real extra money collected from customer.
+                if (!in_array((string) $r->payment_type, $excludedPaymentTypes, true)) {
+                    $out[$storeKey][$day] = ($out[$storeKey][$day] ?? 0) + (float) $r->payment_amount;
+                }
+                continue;
+            }
+
+            $normalKey = $storeKey . '|' . $day . '|' . $r->order_id;
+            if (!isset($normalOrderAdded[$normalKey])) {
+                $out[$storeKey][$day] = ($out[$storeKey][$day] ?? 0) + (float) $r->total_amount;
+                $normalOrderAdded[$normalKey] = true;
+            }
         }
 
-        foreach ($grouped as $storeId => $days) {
+        foreach ($out as $storeId => $days) {
             foreach ($days as $day => $total) {
                 $out[$storeId][$day] = round($total, 2);
             }
@@ -328,7 +355,18 @@ class CashSheetController extends Controller
     private function loadBranchPayments(array $ids, string $from, string $to): array
     {
         $out = [];
+        $excludedPaymentTypes = ['exchange_balance', 'store_credit', 'balance_carryover'];
 
+        $addToBucket = function ($r) use (&$out) {
+            // In the cash sheet, every completed non-cash counter payment is treated
+            // as Bank. This intentionally includes card, bank transfer, online banking,
+            // digital wallet, and mobile banking/MFS such as bKash and Nagad.
+            $bucket = in_array($r->mt, self::CASH_TYPES, true) ? 'cash' : 'bank';
+            $storeKey = (string) $r->store_id;
+            $out[$storeKey][$r->day][$bucket] = ($out[$storeKey][$r->day][$bucket] ?? 0) + (float) $r->total;
+        };
+
+        // 1) Normal single-method payments.
         DB::table('order_payments as op')
             ->join('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
@@ -340,18 +378,41 @@ class CashSheetController extends Controller
             )
             ->whereIn('op.store_id', $ids)
             ->where('o.order_type', 'counter')
+            ->whereNotIn('o.status', ['cancelled', 'refunded'])
             ->whereDate('op.completed_at', '>=', $from)
             ->whereDate('op.completed_at', '<=', $to)
             ->where('op.status', 'completed')
-            ->whereNotIn('op.payment_type', ['exchange_balance', 'store_credit', 'balance_carryover'])
+            ->whereNotIn('op.payment_type', $excludedPaymentTypes)
             ->whereNotNull('op.completed_at')
             ->groupBy('op.store_id', 'day', 'pm.type')
             ->get()
-            ->each(function ($r) use (&$out) {
-                $bucket = in_array($r->mt, self::CASH_TYPES, true) ? 'cash' : 'bank';
-                $storeKey = (string) $r->store_id;
-                $out[$storeKey][$r->day][$bucket] = ($out[$storeKey][$r->day][$bucket] ?? 0) + (float) $r->total;
-            });
+            ->each($addToBucket);
+
+        // 2) Split payments. The parent order_payments row has payment_method_id = null,
+        // so the old query skipped all split parts. That made bKash/Nagad/card portions
+        // disappear from Bank even though the sale total was counted.
+        DB::table('payment_splits as ps')
+            ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
+            ->join('payment_methods as pm', 'pm.id', '=', 'ps.payment_method_id')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->select(
+                'ps.store_id',
+                DB::raw('DATE(COALESCE(ps.completed_at, op.completed_at)) as day'),
+                'pm.type as mt',
+                DB::raw('SUM(ps.amount) as total')
+            )
+            ->whereIn('ps.store_id', $ids)
+            ->where('o.order_type', 'counter')
+            ->whereNotIn('o.status', ['cancelled', 'refunded'])
+            ->where('op.status', 'completed')
+            ->where('ps.status', 'completed')
+            ->whereNotIn('op.payment_type', $excludedPaymentTypes)
+            ->whereNotNull('op.completed_at')
+            ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '>=', $from)
+            ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '<=', $to)
+            ->groupBy('ps.store_id', 'day', 'pm.type')
+            ->get()
+            ->each($addToBucket);
 
         return $out;
     }

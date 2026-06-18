@@ -414,13 +414,21 @@ export default function PurchaseHistoryPage() {
     removedProducts: Array<{
       order_item_id: number;
       quantity: number;
+      unit_price?: number;
+      total_price?: number;
       product_barcode_id?: number;
+      barcode_id?: number;
+      barcode?: string;
+      return_reason?: string;
+      quality_check_passed?: boolean;
     }>;
     replacementProducts: Array<{
       product_id: number;
       batch_id: number;
       quantity: number;
       unit_price: number;
+      total_price?: number;
+      discount_amount?: number;
       barcode?: string;
       barcode_id?: number;
     }>;
@@ -432,194 +440,98 @@ export default function PurchaseHistoryPage() {
       nagad: number;
       total: number;
     };
+    exchangeAtStoreId: number;
   }) => {
     try {
       if (!selectedOrderForAction) return;
 
-      console.log('🔄 Processing exchange with data:', exchangeData);
-      console.log('📦 Original order:', selectedOrderForAction.order_number);
-
-      console.log('\n📤 STEP 1: Creating return for old products...');
-      const returnRequest: CreateReturnRequest = {
-        order_id: selectedOrderForAction.id,
-        return_reason: 'other',
-        return_type: 'customer_return',
-        items: exchangeData.removedProducts.map(item => ({
-          order_item_id: item.order_item_id,
-          quantity: item.quantity,
-          product_barcode_id: item.product_barcode_id,
-        })),
-        customer_notes: `Exchange transaction - Original Order: ${selectedOrderForAction.order_number}`,
+      const ensureFullOrder = async () => {
+        if (selectedOrderForAction.items && selectedOrderForAction.items.length > 0) {
+          return selectedOrderForAction;
+        }
+        return await orderService.getById(selectedOrderForAction.id);
       };
 
-      const returnResponse = await productReturnService.create(returnRequest);
-      const returnId = returnResponse.data.id;
-      const returnNumber = returnResponse.data.return_number;
-      console.log(`✅ Return created: #${returnNumber} (ID: ${returnId})`);
+      const fullOrder = await ensureFullOrder();
+      const orderItems = Array.isArray(fullOrder.items) ? fullOrder.items : [];
 
-      console.log('\n⚙️ STEP 2: Auto-approving and processing return...');
-
-      await productReturnService.update(returnId, {
-        quality_check_passed: true,
-        quality_check_notes: 'Exchange - Auto-approved via POS',
-      });
-      console.log('✅ Quality check updated');
-
-      await productReturnService.approve(returnId, {
-        internal_notes: 'Exchange - Auto-approved via POS',
-      });
-      console.log('✅ Return approved');
-
-      await productReturnService.process(returnId, {
-        restore_inventory: true,
-      });
-      console.log('✅ Return processed - Inventory restored for old products');
-
-      await productReturnService.complete(returnId);
-      console.log('✅ Return completed');
-
-      console.log('\n💰 STEP 3: Creating FULL refund for returned items...');
-      const refundRequest: CreateRefundRequest = {
-        return_id: returnId,
-        refund_type: 'full',
-        refund_method: 'cash',
-        internal_notes: `Full refund for exchange - Original Order: ${selectedOrderForAction.order_number}`,
-      };
-
-      const refundResponse = await refundService.create(refundRequest);
-      const refundId = refundResponse.data.id;
-      console.log(`✅ Refund created (ID: ${refundId})`);
-
-      await refundService.process(refundId);
-      console.log('✅ Refund processed');
-
-      await refundService.complete(refundId, {
-        transaction_reference: `EXCHANGE-REFUND-${Date.now()}`,
-      });
-      console.log('✅ Refund completed - Customer has full refund amount');
-
-      console.log('\n🛒 STEP 4: Creating new order for replacement products...');
-
-      const newOrderData = {
-        order_type: 'counter' as const,
-        store_id: selectedOrderForAction.store.id,
-        customer_id: selectedOrderForAction.customer?.id,
-        items: exchangeData.replacementProducts.map(p => ({
+      const payload = {
+        order_id: fullOrder.id,
+        exchangeAtStoreId: exchangeData.exchangeAtStoreId,
+        customer_id: fullOrder.customer?.id,
+        removedProducts: exchangeData.removedProducts.map((item: any) => {
+          const originalItem = orderItems.find((i: any) => Number(i.id) === Number(item.order_item_id));
+          const unitPrice = Number(item.unit_price ?? originalItem?.unit_price ?? 0);
+          const quantity = Number(item.quantity || 0);
+          return {
+            order_item_id: item.order_item_id,
+            product_id: originalItem?.product_id ?? item.product_id,
+            product_batch_id: originalItem?.product_batch_id ?? originalItem?.batch_id ?? item.product_batch_id,
+            batch_id: originalItem?.product_batch_id ?? originalItem?.batch_id ?? item.batch_id,
+            quantity,
+            unit_price: unitPrice,
+            total_price: Number(item.total_price ?? unitPrice * quantity),
+            // Do not send SKU text as a barcode. Send the barcode only when the modal has a real barcode id.
+            barcode: (item.product_barcode_id || item.barcode_id) ? item.barcode : undefined,
+            product_barcode_id: item.product_barcode_id || item.barcode_id || originalItem?.barcode_id,
+            barcode_id: item.product_barcode_id || item.barcode_id || originalItem?.barcode_id,
+            return_reason: item.return_reason || 'other',
+            quality_check_passed: item.quality_check_passed ?? true,
+          };
+        }),
+        replacementProducts: exchangeData.replacementProducts.map((p: any) => ({
           product_id: p.product_id,
           batch_id: p.batch_id,
           quantity: p.quantity,
           unit_price: p.unit_price,
+          total_price: p.total_price ?? (Number(p.unit_price || 0) * Number(p.quantity || 0)),
+          discount_amount: p.discount_amount || 0,
           barcode: p.barcode,
           barcode_id: p.barcode_id,
         })),
-        notes: `Exchange from order #${selectedOrderForAction.order_number} | Return: #${returnNumber}`,
+        paymentRefund: {
+          type: exchangeData.paymentRefund?.type === 'payment'
+            ? 'surplus'
+            : (exchangeData.paymentRefund?.type === 'refund' ? 'refund' : 'even'),
+          amount: exchangeData.paymentRefund?.total || 0,
+          method: exchangeData.paymentRefund?.card > 0
+            ? 'card'
+            : (exchangeData.paymentRefund?.bkash > 0
+              ? 'bkash'
+              : (exchangeData.paymentRefund?.nagad > 0 ? 'nagad' : 'cash')),
+          details: {
+            cash: exchangeData.paymentRefund?.cash || 0,
+            card: exchangeData.paymentRefund?.card || 0,
+            bkash: exchangeData.paymentRefund?.bkash || 0,
+            nagad: exchangeData.paymentRefund?.nagad || 0,
+          },
+        },
+        notes: `Exchange transaction - Original Order: ${fullOrder.order_number}`,
       };
 
-      console.log('Creating new order (no payment yet)...');
-      const newOrder = await orderService.create(newOrderData);
-      console.log(`✅ New order created: #${newOrder.order_number} (ID: ${newOrder.id})`);
+      const response = await axiosInstance.post('/exchange/process', payload);
+      const data = response.data?.data || {};
+      const newOrderNumber = data.order?.order_number || data.order?.id || 'created';
+      const returnNumber = data.return?.return_number || 'created';
 
-      // STEP 4a: Link the return and the new order for accounting/exchange history
-      console.log('\n🔗 STEP 4a: Linking return to replacement order...');
-      try {
-        await axiosInstance.post(`/returns/${returnId}/exchange`, {
-          new_order_id: newOrder.id,
-          notes: `Automatic link from exchange flow. Original: #${selectedOrderForAction.order_number}`
-        });
-        console.log('✅ Exchange link established');
-      } catch (linkErr) {
-        console.warn('⚠️ Link failed (non-critical):', linkErr);
-      }
-
-      // STEP 4b: Explicitly create + auto-complete the payment so the order is marked "paid"
-      // We use the backend-calculated total_amount to ensure it perfectly covers VAT/taxes.
-      const rawTotal = String(newOrder.total_amount).replace(/[^0-9.]/g, '');
-      const backendTotal = parseFloat(rawTotal) || 0;
-      
-      console.log(`\n💳 STEP 4b: Completing payment of ৳${backendTotal} for order #${newOrder.order_number}...`);
-      await axiosInstance.post(`/orders/${newOrder.id}/payments/simple`, {
-        payment_method_id: 1, // Cash
-        amount: backendTotal,
-        payment_type: 'full',
-        auto_complete: true,
-        notes: `Exchange payment - Original Order: #${selectedOrderForAction.order_number}`,
-      });
-      console.log(`✅ Payment completed for order #${newOrder.order_number} — order is now PAID`);
-
-
-      // Log what happens with the money difference
-      if (exchangeData.paymentRefund.type === 'payment') {
-        console.log(`\n💳 Financial settlement: Customer collects ADDITIONAL ৳${exchangeData.paymentRefund.total.toLocaleString()}`);
-        console.log(`   (New items ৳${backendTotal} > Refund received, customer pays extra)`);
-      } else if (exchangeData.paymentRefund.type === 'refund') {
-        console.log(`\n💵 Financial settlement: Cashier gives back ৳${exchangeData.paymentRefund.total.toLocaleString()}`);
-        console.log(`   (Refund received > New items ৳${backendTotal}, customer gets difference)`);
-      } else {
-        console.log(`\n📊 Financial settlement: Even exchange (Refund = New items ৳${backendTotal})`);
-      }
-
-      console.log('\n🏁 STEP 5: Completing new order...');
-      await orderService.complete(newOrder.id);
-      console.log('✅ New order completed - Inventory reduced for new products');
-
-      console.log('\n🔄 STEP 6: Refreshing order list...');
       await fetchOrders();
 
-      console.log('\n✅ ========================================');
-      console.log('✅ EXCHANGE COMPLETED SUCCESSFULLY!');
-      console.log('✅ ========================================');
-      console.log(`Old Order: #${selectedOrderForAction.order_number}`);
-      console.log(`Return: #${returnNumber}`);
-      console.log(`New Order: #${newOrder.order_number}`);
-      console.log(`New Order Payment Status: PAID ✅`);
-
-      // Build success message based on exchange type
-      console.log('✅ ========================================\n');
-
-
-      console.log('\n✅ ========================================');
-      console.log('✅ EXCHANGE COMPLETED SUCCESSFULLY!');
-      console.log('✅ ========================================');
-      console.log(`Old Order: #${selectedOrderForAction.order_number}`);
-      console.log(`Return: #${returnNumber}`);
-      console.log(`New Order: #${newOrder.order_number}`);
-
-      let successMessage = `✅ Exchange processed successfully!\n\n`;
-      successMessage += `Return: #${returnNumber}\n`;
-      successMessage += `New Order: #${newOrder.order_number}\n\n`;
-
+      let successMessage = `✅ Exchange processed successfully!\n\nReturn: #${returnNumber}\nNew Order: #${newOrderNumber}`;
       if (exchangeData.paymentRefund.type === 'payment') {
-        console.log(`Payment Type: Additional payment from customer`);
-        console.log(`Amount Collected: ৳${exchangeData.paymentRefund.total.toLocaleString()}`);
-        successMessage += `💳 Customer paid additional: ৳${exchangeData.paymentRefund.total.toLocaleString()}\n`;
-        successMessage += `(New items cost more than returned items)`;
+        successMessage += `\n\n💳 Customer paid additional: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
       } else if (exchangeData.paymentRefund.type === 'refund') {
-        console.log(`Payment Type: Additional refund to customer`);
-        console.log(`Amount Refunded: ৳${exchangeData.paymentRefund.total.toLocaleString()}`);
-        successMessage += `💵 Additional refund to customer: ৳${exchangeData.paymentRefund.total.toLocaleString()}\n`;
-        successMessage += `(Returned items cost more than new items)\n`;
-        successMessage += `Please give customer the refund difference in cash/selected method`;
+        successMessage += `\n\n💵 Additional refund to customer: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
       } else {
-        console.log(`Payment Type: Even exchange`);
-        successMessage += `Even exchange - no payment difference`;
+        successMessage += `\n\n📊 Even exchange - no payment difference`;
       }
 
-      console.log('✅ ========================================\n');
-
       alert(successMessage);
-
       setShowExchangeModal(false);
       setSelectedOrderForAction(null);
     } catch (error: any) {
-      console.error('\n❌ ========================================');
-      console.error('❌ EXCHANGE PROCESSING FAILED!');
-      console.error('❌ ========================================');
-      console.error('Error details:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('❌ ========================================\n');
-
+      console.error('❌ Exchange processing failed:', error);
       const errorMsg = error.response?.data?.message || error.message || 'Failed to process exchange';
-      alert(`❌ Exchange failed: ${errorMsg}\n\nPlease check the console for details.`);
+      alert(`❌ Exchange failed: ${errorMsg}`);
     }
   };
 

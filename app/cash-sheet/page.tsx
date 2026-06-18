@@ -424,7 +424,7 @@ export default function CashSheetPage() {
           )}
 
           <div className="mt-3 text-[10px] text-gray-400 dark:text-gray-500">
-            Cash = branch cash only · Bank = branch bank + online advance · Use the Admin / Branch / Owner panels to add entries
+            Cash = branch cash after Salary, Cost, and →Bank deductions · Bank includes card/bKash/Nagad/mobile banking + online advance · Use the Admin / Branch / Owner panels to add entries
           </div>
 
         </main>

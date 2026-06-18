@@ -304,8 +304,8 @@ function posReceiptBody(order: any) {
   const customerAddressLines = Array.isArray(r.customerAddressLines) && r.customerAddressLines.length > 0
     ? r.customerAddressLines
     : addressFromNotes
-      ? [addressFromNotes]
-      : [];
+    ? [addressFromNotes]
+    : [];
   const sanitizedNotes = sanitizeReceiptNotes(r.notes);
 
   const rows = (r.items || [])
@@ -320,8 +320,8 @@ function posReceiptBody(order: any) {
       const displayUnitValue = hasUnitPrice
         ? Number(it.unitPrice || 0)
         : qtyNum > 0
-          ? Number(it.lineTotal || 0) / qtyNum
-          : Number(it.lineTotal || 0);
+        ? Number(it.lineTotal || 0) / qtyNum
+        : Number(it.lineTotal || 0);
 
       const displayAmount = qtyNum > 0 ? displayUnitValue * qtyNum : Number(it.lineTotal || 0);
 
@@ -366,15 +366,15 @@ function posReceiptBody(order: any) {
         <table class="totals payment-details">
           <tbody>
             ${paymentRows
-        .map(
-          (p) => `<tr><td>${escapeHtml(p.label)}</td><td class="right">${escapeHtml(money(p.amount))}</td></tr>`
-        )
-        .join('')}
+              .map(
+                (p) => `<tr><td>${escapeHtml(p.label)}</td><td class="right">${escapeHtml(money(p.amount))}</td></tr>`
+              )
+              .join('')}
             ${paymentMap.OTHERS
-        .map(
-          (p) => `<tr><td>${escapeHtml(p.name)}</td><td class="right">${escapeHtml(money(p.amount))}</td></tr>`
-        )
-        .join('')}
+              .map(
+                (p) => `<tr><td>${escapeHtml(p.name)}</td><td class="right">${escapeHtml(money(p.amount))}</td></tr>`
+              )
+              .join('')}
           </tbody>
         </table>
       </div>`
@@ -400,8 +400,8 @@ function posReceiptBody(order: any) {
       <div><span class="lbl">Phone:</span> ${escapeHtml(r.customerPhone || 'WALK-IN')}</div>
       ${r.salesBy ? `<div><span class="lbl">Sales By:</span> ${escapeHtml(r.salesBy)}</div>` : ''}
       ${customerAddressLines.length > 0
-      ? `<div><span class="lbl">Address:</span> ${escapeHtml(customerAddressLines.join(', '))}</div>`
-      : ''}
+        ? `<div><span class="lbl">Address:</span> ${escapeHtml(customerAddressLines.join(', '))}</div>`
+        : ''}
     </div>
 
     <div class="dash"></div>
@@ -441,7 +441,7 @@ function posReceiptBody(order: any) {
     ${paymentInfoHtml}
 
     <div class="policy">
-      <div>Note: Return / Exchange / Refund Available Within 7 Days</div>
+      <div>Return / Exchange / Refund Available Within 7 Days</div>
       <div>Product have to be 100% intact, fresh and unused. Must bring the memo.</div>
       <div>No query will be accepted after 7 days of purchase</div>
       <div>(Discount &amp; Offer Items cannot be returned.Only exchanged within 3days)</div>
