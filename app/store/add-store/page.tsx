@@ -31,6 +31,21 @@ export default function AddStorePage({ searchParams }: AddStorePageProps) {
     pathao_key: '',
     type: 'store',
     is_online: false,
+    phone: '',
+    email: '',
+    contact_person: '',
+    store_code: '',
+    description: '',
+    latitude: '',
+    longitude: '',
+    capacity: '',
+    pathao_contact_name: '',
+    pathao_contact_number: '',
+    pathao_secondary_contact: '',
+    pathao_city_id: null,
+    pathao_zone_id: null,
+    pathao_area_id: null,
+    pathao_registered: false,
   });
 
   // Load store data when editing
@@ -48,11 +63,26 @@ export default function AddStorePage({ searchParams }: AddStorePageProps) {
       
       setFormData({
         id: store.id,
-        name: store.name,
-        address: store.address,
-        pathao_key: store.pathao_key,
+        name: store.name || '',
+        address: store.address || '',
+        pathao_key: store.pathao_key || store.pathao_store_id || '',
         type: store.is_warehouse ? 'warehouse' : 'store',
-        is_online: store.is_online,
+        is_online: Boolean(store.is_online),
+        phone: store.phone || '',
+        email: store.email || '',
+        contact_person: store.contact_person || '',
+        store_code: store.store_code || '',
+        description: store.description || '',
+        latitude: store.latitude ?? '',
+        longitude: store.longitude ?? '',
+        capacity: store.capacity ?? '',
+        pathao_contact_name: store.pathao_contact_name || '',
+        pathao_contact_number: store.pathao_contact_number || '',
+        pathao_secondary_contact: store.pathao_secondary_contact || '',
+        pathao_city_id: store.pathao_city_id ?? null,
+        pathao_zone_id: store.pathao_zone_id ?? null,
+        pathao_area_id: store.pathao_area_id ?? null,
+        pathao_registered: Boolean(store.pathao_registered),
       });
     } catch (err: any) {
       console.error('Error loading store:', err);
@@ -84,10 +114,11 @@ export default function AddStorePage({ searchParams }: AddStorePageProps) {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
+    const { name, value, type } = e.target;
+    const checked = (e.target as HTMLInputElement).checked;
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: type === 'checkbox' ? checked : value
     }));
   };
 
@@ -113,7 +144,7 @@ export default function AddStorePage({ searchParams }: AddStorePageProps) {
         <div className="flex-1 flex flex-col">
           <Header darkMode={darkMode} setDarkMode={setDarkMode} />
           <main className="flex-1 overflow-auto p-6">
-            <div className="max-w-xl mx-auto">
+            <div className="max-w-3xl mx-auto">
               <div className="mb-4">
                 <Link href="/store">
                   <button className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors mb-3">
@@ -172,10 +203,137 @@ export default function AddStorePage({ searchParams }: AddStorePageProps) {
                     />
                   </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="phone" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Store Phone / Memo Mobile
+                      </label>
+                      <input
+                        type="text"
+                        id="phone"
+                        name="phone"
+                        value={formData.phone || ''}
+                        onChange={handleChange}
+                        placeholder="Enter store phone number"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="email" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        value={formData.email || ''}
+                        onChange={handleChange}
+                        placeholder="Enter store email"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="contact_person" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Contact Person
+                      </label>
+                      <input
+                        type="text"
+                        id="contact_person"
+                        name="contact_person"
+                        value={formData.contact_person || ''}
+                        onChange={handleChange}
+                        placeholder="Enter contact person"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="store_code" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Store Code
+                      </label>
+                      <input
+                        type="text"
+                        id="store_code"
+                        name="store_code"
+                        value={formData.store_code || ''}
+                        onChange={handleChange}
+                        placeholder="Example: MIRPUR-01"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="description" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Store Details / Internal Note
+                    </label>
+                    <textarea
+                      id="description"
+                      name="description"
+                      value={formData.description || ''}
+                      onChange={handleChange}
+                      placeholder="Optional store details"
+                      rows={2}
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label htmlFor="capacity" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Capacity
+                      </label>
+                      <input
+                        type="number"
+                        id="capacity"
+                        name="capacity"
+                        value={formData.capacity ?? ''}
+                        onChange={handleChange}
+                        placeholder="Optional"
+                        min="0"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="latitude" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Latitude
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        id="latitude"
+                        name="latitude"
+                        value={formData.latitude ?? ''}
+                        onChange={handleChange}
+                        placeholder="Optional"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="longitude" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Longitude
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        id="longitude"
+                        name="longitude"
+                        value={formData.longitude ?? ''}
+                        onChange={handleChange}
+                        placeholder="Optional"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
                   {/* Pathao Key */}
                   <div>
                     <label htmlFor="pathao_key" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                      Pathao Key
+                      Pathao Store ID / Key
                     </label>
                     <input
                       type="text"
@@ -183,10 +341,51 @@ export default function AddStorePage({ searchParams }: AddStorePageProps) {
                       name="pathao_key"
                       value={formData.pathao_key}
                       onChange={handleChange}
-                      placeholder="Enter Pathao key"
-                      required
+                      placeholder="Enter Pathao store ID/key (optional)"
                       className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
                     />
+                  </div>
+
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Pathao Pickup Details</h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Optional. Used when this branch sends Pathao orders.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="pathao_contact_name" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Pickup Contact Name</label>
+                        <input type="text" id="pathao_contact_name" name="pathao_contact_name" value={formData.pathao_contact_name || ''} onChange={handleChange} placeholder="Pickup contact name" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors" />
+                      </div>
+                      <div>
+                        <label htmlFor="pathao_contact_number" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Pickup Contact Number</label>
+                        <input type="text" id="pathao_contact_number" name="pathao_contact_number" value={formData.pathao_contact_number || ''} onChange={handleChange} placeholder="Pickup contact number" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label htmlFor="pathao_secondary_contact" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Secondary Contact</label>
+                        <input type="text" id="pathao_secondary_contact" name="pathao_secondary_contact" value={formData.pathao_secondary_contact || ''} onChange={handleChange} placeholder="Optional" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors" />
+                      </div>
+                      <div>
+                        <label htmlFor="pathao_city_id" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">City ID</label>
+                        <input type="number" id="pathao_city_id" name="pathao_city_id" value={formData.pathao_city_id ?? ''} onChange={handleChange} placeholder="Optional" min="0" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors" />
+                      </div>
+                      <div>
+                        <label htmlFor="pathao_zone_id" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Zone ID</label>
+                        <input type="number" id="pathao_zone_id" name="pathao_zone_id" value={formData.pathao_zone_id ?? ''} onChange={handleChange} placeholder="Optional" min="0" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors" />
+                      </div>
+                      <div>
+                        <label htmlFor="pathao_area_id" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Area ID</label>
+                        <input type="number" id="pathao_area_id" name="pathao_area_id" value={formData.pathao_area_id ?? ''} onChange={handleChange} placeholder="Optional" min="0" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors" />
+                      </div>
+                    </div>
+
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-900 dark:text-white">
+                      <input type="checkbox" name="pathao_registered" checked={Boolean(formData.pathao_registered)} onChange={handleChange} className="text-gray-900 focus:ring-gray-900 dark:focus:ring-gray-500" />
+                      Store is registered in Pathao
+                    </label>
                   </div>
 
                   {/* Type Selection */}

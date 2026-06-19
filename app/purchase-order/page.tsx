@@ -252,6 +252,7 @@ export default function PurchaseOrdersPage() {
     status: '',
     payment_status: '',
     search: '',
+    product_search: '',
     // ✅ backend seems to default to a very small page size in some environments
     // so we force a sane default here.
     per_page: 50,
@@ -378,7 +379,7 @@ export default function PurchaseOrdersPage() {
 
   useEffect(() => {
     loadPurchaseOrders();
-  }, [filters.vendor_id, filters.status, filters.payment_status, filters.page, filters.per_page]);
+  }, [filters.vendor_id, filters.status, filters.payment_status, filters.product_search, filters.page, filters.per_page]);
 
   // Load flat category list when edit modal opens
   useEffect(() => {
@@ -901,7 +902,7 @@ export default function PurchaseOrdersPage() {
 
           {/* Filters */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Vendor
@@ -961,7 +962,21 @@ export default function PurchaseOrdersPage() {
                   value={filters.search}
                   onChange={(e) => updateFilters({ search: e.target.value }, { resetPage: false })}
                   onKeyPress={(e) => e.key === 'Enter' && loadPurchaseOrders()}
-                  placeholder="Search PO number..."
+                  placeholder="PO no/vendor/product..."
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Product Name
+                </label>
+                <input
+                  type="text"
+                  value={filters.product_search || ''}
+                  onChange={(e) => updateFilters({ product_search: e.target.value })}
+                  onKeyPress={(e) => e.key === 'Enter' && loadPurchaseOrders()}
+                  placeholder="Filter product/SKU..."
                   className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>

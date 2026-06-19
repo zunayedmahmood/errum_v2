@@ -13,7 +13,7 @@ export interface CreateOrderPayload {
   salesman_id?: number;
   items: Array<{
     product_id: number;
-    batch_id: number;
+    batch_id?: number;
     quantity: number;
     unit_price: number;
     discount_amount?: number;

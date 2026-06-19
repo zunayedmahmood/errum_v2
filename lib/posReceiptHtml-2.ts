@@ -220,8 +220,8 @@ function pickAddressFromObject(obj: any): string {
 
 function resolveStoreDisplay(order: any, r: ReceiptOrder): { brand: string; tagline: string; address: string; phone: string } {
   const brand = 'ERRUM BD';
-  const defaultAddress = 'Level 03, Lift 2, Haji Kujrot Ali Mollah Super Market, Dhaka 1216';
-  const defaultPhone = '01942-565664';
+  const defaultAddress = r.storeAddress || 'Level 03, Lift 2, Haji Kujrot Ali Mollah Super Market, Dhaka 1216';
+  const defaultPhone = r.storePhone || '01942-565664';
 
   const objectCandidates = [
     order?.store,
@@ -260,7 +260,8 @@ function resolveStoreDisplay(order: any, r: ReceiptOrder): { brand: string; tagl
       order?.outlet_address,
       order?.outletAddress,
       order?.shop_address,
-      order?.shopAddress
+      order?.shopAddress,
+      r.storeAddress
     ) || defaultAddress;
 
   const phone =
@@ -272,7 +273,8 @@ function resolveStoreDisplay(order: any, r: ReceiptOrder): { brand: string; tagl
       order?.store_phone,
       order?.storePhone,
       order?.branch_phone,
-      order?.branchPhone
+      order?.branchPhone,
+      r.storePhone
     ) || defaultPhone;
 
   return { brand, tagline, address, phone };

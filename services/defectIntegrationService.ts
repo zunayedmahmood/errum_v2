@@ -146,9 +146,8 @@ class DefectIntegrationService {
         product_barcode_id: barcodeId,
         store_id: formData.store_id,
         defect_type: formData.is_used_item ? 'other' : formData.defect_type,
-        defect_description: formData.is_used_item 
-          ? 'USED_ITEM - Product has been used' 
-          : formData.defect_description,
+        defect_description: formData.defect_description
+          || (formData.is_used_item ? 'USED_ITEM - Product has been used' : ''),
         severity: formData.severity,
         original_price: originalPrice,
         product_batch_id: batchId,

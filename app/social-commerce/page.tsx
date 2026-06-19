@@ -22,6 +22,7 @@ interface DefectItem {
   productName: string;
   sellingPrice?: number;
   store?: string;
+  store_id?: number;
   batchId: number;
 }
 
@@ -36,6 +37,7 @@ interface CartProduct {
   amount: number;
   isDefective?: boolean;
   defectId?: string;
+  barcode?: string;
   store_id?: number | null;
   store_name?: string | null;
   sku?: string;
@@ -670,6 +672,7 @@ export default function SocialCommercePage() {
             amount: defect.sellingPrice || 0,
             isDefective: true,
             defectId: defect.id,
+            barcode: defect.barcode,
             store_id: defect.store_id || 0,
             store_name: defect.store || 'Unknown',
           };
@@ -992,7 +995,7 @@ export default function SocialCommercePage() {
           return {
             ...(numericExistingId ? { id: numericExistingId } : {}),
             product_id: item.product_id,
-            ...(item.batch_id ? { batch_id: item.batch_id } : {}),
+            batch_id: item.batch_id,
             quantity: item.quantity,
             unit_price: item.unit_price,
             discount_amount: item.discount_amount || 0,
@@ -1002,6 +1005,7 @@ export default function SocialCommercePage() {
             ...(item.isDefective ? {
               is_defective: true,
               defective_product_id: item.defectId,
+              barcode: item.barcode,
               source: 'defective_resale',
             } : {}),
           };

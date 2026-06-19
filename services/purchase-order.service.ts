@@ -83,6 +83,7 @@ export interface PurchaseOrderFilters {
   status?: string;
   payment_status?: string;
   search?: string;
+  product_search?: string;
   from_date?: string;
   to_date?: string;
   sort_by?: string;
@@ -165,6 +166,7 @@ class PurchaseOrderService {
       if (filters.status) cleanFilters.status = filters.status;
       if (filters.payment_status) cleanFilters.payment_status = filters.payment_status;
       if (filters.search) cleanFilters.search = filters.search;
+      if (filters.product_search) cleanFilters.product_search = filters.product_search;
       if (filters.from_date) cleanFilters.from_date = filters.from_date;
       if (filters.to_date) cleanFilters.to_date = filters.to_date;
       if (filters.sort_by) cleanFilters.sort_by = filters.sort_by;

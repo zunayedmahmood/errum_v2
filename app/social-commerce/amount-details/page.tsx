@@ -378,6 +378,10 @@ export default function AmountDetailsPage() {
       const itemPayloads = (orderData.items || []).map((item: any) => {
         const rawExistingId = Number(item.id ?? item.order_item_id ?? 0) || 0;
         const numericExistingId = rawExistingId > 0 && rawExistingId < 1000000000 ? rawExistingId : null;
+        if ((item.is_defective || item.isDefective) && !item.batch_id) {
+          throw new Error(`Missing batch_id for Extra Item ${item.productName || item.product_id}. Please re-scan/recreate it from Extra Items Management.`);
+        }
+
         return {
           id: numericExistingId,
           product_id: item.product_id,
@@ -387,6 +391,7 @@ export default function AmountDetailsPage() {
           discount_amount: Number(item.discount_amount) || 0,
           is_defective: Boolean(item.is_defective || item.isDefective),
           defective_product_id: item.defective_product_id || item.defectId || null,
+          barcode: item.barcode || undefined,
           source: item.source || (item.is_defective || item.isDefective ? 'defective_resale' : undefined),
         };
       });
@@ -515,6 +520,7 @@ export default function AmountDetailsPage() {
             ...(item.is_defective ? {
               is_defective: true,
               defective_product_id: item.defective_product_id,
+              barcode: item.barcode,
               source: item.source || 'defective_resale',
             } : {}),
             // VAT is inclusive; do not add extra tax
