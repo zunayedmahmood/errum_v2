@@ -1721,24 +1721,12 @@ export default function OrdersDashboard() {
   };
 
   const handleExchangeSubmit = async (exchangeData: {
-    removedProducts: Array<{
-      order_item_id: number;
-      quantity: number;
-      unit_price?: number;
-      total_price?: number;
-      product_barcode_id?: number;
-      barcode_id?: number;
-      barcode?: string;
-      return_reason?: string;
-      quality_check_passed?: boolean;
-    }>;
+    removedProducts: Array<{ order_item_id: number; quantity: number; product_barcode_id?: number }>;
     replacementProducts: Array<{
       product_id: number;
       batch_id: number;
       quantity: number;
       unit_price: number;
-      total_price?: number;
-      discount_amount?: number;
       barcode?: string;
       barcode_id?: number;
     }>;
@@ -1755,91 +1743,100 @@ export default function OrdersDashboard() {
     try {
       if (!selectedOrderForAction) return;
 
-      const fullOrder = selectedOrderForAction.items && selectedOrderForAction.items.length > 0
-        ? selectedOrderForAction
-        : await orderService.getById(selectedOrderForAction.id, true);
-      const orderItems = Array.isArray(fullOrder.items) ? fullOrder.items : [];
-      const exchangeAtStoreId = Number(exchangeData.exchangeAtStoreId || fullOrder.store?.id);
+      const returnRequest: CreateReturnRequest = {
+        order_id: selectedOrderForAction.id,
+        return_reason: 'other',
+        return_type: 'customer_return',
+        received_at_store_id: exchangeData.exchangeAtStoreId,
+        items: exchangeData.removedProducts.map((item) => ({
+          order_item_id: item.order_item_id,
+          quantity: item.quantity,
+          product_barcode_id: item.product_barcode_id,
+        })),
+        customer_notes: `Exchange transaction - Original Order: ${selectedOrderForAction.order_number}`,
+      };
 
-      const payload = {
-        order_id: fullOrder.id,
-        exchangeAtStoreId,
-        customer_id: fullOrder.customer?.id,
-        removedProducts: exchangeData.removedProducts.map((item: any) => {
-          const originalItem = orderItems.find((i: any) => Number(i.id) === Number(item.order_item_id));
-          const unitPrice = Number(item.unit_price ?? originalItem?.unit_price ?? 0);
-          const quantity = Number(item.quantity || 0);
-          const barcodeId = item.product_barcode_id || item.barcode_id || originalItem?.barcode_id;
+      const returnResponse = await productReturnService.create(returnRequest);
+      const returnId = returnResponse.data.id;
+      const returnNumber = returnResponse.data.return_number;
 
-          return {
-            order_item_id: item.order_item_id,
-            product_id: originalItem?.product_id ?? item.product_id,
-            product_batch_id: originalItem?.product_batch_id ?? originalItem?.batch_id ?? item.product_batch_id,
-            batch_id: originalItem?.product_batch_id ?? originalItem?.batch_id ?? item.batch_id,
-            quantity,
-            unit_price: unitPrice,
-            total_price: Number(item.total_price ?? unitPrice * quantity),
-            // Do not send SKU text as barcode. Send barcode only when a real barcode id exists.
-            barcode: barcodeId ? item.barcode : undefined,
-            product_barcode_id: barcodeId,
-            barcode_id: barcodeId,
-            return_reason: item.return_reason || 'other',
-            quality_check_passed: item.quality_check_passed ?? true,
-          };
-        }),
-        replacementProducts: exchangeData.replacementProducts.map((p: any) => ({
+      await productReturnService.update(returnId, {
+        quality_check_passed: true,
+        quality_check_notes: 'Exchange - Auto-approved via Orders dashboard',
+      });
+      await productReturnService.approve(returnId, { internal_notes: 'Exchange - Auto-approved via Orders dashboard' });
+      await productReturnService.process(returnId, { restore_inventory: true });
+      await productReturnService.complete(returnId);
+
+      const refundRequest: CreateRefundRequest = {
+        return_id: returnId,
+        refund_type: 'full',
+        refund_method: 'cash',
+        internal_notes: `Full refund for exchange - Original Order: ${selectedOrderForAction.order_number}`,
+      };
+
+      const refundResponse = await refundService.create(refundRequest);
+      const refundId = refundResponse.data.id;
+
+      await refundService.process(refundId);
+      await refundService.complete(refundId, { transaction_reference: `EXCHANGE-REFUND-${Date.now()}` });
+
+      const newOrderTotal = exchangeData.replacementProducts.reduce((sum, p) => sum + p.unit_price * p.quantity, 0);
+
+
+      // ✅ Avoid hardcoding payment_method_id (IDs can differ per environment)
+      let paymentMethodId = 1;
+      try {
+        const pmRes = await axios.get('/payment-methods/all');
+        const methods: any[] =
+          (pmRes as any)?.data?.data?.payment_methods ||
+          (pmRes as any)?.data?.data ||
+          (pmRes as any)?.data ||
+          [];
+
+        const normalized = (v: any) => String(v ?? '').toLowerCase().trim();
+        const cash =
+          methods.find((m) => normalized(m?.type) === 'cash') ||
+          methods.find((m) => normalized(m?.name).includes('cash')) ||
+          methods.find((m) => normalized(m?.name).includes('ক্যাশ')) ||
+          methods[0];
+
+        paymentMethodId = Number(cash?.id) || 1;
+      } catch (e) {
+        console.warn('Failed to load payment methods, falling back to id=1', e);
+      }
+
+      const newOrderData = {
+        order_type: selectedOrderForAction.order_type as 'social_commerce' | 'ecommerce',
+        store_id: exchangeData.exchangeAtStoreId,
+        customer_id: selectedOrderForAction.customer?.id,
+        items: exchangeData.replacementProducts.map((p) => ({
           product_id: p.product_id,
           batch_id: p.batch_id,
           quantity: p.quantity,
           unit_price: p.unit_price,
-          total_price: p.total_price ?? (Number(p.unit_price || 0) * Number(p.quantity || 0)),
-          discount_amount: p.discount_amount || 0,
           barcode: p.barcode,
-          barcode_id: p.barcode_id,
         })),
-        paymentRefund: {
-          type: exchangeData.paymentRefund?.type === 'payment'
-            ? 'surplus'
-            : (exchangeData.paymentRefund?.type === 'refund' ? 'refund' : 'even'),
-          amount: exchangeData.paymentRefund?.total || 0,
-          method: exchangeData.paymentRefund?.card > 0
-            ? 'card'
-            : (exchangeData.paymentRefund?.bkash > 0
-              ? 'bkash'
-              : (exchangeData.paymentRefund?.nagad > 0 ? 'nagad' : 'cash')),
-          details: {
-            cash: exchangeData.paymentRefund?.cash || 0,
-            card: exchangeData.paymentRefund?.card || 0,
-            bkash: exchangeData.paymentRefund?.bkash || 0,
-            nagad: exchangeData.paymentRefund?.nagad || 0,
-          },
+        payment: {
+          payment_method_id: paymentMethodId,
+          amount: newOrderTotal,
+          payment_type: 'full' as const,
         },
-        notes: `Exchange transaction - Original Order: ${fullOrder.order_number}`,
+        notes: `Exchange from order #${selectedOrderForAction.order_number} | Return: #${returnNumber}`,
       };
 
-      const response = await axios.post('/exchange/process', payload);
-      const data = response.data?.data || {};
-      const newOrderNumber = data.order?.order_number || data.order?.id || 'created';
-      const returnNumber = data.return?.return_number || 'created';
+      const newOrder = await orderService.create(newOrderData);
+      await orderService.complete(newOrder.id);
 
       await loadOrders();
 
-      let msg = `✅ Exchange processed successfully!
-
-📦 Return: #${returnNumber}
-🛒 New Order: #${newOrderNumber}`;
+      let msg = `✅ Exchange processed successfully!\n\n📦 Return: #${returnNumber}\n🛒 New Order: #${newOrder.order_number}`;
       if (exchangeData.paymentRefund.type === 'payment') {
-        msg += `
-
-💳 Customer paid additional: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
+        msg += `\n\n💳 Customer paid additional: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
       } else if (exchangeData.paymentRefund.type === 'refund') {
-        msg += `
-
-💵 Additional refund to customer: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
+        msg += `\n\n💵 Give customer back: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
       } else {
-        msg += `
-
-📊 Even exchange - no payment difference`;
+        msg += `\n\n📊 Even exchange (no difference)`;
       }
       alert(msg);
 

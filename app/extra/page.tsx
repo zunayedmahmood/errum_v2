@@ -277,7 +277,7 @@ export default function DefectsPage() {
       const fullDetails = await defectIntegrationService.getDefectiveById(defect.id);
       
       if (!fullDetails.product_batch_id) {
-        throw new Error('Missing batch_id - cannot proceed with sale. Please re-scan/recreate this Extra Item so backend can save its batch information.');
+        throw new Error('Missing batch_id - cannot proceed with sale');
       }
       
       let currentStatus = fullDetails.status;
@@ -346,7 +346,7 @@ export default function DefectsPage() {
       };
 
       if (!defectData.batchId) {
-        alert('Error: Missing batch information. Please re-scan/recreate this Extra Item.');
+        alert('Error: Missing batch information. Please try again.');
         setLoading(false);
         return;
       }

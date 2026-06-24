@@ -98,7 +98,7 @@ class OrderManagementService {
       console.log('📦 Fetching pending assignment orders...');
       
       const response = await axiosInstance.get('/order-management/pending-assignment', {
-        params: params || { per_page: 15, sort_order: 'asc' }
+        params: params || { per_page: 15, sort_order: 'desc' }
       });
 
       console.log('✅ Pending assignment orders loaded:', response.data.data);

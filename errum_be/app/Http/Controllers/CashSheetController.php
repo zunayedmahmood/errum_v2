@@ -296,7 +296,6 @@ class CashSheetController extends Controller
     private function loadBranchSales(array $ids, string $from, string $to): array
     {
         $out = [];
-        $excludedPaymentTypes = ['exchange_balance', 'store_credit', 'balance_carryover'];
 
         $rows = DB::table('orders as o')
             ->join('order_payments as op', 'op.order_id', '=', 'o.id')
@@ -304,46 +303,24 @@ class CashSheetController extends Controller
                 'op.store_id',
                 DB::raw('DATE(COALESCE(op.completed_at, o.created_at)) as day'),
                 'o.id as order_id',
-                'o.total_amount',
-                'o.metadata',
-                'op.amount as payment_amount',
-                'op.payment_type'
+                'o.total_amount'
             )
             ->whereIn('op.store_id', $ids)
             ->where('o.order_type', 'counter')
             ->whereNotIn('o.status', ['cancelled', 'refunded'])
-            ->where('op.status', 'completed')
             ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '>=', $from)
             ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '<=', $to)
+            ->groupBy('op.store_id', 'day', 'o.id', 'o.total_amount')
             ->get();
 
-        $normalOrderAdded = [];
+        $grouped = [];
         foreach ($rows as $r) {
             $storeKey = (string) $r->store_id;
             $day = $r->day;
-            $metadata = [];
-            if (!empty($r->metadata)) {
-                $metadata = is_array($r->metadata) ? $r->metadata : (json_decode($r->metadata, true) ?: []);
-            }
-            $isExchangeReplacement = !empty($metadata['is_exchange_replacement']);
-
-            if ($isExchangeReplacement) {
-                // Exchange replacement order value is mostly settled by internal exchange balance.
-                // Cash-sheet sales should only receive real extra money collected from customer.
-                if (!in_array((string) $r->payment_type, $excludedPaymentTypes, true)) {
-                    $out[$storeKey][$day] = ($out[$storeKey][$day] ?? 0) + (float) $r->payment_amount;
-                }
-                continue;
-            }
-
-            $normalKey = $storeKey . '|' . $day . '|' . $r->order_id;
-            if (!isset($normalOrderAdded[$normalKey])) {
-                $out[$storeKey][$day] = ($out[$storeKey][$day] ?? 0) + (float) $r->total_amount;
-                $normalOrderAdded[$normalKey] = true;
-            }
+            $grouped[$storeKey][$day] = ($grouped[$storeKey][$day] ?? 0) + (float) $r->total_amount;
         }
 
-        foreach ($out as $storeId => $days) {
+        foreach ($grouped as $storeId => $days) {
             foreach ($days as $day => $total) {
                 $out[$storeId][$day] = round($total, 2);
             }
@@ -378,7 +355,6 @@ class CashSheetController extends Controller
             )
             ->whereIn('op.store_id', $ids)
             ->where('o.order_type', 'counter')
-            ->whereNotIn('o.status', ['cancelled', 'refunded'])
             ->whereDate('op.completed_at', '>=', $from)
             ->whereDate('op.completed_at', '<=', $to)
             ->where('op.status', 'completed')
@@ -403,7 +379,6 @@ class CashSheetController extends Controller
             )
             ->whereIn('ps.store_id', $ids)
             ->where('o.order_type', 'counter')
-            ->whereNotIn('o.status', ['cancelled', 'refunded'])
             ->where('op.status', 'completed')
             ->where('ps.status', 'completed')
             ->whereNotIn('op.payment_type', $excludedPaymentTypes)

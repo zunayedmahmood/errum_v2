@@ -16,7 +16,7 @@ interface DefectItem {
   reason: string;
   sellingPrice?: number;
   store?: string;
-  batchId: number;
+  batchId?: number;
 }
 
 export default function SellDefectPage() {
@@ -73,10 +73,6 @@ export default function SellDefectPage() {
       
       console.log('📦 Defect details:', fullDetails);
       console.log('🔢 Batch ID:', fullDetails.product_batch_id);
-
-      if (!fullDetails.product_batch_id) {
-        throw new Error('Missing batch_id - cannot proceed with sale. Please re-scan/recreate this Extra Item so backend can save its batch information.');
-      }
       
       const defectItem: DefectItem = {
         id: fullDetails.id.toString(),
@@ -142,7 +138,7 @@ export default function SellDefectPage() {
       
       if (!defectData.batchId) {
         console.error('❌ ERROR: Missing batch_id!');
-        throw new Error('Batch ID is missing. Please re-scan/recreate this Extra Item so it can be sold safely.');
+        throw new Error('Batch ID is missing');
       }
       
       // Save to sessionStorage

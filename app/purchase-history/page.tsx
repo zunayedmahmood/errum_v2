@@ -94,9 +94,16 @@ export default function PurchaseHistoryPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStore, setSelectedStore] = useState('');
-  const [exactDate, setExactDate] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const todayIso = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const [exactDate, setExactDate] = useState(() => todayIso());
+  const [startDate, setStartDate] = useState(() => todayIso());
+  const [endDate, setEndDate] = useState(() => todayIso());
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
   const [loadingDetails, setLoadingDetails] = useState<number | null>(null);
   const [errorDetails, setErrorDetails] = useState<{ [key: number]: string }>({});
@@ -414,21 +421,13 @@ export default function PurchaseHistoryPage() {
     removedProducts: Array<{
       order_item_id: number;
       quantity: number;
-      unit_price?: number;
-      total_price?: number;
       product_barcode_id?: number;
-      barcode_id?: number;
-      barcode?: string;
-      return_reason?: string;
-      quality_check_passed?: boolean;
     }>;
     replacementProducts: Array<{
       product_id: number;
       batch_id: number;
       quantity: number;
       unit_price: number;
-      total_price?: number;
-      discount_amount?: number;
       barcode?: string;
       barcode_id?: number;
     }>;
@@ -440,98 +439,194 @@ export default function PurchaseHistoryPage() {
       nagad: number;
       total: number;
     };
-    exchangeAtStoreId: number;
   }) => {
     try {
       if (!selectedOrderForAction) return;
 
-      const ensureFullOrder = async () => {
-        if (selectedOrderForAction.items && selectedOrderForAction.items.length > 0) {
-          return selectedOrderForAction;
-        }
-        return await orderService.getById(selectedOrderForAction.id);
+      console.log('🔄 Processing exchange with data:', exchangeData);
+      console.log('📦 Original order:', selectedOrderForAction.order_number);
+
+      console.log('\n📤 STEP 1: Creating return for old products...');
+      const returnRequest: CreateReturnRequest = {
+        order_id: selectedOrderForAction.id,
+        return_reason: 'other',
+        return_type: 'customer_return',
+        items: exchangeData.removedProducts.map(item => ({
+          order_item_id: item.order_item_id,
+          quantity: item.quantity,
+          product_barcode_id: item.product_barcode_id,
+        })),
+        customer_notes: `Exchange transaction - Original Order: ${selectedOrderForAction.order_number}`,
       };
 
-      const fullOrder = await ensureFullOrder();
-      const orderItems = Array.isArray(fullOrder.items) ? fullOrder.items : [];
+      const returnResponse = await productReturnService.create(returnRequest);
+      const returnId = returnResponse.data.id;
+      const returnNumber = returnResponse.data.return_number;
+      console.log(`✅ Return created: #${returnNumber} (ID: ${returnId})`);
 
-      const payload = {
-        order_id: fullOrder.id,
-        exchangeAtStoreId: exchangeData.exchangeAtStoreId,
-        customer_id: fullOrder.customer?.id,
-        removedProducts: exchangeData.removedProducts.map((item: any) => {
-          const originalItem = orderItems.find((i: any) => Number(i.id) === Number(item.order_item_id));
-          const unitPrice = Number(item.unit_price ?? originalItem?.unit_price ?? 0);
-          const quantity = Number(item.quantity || 0);
-          return {
-            order_item_id: item.order_item_id,
-            product_id: originalItem?.product_id ?? item.product_id,
-            product_batch_id: originalItem?.product_batch_id ?? originalItem?.batch_id ?? item.product_batch_id,
-            batch_id: originalItem?.product_batch_id ?? originalItem?.batch_id ?? item.batch_id,
-            quantity,
-            unit_price: unitPrice,
-            total_price: Number(item.total_price ?? unitPrice * quantity),
-            // Do not send SKU text as a barcode. Send the barcode only when the modal has a real barcode id.
-            barcode: (item.product_barcode_id || item.barcode_id) ? item.barcode : undefined,
-            product_barcode_id: item.product_barcode_id || item.barcode_id || originalItem?.barcode_id,
-            barcode_id: item.product_barcode_id || item.barcode_id || originalItem?.barcode_id,
-            return_reason: item.return_reason || 'other',
-            quality_check_passed: item.quality_check_passed ?? true,
-          };
-        }),
-        replacementProducts: exchangeData.replacementProducts.map((p: any) => ({
+      console.log('\n⚙️ STEP 2: Auto-approving and processing return...');
+
+      await productReturnService.update(returnId, {
+        quality_check_passed: true,
+        quality_check_notes: 'Exchange - Auto-approved via POS',
+      });
+      console.log('✅ Quality check updated');
+
+      await productReturnService.approve(returnId, {
+        internal_notes: 'Exchange - Auto-approved via POS',
+      });
+      console.log('✅ Return approved');
+
+      await productReturnService.process(returnId, {
+        restore_inventory: true,
+      });
+      console.log('✅ Return processed - Inventory restored for old products');
+
+      await productReturnService.complete(returnId);
+      console.log('✅ Return completed');
+
+      console.log('\n💰 STEP 3: Creating FULL refund for returned items...');
+      const refundRequest: CreateRefundRequest = {
+        return_id: returnId,
+        refund_type: 'full',
+        refund_method: 'cash',
+        internal_notes: `Full refund for exchange - Original Order: ${selectedOrderForAction.order_number}`,
+      };
+
+      const refundResponse = await refundService.create(refundRequest);
+      const refundId = refundResponse.data.id;
+      console.log(`✅ Refund created (ID: ${refundId})`);
+
+      await refundService.process(refundId);
+      console.log('✅ Refund processed');
+
+      await refundService.complete(refundId, {
+        transaction_reference: `EXCHANGE-REFUND-${Date.now()}`,
+      });
+      console.log('✅ Refund completed - Customer has full refund amount');
+
+      console.log('\n🛒 STEP 4: Creating new order for replacement products...');
+
+      const newOrderData = {
+        order_type: 'counter' as const,
+        store_id: selectedOrderForAction.store.id,
+        customer_id: selectedOrderForAction.customer?.id,
+        items: exchangeData.replacementProducts.map(p => ({
           product_id: p.product_id,
           batch_id: p.batch_id,
           quantity: p.quantity,
           unit_price: p.unit_price,
-          total_price: p.total_price ?? (Number(p.unit_price || 0) * Number(p.quantity || 0)),
-          discount_amount: p.discount_amount || 0,
           barcode: p.barcode,
           barcode_id: p.barcode_id,
         })),
-        paymentRefund: {
-          type: exchangeData.paymentRefund?.type === 'payment'
-            ? 'surplus'
-            : (exchangeData.paymentRefund?.type === 'refund' ? 'refund' : 'even'),
-          amount: exchangeData.paymentRefund?.total || 0,
-          method: exchangeData.paymentRefund?.card > 0
-            ? 'card'
-            : (exchangeData.paymentRefund?.bkash > 0
-              ? 'bkash'
-              : (exchangeData.paymentRefund?.nagad > 0 ? 'nagad' : 'cash')),
-          details: {
-            cash: exchangeData.paymentRefund?.cash || 0,
-            card: exchangeData.paymentRefund?.card || 0,
-            bkash: exchangeData.paymentRefund?.bkash || 0,
-            nagad: exchangeData.paymentRefund?.nagad || 0,
-          },
-        },
-        notes: `Exchange transaction - Original Order: ${fullOrder.order_number}`,
+        notes: `Exchange from order #${selectedOrderForAction.order_number} | Return: #${returnNumber}`,
       };
 
-      const response = await axiosInstance.post('/exchange/process', payload);
-      const data = response.data?.data || {};
-      const newOrderNumber = data.order?.order_number || data.order?.id || 'created';
-      const returnNumber = data.return?.return_number || 'created';
+      console.log('Creating new order (no payment yet)...');
+      const newOrder = await orderService.create(newOrderData);
+      console.log(`✅ New order created: #${newOrder.order_number} (ID: ${newOrder.id})`);
 
-      await fetchOrders();
-
-      let successMessage = `✅ Exchange processed successfully!\n\nReturn: #${returnNumber}\nNew Order: #${newOrderNumber}`;
-      if (exchangeData.paymentRefund.type === 'payment') {
-        successMessage += `\n\n💳 Customer paid additional: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
-      } else if (exchangeData.paymentRefund.type === 'refund') {
-        successMessage += `\n\n💵 Additional refund to customer: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
-      } else {
-        successMessage += `\n\n📊 Even exchange - no payment difference`;
+      // STEP 4a: Link the return and the new order for accounting/exchange history
+      console.log('\n🔗 STEP 4a: Linking return to replacement order...');
+      try {
+        await axiosInstance.post(`/returns/${returnId}/exchange`, {
+          new_order_id: newOrder.id,
+          notes: `Automatic link from exchange flow. Original: #${selectedOrderForAction.order_number}`
+        });
+        console.log('✅ Exchange link established');
+      } catch (linkErr) {
+        console.warn('⚠️ Link failed (non-critical):', linkErr);
       }
 
+      // STEP 4b: Explicitly create + auto-complete the payment so the order is marked "paid"
+      // We use the backend-calculated total_amount to ensure it perfectly covers VAT/taxes.
+      const rawTotal = String(newOrder.total_amount).replace(/[^0-9.]/g, '');
+      const backendTotal = parseFloat(rawTotal) || 0;
+      
+      console.log(`\n💳 STEP 4b: Completing payment of ৳${backendTotal} for order #${newOrder.order_number}...`);
+      await axiosInstance.post(`/orders/${newOrder.id}/payments/simple`, {
+        payment_method_id: 1, // Cash
+        amount: backendTotal,
+        payment_type: 'full',
+        auto_complete: true,
+        notes: `Exchange payment - Original Order: #${selectedOrderForAction.order_number}`,
+      });
+      console.log(`✅ Payment completed for order #${newOrder.order_number} — order is now PAID`);
+
+
+      // Log what happens with the money difference
+      if (exchangeData.paymentRefund.type === 'payment') {
+        console.log(`\n💳 Financial settlement: Customer collects ADDITIONAL ৳${exchangeData.paymentRefund.total.toLocaleString()}`);
+        console.log(`   (New items ৳${backendTotal} > Refund received, customer pays extra)`);
+      } else if (exchangeData.paymentRefund.type === 'refund') {
+        console.log(`\n💵 Financial settlement: Cashier gives back ৳${exchangeData.paymentRefund.total.toLocaleString()}`);
+        console.log(`   (Refund received > New items ৳${backendTotal}, customer gets difference)`);
+      } else {
+        console.log(`\n📊 Financial settlement: Even exchange (Refund = New items ৳${backendTotal})`);
+      }
+
+      console.log('\n🏁 STEP 5: Completing new order...');
+      await orderService.complete(newOrder.id);
+      console.log('✅ New order completed - Inventory reduced for new products');
+
+      console.log('\n🔄 STEP 6: Refreshing order list...');
+      await fetchOrders();
+
+      console.log('\n✅ ========================================');
+      console.log('✅ EXCHANGE COMPLETED SUCCESSFULLY!');
+      console.log('✅ ========================================');
+      console.log(`Old Order: #${selectedOrderForAction.order_number}`);
+      console.log(`Return: #${returnNumber}`);
+      console.log(`New Order: #${newOrder.order_number}`);
+      console.log(`New Order Payment Status: PAID ✅`);
+
+      // Build success message based on exchange type
+      console.log('✅ ========================================\n');
+
+
+      console.log('\n✅ ========================================');
+      console.log('✅ EXCHANGE COMPLETED SUCCESSFULLY!');
+      console.log('✅ ========================================');
+      console.log(`Old Order: #${selectedOrderForAction.order_number}`);
+      console.log(`Return: #${returnNumber}`);
+      console.log(`New Order: #${newOrder.order_number}`);
+
+      let successMessage = `✅ Exchange processed successfully!\n\n`;
+      successMessage += `Return: #${returnNumber}\n`;
+      successMessage += `New Order: #${newOrder.order_number}\n\n`;
+
+      if (exchangeData.paymentRefund.type === 'payment') {
+        console.log(`Payment Type: Additional payment from customer`);
+        console.log(`Amount Collected: ৳${exchangeData.paymentRefund.total.toLocaleString()}`);
+        successMessage += `💳 Customer paid additional: ৳${exchangeData.paymentRefund.total.toLocaleString()}\n`;
+        successMessage += `(New items cost more than returned items)`;
+      } else if (exchangeData.paymentRefund.type === 'refund') {
+        console.log(`Payment Type: Additional refund to customer`);
+        console.log(`Amount Refunded: ৳${exchangeData.paymentRefund.total.toLocaleString()}`);
+        successMessage += `💵 Additional refund to customer: ৳${exchangeData.paymentRefund.total.toLocaleString()}\n`;
+        successMessage += `(Returned items cost more than new items)\n`;
+        successMessage += `Please give customer the refund difference in cash/selected method`;
+      } else {
+        console.log(`Payment Type: Even exchange`);
+        successMessage += `Even exchange - no payment difference`;
+      }
+
+      console.log('✅ ========================================\n');
+
       alert(successMessage);
+
       setShowExchangeModal(false);
       setSelectedOrderForAction(null);
     } catch (error: any) {
-      console.error('❌ Exchange processing failed:', error);
+      console.error('\n❌ ========================================');
+      console.error('❌ EXCHANGE PROCESSING FAILED!');
+      console.error('❌ ========================================');
+      console.error('Error details:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('❌ ========================================\n');
+
       const errorMsg = error.response?.data?.message || error.message || 'Failed to process exchange';
-      alert(`❌ Exchange failed: ${errorMsg}`);
+      alert(`❌ Exchange failed: ${errorMsg}\n\nPlease check the console for details.`);
     }
   };
 
@@ -744,7 +839,7 @@ export default function PurchaseHistoryPage() {
       const pdfHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Offline Sale History</title><style>
         *{box-sizing:border-box} body{font-family:Inter,Arial,sans-serif;margin:0;padding:24px;background:#f8fafc;color:#111827}.sheet{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:22px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
         h1{margin:0 0 6px;font-size:24px}.muted{color:#6b7280;font-size:12px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb}.label{font-size:10px;text-transform:uppercase;color:#6b7280;font-weight:700}.value{font-size:18px;font-weight:800;margin-top:4px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#111827;color:white;text-align:left;padding:8px;border:1px solid #111827}td{padding:7px;border:1px solid #e5e7eb;vertical-align:top}tr:nth-child(even){background:#f9fafb}.money{text-align:right;white-space:nowrap}@media print{body{background:white;padding:0}.sheet{box-shadow:none;border:0;border-radius:0}.no-print{display:none}}
-      </style></head><body><div class="sheet"><div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()" style="padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700">Print / Save as PDF</button></div><h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. Filters: ${escapeHtml(range.from || 'beginning')} to ${escapeHtml(range.to || 'latest')}${selectedStore ? `, Store ID ${escapeHtml(selectedStore)}` : ''}${searchTerm ? `, Search ${escapeHtml(searchTerm)}` : ''}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Revenue</div><div class="value">৳${totalExportRevenue.toFixed(2)}</div></div><div class="card"><div class="label">Scope</div><div class="value">${escapeHtml(exportScope)}</div></div></div><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${['Subtotal','Order Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div><script>setTimeout(() => window.print(), 250);</script></body></html>`;
+      </style></head><body><div class="sheet"><div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()" style="padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700">Print / Save as PDF</button></div><h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. Defaults to today when no custom filter is selected. Filters: ${escapeHtml(range.from || 'beginning')} to ${escapeHtml(range.to || 'latest')}${selectedStore ? `, Store ID ${escapeHtml(selectedStore)}` : ''}${searchTerm ? `, Search ${escapeHtml(searchTerm)}` : ''}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Revenue</div><div class="value">৳${totalExportRevenue.toFixed(2)}</div></div><div class="card"><div class="label">Scope</div><div class="value">${escapeHtml(exportScope)}</div></div></div><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${['Subtotal','Order Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div><script>setTimeout(() => window.print(), 250);</script></body></html>`;
       const w = window.open('', '_blank', 'width=1200,height=800');
       if (!w) {
         alert('Popup blocked. Please allow popups to export PDF.');

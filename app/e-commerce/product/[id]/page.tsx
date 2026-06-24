@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   ShoppingCart,
   Heart,
@@ -347,6 +347,7 @@ const getNewestKey = (product: SimpleProduct): number => {
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const productId = params?.id ? parseInt(params.id as string) : null;
 
   const { refreshCart, addToCart, setIsCartOpen } = useCart();
@@ -371,6 +372,26 @@ export default function ProductDetailPage() {
   const [isStickyVisible, setIsStickyVisible] = useState(false);
   const [recentlyViewed, setRecentlyViewed] = useState<SimpleProduct[]>([]);
   const mainCtaRef = useRef<HTMLButtonElement>(null);
+
+  const getReturnToListing = () => {
+    const fromUrl = searchParams.get('returnTo');
+    if (fromUrl) return fromUrl;
+
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('errumEcommerceProductListReturnToV1') || '/e-commerce/products';
+    }
+
+    return '/e-commerce/products';
+  };
+
+  const goBackToListing = () => {
+    router.push(getReturnToListing());
+  };
+
+  const buildProductDetailUrl = (nextProductId: number | string) => {
+    const returnTo = getReturnToListing();
+    return `/e-commerce/product/${nextProductId}${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`;
+  };
 
   // 3.2 — Live Viewers Calculation
   useEffect(() => {
@@ -714,7 +735,7 @@ export default function ProductDetailPage() {
     setQuantity(1);
 
     // 3.5 — No page reload
-    window.history.replaceState(null, '', `/e-commerce/product/${variant.id}`);
+    window.history.replaceState(null, '', buildProductDetailUrl(variant.id));
 
     // Background fetch for FULL details (including all images)
     try {
@@ -739,7 +760,7 @@ export default function ProductDetailPage() {
       handleVariantChange(variantMatch);
       // Optional: scroll to top if needed, but variants usually want to stay in context
     } else {
-      router.push(`/e-commerce/product/${p.id}`);
+      router.push(buildProductDetailUrl(p.id));
     }
   };
 
@@ -946,7 +967,7 @@ export default function ProductDetailPage() {
             </h1>
             <p className="mb-6 text-sm text-[var(--text-muted)]">{error}</p>
             <button
-              onClick={() => router.back()}
+              onClick={goBackToListing}
               className="inline-flex items-center justify-center rounded-xl bg-[var(--text-primary)] px-5 py-3 text-xs font-semibold text-[var(--bg-root)] hover:opacity-90 transition"
             >
               Go Back
@@ -1014,7 +1035,7 @@ export default function ProductDetailPage() {
             </div>
             
             <div className="flex items-center gap-4 text-gray-400">
-               <button onClick={() => router.back()} className="hover:text-gray-900 transition-colors flex items-center gap-1">
+               <button onClick={goBackToListing} className="hover:text-gray-900 transition-colors flex items-center gap-1">
                  <ChevronLeft size={16} />
                </button>
                <button onClick={() => router.push('/e-commerce/search')} className="hover:text-gray-900 transition-colors">

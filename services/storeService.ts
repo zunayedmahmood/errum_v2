@@ -13,18 +13,6 @@ export interface Store {
   email?: string;
   contact_person?: string;
   store_code?: string;
-  description?: string;
-  latitude?: number | string | null;
-  longitude?: number | string | null;
-  capacity?: number | string | null;
-  pathao_store_id?: string;
-  pathao_contact_name?: string;
-  pathao_contact_number?: string;
-  pathao_secondary_contact?: string;
-  pathao_city_id?: number | null;
-  pathao_zone_id?: number | null;
-  pathao_area_id?: number | null;
-  pathao_registered?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -42,10 +30,6 @@ export interface StoreFormData {
   email?: string;
   contact_person?: string;
   store_code?: string;
-  description?: string;
-  latitude?: number | string | null;
-  longitude?: number | string | null;
-  capacity?: number | string | null;
 
   /** Pathao pickup/contact config */
   pathao_contact_name?: string;
@@ -61,10 +45,6 @@ export interface StoreFormData {
 }
 
 class StoreService {
-  private blankToNull(value: any) {
-    return value === '' || value === undefined ? null : value;
-  }
-
   // Get all stores
   async getStores(params?: {
     is_warehouse?: boolean;
@@ -109,29 +89,24 @@ class StoreService {
 
       // Pathao Store ID is stored in `pathao_key` in the UI.
       // Backend expects `pathao_store_id` when creating Pathao orders.
-      pathao_key: this.blankToNull(data.pathao_key),
-      pathao_store_id: this.blankToNull(data.pathao_key),
+      pathao_key: data.pathao_key,
+      pathao_store_id: data.pathao_key,
 
       phone: data.phone,
       email: data.email,
       contact_person: data.contact_person,
       store_code: data.store_code,
-      description: data.description,
-      latitude: this.blankToNull(data.latitude),
-      longitude: this.blankToNull(data.longitude),
-      capacity: this.blankToNull(data.capacity),
 
       pathao_contact_name: data.pathao_contact_name,
       pathao_contact_number: data.pathao_contact_number,
       pathao_secondary_contact: data.pathao_secondary_contact,
-      pathao_city_id: this.blankToNull(data.pathao_city_id),
-      pathao_zone_id: this.blankToNull(data.pathao_zone_id),
-      pathao_area_id: this.blankToNull(data.pathao_area_id),
+      pathao_city_id: data.pathao_city_id ?? null,
+      pathao_zone_id: data.pathao_zone_id ?? null,
+      pathao_area_id: data.pathao_area_id ?? null,
       pathao_registered: data.pathao_registered ?? false,
 
       is_warehouse: data.type === 'warehouse',
-      is_online: data.is_online,
-    };
+      is_online: data.is_online,};
     const response = await axios.post('/stores', payload);
     return response.data;
   }
@@ -144,29 +119,24 @@ class StoreService {
 
       // Pathao Store ID is stored in `pathao_key` in the UI.
       // Backend expects `pathao_store_id` when creating Pathao orders.
-      pathao_key: this.blankToNull(data.pathao_key),
-      pathao_store_id: this.blankToNull(data.pathao_key),
+      pathao_key: data.pathao_key,
+      pathao_store_id: data.pathao_key,
 
       phone: data.phone,
       email: data.email,
       contact_person: data.contact_person,
       store_code: data.store_code,
-      description: data.description,
-      latitude: this.blankToNull(data.latitude),
-      longitude: this.blankToNull(data.longitude),
-      capacity: this.blankToNull(data.capacity),
 
       pathao_contact_name: data.pathao_contact_name,
       pathao_contact_number: data.pathao_contact_number,
       pathao_secondary_contact: data.pathao_secondary_contact,
-      pathao_city_id: this.blankToNull(data.pathao_city_id),
-      pathao_zone_id: this.blankToNull(data.pathao_zone_id),
-      pathao_area_id: this.blankToNull(data.pathao_area_id),
+      pathao_city_id: data.pathao_city_id ?? null,
+      pathao_zone_id: data.pathao_zone_id ?? null,
+      pathao_area_id: data.pathao_area_id ?? null,
       pathao_registered: data.pathao_registered ?? false,
 
       is_warehouse: data.type === 'warehouse',
-      is_online: data.is_online,
-    };
+      is_online: data.is_online,};
     const response = await axios.put(`/stores/${id}`, payload);
     return response.data;
   }

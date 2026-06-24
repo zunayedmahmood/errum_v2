@@ -348,7 +348,7 @@ export default function POSPage() {
           if (!parsedDefect.batchId) {
             console.error('❌ Missing batch_id in defect data');
             showToast(
-              'Error: Extra Item is missing batch information. Please re-scan/recreate it from Extra Items Management.',
+              'Error: Defect item is missing batch information',
               'error'
             );
             return;
@@ -746,8 +746,7 @@ export default function POSPage() {
             const unitPrice = parseFloat(String(item.price));
             const discountAmount = parseFloat(String(item.discount || 0));
 
-            // Validate after conversion. Extra Items also require batch_id so the
-            // sale remains traceable to the original stock source and COGS.
+            // Validate after conversion
             if (isNaN(productId)) {
               throw new Error(`Invalid product_id for ${item.productName}`);
             }
@@ -770,9 +769,8 @@ export default function POSPage() {
               tax_amount: taxAmount, // VAT inclusive — no extra tax
             };
 
-            // Include the barcode for both normal sales and Extra Items resale.
-            // Backend allows a defective barcode only when source=defective_resale.
-            if (item.barcode) {
+            // ✅ CRITICAL: Only include barcode for NON-defective items
+            if (!item.isDefective && item.barcode) {
               itemPayload.barcode = item.barcode;
             }
 
@@ -1220,6 +1218,17 @@ export default function POSPage() {
         joinDate: emp.join_date || new Date().toISOString(),
       }));
 
+      if (user?.id && !formattedEmployees.some((emp: any) => String(emp.id) === String(user.id))) {
+        formattedEmployees.unshift({
+          id: String(user.id),
+          name: user.name || userName || 'Current User',
+          email: user.email || '',
+          phone: '',
+          role: role || userRole || 'Employee',
+          joinDate: new Date().toISOString(),
+        });
+      }
+
       setEmployees(formattedEmployees);
     } catch (error: any) {
       console.error('Error fetching employees:', error);
@@ -1566,7 +1575,7 @@ export default function POSPage() {
                   </label>
                   <input
                     type="text"
-                    value={userRole === 'store_manager' ? userName : 'Admin'}
+                    value={userName || user?.name || 'Current User'}
                     readOnly
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white"
                   />

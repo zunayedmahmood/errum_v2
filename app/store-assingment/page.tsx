@@ -36,7 +36,7 @@ export default function StoreAssignmentPage() {
   const [pendingOrders, setPendingOrders] = useState<PendingAssignmentOrder[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Assignment state
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);

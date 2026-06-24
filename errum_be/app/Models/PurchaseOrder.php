@@ -260,89 +260,106 @@ class PurchaseOrder extends Model
     {
         DB::beginTransaction();
         try {
+            /** @var self $lockedPo */
+            $lockedPo = static::whereKey($this->id)->lockForUpdate()->firstOrFail();
+            if (!in_array($lockedPo->status, ['approved', 'partially_received'], true)) {
+                throw new \Exception('This purchase order has already been received or cannot be received in its current status.');
+            }
+
             foreach ($receivedItems as $itemData) {
-                $item = $this->items()->find($itemData['item_id']);
+                $item = PurchaseOrderItem::where('purchase_order_id', $lockedPo->id)
+                    ->where('id', $itemData['item_id'] ?? 0)
+                    ->lockForUpdate()
+                    ->first();
                 if (!$item) continue;
 
-                $quantityReceived = $itemData['quantity_received'] ?? $item->quantity_ordered;
-                
-                // Create product batch
+                $requestedQuantity = (int) ($itemData['quantity_received'] ?? ($item->quantity_ordered - $item->quantity_received));
+                if ($requestedQuantity <= 0) continue;
+
+                $remainingQuantity = max(0, (int) $item->quantity_ordered - (int) $item->quantity_received);
+                if ($remainingQuantity <= 0) {
+                    throw new \Exception("Item {$item->id} is already fully received.");
+                }
+                if ($requestedQuantity > $remainingQuantity) {
+                    throw new \Exception("Cannot receive {$requestedQuantity} units for {$item->product?->name}. Remaining quantity is {$remainingQuantity}.");
+                }
+
+                // Create product batch only for the quantity that is still pending.
                 $batch = ProductBatch::create([
                     'product_id' => $item->product_id,
-                    'batch_number' => $itemData['batch_number'] ?? $this->po_number . '-' . $item->id,
-                    'quantity' => $quantityReceived,
+                    'batch_number' => $itemData['batch_number'] ?? $lockedPo->po_number . '-' . $item->id . '-' . now()->format('His'),
+                    'quantity' => $requestedQuantity,
                     'cost_price' => $item->unit_cost,
                     'sell_price' => $item->unit_sell_price,
-                    'store_id' => $this->store_id,
+                    'store_id' => $lockedPo->store_id,
                     'manufactured_date' => $itemData['manufactured_date'] ?? null,
                     'expiry_date' => $itemData['expiry_date'] ?? null,
                 ]);
 
-                // Generate barcodes for each unit in the batch
-                $store = $this->store;
+                $store = $lockedPo->store;
                 $initialStatus = $store && $store->is_warehouse ? 'in_warehouse' : 'in_shop';
-                
+
                 $generatedBarcodes = [];
-                for ($i = 0; $i < $quantityReceived; $i++) {
+                for ($i = 0; $i < $requestedQuantity; $i++) {
                     $barcode = ProductBarcode::create([
                         'product_id' => $item->product_id,
                         'batch_id' => $batch->id,
                         'type' => 'CODE128',
-                        'is_primary' => ($i === 0), // First barcode is primary
+                        'is_primary' => ($i === 0),
                         'is_active' => true,
                         'generated_at' => now(),
-                        'current_store_id' => $this->store_id,
+                        'current_store_id' => $lockedPo->store_id,
                         'current_status' => $initialStatus,
                         'location_updated_at' => now(),
                         'location_metadata' => [
                             'source' => 'purchase_order',
-                            'po_number' => $this->po_number,
+                            'po_number' => $lockedPo->po_number,
                             'received_date' => now()->format('Y-m-d H:i:s'),
                         ],
                     ]);
-                    
+
                     $generatedBarcodes[] = $barcode;
                 }
-                
-                // Set primary barcode for batch
+
                 if (!empty($generatedBarcodes)) {
                     $batch->barcode_id = $generatedBarcodes[0]->id;
                     $batch->save();
                 }
 
-                // Update item
                 $item->product_batch_id = $batch->id;
                 $item->batch_number = $batch->batch_number;
-                $item->quantity_received += $quantityReceived;
-                $item->quantity_pending = $item->quantity_ordered - $item->quantity_received;
+                $item->quantity_received = (int) $item->quantity_received + $requestedQuantity;
+                $item->quantity_pending = max(0, (int) $item->quantity_ordered - (int) $item->quantity_received);
                 $item->manufactured_date = $itemData['manufactured_date'] ?? null;
                 $item->expiry_date = $itemData['expiry_date'] ?? null;
-                
-                // Update receive status
+
                 if ($item->quantity_received >= $item->quantity_ordered) {
                     $item->receive_status = 'fully_received';
                 } elseif ($item->quantity_received > 0) {
                     $item->receive_status = 'partially_received';
                 }
                 $item->save();
-                
-                // Log barcode generation
-                \Log::info("Generated {$quantityReceived} barcodes for PO {$this->po_number}, Batch {$batch->batch_number}");
+
+                \Log::info("Generated {$requestedQuantity} barcodes for PO {$lockedPo->po_number}, Batch {$batch->batch_number}");
             }
 
-            // Update PO status
-            $totalOrdered = $this->items->sum('quantity_ordered');
-            $totalReceived = $this->items->sum('quantity_received');
-            
-            if ($totalReceived >= $totalOrdered) {
-                $this->status = 'received';
-                $this->actual_delivery_date = now();
+            $totals = $lockedPo->items()
+                ->selectRaw('COALESCE(SUM(quantity_ordered), 0) as total_ordered, COALESCE(SUM(quantity_received), 0) as total_received')
+                ->first();
+            $totalOrdered = (int) ($totals->total_ordered ?? 0);
+            $totalReceived = (int) ($totals->total_received ?? 0);
+
+            if ($totalOrdered > 0 && $totalReceived >= $totalOrdered) {
+                $lockedPo->status = 'received';
+                $lockedPo->actual_delivery_date = now();
+                $lockedPo->received_at = $lockedPo->received_at ?: now();
             } elseif ($totalReceived > 0) {
-                $this->status = 'partially_received';
+                $lockedPo->status = 'partially_received';
             }
-            
-            $this->save();
+
+            $lockedPo->save();
             DB::commit();
+            $this->refresh();
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error("Failed to receive PO {$this->po_number}: " . $e->getMessage());

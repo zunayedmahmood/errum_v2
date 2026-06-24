@@ -311,11 +311,25 @@ export default function AmountDetailsPage() {
     );
   }
 
+  const normalizeSocialOrderSource = (value: any): string => {
+    const raw = String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (raw === 'facebook') return 'fb';
+    if (raw === 'whatsapp' || raw === 'wa') return 'wp';
+    if (raw === 'internal_order') return 'internal';
+    return raw;
+  };
+
   const handlePlaceOrder = async () => {
     // Store can be blank for auto-assigned social/e-commerce orders.
     // If a store is selected on the previous page, we pass it. Otherwise the backend keeps store_id null.
     const parsedStoreId = Number.parseInt(String(orderData?.store_id ?? ''), 10);
     const hasStoreId = Number.isFinite(parsedStoreId) && parsedStoreId > 0;
+    const orderSource = normalizeSocialOrderSource(orderData?.order_source || orderData?.source_tag || orderData?.orderSource || (Array.isArray(orderData?.tags) ? orderData.tags[0] : ''));
+    const allowedOrderSources = ['fb', 'instagram', 'wp', 'internal'];
+    if ((orderData?.order_type || 'social_commerce') === 'social_commerce' && !allowedOrderSources.includes(orderSource)) {
+      displayToast('Please select a social-commerce order source before placing the order.', 'error');
+      return;
+    }
 
     // Validation: payment methods
     if (paymentOption === 'full' || paymentOption === 'partial' || paymentOption === 'installment') {
@@ -378,10 +392,6 @@ export default function AmountDetailsPage() {
       const itemPayloads = (orderData.items || []).map((item: any) => {
         const rawExistingId = Number(item.id ?? item.order_item_id ?? 0) || 0;
         const numericExistingId = rawExistingId > 0 && rawExistingId < 1000000000 ? rawExistingId : null;
-        if ((item.is_defective || item.isDefective) && !item.batch_id) {
-          throw new Error(`Missing batch_id for Extra Item ${item.productName || item.product_id}. Please re-scan/recreate it from Extra Items Management.`);
-        }
-
         return {
           id: numericExistingId,
           product_id: item.product_id,
@@ -391,7 +401,6 @@ export default function AmountDetailsPage() {
           discount_amount: Number(item.discount_amount) || 0,
           is_defective: Boolean(item.is_defective || item.isDefective),
           defective_product_id: item.defective_product_id || item.defectId || null,
-          barcode: item.barcode || undefined,
           source: item.source || (item.is_defective || item.isDefective ? 'defective_resale' : undefined),
         };
       });
@@ -410,6 +419,7 @@ export default function AmountDetailsPage() {
           customer_email: orderData.customer?.email || undefined,
           customer_address: orderData.customer?.address || undefined,
           shipping_address: shippingPayload,
+          ...(orderSource ? { order_source: orderSource, source_tag: orderSource, tags: [orderSource] } : {}),
           discount_amount: orderDiscount,
           shipping_amount: transport,
           ...(Array.isArray(orderData.services) && orderData.services.length > 0 ? { services: orderData.services } : {}),
@@ -511,6 +521,7 @@ export default function AmountDetailsPage() {
           },
           shipping_address: shippingPayload,
           delivery_address: shippingPayload,
+          ...(orderSource ? { order_source: orderSource, source_tag: orderSource, tags: [orderSource] } : {}),
           items: itemPayloads.map((item: any) => ({
             product_id: item.product_id,
             batch_id: item.batch_id ?? null,
@@ -520,7 +531,6 @@ export default function AmountDetailsPage() {
             ...(item.is_defective ? {
               is_defective: true,
               defective_product_id: item.defective_product_id,
-              barcode: item.barcode,
               source: item.source || 'defective_resale',
             } : {}),
             // VAT is inclusive; do not add extra tax

@@ -161,6 +161,10 @@ export interface InventoryOverviewParams {
   start_date?: string;
   end_date?: string;
   category_id?: number;
+  category_ids?: string | number[];
+  subcategory_id?: number;
+  subcategory_ids?: string | number[];
+  size?: string;
   search?: string;
   page?: number;
   per_page?: number;

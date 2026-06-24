@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
-import CategoryTreeSelector from '@/components/product/CategoryTreeSelector';
 import categoryService from '@/services/categoryService';
 import inventoryService, {
   InventoryDatePreset,
@@ -94,6 +93,14 @@ function getStatusLabel(status: InventoryStockStatus) {
     case 'slow_moving': return 'Slow moving';
     default: return 'Normal';
   }
+}
+
+function flattenCategoryOptions(categories: Category[], depth = 0): Array<{ id: number; label: string }> {
+  return (categories || []).flatMap((category) => {
+    const title = category.title || category.name || `Category ${category.id}`;
+    const row = { id: category.id, label: `${'— '.repeat(depth)}${title}` };
+    return [row, ...flattenCategoryOptions(category.children || [], depth + 1)];
+  });
 }
 
 function getStatusClasses(status: InventoryStockStatus) {
@@ -491,7 +498,8 @@ function ViewInventoryPageContent() {
   const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
+  const [sizeFilter, setSizeFilter] = useState('');
   const [datePreset, setDatePreset] = useState<InventoryDatePreset>('365');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -521,7 +529,8 @@ function ViewInventoryPageContent() {
         date_preset: datePreset,
         start_date: datePreset === 'custom' ? startDate || undefined : undefined,
         end_date: datePreset === 'custom' ? endDate || undefined : undefined,
-        category_id: selectedCategoryId || undefined,
+        category_ids: selectedCategoryIds.length ? selectedCategoryIds.join(',') : undefined,
+        size: sizeFilter.trim() || undefined,
         search: appliedSearch || undefined,
         page,
         per_page: perPage,
@@ -533,7 +542,7 @@ function ViewInventoryPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset, startDate, endDate, selectedCategoryId, appliedSearch, page, perPage]);
+  }, [datePreset, startDate, endDate, selectedCategoryIds, sizeFilter, appliedSearch, page, perPage]);
 
   useEffect(() => {
     fetchCategories();
@@ -547,6 +556,7 @@ function ViewInventoryPageContent() {
 
   const summary = data?.summary;
   const products = data?.items || [];
+  const categoryOptions = flattenCategoryOptions(categories);
 
   const fetchFilteredProductsForExport = useCallback(async () => {
     const exportPerPage = 500;
@@ -554,7 +564,8 @@ function ViewInventoryPageContent() {
       date_preset: datePreset,
       start_date: datePreset === 'custom' ? startDate || undefined : undefined,
       end_date: datePreset === 'custom' ? endDate || undefined : undefined,
-      category_id: selectedCategoryId || undefined,
+      category_ids: selectedCategoryIds.length ? selectedCategoryIds.join(',') : undefined,
+      size: sizeFilter.trim() || undefined,
       search: appliedSearch || undefined,
       per_page: exportPerPage,
       skipStoreScope: true,
@@ -577,7 +588,7 @@ function ViewInventoryPageContent() {
     }
 
     return exportProducts;
-  }, [datePreset, startDate, endDate, selectedCategoryId, appliedSearch]);
+  }, [datePreset, startDate, endDate, selectedCategoryIds, sizeFilter, appliedSearch]);
 
   const handleExportCsv = async () => {
     try {
@@ -682,16 +693,31 @@ function ViewInventoryPageContent() {
                 )}
 
                 <div className={datePreset === 'custom' ? 'lg:col-span-3' : 'lg:col-span-4'}>
-                  <CategoryTreeSelector
-                    categories={categories as any}
-                    selectedCategoryId={selectedCategoryId ? String(selectedCategoryId) : ''}
-                    onSelect={(id) => { setSelectedCategoryId(id ? Number(id) : null); resetToFirstPage(); }}
-                    label="Category"
-                    required={false}
-                    placeholder="All categories"
-                    showSelectedInfo={false}
-                    allowClear={true}
-                    clearText="All categories"
+                  <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Categories / Subcategories</label>
+                  <select
+                    multiple
+                    value={selectedCategoryIds.map(String)}
+                    onChange={(e) => {
+                      const values = Array.from(e.currentTarget.selectedOptions as any).map((option: any) => Number(option.value)).filter(Boolean);
+                      setSelectedCategoryIds(values);
+                      resetToFirstPage();
+                    }}
+                    className="min-h-[92px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  >
+                    {categoryOptions.map((category) => (
+                      <option key={category.id} value={category.id}>{category.label}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[10px] font-semibold text-gray-400">Ctrl/Cmd click to select multiple. Selected parent categories include their subcategories.</p>
+                </div>
+
+                <div className="lg:col-span-2">
+                  <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Size / Variation</label>
+                  <input
+                    value={sizeFilter}
+                    onChange={(e) => { setSizeFilter(e.target.value); resetToFirstPage(); }}
+                    placeholder="e.g. XL, 42, 6 Yards"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   />
                 </div>
 
@@ -751,7 +777,7 @@ function ViewInventoryPageContent() {
                 <div>
                   <p className="text-sm font-black text-gray-900 dark:text-white">Inventory sheet</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    No dropdowns. Scroll right for all columns; the product name column stays frozen on the left. CSV export respects the current date/category/search filters.
+                    No dropdowns. Scroll right for all columns; the product name column stays frozen on the left. CSV export respects the current date/category/subcategory/size/search filters.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

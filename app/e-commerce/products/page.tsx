@@ -215,7 +215,9 @@ function ProductsPageContent() {
   };
 
   const handleProductClick = (product: SimpleProduct) => {
-    router.push(`/e-commerce/product/${product.id}`);
+    const currentListingPath = `${window.location.pathname}${window.location.search}`;
+    sessionStorage.setItem('errumEcommerceProductListReturnToV1', currentListingPath);
+    router.push(`/e-commerce/product/${product.id}?returnTo=${encodeURIComponent(currentListingPath)}`);
   };
 
   const closeFilters = () => {

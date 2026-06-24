@@ -22,7 +22,6 @@ interface DefectItem {
   productName: string;
   sellingPrice?: number;
   store?: string;
-  store_id?: number;
   batchId: number;
 }
 
@@ -37,7 +36,6 @@ interface CartProduct {
   amount: number;
   isDefective?: boolean;
   defectId?: string;
-  barcode?: string;
   store_id?: number | null;
   store_name?: string | null;
   sku?: string;
@@ -76,6 +74,21 @@ interface ProductSearchResult {
 
 const SC_EDIT_PREFILL_KEY = 'socialCommerceEditPrefillV1';
 const SC_EDIT_CONTEXT_KEY = 'socialCommerceEditContextV1';
+
+const SOCIAL_ORDER_SOURCE_OPTIONS = [
+  { value: 'fb', label: 'Facebook' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'wp', label: 'WhatsApp' },
+  { value: 'internal', label: 'Internal Order' },
+] as const;
+
+const normalizeOrderSource = (value: any): string => {
+  const raw = String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (raw === 'facebook') return 'fb';
+  if (raw === 'whatsapp' || raw === 'wa') return 'wp';
+  if (raw === 'internal_order') return 'internal';
+  return raw;
+};
 
 const parseMoney = (value: any): number => {
   const n = Number(String(value ?? '0').replace(/[^0-9.-]/g, ''));
@@ -139,6 +152,7 @@ export default function SocialCommercePage() {
   const [userPhone, setUserPhone] = useState('');
   const [socialId, setSocialId] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
+  const [orderSource, setOrderSource] = useState('');
   const [editOrderId, setEditOrderId] = useState<number | null>(null);
   const [editOrderNumber, setEditOrderNumber] = useState<string | null>(null);
   const [editOrderType, setEditOrderType] = useState<string>('social_commerce');
@@ -604,6 +618,7 @@ export default function SocialCommercePage() {
       if (typeof prefill.userEmail === 'string') setUserEmail(prefill.userEmail);
       if (typeof prefill.socialId === 'string') setSocialId(prefill.socialId);
       if (typeof prefill.orderNotes === 'string') setOrderNotes(prefill.orderNotes);
+      if (typeof prefill.orderSource === 'string') setOrderSource(normalizeOrderSource(prefill.orderSource));
       if (typeof prefill.isInternational === 'boolean') setIsInternational(prefill.isInternational);
       if (typeof prefill.streetAddress === 'string') setStreetAddress(prefill.streetAddress);
       if (typeof prefill.postalCode === 'string') setPostalCode(prefill.postalCode);
@@ -672,7 +687,6 @@ export default function SocialCommercePage() {
             amount: defect.sellingPrice || 0,
             isDefective: true,
             defectId: defect.id,
-            barcode: defect.barcode,
             store_id: defect.store_id || 0,
             store_name: defect.store || 'Unknown',
           };
@@ -913,6 +927,12 @@ export default function SocialCommercePage() {
       return;
     }
 
+    const normalizedOrderSource = normalizeOrderSource(orderSource);
+    if (!SOCIAL_ORDER_SOURCE_OPTIONS.some((option) => option.value === normalizedOrderSource)) {
+      fireToast('Please select order source: Facebook, Instagram, WhatsApp, or Internal Order.', 'error');
+      return;
+    }
+
     try {
       setIsProcessingOrder(true);
       console.log(editOrderId ? '✏️ PREPARING EDIT ORDER FOR AMOUNT DETAILS' : '📦 PREPARING NEW SOCIAL COMMERCE ORDER');
@@ -979,6 +999,10 @@ export default function SocialCommercePage() {
         ...(effectiveEditOrderId ? { editOrderId: effectiveEditOrderId } : {}),
         ...(effectiveEditOrderNumber ? { editOrderNumber: effectiveEditOrderNumber } : {}),
         ...(selectedStore ? { store_id: parseInt(selectedStore, 10) } : {}),
+        orderSource: normalizedOrderSource,
+        order_source: normalizedOrderSource,
+        source_tag: normalizedOrderSource,
+        tags: [normalizedOrderSource],
         customer: {
           name: userName,
           email: userEmail || undefined,
@@ -995,7 +1019,7 @@ export default function SocialCommercePage() {
           return {
             ...(numericExistingId ? { id: numericExistingId } : {}),
             product_id: item.product_id,
-            batch_id: item.batch_id,
+            ...(item.batch_id ? { batch_id: item.batch_id } : {}),
             quantity: item.quantity,
             unit_price: item.unit_price,
             discount_amount: item.discount_amount || 0,
@@ -1005,7 +1029,6 @@ export default function SocialCommercePage() {
             ...(item.isDefective ? {
               is_defective: true,
               defective_product_id: item.defectId,
-              barcode: item.barcode,
               source: 'defective_resale',
             } : {}),
           };
@@ -1179,6 +1202,20 @@ export default function SocialCommercePage() {
               </select>
             </div>
           )}
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Order Source <span className="text-red-500">*</span></label>
+          <select
+            value={orderSource}
+            onChange={(e) => setOrderSource(e.target.value)}
+            className="w-full px-3 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 focus:ring-teal-500 dark:text-white"
+          >
+            <option value="">Select order source</option>
+            {SOCIAL_ORDER_SOURCE_OPTIONS.map((source) => (
+              <option key={source.value} value={source.value}>{source.label}</option>
+            ))}
+          </select>
         </div>
 
         <div className="space-y-2">

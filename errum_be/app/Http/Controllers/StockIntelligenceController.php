@@ -437,18 +437,57 @@ class StockIntelligenceController extends Controller
                     DB::raw("CASE WHEN pc.id IS NOT NULL THEN c.title ELSE '-' END as subcategory_name"),
                 ]);
 
+            $requestedCategoryIds = collect();
+            if ($request->filled('category_ids')) {
+                $rawCategoryIds = $request->query('category_ids');
+                $rawCategoryIds = is_array($rawCategoryIds) ? $rawCategoryIds : preg_split('/[,|]/', (string) $rawCategoryIds);
+                $requestedCategoryIds = $requestedCategoryIds->merge($rawCategoryIds);
+            }
+            if ($request->filled('subcategory_ids')) {
+                $rawSubCategoryIds = $request->query('subcategory_ids');
+                $rawSubCategoryIds = is_array($rawSubCategoryIds) ? $rawSubCategoryIds : preg_split('/[,|]/', (string) $rawSubCategoryIds);
+                $requestedCategoryIds = $requestedCategoryIds->merge($rawSubCategoryIds);
+            }
             if ($request->filled('category_id')) {
-                $categoryId = (int) $request->query('category_id');
-                $categoryIds = [$categoryId];
+                $requestedCategoryIds->push($request->query('category_id'));
+            }
+            if ($request->filled('subcategory_id')) {
+                $requestedCategoryIds->push($request->query('subcategory_id'));
+            }
+
+            $requestedCategoryIds = $requestedCategoryIds
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values();
+
+            if ($requestedCategoryIds->isNotEmpty()) {
+                $categoryIds = $requestedCategoryIds->all();
                 try {
-                    $category = \App\Models\Category::find($categoryId);
-                    if ($category && method_exists($category, 'descendants')) {
-                        $categoryIds = $category->descendants()->pluck('id')->push($category->id)->unique()->values()->toArray();
+                    foreach ($requestedCategoryIds as $categoryId) {
+                        $category = \App\Models\Category::find($categoryId);
+                        if ($category && method_exists($category, 'descendants')) {
+                            $categoryIds = array_merge(
+                                $categoryIds,
+                                $category->descendants()->pluck('id')->push($category->id)->toArray()
+                            );
+                        }
                     }
+                    $categoryIds = array_values(array_unique(array_map('intval', $categoryIds)));
                 } catch (\Throwable $e) {
-                    // Fallback to the selected category only.
+                    // Fallback to the selected categories only.
                 }
                 $productQuery->whereIn('p.category_id', $categoryIds);
+            }
+
+            $size = trim((string) $request->query('size', ''));
+            if ($size !== '') {
+                $sizeLike = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $size) . '%';
+                $productQuery->where(function ($q) use ($sizeLike) {
+                    $q->where('p.variation_suffix', 'like', $sizeLike)
+                        ->orWhere('p.name', 'like', $sizeLike)
+                        ->orWhere('p.base_name', 'like', $sizeLike);
+                });
             }
 
             if ($search !== '') {

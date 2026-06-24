@@ -7,11 +7,6 @@ use App\Models\OrderItem;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductBatch;
-use App\Models\ProductBarcode;
-use App\Models\ProductMovement;
-use App\Models\ProductReturn;
-use App\Models\Refund;
-use App\Models\OrderPayment;
 use App\Models\Store;
 use App\Models\Employee;
 use App\Models\PaymentMethod;
@@ -41,11 +36,25 @@ class OrderController extends Controller
             'items.product',
             'items.batch',
             'payments.paymentMethod',
+            'createdBy',
+            'salesman',
         ]);
 
-        // Filter by order type (counter, social_commerce, ecommerce)
-        if ($request->filled('order_type')) {
+        // Filter by order type (counter, social_commerce, ecommerce). Accepts either one order_type
+        // or order_types as an array/comma-separated string for breakdown screens.
+        if ($request->filled('order_types')) {
+            $types = $request->input('order_types');
+            $types = is_array($types) ? $types : preg_split('/[,|]/', (string) $types);
+            $types = collect($types)->map(fn ($type) => trim((string) $type))->filter()->values()->all();
+            if (!empty($types)) {
+                $query->whereIn('order_type', $types);
+            }
+        } elseif ($request->filled('order_type')) {
             $query->where('order_type', $request->order_type);
+        }
+
+        if ($request->filled('source_tag') || $request->filled('order_source')) {
+            $this->applyOrderSourceFilter($query, $request->input('source_tag', $request->input('order_source')));
         }
 
         // Filter by status
@@ -181,6 +190,8 @@ class OrderController extends Controller
             'payments.processedBy',
             'payments.paymentSplits.paymentMethod',
             'payments.cashDenominations',
+            'createdBy',
+            'salesman',
         ])->find($id);
 
         if (!$order) {
@@ -262,6 +273,10 @@ class OrderController extends Controller
             'installment_plan.total_installments' => 'required_with:installment_plan|integer|min:2',
             'installment_plan.installment_amount' => 'required_with:installment_plan|numeric|min:0.01',
             'installment_plan.start_date' => 'nullable|date',
+            'order_source' => 'nullable|string|max:50',
+            'source_tag' => 'nullable|string|max:50',
+            'tags' => 'nullable|array',
+            'tags.*' => 'nullable|string|max:50',
         ]);
 
         if ($validator->fails()) {
@@ -269,6 +284,15 @@ class OrderController extends Controller
                 'success' => false,
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $orderSourceTag = $this->extractOrderSourceTag($request);
+        if ($request->order_type === 'social_commerce' && !$orderSourceTag) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Social commerce orders require one source tag: Facebook, Instagram, WhatsApp, or Internal Order.',
+                'errors' => ['order_source' => ['Please select Facebook, Instagram, WhatsApp, or Internal Order.']],
             ], 422);
         }
 
@@ -307,7 +331,20 @@ class OrderController extends Controller
                 // Check if customer exists by phone
                 $existing = Customer::where('phone', $customerData['phone'])->first();
                 if ($existing) {
-                    $customer = $existing;
+                    $updates = [];
+                    if (!empty($customerData['name']) && $customerData['name'] !== $existing->name) {
+                        $updates['name'] = $customerData['name'];
+                    }
+                    if (!empty($customerData['email']) && $customerData['email'] !== $existing->email) {
+                        $updates['email'] = $customerData['email'];
+                    }
+                    if (!empty($customerData['address']) && $customerData['address'] !== $existing->address) {
+                        $updates['address'] = $customerData['address'];
+                    }
+                    if (!empty($updates)) {
+                        $existing->fill($updates)->save();
+                    }
+                    $customer = $existing->fresh();
                 } else {
                     if ($request->order_type === 'counter') {
                         $customer = Customer::create([
@@ -390,6 +427,11 @@ class OrderController extends Controller
                 }
             }
 
+            $orderMetadata = array_merge(
+                ['discount_amount_role' => 'order_level'],
+                $this->buildOrderSourceMetadata($orderSourceTag)
+            );
+
             // Create order
             $order = Order::create([
                 'customer_id' => $customer->id,
@@ -402,9 +444,7 @@ class OrderController extends Controller
                 'shipping_amount' => $request->shipping_amount ?? 0,
                 'notes' => $request->notes,
                 'shipping_address' => $request->shipping_address,
-                'metadata' => [
-                    'discount_amount_role' => 'order_level',
-                ],
+                'metadata' => $orderMetadata,
                 'created_by' => $actorId,
                 'salesman_id' => $salesmanId,
                 'order_date' => now(),
@@ -681,7 +721,9 @@ class OrderController extends Controller
                     'store',
                     'items.product',
                     'items.batch',
-                    'payments.paymentMethod'
+                    'payments.paymentMethod',
+                    'createdBy',
+                    'salesman'
                 ]), true)
             ], 201);
 
@@ -745,6 +787,10 @@ class OrderController extends Controller
             'discount_amount' => 'nullable|numeric|min:0',
             'shipping_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
+            'order_source' => 'nullable|string|max:50',
+            'source_tag' => 'nullable|string|max:50',
+            'tags' => 'nullable|array',
+            'tags.*' => 'nullable|string|max:50',
         ]);
 
         if ($validator->fails()) {
@@ -752,6 +798,16 @@ class OrderController extends Controller
                 'success' => false,
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $hasOrderSourceInput = $request->has('order_source') || $request->has('source_tag') || $request->has('tags');
+        $orderSourceTag = $hasOrderSourceInput ? $this->extractOrderSourceTag($request) : null;
+        if ($hasOrderSourceInput && !$orderSourceTag) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid order source. Use Facebook, Instagram, WhatsApp, or Internal Order.',
+                'errors' => ['order_source' => ['Invalid order source.']],
             ], 422);
         }
 
@@ -782,6 +838,10 @@ class OrderController extends Controller
             // Update order fields
             if ($request->has('shipping_address')) {
                 $order->shipping_address = $request->shipping_address;
+            }
+
+            if ($hasOrderSourceInput && $orderSourceTag) {
+                $order->metadata = array_merge($order->metadata ?? [], $this->buildOrderSourceMetadata($orderSourceTag));
             }
 
             if ($request->has('discount_amount')) {
@@ -1578,33 +1638,15 @@ class OrderController extends Controller
             // Release reserved stock before changing status to cancelled.
             // OrderItemObserver only handles item create/update/delete, not order status changes.
             $reservationRelease = app(InventoryReservationService::class)
-                ->releaseForCancelledOrder($order->loadMissing(['items.batch', 'items.barcode', 'payments']));
-
-            $metadata = $order->metadata ?? [];
-            $exchangeReversal = null;
-            if (!empty($metadata['is_exchange_replacement'])) {
-                // Exchange replacement orders are not normal sales: stock was already moved and
-                // the payment can be an internal exchange-balance. Cancelling/deleting the order
-                // must undo the exchange side effects, otherwise the amount still appears in cash
-                // sheets/reports and the original return remains locked.
-                $exchangeReversal = $this->reverseExchangeReplacementOrder($order, $request->reason ?? 'Order cancelled');
-            }
-
-            // Cancel payment rows so cancelled exchange/paid orders do not keep showing as Paid.
-            $cancelledPayments = $this->cancelOrderPaymentsForCancelledOrder($order, $request->reason ?? 'Order cancelled');
+                ->releaseForCancelledOrder($order->loadMissing('items'));
 
             $order->update([
                 'status' => 'cancelled',
                 'cancelled_at' => now(),
-                'paid_amount' => 0,
-                'outstanding_amount' => 0,
-                'payment_status' => 'pending',
-                'notes' => $this->appendCancellationNote($order->notes, $request->reason ?? 'No reason provided'),
-                'metadata' => array_merge($metadata, [
+                'notes' => ($order->notes ? $order->notes . "\n" : '') . 'Cancelled: ' . ($request->reason ?? 'No reason provided'),
+                'metadata' => array_merge($order->metadata ?? [], [
                     'cancelled_by' => auth()->id(),
                     'reservation_release_on_cancel' => $reservationRelease,
-                    'cancelled_payments' => $cancelledPayments,
-                    'exchange_reversal' => $exchangeReversal,
                 ]),
             ]);
 
@@ -1623,292 +1665,6 @@ class OrderController extends Controller
                 'message' => $e->getMessage()
             ], 422);
         }
-    }
-
-
-    private function appendCancellationNote(?string $existingNotes, string $reason): string
-    {
-        $line = 'Cancelled: ' . $reason;
-        $notes = trim((string) $existingNotes);
-
-        // Prevent repeated "Cancelled: Deleted by user" lines when the same cancelled
-        // order is clicked multiple times from Purchase History.
-        if ($notes !== '' && str_contains($notes, $line)) {
-            return $notes;
-        }
-
-        return ($notes !== '' ? $notes . "\n" : '') . $line;
-    }
-
-    private function cancelOrderPaymentsForCancelledOrder(Order $order, string $reason): array
-    {
-        $summary = [];
-        $payments = $order->payments()->withTrashed()->lockForUpdate()->get();
-
-        foreach ($payments as $payment) {
-            if (in_array($payment->status, ['cancelled', 'refunded', 'failed'], true)) {
-                continue;
-            }
-
-            $history = $payment->status_history ?? [];
-            $history[] = [
-                'status' => 'cancelled',
-                'changed_at' => now()->toISOString(),
-                'changed_by' => auth()->id(),
-                'notes' => $reason,
-            ];
-
-            $payment->status = 'cancelled';
-            $payment->failure_reason = $reason;
-            $payment->status_history = $history;
-            $payment->save();
-
-            Transaction::byReference(OrderPayment::class, $payment->id)->update([
-                'status' => 'cancelled',
-            ]);
-
-            $summary[] = [
-                'payment_id' => $payment->id,
-                'amount' => (float) $payment->amount,
-                'payment_type' => $payment->payment_type,
-            ];
-        }
-
-        return $summary;
-    }
-
-    private function reverseExchangeReplacementOrder(Order $order, string $reason): array
-    {
-        $summary = [
-            'replacement_stock_restored' => [],
-            'return_rejected' => null,
-            'return_stock_reversed' => [],
-            'transactions_cancelled' => 0,
-            'refunds_cancelled' => [],
-        ];
-
-        $metadata = $order->metadata ?? [];
-        $returnId = $metadata['product_return_id'] ?? null;
-        $productReturn = $returnId
-            ? ProductReturn::where('id', $returnId)->lockForUpdate()->first()
-            : ProductReturn::whereJsonContains('status_history', [['replacement_order_id' => $order->id]])->latest()->first();
-
-        // 1) Put replacement items back into stock. ExchangeController deducted these at creation.
-        foreach ($order->items as $item) {
-            $batch = $item->batch ?: ProductBatch::where('id', $item->product_batch_id)->lockForUpdate()->first();
-            if ($batch) {
-                $batch->increment('quantity', (int) $item->quantity);
-            }
-
-            if ($item->product_barcode_id) {
-                $barcode = ProductBarcode::where('id', $item->product_barcode_id)->lockForUpdate()->first();
-                if ($barcode) {
-                    $barcode->updateLocation($order->store_id, 'in_warehouse', [
-                        'exchange_cancelled_order_id' => $order->id,
-                        'exchange_cancelled_at' => now()->toISOString(),
-                        'performed_by' => auth()->id(),
-                        'notes' => "Exchange replacement cancelled: {$order->order_number}",
-                    ], false);
-                    $barcode->is_active = true;
-                    $barcode->is_defective = false;
-                    if ($batch) {
-                        $barcode->batch_id = $batch->id;
-                    }
-                    $barcode->save();
-                }
-            }
-
-            ProductMovement::create([
-                'product_id' => $item->product_id,
-                'product_batch_id' => $batch?->id,
-                'product_barcode_id' => $item->product_barcode_id,
-                'to_store_id' => $order->store_id,
-                'movement_type' => 'adjustment',
-                'quantity' => (int) $item->quantity,
-                'unit_cost' => $batch?->cost_price ?? 0,
-                'unit_price' => $item->unit_price ?? 0,
-                'total_cost' => ($batch?->cost_price ?? 0) * (int) $item->quantity,
-                'total_value' => (float) ($item->total_amount ?? 0),
-                'reference_type' => 'exchange_cancel',
-                'reference_id' => $order->id,
-                'notes' => "Restored replacement stock after exchange order cancellation: {$order->order_number}",
-                'performed_by' => auth()->id(),
-            ]);
-
-            $summary['replacement_stock_restored'][] = [
-                'order_item_id' => $item->id,
-                'product_id' => $item->product_id,
-                'batch_id' => $batch?->id,
-                'quantity' => (int) $item->quantity,
-            ];
-        }
-
-        // 2) Reverse the ProductReturn part, so the old order can be returned/exchanged again
-        // and the returned old stock is not left in inventory after deleting the exchange.
-        if ($productReturn) {
-            foreach (($productReturn->return_items ?? []) as $returnItem) {
-                $originalBatch = ProductBatch::where('id', $returnItem['product_batch_id'] ?? null)->lockForUpdate()->first();
-                $targetBatch = $this->resolveReturnedExchangeBatchForCancellation($originalBatch, $returnItem, $productReturn);
-                $quantity = (int) ($returnItem['quantity'] ?? 0);
-                $shouldRestock = $this->exchangeReturnItemWasRestocked($returnItem);
-
-                if ($targetBatch && $shouldRestock && $quantity > 0) {
-                    $targetBatch->quantity = max(0, (int) $targetBatch->quantity - $quantity);
-                    $targetBatch->save();
-                }
-
-                $barcodeIds = collect($returnItem['returned_barcode_ids'] ?? [])
-                    ->filter()
-                    ->map(fn ($id) => (int) $id)
-                    ->values()
-                    ->all();
-
-                if (!empty($barcodeIds)) {
-                    ProductBarcode::whereIn('id', $barcodeIds)->lockForUpdate()->get()->each(function (ProductBarcode $barcode) use ($order, $originalBatch) {
-                        $barcode->updateLocation($order->store_id, 'with_customer', [
-                            'exchange_cancelled_order_id' => $order->id,
-                            'exchange_cancelled_at' => now()->toISOString(),
-                            'performed_by' => auth()->id(),
-                            'notes' => "Returned barcode moved back to customer after exchange cancellation: {$order->order_number}",
-                        ], false);
-                        $barcode->is_active = false;
-                        $barcode->is_defective = false;
-                        if ($originalBatch) {
-                            $barcode->batch_id = $originalBatch->id;
-                        }
-                        $barcode->save();
-                    });
-                }
-
-                if ($targetBatch && $quantity > 0) {
-                    ProductMovement::create([
-                        'product_id' => $returnItem['product_id'] ?? null,
-                        'product_batch_id' => $targetBatch->id,
-                        'product_barcode_id' => $barcodeIds[0] ?? null,
-                        'from_store_id' => $productReturn->received_at_store_id ?? $productReturn->store_id,
-                        'movement_type' => 'adjustment',
-                        'quantity' => $quantity,
-                        'unit_cost' => $targetBatch->cost_price ?? 0,
-                        'unit_price' => $returnItem['unit_price'] ?? 0,
-                        'total_cost' => ($targetBatch->cost_price ?? 0) * $quantity,
-                        'total_value' => ($returnItem['unit_price'] ?? 0) * $quantity,
-                        'reference_type' => 'exchange_cancel',
-                        'reference_id' => $order->id,
-                        'notes' => "Reversed old returned stock after exchange order cancellation: {$order->order_number}",
-                        'performed_by' => auth()->id(),
-                    ]);
-                }
-
-                $summary['return_stock_reversed'][] = [
-                    'return_item_order_item_id' => $returnItem['order_item_id'] ?? null,
-                    'product_id' => $returnItem['product_id'] ?? null,
-                    'batch_id' => $targetBatch?->id,
-                    'quantity' => $quantity,
-                    'restocked_was_reversed' => $shouldRestock,
-                ];
-            }
-
-            $history = $productReturn->status_history ?? [];
-            $history[] = [
-                'status' => 'exchange_cancelled',
-                'changed_at' => now()->toISOString(),
-                'changed_by' => auth()->id(),
-                'replacement_order_id' => $order->id,
-                'notes' => $reason,
-            ];
-
-            $productReturn->status = 'rejected';
-            $productReturn->rejection_reason = 'Exchange replacement order was cancelled/deleted.';
-            $productReturn->status_history = $history;
-            $productReturn->internal_notes = trim(($productReturn->internal_notes ? $productReturn->internal_notes . "\n" : '') . "Exchange cancelled with order #{$order->order_number}: {$reason}");
-            $productReturn->save();
-
-            $summary['return_rejected'] = $productReturn->id;
-
-            Refund::where('return_id', $productReturn->id)
-                ->whereNotIn('status', ['cancelled', 'failed'])
-                ->lockForUpdate()
-                ->get()
-                ->each(function (Refund $refund) use (&$summary, $reason) {
-                    $history = $refund->status_history ?? [];
-                    $history[] = [
-                        'status' => 'cancelled',
-                        'changed_at' => now()->toISOString(),
-                        'changed_by' => auth()->id(),
-                        'notes' => $reason,
-                    ];
-
-                    $refund->status = 'cancelled';
-                    $refund->failure_reason = $reason;
-                    $refund->status_history = $history;
-                    $refund->save();
-
-                    Transaction::byReference(Refund::class, $refund->id)->update(['status' => 'cancelled']);
-                    $summary['refunds_cancelled'][] = $refund->id;
-                });
-        }
-
-        // 3) Cancel all exchange ledger entries. This covers exchange_balance, upcharge,
-        // refund-difference, old-item reversal, and new-item COGS entries.
-        $cancelled = Transaction::where(function ($q) use ($order, $productReturn) {
-                $q->where(function ($qq) use ($order) {
-                    $qq->where('reference_type', Order::class)->where('reference_id', $order->id);
-                });
-
-                if ($productReturn) {
-                    $q->orWhere(function ($qq) use ($productReturn) {
-                        $qq->where('reference_type', ProductReturn::class)->where('reference_id', $productReturn->id);
-                    });
-                }
-            })
-            ->where('status', '!=', 'cancelled')
-            ->update(['status' => 'cancelled']);
-
-        $summary['transactions_cancelled'] = $cancelled;
-
-        return $summary;
-    }
-
-    private function resolveReturnedExchangeBatchForCancellation(?ProductBatch $originalBatch, array $returnItem, ProductReturn $return): ?ProductBatch
-    {
-        $returnStore = (int) ($return->received_at_store_id ?? $return->store_id);
-        $barcodeId = collect($returnItem['returned_barcode_ids'] ?? [])->filter()->first();
-
-        if ($barcodeId) {
-            $barcode = ProductBarcode::find($barcodeId);
-            if ($barcode?->batch_id) {
-                $barcodeBatch = ProductBatch::where('id', $barcode->batch_id)->lockForUpdate()->first();
-                if ($barcodeBatch) {
-                    return $barcodeBatch;
-                }
-            }
-        }
-
-        if (!$originalBatch) {
-            return null;
-        }
-
-        if ((int) $originalBatch->store_id === $returnStore) {
-            return $originalBatch;
-        }
-
-        $baseBatchNumber = $originalBatch->batch_number . '-RTN-S' . $returnStore;
-        return ProductBatch::where('product_id', $returnItem['product_id'] ?? $originalBatch->product_id)
-            ->where('store_id', $returnStore)
-            ->where(function ($q) use ($baseBatchNumber) {
-                $q->where('batch_number', $baseBatchNumber)
-                  ->orWhere('batch_number', 'like', $baseBatchNumber . '-%');
-            })
-            ->lockForUpdate()
-            ->first();
-    }
-
-    private function exchangeReturnItemWasRestocked(array $item): bool
-    {
-        $defectiveReasons = ['defective_product', 'quality_issue', 'not_as_described', 'wrong_item'];
-        $reason = $item['return_reason'] ?? $item['reason'] ?? null;
-
-        return (bool) ($item['quality_check_passed'] ?? true) && !in_array($reason, $defectiveReasons, true);
     }
 
     /**
@@ -2001,6 +1757,96 @@ class OrderController extends Controller
         ]);
     }
 
+    private const SOCIAL_ORDER_SOURCE_TAGS = ['fb', 'instagram', 'wp', 'internal'];
+
+    private function normalizeOrderSourceTag($value): ?string
+    {
+        $raw = strtolower(trim((string) ($value ?? '')));
+        $raw = str_replace([' ', '-'], '_', $raw);
+
+        return match ($raw) {
+            'facebook' => 'fb',
+            'whatsapp', 'wa' => 'wp',
+            'internal_order' => 'internal',
+            default => in_array($raw, self::SOCIAL_ORDER_SOURCE_TAGS, true) ? $raw : null,
+        };
+    }
+
+    private function extractOrderSourceTag(Request $request): ?string
+    {
+        $candidates = [
+            $request->input('source_tag'),
+            $request->input('order_source'),
+        ];
+
+        $tags = $request->input('tags', []);
+        if (is_array($tags)) {
+            $candidates = array_merge($candidates, $tags);
+        }
+
+        foreach ($candidates as $candidate) {
+            $normalized = $this->normalizeOrderSourceTag($candidate);
+            if ($normalized) return $normalized;
+        }
+
+        return null;
+    }
+
+    private function extractOrderSourceTagFromMetadata(array $metadata): ?string
+    {
+        $candidates = [
+            $metadata['source_tag'] ?? null,
+            $metadata['order_source'] ?? null,
+        ];
+        if (!empty($metadata['tags']) && is_array($metadata['tags'])) {
+            $candidates = array_merge($candidates, $metadata['tags']);
+        }
+
+        foreach ($candidates as $candidate) {
+            $normalized = $this->normalizeOrderSourceTag($candidate);
+            if ($normalized) return $normalized;
+        }
+
+        return null;
+    }
+
+    private function buildOrderSourceMetadata(?string $sourceTag): array
+    {
+        if (!$sourceTag) return [];
+        return [
+            'order_source' => $sourceTag,
+            'source_tag' => $sourceTag,
+            'tags' => [$sourceTag],
+        ];
+    }
+
+    private function applyOrderSourceFilter($query, $source): void
+    {
+        $sourceTag = $this->normalizeOrderSourceTag($source);
+        if (!$sourceTag) return;
+
+        $driver = DB::connection()->getDriverName();
+        $query->where(function ($q) use ($sourceTag, $driver) {
+            if ($driver === 'pgsql') {
+                $q->whereRaw("metadata->>'order_source' = ?", [$sourceTag])
+                    ->orWhereRaw("metadata->>'source_tag' = ?", [$sourceTag])
+                    ->orWhereRaw("(metadata->'tags') ? ?", [$sourceTag]);
+                return;
+            }
+
+            if ($driver === 'mysql') {
+                $q->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.order_source')) = ?", [$sourceTag])
+                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.source_tag')) = ?", [$sourceTag])
+                    ->orWhereRaw("JSON_CONTAINS(COALESCE(JSON_EXTRACT(metadata, '$.tags'), JSON_ARRAY()), JSON_QUOTE(?))", [$sourceTag]);
+                return;
+            }
+
+            $q->where('metadata', 'like', '%"order_source":"' . $sourceTag . '"%')
+                ->orWhere('metadata', 'like', '%"source_tag":"' . $sourceTag . '"%')
+                ->orWhere('metadata', 'like', '%"' . $sourceTag . '"%');
+        });
+    }
+
     /**
      * Helper function to format order response
      */
@@ -2011,6 +1857,10 @@ class OrderController extends Controller
             return $i->cogs ?? (($i->batch?->cost_price ?? 0) * $i->quantity);
         });
         $grossMargin = (float)$order->total_amount - $totalCogs;
+
+        $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
+        $sourceTag = $this->extractOrderSourceTagFromMetadata($metadata);
+        $salesman = $order->salesman ?: $order->createdBy;
 
         $response = [
             'id' => $order->id,
@@ -2038,10 +1888,14 @@ class OrderController extends Controller
                 'address' => $order->store->address,
                 'phone' => $order->store->phone,
             ] : null,
-            'salesman' => $order->createdBy ? [
-                'id' => $order->createdBy->id,
-                'name' => $order->createdBy->name,
+            'salesman' => $salesman ? [
+                'id' => $salesman->id,
+                'name' => $salesman->name,
             ] : null,
+            'metadata' => $metadata,
+            'order_source' => $sourceTag,
+            'source_tag' => $sourceTag,
+            'tags' => $metadata['tags'] ?? ($sourceTag ? [$sourceTag] : []),
             'subtotal' => number_format((float)$order->subtotal, 2),
             'tax_amount' => number_format((float)$order->tax_amount, 2),
             'discount_amount' => number_format((float)$order->discount_amount, 2),

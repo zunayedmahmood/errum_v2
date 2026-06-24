@@ -245,6 +245,8 @@ export default function PurchaseOrdersPage() {
   // Modals
   const [showViewModal, setShowViewModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
+  const [receivingPOId, setReceivingPOId] = useState<number | null>(null);
+  const [isReceiveSubmitting, setIsReceiveSubmitting] = useState(false);
 
   // Filters
   const [filters, setFilters] = useState<PurchaseOrderFilters>({
@@ -252,7 +254,6 @@ export default function PurchaseOrdersPage() {
     status: '',
     payment_status: '',
     search: '',
-    product_search: '',
     // ✅ backend seems to default to a very small page size in some environments
     // so we force a sane default here.
     per_page: 50,
@@ -379,7 +380,7 @@ export default function PurchaseOrdersPage() {
 
   useEffect(() => {
     loadPurchaseOrders();
-  }, [filters.vendor_id, filters.status, filters.payment_status, filters.product_search, filters.page, filters.per_page]);
+  }, [filters.vendor_id, filters.status, filters.payment_status, filters.page, filters.per_page]);
 
   // Load flat category list when edit modal opens
   useEffect(() => {
@@ -781,7 +782,7 @@ export default function PurchaseOrdersPage() {
 
 
   const handleReceivePO = async () => {
-    if (!selectedPO) return;
+    if (!selectedPO || isReceiveSubmitting) return;
 
     // Validate that at least one item has quantity
     const hasItems = receiveForm.items.some(item =>
@@ -795,6 +796,8 @@ export default function PurchaseOrdersPage() {
 
     try {
       setLoading(true);
+      setIsReceiveSubmitting(true);
+      setReceivingPOId(selectedPO.id);
 
       const receiveData: { items: ReceiveItemData[] } = {
         items: receiveForm.items
@@ -816,6 +819,8 @@ export default function PurchaseOrdersPage() {
       showAlert('error', error.message || 'Failed to receive products');
     } finally {
       setLoading(false);
+      setIsReceiveSubmitting(false);
+      setReceivingPOId(null);
     }
   };
 
@@ -902,7 +907,7 @@ export default function PurchaseOrdersPage() {
 
           {/* Filters */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Vendor
@@ -962,21 +967,7 @@ export default function PurchaseOrdersPage() {
                   value={filters.search}
                   onChange={(e) => updateFilters({ search: e.target.value }, { resetPage: false })}
                   onKeyPress={(e) => e.key === 'Enter' && loadPurchaseOrders()}
-                  placeholder="PO no/vendor/product..."
-                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Product Name
-                </label>
-                <input
-                  type="text"
-                  value={filters.product_search || ''}
-                  onChange={(e) => updateFilters({ product_search: e.target.value })}
-                  onKeyPress={(e) => e.key === 'Enter' && loadPurchaseOrders()}
-                  placeholder="Filter product/SKU..."
+                  placeholder="Search PO number..."
                   className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
@@ -1077,11 +1068,12 @@ export default function PurchaseOrdersPage() {
                         {(po.status === 'approved' || po.status === 'partially_received') && (
                           <button
                             onClick={() => openReceiveModal(po)}
-                            className="flex items-center gap-1 px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                            disabled={loading || receivingPOId === po.id}
+                            className="flex items-center gap-1 px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Receive products"
                           >
-                            <Package className="w-4 h-4" />
-                            Receive
+                            {receivingPOId === po.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
+                            {receivingPOId === po.id ? 'Processing...' : 'Receive'}
                           </button>
                         )}
 
@@ -2123,11 +2115,11 @@ export default function PurchaseOrdersPage() {
               </button>
               <button
                 onClick={handleReceivePO}
-                disabled={loading}
+                disabled={loading || isReceiveSubmitting}
                 className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
               >
-                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                Receive Products
+                {isReceiveSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isReceiveSubmitting ? 'Processing...' : 'Receive Products'}
               </button>
             </div>
           </div>

@@ -27,7 +27,7 @@ class OrderManagementController extends Controller
     {
         try {
             $perPage = $request->query('per_page', 15);
-            $sortOrder = $request->query('sort_order', 'asc');
+            $sortOrder = $request->query('sort_order', 'desc');
             $status = $request->query('status', 'pending_assignment');
             
             // Validate sort order to prevent SQL injection or invalid values

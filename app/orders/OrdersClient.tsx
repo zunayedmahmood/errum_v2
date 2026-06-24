@@ -111,6 +111,9 @@ interface Order {
   // Intended courier marker
   intendedCourier?: string | null;
 
+  // Social-commerce source tag (fb/instagram/wp/internal)
+  sourceTag?: string | null;
+
   // Installments / EMI
   isInstallment?: boolean;
   installmentInfo?: {
@@ -247,6 +250,46 @@ const titleCase = (s: string) =>
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
 
+const SOCIAL_ORDER_SOURCE_OPTIONS = [
+  { value: 'fb', label: 'Facebook' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'wp', label: 'WhatsApp' },
+  { value: 'internal', label: 'Internal Order' },
+] as const;
+
+const normalizeOrderSourceTag = (value: any): string => {
+  const raw = String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (raw === 'facebook') return 'fb';
+  if (raw === 'whatsapp' || raw === 'wa') return 'wp';
+  if (raw === 'internal_order') return 'internal';
+  return raw;
+};
+
+const orderSourceLabel = (value: any): string => {
+  const normalized = normalizeOrderSourceTag(value);
+  return SOCIAL_ORDER_SOURCE_OPTIONS.find((option) => option.value === normalized)?.label || titleCase(normalized || 'Unknown');
+};
+
+const extractOrderSourceTag = (order: any): string | null => {
+  const candidates = [
+    order?.source_tag,
+    order?.order_source,
+    order?.metadata?.source_tag,
+    order?.metadata?.order_source,
+    ...(Array.isArray(order?.tags) ? order.tags : []),
+    ...(Array.isArray(order?.metadata?.tags) ? order.metadata.tags : []),
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeOrderSourceTag(candidate);
+    if (SOCIAL_ORDER_SOURCE_OPTIONS.some((option) => option.value === normalized)) {
+      return normalized;
+    }
+  }
+
+  return null;
+};
+
 const sanitizePhone = (phone?: string) => String(phone || '').replace(/[^0-9+]/g, '');
 
 const buildPathaoTrackingUrl = (consignmentId: string, phone?: string) => {
@@ -335,6 +378,7 @@ export default function OrdersDashboard() {
 
   // ✅ NEW: Order type filter (All / Social / E-Com)
   const [orderTypeFilter, setOrderTypeFilter] = useState('All Types');
+  const [sourceTagFilter, setSourceTagFilter] = useState('All Sources');
 
   // ✅ Separate filters
   const [orderStatusFilter, setOrderStatusFilter] = useState('All Order Status');
@@ -1002,6 +1046,7 @@ export default function OrdersDashboard() {
       paymentStatusLabel: statusLabel(pStatusRaw || 'pending'),
 
       intendedCourier: order.intended_courier ?? order.intendedCourier ?? null,
+      sourceTag: extractOrderSourceTag(order),
 
       isInstallment: !!(
         order.is_installment === true ||
@@ -1308,6 +1353,11 @@ export default function OrdersDashboard() {
       filtered = filtered.filter((o) => normalize(o.orderType) === target);
     }
 
+    if (sourceTagFilter !== 'All Sources') {
+      const target = normalizeOrderSourceTag(sourceTagFilter);
+      filtered = filtered.filter((o) => normalizeOrderSourceTag(o.sourceTag) === target);
+    }
+
     if (orderStatusFilter !== 'All Order Status') {
       const target = normalize(orderStatusFilter);
       filtered = filtered.filter((o) => normalize(o.status) === target);
@@ -1325,7 +1375,7 @@ export default function OrdersDashboard() {
     }
 
     setFilteredOrders(filtered);
-  }, [search, dateFilter, startDate, endDate, orderTypeFilter, orderStatusFilter, paymentStatusFilter, courierFilter, orders]);
+  }, [search, dateFilter, startDate, endDate, orderTypeFilter, sourceTagFilter, orderStatusFilter, paymentStatusFilter, courierFilter, orders]);
 
   // 🧾 Bulk lookup Pathao status for displayed orders
   const filteredOrderNumbers = useMemo(() => {
@@ -1594,6 +1644,7 @@ export default function OrdersDashboard() {
         userEmail: fullOrder.customer?.email || '',
         socialId: (fullOrder.customer as any)?.social_id || '',
         orderNotes: fullOrder.notes || '',
+        orderSource: extractOrderSourceTag(fullOrder) || '',
         isInternational,
         streetAddress,
         postalCode: normalisedShippingAddress.postal_code || normalisedShippingAddress.postalCode || '',
@@ -1744,24 +1795,12 @@ export default function OrdersDashboard() {
   };
 
   const handleExchangeSubmit = async (exchangeData: {
-    removedProducts: Array<{
-      order_item_id: number;
-      quantity: number;
-      unit_price?: number;
-      total_price?: number;
-      product_barcode_id?: number;
-      barcode_id?: number;
-      barcode?: string;
-      return_reason?: string;
-      quality_check_passed?: boolean;
-    }>;
+    removedProducts: Array<{ order_item_id: number; quantity: number; product_barcode_id?: number }>;
     replacementProducts: Array<{
       product_id: number;
       batch_id: number;
       quantity: number;
       unit_price: number;
-      total_price?: number;
-      discount_amount?: number;
       barcode?: string;
       barcode_id?: number;
     }>;
@@ -1778,91 +1817,100 @@ export default function OrdersDashboard() {
     try {
       if (!selectedOrderForAction) return;
 
-      const fullOrder = selectedOrderForAction.items && selectedOrderForAction.items.length > 0
-        ? selectedOrderForAction
-        : await orderService.getById(selectedOrderForAction.id, true);
-      const orderItems = Array.isArray(fullOrder.items) ? fullOrder.items : [];
-      const exchangeAtStoreId = Number(exchangeData.exchangeAtStoreId || fullOrder.store?.id);
+      const returnRequest: CreateReturnRequest = {
+        order_id: selectedOrderForAction.id,
+        return_reason: 'other',
+        return_type: 'customer_return',
+        received_at_store_id: exchangeData.exchangeAtStoreId,
+        items: exchangeData.removedProducts.map((item) => ({
+          order_item_id: item.order_item_id,
+          quantity: item.quantity,
+          product_barcode_id: item.product_barcode_id,
+        })),
+        customer_notes: `Exchange transaction - Original Order: ${selectedOrderForAction.order_number}`,
+      };
 
-      const payload = {
-        order_id: fullOrder.id,
-        exchangeAtStoreId,
-        customer_id: fullOrder.customer?.id,
-        removedProducts: exchangeData.removedProducts.map((item: any) => {
-          const originalItem = orderItems.find((i: any) => Number(i.id) === Number(item.order_item_id));
-          const unitPrice = Number(item.unit_price ?? originalItem?.unit_price ?? 0);
-          const quantity = Number(item.quantity || 0);
-          const barcodeId = item.product_barcode_id || item.barcode_id || originalItem?.barcode_id;
+      const returnResponse = await productReturnService.create(returnRequest);
+      const returnId = returnResponse.data.id;
+      const returnNumber = returnResponse.data.return_number;
 
-          return {
-            order_item_id: item.order_item_id,
-            product_id: originalItem?.product_id ?? item.product_id,
-            product_batch_id: originalItem?.product_batch_id ?? originalItem?.batch_id ?? item.product_batch_id,
-            batch_id: originalItem?.product_batch_id ?? originalItem?.batch_id ?? item.batch_id,
-            quantity,
-            unit_price: unitPrice,
-            total_price: Number(item.total_price ?? unitPrice * quantity),
-            // Do not send SKU text as barcode. Send barcode only when a real barcode id exists.
-            barcode: barcodeId ? item.barcode : undefined,
-            product_barcode_id: barcodeId,
-            barcode_id: barcodeId,
-            return_reason: item.return_reason || 'other',
-            quality_check_passed: item.quality_check_passed ?? true,
-          };
-        }),
-        replacementProducts: exchangeData.replacementProducts.map((p: any) => ({
+      await productReturnService.update(returnId, {
+        quality_check_passed: true,
+        quality_check_notes: 'Exchange - Auto-approved via Orders dashboard',
+      });
+      await productReturnService.approve(returnId, { internal_notes: 'Exchange - Auto-approved via Orders dashboard' });
+      await productReturnService.process(returnId, { restore_inventory: true });
+      await productReturnService.complete(returnId);
+
+      const refundRequest: CreateRefundRequest = {
+        return_id: returnId,
+        refund_type: 'full',
+        refund_method: 'cash',
+        internal_notes: `Full refund for exchange - Original Order: ${selectedOrderForAction.order_number}`,
+      };
+
+      const refundResponse = await refundService.create(refundRequest);
+      const refundId = refundResponse.data.id;
+
+      await refundService.process(refundId);
+      await refundService.complete(refundId, { transaction_reference: `EXCHANGE-REFUND-${Date.now()}` });
+
+      const newOrderTotal = exchangeData.replacementProducts.reduce((sum, p) => sum + p.unit_price * p.quantity, 0);
+
+
+      // ✅ Avoid hardcoding payment_method_id (IDs can differ per environment)
+      let paymentMethodId = 1;
+      try {
+        const pmRes = await axios.get('/payment-methods/all');
+        const methods: any[] =
+          (pmRes as any)?.data?.data?.payment_methods ||
+          (pmRes as any)?.data?.data ||
+          (pmRes as any)?.data ||
+          [];
+
+        const normalized = (v: any) => String(v ?? '').toLowerCase().trim();
+        const cash =
+          methods.find((m) => normalized(m?.type) === 'cash') ||
+          methods.find((m) => normalized(m?.name).includes('cash')) ||
+          methods.find((m) => normalized(m?.name).includes('ক্যাশ')) ||
+          methods[0];
+
+        paymentMethodId = Number(cash?.id) || 1;
+      } catch (e) {
+        console.warn('Failed to load payment methods, falling back to id=1', e);
+      }
+
+      const newOrderData = {
+        order_type: selectedOrderForAction.order_type as 'social_commerce' | 'ecommerce',
+        store_id: exchangeData.exchangeAtStoreId,
+        customer_id: selectedOrderForAction.customer?.id,
+        items: exchangeData.replacementProducts.map((p) => ({
           product_id: p.product_id,
           batch_id: p.batch_id,
           quantity: p.quantity,
           unit_price: p.unit_price,
-          total_price: p.total_price ?? (Number(p.unit_price || 0) * Number(p.quantity || 0)),
-          discount_amount: p.discount_amount || 0,
           barcode: p.barcode,
-          barcode_id: p.barcode_id,
         })),
-        paymentRefund: {
-          type: exchangeData.paymentRefund?.type === 'payment'
-            ? 'surplus'
-            : (exchangeData.paymentRefund?.type === 'refund' ? 'refund' : 'even'),
-          amount: exchangeData.paymentRefund?.total || 0,
-          method: exchangeData.paymentRefund?.card > 0
-            ? 'card'
-            : (exchangeData.paymentRefund?.bkash > 0
-              ? 'bkash'
-              : (exchangeData.paymentRefund?.nagad > 0 ? 'nagad' : 'cash')),
-          details: {
-            cash: exchangeData.paymentRefund?.cash || 0,
-            card: exchangeData.paymentRefund?.card || 0,
-            bkash: exchangeData.paymentRefund?.bkash || 0,
-            nagad: exchangeData.paymentRefund?.nagad || 0,
-          },
+        payment: {
+          payment_method_id: paymentMethodId,
+          amount: newOrderTotal,
+          payment_type: 'full' as const,
         },
-        notes: `Exchange transaction - Original Order: ${fullOrder.order_number}`,
+        notes: `Exchange from order #${selectedOrderForAction.order_number} | Return: #${returnNumber}`,
       };
 
-      const response = await axios.post('/exchange/process', payload);
-      const data = response.data?.data || {};
-      const newOrderNumber = data.order?.order_number || data.order?.id || 'created';
-      const returnNumber = data.return?.return_number || 'created';
+      const newOrder = await orderService.create(newOrderData);
+      await orderService.complete(newOrder.id);
 
       await loadOrders();
 
-      let msg = `✅ Exchange processed successfully!
-
-📦 Return: #${returnNumber}
-🛒 New Order: #${newOrderNumber}`;
+      let msg = `✅ Exchange processed successfully!\n\n📦 Return: #${returnNumber}\n🛒 New Order: #${newOrder.order_number}`;
       if (exchangeData.paymentRefund.type === 'payment') {
-        msg += `
-
-💳 Customer paid additional: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
+        msg += `\n\n💳 Customer paid additional: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
       } else if (exchangeData.paymentRefund.type === 'refund') {
-        msg += `
-
-💵 Additional refund to customer: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
+        msg += `\n\n💵 Give customer back: ৳${exchangeData.paymentRefund.total.toLocaleString()}`;
       } else {
-        msg += `
-
-📊 Even exchange - no payment difference`;
+        msg += `\n\n📊 Even exchange (no difference)`;
       }
       alert(msg);
 
@@ -3435,6 +3483,22 @@ export default function OrdersDashboard() {
 
                   {viewMode === 'online' && (
                     <div>
+                      <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase mb-1.5 ml-1">Order Source</label>
+                      <select
+                        value={sourceTagFilter}
+                        onChange={(e) => setSourceTagFilter(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white"
+                      >
+                        <option value="All Sources">All Sources</option>
+                        {SOCIAL_ORDER_SOURCE_OPTIONS.map((source) => (
+                          <option key={source.value} value={source.value}>{source.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {viewMode === 'online' && (
+                    <div>
                       <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase mb-1.5 ml-1">Order Marker</label>
                       <select
                         value={courierFilter}
@@ -3452,7 +3516,7 @@ export default function OrdersDashboard() {
               )}
 
               {/* Active Filter Pills */}
-              {(search || dateFilter || startDate || endDate || orderTypeFilter !== 'All Types' || orderStatusFilter !== (viewMode === 'online' ? 'All Order Status' : 'All Order Status') || paymentStatusFilter !== 'All Payment Status' || courierFilter !== 'All Couriers') && (
+              {(search || dateFilter || startDate || endDate || orderTypeFilter !== 'All Types' || orderStatusFilter !== (viewMode === 'online' ? 'All Order Status' : 'All Order Status') || paymentStatusFilter !== 'All Payment Status' || sourceTagFilter !== 'All Sources' || courierFilter !== 'All Couriers') && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className="text-[10px] font-bold text-gray-400 dark:text-gray-600 uppercase mr-1">Active:</span>
 
@@ -3490,6 +3554,12 @@ export default function OrdersDashboard() {
                     </div>
                   )}
 
+                  {sourceTagFilter !== 'All Sources' && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium bg-black text-white dark:bg-white dark:text-black rounded-full animate-in zoom-in-95 duration-200">
+                      Source: {orderSourceLabel(sourceTagFilter)} <X className="w-2.5 h-2.5 cursor-pointer" onClick={() => setSourceTagFilter('All Sources')} />
+                    </div>
+                  )}
+
                   {courierFilter !== 'All Couriers' && (
                     <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium bg-black text-white dark:bg-white dark:text-black rounded-full animate-in zoom-in-95 duration-200">
                       Marker: {courierLabel(courierFilter)} <X className="w-2.5 h-2.5 cursor-pointer" onClick={() => setCourierFilter('All Couriers')} />
@@ -3505,6 +3575,7 @@ export default function OrdersDashboard() {
                       setOrderTypeFilter('All Types');
                       setOrderStatusFilter('All Order Status');
                       setPaymentStatusFilter('All Payment Status');
+                      setSourceTagFilter('All Sources');
                       setCourierFilter('All Couriers');
                     }}
                     className="text-[10px] font-bold text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 ml-1 transition-colors"
@@ -3761,6 +3832,9 @@ export default function OrdersDashboard() {
                                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                   {getOrderTypeBadge(order.orderType)}
                                   {getDeliveryBadge(order.orderNumber)}
+                                  {viewMode === 'online' && order.sourceTag && (
+                                    <span className="px-2 py-1 text-[10px] font-black rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">{orderSourceLabel(order.sourceTag)}</span>
+                                  )}
                                   {viewMode === 'online' && getCourierBadge(order.intendedCourier)}
                                   {order.isInstallment && (
                                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
@@ -3872,6 +3946,9 @@ export default function OrdersDashboard() {
                                     </span>
                                   )}
                                   {getDeliveryBadge(order.orderNumber)}
+                                  {viewMode === 'online' && order.sourceTag && (
+                                    <span className="px-2 py-1 text-[10px] font-black rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">{orderSourceLabel(order.sourceTag)}</span>
+                                  )}
                                   {viewMode === 'online' && getCourierBadge(order.intendedCourier)}
                                 </div>
                                 {pathaoLookupByOrderNumber[order.orderNumber]?.is_sent_via_pathao &&
