@@ -166,6 +166,7 @@ export interface InventoryOverviewParams {
   subcategory_ids?: string | number[];
   size?: string;
   search?: string;
+  store_id?: number;
   page?: number;
   per_page?: number;
   skipStoreScope?: boolean;
@@ -254,6 +255,7 @@ export interface InventoryMovementRecommendation {
 export interface InventoryOverviewItem {
   group_key: string;
   sku: string;
+  skus?: string[];
   product_name: string;
   category_id?: number | null;
   category_name?: string | null;
@@ -289,6 +291,7 @@ export interface InventoryOverviewResponse {
     start_date: string;
     end_date: string;
     period_days: number;
+    store_id?: number | null;
   };
   summary: {
     total_products: number;

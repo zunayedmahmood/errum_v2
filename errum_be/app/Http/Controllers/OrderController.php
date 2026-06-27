@@ -36,9 +36,21 @@ class OrderController extends Controller
             'items.product',
             'items.batch',
             'payments.paymentMethod',
+            'payments.processedBy',
+            'payments.paymentSplits.paymentMethod',
             'createdBy',
             'salesman',
         ]);
+
+        // Offline sales history should not list exchange replacement orders as
+        // normal sales. Those are operational records and their net settlement
+        // belongs in the cash sheet EX column.
+        if ($request->boolean('exclude_exchange_replacements')) {
+            $query->where(function ($q) {
+                $q->whereNull('metadata')
+                  ->orWhere('metadata', 'not like', '%is_exchange_replacement%');
+            });
+        }
 
         // Filter by order type (counter, social_commerce, ecommerce). Accepts either one order_type
         // or order_types as an array/comma-separated string for breakdown screens.
@@ -1850,6 +1862,44 @@ class OrderController extends Controller
     /**
      * Helper function to format order response
      */
+    private function formatOrderPaymentResponse($payment): array
+    {
+        $splits = collect();
+
+        if ($payment->relationLoaded('paymentSplits')) {
+            $splits = $payment->paymentSplits;
+        } elseif ($payment->hasSplits()) {
+            $splits = $payment->paymentSplits()->with('paymentMethod')->get();
+        }
+
+        $paymentData = [
+            'id' => $payment->id,
+            'amount' => number_format((float)$payment->amount, 2),
+            'payment_method' => $payment->payment_method_name,
+            'payment_type' => $payment->payment_type,
+            'status' => $payment->status,
+            'processed_by' => $payment->processedBy?->name,
+            'created_at' => $payment->created_at?->format('Y-m-d H:i:s'),
+            'is_split_payment' => $splits->isNotEmpty(),
+            'splits' => [],
+        ];
+
+        if ($splits->isNotEmpty()) {
+            $paymentData['splits'] = $splits
+                ->sortBy('split_sequence')
+                ->map(function ($split) {
+                    return [
+                        'payment_method' => $split->paymentMethod?->name ?? 'Unknown',
+                        'amount' => number_format((float)$split->amount, 2),
+                        'status' => $split->status,
+                    ];
+                })
+                ->values();
+        }
+
+        return $paymentData;
+    }
+
     private function formatOrderResponse(Order $order, $detailed = false)
     {
         // Calculate COGS and gross margin for all responses
@@ -1911,6 +1961,23 @@ class OrderController extends Controller
             'created_at' => $order->created_at->format('Y-m-d H:i:s'),
         ];
 
+        // Always include payment breakdowns so list pages, expanded details, and exports
+        // can show split-payment methods and amounts instead of only "Split Payment".
+        $response['payments'] = $order->payments->map(fn ($payment) => $this->formatOrderPaymentResponse($payment));
+        $response['payment_method_summary'] = $response['payments']
+            ->flatMap(function ($payment) {
+                $splits = collect($payment['splits'] ?? []);
+
+                if ($splits->isNotEmpty()) {
+                    return $splits->map(fn ($split) => trim(($split['payment_method'] ?? 'Unknown') . ' ৳' . ($split['amount'] ?? '0.00')));
+                }
+
+                return [trim(($payment['payment_method'] ?? 'Unknown') . ' ৳' . ($payment['amount'] ?? '0.00'))];
+            })
+            ->filter()
+            ->values()
+            ->implode(' + ');
+
         if ($detailed) {
             $response['items'] = $order->items->map(function ($item) {
                 return [
@@ -1931,31 +1998,6 @@ class OrderController extends Controller
                     'cogs' => number_format((float)($item->cogs ?? (($item->batch?->cost_price ?? 0) * $item->quantity)), 2),
                     'item_gross_margin' => number_format((float)$item->total_amount - (float)($item->cogs ?? (($item->batch?->cost_price ?? 0) * $item->quantity)), 2),
                 ];
-            });
-
-            $response['payments'] = $order->payments->map(function ($payment) {
-                $paymentData = [
-                    'id' => $payment->id,
-                    'amount' => number_format((float)$payment->amount, 2),
-                    'payment_method' => $payment->payment_method_name,
-                    'payment_type' => $payment->payment_type,
-                    'status' => $payment->status,
-                    'processed_by' => $payment->processedBy?->name,
-                    'created_at' => $payment->created_at->format('Y-m-d H:i:s'),
-                ];
-
-                // Include split details if it's a split payment
-                if ($payment->isSplitPayment()) {
-                    $paymentData['splits'] = $payment->paymentSplits->map(function ($split) {
-                        return [
-                            'payment_method' => $split->paymentMethod->name,
-                            'amount' => number_format((float)$split->amount, 2),
-                            'status' => $split->status,
-                        ];
-                    });
-                }
-
-                return $paymentData;
             });
 
             if ($order->is_installment_payment) {

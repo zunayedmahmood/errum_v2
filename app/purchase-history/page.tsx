@@ -77,7 +77,14 @@ interface PurchaseHistoryOrder {
     status: string;
     processed_by?: string;
     created_at: string;
+    is_split_payment?: boolean;
+    splits?: Array<{
+      payment_method: string;
+      amount: string;
+      status?: string;
+    }>;
   }>;
+  payment_method_summary?: string;
 }
 
 interface Store {
@@ -149,6 +156,7 @@ export default function PurchaseHistoryPage() {
     const filters: OrderFilters = {
       order_type: 'counter',
       per_page: 50,
+      exclude_exchange_replacements: true,
       ...overrides,
     };
 
@@ -712,7 +720,7 @@ export default function PurchaseHistoryPage() {
     return matchesSearch && matchesStore && matchesStartDate && matchesEndDate;
   });
 
-  const totalRevenue = filteredOrders.reduce((sum, order) => {
+  const totalSalesAmount = filteredOrders.reduce((sum, order) => {
     const amount = parseFloat(order.total_amount.replace(/,/g, ''));
     return sum + (isNaN(amount) ? 0 : amount);
   }, 0);
@@ -725,6 +733,33 @@ export default function PurchaseHistoryPage() {
   }, 0);
 
   const parseMoney = (value: any) => Number(String(value ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+  const money = (value: any) => `৳${parseMoney(value).toFixed(2)}`;
+
+  const getPaymentSplits = (payment: any) => {
+    if (!payment) return [];
+    return Array.isArray(payment.splits) ? payment.splits : [];
+  };
+
+  const formatPaymentBreakdown = (order: any) => {
+    if (order?.payment_method_summary) return order.payment_method_summary;
+
+    const payments = Array.isArray(order?.payments) ? order.payments : [];
+    const parts = payments.flatMap((payment: any) => {
+      const splits = getPaymentSplits(payment);
+
+      if (splits.length > 0) {
+        return splits.map((split: any) => `${split.payment_method || 'Unknown'} ${money(split.amount)}`);
+      }
+
+      if (payment?.payment_method) {
+        return [`${payment.payment_method} ${money(payment.amount)}`];
+      }
+
+      return [];
+    });
+
+    return parts.length > 0 ? parts.join(' + ') : 'N/A';
+  };
 
   const exportColumns = [
     'Order #',
@@ -735,6 +770,7 @@ export default function PurchaseHistoryPage() {
     'Store',
     'Status',
     'Payment Status',
+    'Payment Methods',
     'Subtotal',
     'Order Discount',
     'Shipping',
@@ -753,6 +789,7 @@ export default function PurchaseHistoryPage() {
     'Store': order.store?.name || '',
     'Status': order.status || '',
     'Payment Status': order.payment_status || '',
+    'Payment Methods': formatPaymentBreakdown(order),
     'Subtotal': parseMoney(order.subtotal ?? order.subtotal_amount).toFixed(2),
     'Order Discount': parseMoney(order.discount_amount).toFixed(2),
     'Shipping': parseMoney(order.shipping_amount ?? order.shipping_cost).toFixed(2),
@@ -835,11 +872,11 @@ export default function PurchaseHistoryPage() {
         return;
       }
 
-      const totalExportRevenue = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
+      const totalExportSalesAmount = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
       const pdfHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Offline Sale History</title><style>
         *{box-sizing:border-box} body{font-family:Inter,Arial,sans-serif;margin:0;padding:24px;background:#f8fafc;color:#111827}.sheet{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:22px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
         h1{margin:0 0 6px;font-size:24px}.muted{color:#6b7280;font-size:12px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb}.label{font-size:10px;text-transform:uppercase;color:#6b7280;font-weight:700}.value{font-size:18px;font-weight:800;margin-top:4px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#111827;color:white;text-align:left;padding:8px;border:1px solid #111827}td{padding:7px;border:1px solid #e5e7eb;vertical-align:top}tr:nth-child(even){background:#f9fafb}.money{text-align:right;white-space:nowrap}@media print{body{background:white;padding:0}.sheet{box-shadow:none;border:0;border-radius:0}.no-print{display:none}}
-      </style></head><body><div class="sheet"><div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()" style="padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700">Print / Save as PDF</button></div><h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. Defaults to today when no custom filter is selected. Filters: ${escapeHtml(range.from || 'beginning')} to ${escapeHtml(range.to || 'latest')}${selectedStore ? `, Store ID ${escapeHtml(selectedStore)}` : ''}${searchTerm ? `, Search ${escapeHtml(searchTerm)}` : ''}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Revenue</div><div class="value">৳${totalExportRevenue.toFixed(2)}</div></div><div class="card"><div class="label">Scope</div><div class="value">${escapeHtml(exportScope)}</div></div></div><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${['Subtotal','Order Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div><script>setTimeout(() => window.print(), 250);</script></body></html>`;
+      </style></head><body><div class="sheet"><div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()" style="padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700">Print / Save as PDF</button></div><h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. Defaults to today when no custom filter is selected. Filters: ${escapeHtml(range.from || 'beginning')} to ${escapeHtml(range.to || 'latest')}${selectedStore ? `, Store ID ${escapeHtml(selectedStore)}` : ''}${searchTerm ? `, Search ${escapeHtml(searchTerm)}` : ''}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Sales Amount</div><div class="value">৳${totalExportSalesAmount.toFixed(2)}</div></div><div class="card"><div class="label">Scope</div><div class="value">${escapeHtml(exportScope)}</div></div></div><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${['Subtotal','Order Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div><script>setTimeout(() => window.print(), 250);</script></body></html>`;
       const w = window.open('', '_blank', 'width=1200,height=800');
       if (!w) {
         alert('Popup blocked. Please allow popups to export PDF.');
@@ -882,9 +919,9 @@ export default function PurchaseHistoryPage() {
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalOrders}</div>
                 </div>
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Revenue</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Sales Amount</div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    ৳{totalRevenue.toFixed(2)}
+                    ৳{totalSalesAmount.toFixed(2)}
                   </div>
                 </div>
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
@@ -1123,6 +1160,12 @@ export default function PurchaseHistoryPage() {
                                   {new Date(order.created_at).toLocaleDateString('en-GB')} {new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
                                 </span>
                               </div>
+                              <div className="md:col-span-2 lg:col-span-4">
+                                <span className="text-gray-600 dark:text-gray-400">Payment: </span>
+                                <span className="text-gray-900 dark:text-white font-medium">
+                                  {formatPaymentBreakdown(order)}
+                                </span>
+                              </div>
                               {order.notes && (
                                 <div className="md:col-span-2 lg:col-span-4 rounded-md bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 px-3 py-2">
                                   <span className="text-blue-700 dark:text-blue-300 font-medium">Order Note: </span>
@@ -1344,16 +1387,47 @@ export default function PurchaseHistoryPage() {
                                   {order.payments && order.payments.length > 0 && (
                                     <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700 space-y-2">
                                       <div className="text-xs font-medium text-gray-700 dark:text-gray-300">Payment History:</div>
-                                      {order.payments?.map((payment: any, payIndex: number) => (
-                                        <div key={payment.id} className="flex justify-between text-xs">
-                                          <span className="text-gray-600 dark:text-gray-400">
-                                            {payment.payment_method} ({payment.payment_type})
-                                          </span>
-                                          <span className="text-gray-900 dark:text-white">
-                                            ৳{Number(String(payment.amount ?? "0").replace(/[^0-9.-]/g, "")).toFixed(2)}
-                                          </span>
-                                        </div>
-                                      ))}
+                                      {order.payments?.map((payment: any) => {
+                                        const splits = getPaymentSplits(payment);
+
+                                        if (splits.length > 0) {
+                                          return (
+                                            <div key={payment.id} className="rounded-md bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700 p-2 space-y-1">
+                                              <div className="flex justify-between text-xs font-medium">
+                                                <span className="text-gray-700 dark:text-gray-300">
+                                                  Split Payment ({payment.payment_type})
+                                                </span>
+                                                <span className="text-gray-900 dark:text-white">
+                                                  {money(payment.amount)}
+                                                </span>
+                                              </div>
+                                              <div className="space-y-1 pl-2 border-l-2 border-blue-200 dark:border-blue-800">
+                                                {splits.map((split: any, splitIndex: number) => (
+                                                  <div key={`${payment.id}-split-${splitIndex}`} className="flex justify-between text-xs">
+                                                    <span className="text-gray-600 dark:text-gray-400">
+                                                      {split.payment_method || 'Unknown method'}
+                                                    </span>
+                                                    <span className="text-gray-900 dark:text-white font-medium">
+                                                      {money(split.amount)}
+                                                    </span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+
+                                        return (
+                                          <div key={payment.id} className="flex justify-between text-xs">
+                                            <span className="text-gray-600 dark:text-gray-400">
+                                              {payment.payment_method} ({payment.payment_type})
+                                            </span>
+                                            <span className="text-gray-900 dark:text-white">
+                                              {money(payment.amount)}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>

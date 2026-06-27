@@ -264,56 +264,88 @@ class Transaction extends Model
     // Static methods for creating transactions
     public static function createFromOrderPayment(OrderPayment $payment): self
     {
+        $payment->loadMissing(['order', 'customer', 'paymentMethod', 'paymentSplits.paymentMethod']);
+
         $status = $payment->status === 'completed' ? 'completed' : 'pending';
         $transactionDate = $payment->completed_at ?? $payment->processed_at ?? now();
-        $cashAccountId = static::getCashAccountId($payment->store_id);
         $salesRevenueAccountId = static::getSalesRevenueAccountId();
         $taxLiabilityAccountId = static::getTaxLiabilityAccountId();
         $groupId = (string) Str::uuid();
 
-        $metadata = [
-            'payment_method' => $payment->paymentMethod->name ?? 'Unknown',
-            'order_number' => $payment->order->order_number ?? null,
-            'customer_name' => $payment->customer->name ?? null,
-            'group_id' => $groupId,
-        ];
-
-        // Calculate proportional tax for this payment (inclusive tax system)
         $order = $payment->order;
-        $paymentAmount = (float)$payment->amount;
-        
-        // Calculate tax proportion based on order total
-        if ($order && $order->total_amount > 0) {
-            // Tax ratio = order tax / order total
-            $taxRatio = (float)$order->tax_amount / (float)$order->total_amount;
-            // Apply ratio to payment amount to get proportional tax
+        $paymentAmount = (float) $payment->amount;
+
+        if ($order && (float) $order->total_amount > 0) {
+            $taxRatio = (float) $order->tax_amount / (float) $order->total_amount;
             $taxAmount = round($paymentAmount * $taxRatio, 2);
         } else {
             $taxAmount = 0;
         }
-        
+
         $revenueAmount = $paymentAmount - $taxAmount;
 
-        // DOUBLE-ENTRY BOOKKEEPING WITH INCLUSIVE TAX:
-        // 1. Debit Cash Account (Asset increases - full amount including tax)
-        $debitTransaction = static::create([
-            'transaction_date' => $transactionDate,
-            'amount' => $paymentAmount,
-            'type' => 'debit',
-            'account_id' => $cashAccountId,
-            'reference_type' => OrderPayment::class,
-            'reference_id' => $payment->id,
-            'description' => "Order Payment - {$payment->payment_number}",
-            'store_id' => $payment->store_id,
-            'created_by' => $payment->processed_by,
-            'metadata' => array_merge($metadata, [
-                'includes_tax' => $taxAmount > 0,
-                'tax_amount' => $taxAmount,
-            ]),
-            'status' => $status,
-        ]);
+        $metadata = [
+            'event' => 'order_payment',
+            'payment_method' => $payment->paymentMethod->name ?? ($payment->paymentSplits->isNotEmpty() ? 'Split Payment' : 'Unknown'),
+            'order_number' => $order->order_number ?? null,
+            'order_type' => $order->order_type ?? null,
+            'customer_name' => $payment->customer->name ?? null,
+            'group_id' => $groupId,
+        ];
 
-        // 2. Credit Sales Revenue Account (Income - excluding tax)
+        $debitTransaction = null;
+        $splits = $payment->paymentSplits
+            ->filter(fn ($split) => in_array($split->status, ['completed', 'pending'], true));
+
+        if ($splits->isNotEmpty()) {
+            foreach ($splits as $split) {
+                $method = $split->paymentMethod;
+                $accountId = static::getReceivingAccountIdForPaymentMethod($method, $split->store_id ?? $payment->store_id);
+                $methodName = $method->name ?? 'Unknown';
+                $splitAmount = (float) $split->amount;
+
+                $txn = static::create([
+                    'transaction_date' => $split->completed_at ?? $transactionDate,
+                    'amount' => $splitAmount,
+                    'type' => 'debit',
+                    'account_id' => $accountId,
+                    'reference_type' => OrderPayment::class,
+                    'reference_id' => $payment->id,
+                    'description' => "Order Payment ({$methodName}) - {$payment->payment_number}",
+                    'store_id' => $split->store_id ?? $payment->store_id,
+                    'created_by' => $payment->processed_by,
+                    'metadata' => array_merge($metadata, [
+                        'payment_split_id' => $split->id,
+                        'payment_method' => $methodName,
+                        'payment_method_type' => $method->type ?? null,
+                    ]),
+                    'status' => $split->status === 'completed' && $status === 'completed' ? 'completed' : 'pending',
+                ]);
+
+                $debitTransaction = $debitTransaction ?: $txn;
+            }
+        } else {
+            $accountId = static::getReceivingAccountIdForPaymentMethod($payment->paymentMethod, $payment->store_id);
+            $debitTransaction = static::create([
+                'transaction_date' => $transactionDate,
+                'amount' => $paymentAmount,
+                'type' => 'debit',
+                'account_id' => $accountId,
+                'reference_type' => OrderPayment::class,
+                'reference_id' => $payment->id,
+                'description' => "Order Payment - {$payment->payment_number}",
+                'store_id' => $payment->store_id,
+                'created_by' => $payment->processed_by,
+                'metadata' => array_merge($metadata, [
+                    'includes_tax' => $taxAmount > 0,
+                    'tax_amount' => $taxAmount,
+                    'payment_method_type' => $payment->paymentMethod->type ?? null,
+                ]),
+                'status' => $status,
+            ]);
+        }
+
+        // Credit Sales Revenue Account (Income - excluding tax)
         static::create([
             'transaction_date' => $transactionDate,
             'amount' => $revenueAmount,
@@ -328,7 +360,7 @@ class Transaction extends Model
             'status' => $status,
         ]);
 
-        // 3. Credit Tax Liability Account (Liability - tax collected)
+        // Credit Tax Liability Account (Liability - tax collected)
         if ($taxAmount > 0) {
             static::create([
                 'transaction_date' => $transactionDate,
@@ -348,7 +380,7 @@ class Transaction extends Model
             ]);
         }
 
-        return $debitTransaction;
+        return $debitTransaction ?: new static();
     }
 
     public static function createFromServiceOrderPayment(ServiceOrderPayment $payment): self
@@ -764,27 +796,55 @@ class Transaction extends Model
 
     public static function createFromExpensePayment(ExpensePayment $payment): self
     {
+        $payment->loadMissing(['expense.category', 'paymentMethod']);
         $status = $payment->status === 'completed' ? 'completed' : 'pending';
         $groupId = (string) Str::uuid();
+        $expense = $payment->expense;
+        $expenseAccountId = static::getExpenseAccountId($expense->category_id ?? null);
+        $cashAccountId = static::getCashAccountId($expense->store_id ?? null);
+        $transactionDate = $payment->completed_at ?? $payment->processed_at ?? now();
 
-        return static::create([
-            'transaction_date' => $payment->completed_at ?? $payment->processed_at ?? now(),
+        $metadata = [
+            'event' => 'expense_payment',
+            'payment_method' => $payment->paymentMethod->name ?? 'Unknown',
+            'expense_number' => $expense->expense_number ?? null,
+            'expense_description' => $expense->description ?? null,
+            'expense_category' => $expense->category->name ?? null,
+            'group_id' => $groupId,
+        ];
+
+        // DOUBLE-ENTRY:
+        // 1. Debit Expense account (expense recognised)
+        $debitTransaction = static::create([
+            'transaction_date' => $transactionDate,
             'amount' => $payment->amount,
-            'type' => 'credit', // Money going out for expense payment
-            'account_id' => static::getCashAccountId($payment->expense->store_id),
+            'type' => 'debit',
+            'account_id' => $expenseAccountId,
             'reference_type' => ExpensePayment::class,
             'reference_id' => $payment->id,
-            'description' => "Expense Payment - {$payment->payment_number}: " . ($payment->expense->description ?? 'No description'),
-            'store_id' => $payment->expense->store_id,
+            'description' => "Expense - {$payment->payment_number}: " . ($expense->description ?? 'No description'),
+            'store_id' => $expense->store_id ?? null,
             'created_by' => $payment->processed_by,
-            'metadata' => [
-                'payment_method' => $payment->paymentMethod->name ?? 'Unknown',
-                'expense_number' => $payment->expense->expense_number ?? null,
-                'expense_description' => $payment->expense->description ?? null,
-                'group_id' => $groupId,
-            ],
+            'metadata' => $metadata,
             'status' => $status,
         ]);
+
+        // 2. Credit Cash/Bank account (money going out)
+        static::create([
+            'transaction_date' => $transactionDate,
+            'amount' => $payment->amount,
+            'type' => 'credit',
+            'account_id' => $cashAccountId,
+            'reference_type' => ExpensePayment::class,
+            'reference_id' => $payment->id,
+            'description' => "Expense Payment - {$payment->payment_number}: " . ($expense->description ?? 'No description'),
+            'store_id' => $expense->store_id ?? null,
+            'created_by' => $payment->processed_by,
+            'metadata' => $metadata,
+            'status' => $status,
+        ]);
+
+        return $debitTransaction;
     }
 
     public static function createFromVendorPayment(VendorPayment $payment): self
@@ -941,6 +1001,45 @@ class Transaction extends Model
 
         return $account->id;
     }
+
+    public static function getBankAccountId(): ?int
+    {
+        $account = Account::where('account_code', '1004')
+            ->where('is_active', true)
+            ->first();
+
+        if (!$account) {
+            $query = Account::query()->where('type', 'asset')
+                ->where('sub_type', 'current_asset')
+                ->where('is_active', true);
+            (new static)->whereLike($query, 'name', 'Bank');
+            $account = $query->first();
+        }
+
+        if (!$account) {
+            $parent = Account::where('type', 'asset')->whereNull('parent_id')->first();
+            $account = Account::create([
+                'account_code' => '1004',
+                'name' => 'Bank Account',
+                'type' => 'asset',
+                'sub_type' => 'current_asset',
+                'parent_id' => $parent?->id,
+                'description' => 'Auto-created bank account for non-cash payments and cash sheet transfers.',
+                'is_active' => true,
+            ]);
+        }
+
+        return $account->id;
+    }
+
+    private static function getReceivingAccountIdForPaymentMethod($paymentMethod = null, $storeId = null): int
+    {
+        $type = $paymentMethod->type ?? null;
+        return $type === 'cash'
+            ? static::getCashAccountId($storeId)
+            : static::getBankAccountId();
+    }
+
 
     public static function getSalesRevenueAccountId(): ?int
     {

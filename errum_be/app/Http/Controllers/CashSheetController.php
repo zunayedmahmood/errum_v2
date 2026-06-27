@@ -11,6 +11,7 @@ use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Services\AccountingEntryService;
 
 /**
  * CashSheetController
@@ -67,7 +68,7 @@ class CashSheetController extends Controller
 
         $rawSales      = $this->loadBranchSales($storeIds, $dateFrom, $dateTo);
         $rawPayments   = $this->loadBranchPayments($storeIds, $dateFrom, $dateTo);
-        $branchReturns = $this->loadBranchReturns($storeIds, $dateFrom, $dateTo);
+        $branchExchanges = $this->loadBranchExchangeAmounts($storeIds, $dateFrom, $dateTo);
         $branchCosts   = $this->loadBranchCosts($storeIds, $dateFrom, $dateTo);
         $adminData     = $this->loadAdminEntries($dateFrom, $dateTo);
         $onlineData    = $this->loadOnlineData($dateFrom, $dateTo);
@@ -88,7 +89,7 @@ class CashSheetController extends Controller
                 $raw_cash     = (float) ($rawPayments[$storeKey][$date]['cash'] ?? 0);
                 $raw_bank     = (float) ($rawPayments[$storeKey][$date]['bank'] ?? 0);
                 $sale         = (float) ($rawSales[$storeKey][$date] ?? 0);
-                $ex_on        = (float) ($branchReturns[$storeKey][$date] ?? 0);
+                $ex_on        = (float) ($branchExchanges[$storeKey][$date] ?? 0);
                 $daily_cost   = (float) ($branchCosts[$storeKey][$date] ?? 0);
                 $salary       = (float) ($adminData[$storeKey][$date]['salary_setaside'] ?? 0);
                 $cash_to_bank = (float) ($adminData[$storeKey][$date]['cash_to_bank'] ?? 0);
@@ -223,6 +224,8 @@ class CashSheetController extends Controller
             'created_by' => Auth::guard('api')->id(),
         ]);
 
+        app(AccountingEntryService::class)->syncBranchCostEntry($entry);
+
         return response()->json([
             'success' => true,
             'entry'   => $entry->load(['store:id,name,is_warehouse', 'createdBy:id,name']),
@@ -231,7 +234,9 @@ class CashSheetController extends Controller
 
     public function destroyBranchCost(int $id)
     {
-        BranchCostEntry::findOrFail($id)->delete();
+        $entry = BranchCostEntry::findOrFail($id);
+        app(AccountingEntryService::class)->cancelByReference(BranchCostEntry::class, $entry->id);
+        $entry->delete();
         return response()->json(['success' => true]);
     }
 
@@ -255,6 +260,8 @@ class CashSheetController extends Controller
             'created_by' => Auth::guard('api')->id(),
         ]);
 
+        app(AccountingEntryService::class)->syncAdminEntry($entry);
+
         return response()->json([
             'success' => true,
             'entry'   => $entry->load(['store:id,name,is_warehouse', 'createdBy:id,name']),
@@ -263,7 +270,9 @@ class CashSheetController extends Controller
 
     public function destroyAdmin(int $id)
     {
-        AdminEntry::findOrFail($id)->delete();
+        $entry = AdminEntry::findOrFail($id);
+        app(AccountingEntryService::class)->cancelByReference(AdminEntry::class, $entry->id);
+        $entry->delete();
         return response()->json(['success' => true]);
     }
 
@@ -281,6 +290,8 @@ class CashSheetController extends Controller
             'created_by' => Auth::guard('api')->id(),
         ]);
 
+        app(AccountingEntryService::class)->syncOwnerEntry($entry);
+
         return response()->json([
             'success' => true,
             'entry'   => $entry->load(['createdBy:id,name']),
@@ -289,7 +300,9 @@ class CashSheetController extends Controller
 
     public function destroyOwner(int $id)
     {
-        OwnerEntry::findOrFail($id)->delete();
+        $entry = OwnerEntry::findOrFail($id);
+        app(AccountingEntryService::class)->cancelByReference(OwnerEntry::class, $entry->id);
+        $entry->delete();
         return response()->json(['success' => true]);
     }
 
@@ -308,6 +321,15 @@ class CashSheetController extends Controller
             ->whereIn('op.store_id', $ids)
             ->where('o.order_type', 'counter')
             ->whereNotIn('o.status', ['cancelled', 'refunded'])
+            ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
+            // Exchange replacement orders are operational records only. Their
+            // replacement value is settled by exchange balance, so the cash sheet
+            // must not treat the replacement order total as a fresh counter sale.
+            ->where(function ($q) {
+                $q->whereNull('o.metadata')
+                  ->orWhere('o.metadata', 'not like', '%is_exchange_replacement%');
+            })
             ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '>=', $from)
             ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '<=', $to)
             ->groupBy('op.store_id', 'day', 'o.id', 'o.total_amount')
@@ -355,6 +377,9 @@ class CashSheetController extends Controller
             )
             ->whereIn('op.store_id', $ids)
             ->where('o.order_type', 'counter')
+            ->whereNotIn('o.status', ['cancelled', 'refunded'])
+            ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
             ->whereDate('op.completed_at', '>=', $from)
             ->whereDate('op.completed_at', '<=', $to)
             ->where('op.status', 'completed')
@@ -379,6 +404,9 @@ class CashSheetController extends Controller
             )
             ->whereIn('ps.store_id', $ids)
             ->where('o.order_type', 'counter')
+            ->whereNotIn('o.status', ['cancelled', 'refunded'])
+            ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
             ->where('op.status', 'completed')
             ->where('ps.status', 'completed')
             ->whereNotIn('op.payment_type', $excludedPaymentTypes)
@@ -392,27 +420,61 @@ class CashSheetController extends Controller
         return $out;
     }
 
-    private function loadBranchReturns(array $ids, string $from, string $to): array
+    private function loadBranchExchangeAmounts(array $ids, string $from, string $to): array
     {
         $out = [];
 
-        DB::table('product_returns as pr')
-            ->join('orders as o', 'o.id', '=', 'pr.order_id')
+        // EX column = only the net exchange settlement amount.
+        // Example: returned item ৳5,000, replacement ৳5,500 → EX shows ৳500.
+        // Do not use product_returns.total_return_value here, because that is the
+        // full returned-product value and would overstate the exchange adjustment.
+        DB::table('order_payments as op')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
             ->select(
-                'o.store_id',
-                DB::raw('DATE(pr.created_at) as day'),
-                DB::raw('SUM(pr.total_return_value) as total')
+                'op.store_id',
+                DB::raw('DATE(op.completed_at) as day'),
+                DB::raw('SUM(op.amount) as total')
             )
-            ->whereIn('o.store_id', $ids)
+            ->whereIn('op.store_id', $ids)
             ->where('o.order_type', 'counter')
-            ->whereIn('pr.status', ['approved', 'completed'])
-            ->whereDate('pr.created_at', '>=', $from)
-            ->whereDate('pr.created_at', '<=', $to)
-            ->groupBy('o.store_id', 'day')
+            ->where('op.payment_type', 'exchange_surplus')
+            ->where('op.status', 'completed')
+            ->whereNotIn('o.status', ['cancelled', 'refunded'])
+            ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
+            ->whereNotNull('op.completed_at')
+            ->whereDate('op.completed_at', '>=', $from)
+            ->whereDate('op.completed_at', '<=', $to)
+            ->groupBy('op.store_id', 'day')
             ->get()
             ->each(function ($r) use (&$out) {
                 $storeKey = (string) $r->store_id;
-                $out[$storeKey][$r->day] = (float) $r->total;
+                $out[$storeKey][$r->day] = ($out[$storeKey][$r->day] ?? 0) + (float) $r->total;
+            });
+
+        // If the exchange goes the other way and the customer is reimbursed,
+        // keep it visible in EX as a negative adjustment instead of counting it
+        // as a sale. This keeps the column useful for both upgrade and refund
+        // exchange settlements.
+        DB::table('refunds as r')
+            ->join('product_returns as pr', 'pr.id', '=', 'r.return_id')
+            ->select(
+                'pr.store_id',
+                DB::raw('DATE(COALESCE(r.completed_at, r.processed_at, r.created_at)) as day'),
+                DB::raw('SUM(r.refund_amount) as total')
+            )
+            ->whereIn('pr.store_id', $ids)
+            ->where('r.refund_type', 'exchange_refund')
+            ->where('r.status', 'completed')
+            ->whereNull('r.deleted_at')
+            ->whereNull('pr.deleted_at')
+            ->whereDate(DB::raw('COALESCE(r.completed_at, r.processed_at, r.created_at)'), '>=', $from)
+            ->whereDate(DB::raw('COALESCE(r.completed_at, r.processed_at, r.created_at)'), '<=', $to)
+            ->groupBy('pr.store_id', 'day')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $storeKey = (string) $r->store_id;
+                $out[$storeKey][$r->day] = ($out[$storeKey][$r->day] ?? 0) - (float) $r->total;
             });
 
         return $out;
@@ -467,6 +529,7 @@ class CashSheetController extends Controller
             ->whereDate('created_at', '>=', $from)
             ->whereDate('created_at', '<=', $to)
             ->whereNotIn('status', ['cancelled', 'refunded'])
+            ->whereNull('deleted_at')
             ->groupBy('day')
             ->get()
             ->each(function ($r) use (&$out) {
@@ -485,6 +548,7 @@ class CashSheetController extends Controller
             ->whereDate('created_at', '>=', $from)
             ->whereDate('created_at', '<=', $to)
             ->whereNotIn('status', ['cancelled', 'refunded'])
+            ->whereNull('deleted_at')
             ->groupBy('day')
             ->get()
             ->each(function ($r) use (&$out) {

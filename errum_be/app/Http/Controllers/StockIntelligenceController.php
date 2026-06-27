@@ -407,9 +407,9 @@ class StockIntelligenceController extends Controller
     // GET /api/inventory/intelligence/overview
     //   ?date_preset=365|90|30|7|today|custom
     //   ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD   (used for custom or explicit range)
-    //   ?category_id=&search=&page=&per_page=
+    //   ?category_id=&store_id=&search=&page=&per_page=
     //
-    // Date range affects movement counts (purchase/sell/dispatch/defect/velocity).
+    // store_id filters the sheet to one branch/store. Date range affects movement counts (purchase/sell/dispatch/defect/velocity).
     // Current stock always reflects the latest stock state.
     // =========================================================================
     public function overview(Request $request)
@@ -420,6 +420,19 @@ class StockIntelligenceController extends Controller
             $search  = trim((string) $request->query('search', ''));
             $perPage = min(100, max(10, (int) $request->query('per_page', 50)));
             $page    = max(1, (int) $request->query('page', 1));
+            $selectedStoreId = (int) $request->query('store_id', 0);
+            $storeRowsForFilter = DB::table('stores')
+                ->select('id', 'name', 'store_code', 'address')
+                ->orderBy('name')
+                ->get();
+            if ($selectedStoreId > 0 && !$storeRowsForFilter->contains('id', $selectedStoreId)) {
+                $selectedStoreId = 0;
+            }
+            $storesForFilterPayload = $storeRowsForFilter->map(fn($s) => [
+                'id' => (int) $s->id,
+                'name' => $s->name,
+                'store_code' => $s->store_code ?? null,
+            ])->toArray();
 
             $productQuery = DB::table('products as p')
                 ->leftJoin('categories as c', 'p.category_id', '=', 'c.id')
@@ -432,6 +445,7 @@ class StockIntelligenceController extends Controller
                     'p.name as product_name',
                     'p.base_name',
                     'p.variation_suffix',
+                    'p.brand',
                     'p.category_id',
                     DB::raw("CASE WHEN pc.id IS NOT NULL THEN pc.title ELSE COALESCE(c.title, 'Uncategorized') END as category_name"),
                     DB::raw("CASE WHEN pc.id IS NOT NULL THEN c.title ELSE '-' END as subcategory_name"),
@@ -500,6 +514,21 @@ class StockIntelligenceController extends Controller
                 });
             }
 
+            // Branch/store filter for Inventory View: when a store is selected, show
+            // product families that currently have stock in that store. This prevents
+            // the page from calculating global stock and then merely hiding rows on
+            // the frontend.
+            if ($selectedStoreId > 0) {
+                $productQuery->whereExists(function ($q) use ($selectedStoreId) {
+                    $q->select(DB::raw(1))
+                        ->from('product_batches as branch_pb')
+                        ->whereColumn('branch_pb.product_id', 'p.id')
+                        ->where('branch_pb.store_id', $selectedStoreId)
+                        ->where('branch_pb.is_active', true)
+                        ->where('branch_pb.quantity', '>', 0);
+                });
+            }
+
             $products = $productQuery
                 ->orderByRaw('COALESCE(p.base_name, p.name) asc')
                 ->orderBy('p.variation_suffix')
@@ -514,9 +543,10 @@ class StockIntelligenceController extends Controller
                             'start_date' => $from->toDateString(),
                             'end_date' => $to->toDateString(),
                             'period_days' => $periodDays,
+                            'store_id' => $selectedStoreId > 0 ? $selectedStoreId : null,
                         ],
                         'summary' => $this->emptyOverviewSummary(),
-                        'stores' => [],
+                        'stores' => $storesForFilterPayload,
                         'items' => [],
                         'total' => 0,
                         'page' => $page,
@@ -526,8 +556,14 @@ class StockIntelligenceController extends Controller
                 ]);
             }
 
+            // Group the inventory view by product family, not by the individual
+            // variant product row. Previously this used SKU only. In real Errum data,
+            // the same visible product can have separate variant rows/SKUs, so searching
+            // a product showed the same base product repeatedly. This key collapses
+            // variations with the same base product name/category/brand into one row,
+            // while still keeping variation stock details inside the `variations` array.
             $groupedProducts = $products->groupBy(function ($p) {
-                return $p->sku ? (string) $p->sku : 'NO-SKU-' . $p->product_id;
+                return $this->overviewProductFamilyKey($p);
             })->sortBy(function ($group) {
                 $first = $group->first();
                 return strtolower($first->base_name ?: $first->product_name ?: '');
@@ -547,9 +583,10 @@ class StockIntelligenceController extends Controller
                             'start_date' => $from->toDateString(),
                             'end_date' => $to->toDateString(),
                             'period_days' => $periodDays,
+                            'store_id' => $selectedStoreId > 0 ? $selectedStoreId : null,
                         ],
                         'summary' => $this->emptyOverviewSummary(),
-                        'stores' => [],
+                        'stores' => $storesForFilterPayload,
                         'items' => [],
                         'total' => $totalGroups,
                         'page' => $page,
@@ -559,37 +596,35 @@ class StockIntelligenceController extends Controller
                 ]);
             }
 
-            $stores = DB::table('stores')
-                ->select('id', 'name', 'store_code', 'address')
-                ->orderBy('name')
-                ->get()
-                ->keyBy('id');
+            $stores = $storeRowsForFilter->keyBy('id');
 
-            $currentStock = $this->overviewCurrentStock($pageProductIds);
+            $currentStock = $this->overviewCurrentStock($pageProductIds, $selectedStoreId);
             $reserved = DB::table('reserved_products')
                 ->whereIn('product_id', $pageProductIds)
                 ->select('product_id', 'reserved_inventory', 'available_inventory')
                 ->get()
                 ->keyBy('product_id');
 
-            $purchases = $this->overviewPurchases($pageProductIds, $from, $to);
-            $sales = $this->overviewSales($pageProductIds, $from, $to);
-            $dispatchOut = $this->overviewDispatchOut($pageProductIds, $from, $to);
-            $dispatchReceived = $this->overviewDispatchReceived($pageProductIds, $from, $to);
-            $defects = $this->overviewDefects($pageProductIds, $from, $to);
-            $batches = $this->overviewBatchDetails($pageProductIds, $from, $to);
+            $purchases = $this->overviewPurchases($pageProductIds, $from, $to, $selectedStoreId);
+            $sales = $this->overviewSales($pageProductIds, $from, $to, $selectedStoreId);
+            $dispatchOut = $this->overviewDispatchOut($pageProductIds, $from, $to, $selectedStoreId);
+            $dispatchReceived = $this->overviewDispatchReceived($pageProductIds, $from, $to, $selectedStoreId);
+            $defects = $this->overviewDefects($pageProductIds, $from, $to, $selectedStoreId);
+            $batches = $this->overviewBatchDetails($pageProductIds, $from, $to, $selectedStoreId);
 
-            $allStoreIds = collect()
-                ->merge($stores->keys())
-                ->merge($this->nestedMetricStoreIds($currentStock))
-                ->merge($this->nestedMetricStoreIds($purchases))
-                ->merge($this->nestedMetricStoreIds($sales))
-                ->merge($this->nestedMetricStoreIds($dispatchOut))
-                ->merge($this->nestedMetricStoreIds($dispatchReceived))
-                ->merge($this->nestedMetricStoreIds($defects))
-                ->unique()
-                ->filter()
-                ->values();
+            $allStoreIds = $selectedStoreId > 0
+                ? collect([$selectedStoreId])
+                : collect()
+                    ->merge($stores->keys())
+                    ->merge($this->nestedMetricStoreIds($currentStock))
+                    ->merge($this->nestedMetricStoreIds($purchases))
+                    ->merge($this->nestedMetricStoreIds($sales))
+                    ->merge($this->nestedMetricStoreIds($dispatchOut))
+                    ->merge($this->nestedMetricStoreIds($dispatchReceived))
+                    ->merge($this->nestedMetricStoreIds($defects))
+                    ->unique()
+                    ->filter()
+                    ->values();
 
             $items = [];
             $summary = $this->emptyOverviewSummary();
@@ -699,16 +734,18 @@ class StockIntelligenceController extends Controller
                 $totalStockValue = array_sum(array_column($groupStoreRows, 'stock_value'));
                 $totalVelocity = $periodDays > 0 ? round($totalSold / $periodDays, 4) : 0.0;
                 $totalReserved = 0;
-                foreach ($groupProductIds as $pid) {
-                    $reservedRow = $reserved->get($pid);
-                    $totalReserved += $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
+                if ($selectedStoreId <= 0) {
+                    foreach ($groupProductIds as $pid) {
+                        $reservedRow = $reserved->get($pid);
+                        $totalReserved += $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
+                    }
                 }
                 $totalPhysicalStock = max(0, $totalGlobalAvailable - $totalReserved);
                 $totalDaysCover = $totalVelocity > 0 ? round($totalPhysicalStock / $totalVelocity, 1) : null;
                 $groupStatus = $this->overviewProductStatus($groupStoreRows, $totalPhysicalStock, $totalVelocity, $totalDaysCover);
                 $movementRecommendation = $this->overviewMovementRecommendation($groupStoreRows, $periodDays);
 
-                $variations = $groupProducts->map(function ($p) use ($currentStock, $reserved) {
+                $variations = $groupProducts->map(function ($p) use ($currentStock, $reserved, $selectedStoreId) {
                     $productId = (int) $p->product_id;
                     $globalAvailable = 0;
                     $stores = [];
@@ -724,7 +761,7 @@ class StockIntelligenceController extends Controller
                         }
                     }
                     $reservedRow = $reserved->get($productId);
-                    $reservedQty = $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
+                    $reservedQty = ($selectedStoreId > 0 || !$reservedRow) ? 0 : (int) $reservedRow->reserved_inventory;
                     $physicalQty = max(0, $globalAvailable - $reservedQty);
 
                     return [
@@ -743,6 +780,8 @@ class StockIntelligenceController extends Controller
 
                 $groupPoCount = $groupBatches->pluck('po_number')->filter()->unique()->count();
                 $groupBatchCount = $groupBatches->pluck('batch_id')->unique()->count();
+                $groupSkus = $groupProducts->pluck('sku')->filter()->unique()->values();
+                $displaySku = $groupSkus->isNotEmpty() ? $groupSkus->implode(', ') : 'NO-SKU';
 
                 $summary['total_current_stock'] += $totalGlobalAvailable;
                 $summary['total_available_stock'] += $totalPhysicalStock;
@@ -759,7 +798,8 @@ class StockIntelligenceController extends Controller
 
                 $items[] = [
                     'group_key' => (string) $groupKey,
-                    'sku' => $first->sku ?: 'NO-SKU',
+                    'sku' => $displaySku,
+                    'skus' => $groupSkus->toArray(),
                     'product_name' => $first->base_name ?: $first->product_name,
                     'category_id' => $first->category_id,
                     'category_name' => $first->category_name,
@@ -800,6 +840,7 @@ class StockIntelligenceController extends Controller
                         'start_date' => $from->toDateString(),
                         'end_date' => $to->toDateString(),
                         'period_days' => $periodDays,
+                        'store_id' => $selectedStoreId > 0 ? $selectedStoreId : null,
                     ],
                     'summary' => $summary,
                     'stores' => $stores->values()->map(fn($s) => [
@@ -820,6 +861,41 @@ class StockIntelligenceController extends Controller
                 'message' => 'Failed to build inventory overview: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Build a stable grouping key for the Inventory View page.
+     *
+     * Product variations are stored as individual product rows, but Inventory View
+     * should show one visible product row and keep the sizes/colors in the variation
+     * stock cell. SKU-only grouping is not enough when imported variations have
+     * separate SKUs, so we prefer the shared base_name/category/brand family.
+     */
+    private function overviewProductFamilyKey($product): string
+    {
+        $categoryId = (int) ($product->category_id ?? 0);
+        $brand = strtolower(trim((string) ($product->brand ?? '')));
+        $baseName = trim((string) ($product->base_name ?? ''));
+
+        if ($baseName === '') {
+            $baseName = trim((string) ($product->product_name ?? ''));
+            $suffix = trim((string) ($product->variation_suffix ?? ''));
+            if ($suffix !== '' && substr($baseName, -strlen($suffix)) === $suffix) {
+                $baseName = trim(substr($baseName, 0, -strlen($suffix)));
+            }
+        }
+
+        $normalizedBaseName = preg_replace('/\s+/', ' ', strtolower($baseName));
+
+        if ($normalizedBaseName !== '') {
+            return 'FAMILY:' . sha1($categoryId . '|' . $brand . '|' . $normalizedBaseName);
+        }
+
+        if (!empty($product->sku)) {
+            return 'SKU:' . (string) $product->sku;
+        }
+
+        return 'PRODUCT:' . (int) $product->product_id;
     }
 
     private function resolveOverviewDateRange(Request $request): array
@@ -891,7 +967,7 @@ class StockIntelligenceController extends Controller
         return $ids;
     }
 
-    private function overviewCurrentStock(array $productIds): array
+    private function overviewCurrentStock(array $productIds, int $storeId = 0): array
     {
         if (empty($productIds)) return [];
 
@@ -902,6 +978,7 @@ class StockIntelligenceController extends Controller
             ->where('pb.is_active', true)
             ->where('pb.quantity', '>', 0)
             ->whereIn('pb.product_id', $productIds)
+            ->when($storeId > 0, fn ($q) => $q->where('pb.store_id', $storeId))
             ->select([
                 'pb.product_id',
                 'pb.store_id',
@@ -925,7 +1002,7 @@ class StockIntelligenceController extends Controller
         return $map;
     }
 
-    private function overviewPurchases(array $productIds, Carbon $from, Carbon $to): array
+    private function overviewPurchases(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
     {
         if (empty($productIds)) return [];
 
@@ -935,6 +1012,7 @@ class StockIntelligenceController extends Controller
             ->whereIn('poi.product_id', $productIds)
             ->whereNotIn('po.status', ['draft', 'cancelled', 'returned'])
             ->whereBetween(DB::raw('COALESCE(po.actual_delivery_date, po.order_date, po.created_at)'), [$from, $to])
+            ->when($storeId > 0, fn ($q) => $q->whereRaw('COALESCE(pb.store_id, po.store_id) = ?', [$storeId]))
             ->select([
                 'poi.product_id',
                 DB::raw('COALESCE(pb.store_id, po.store_id) as store_id'),
@@ -957,7 +1035,7 @@ class StockIntelligenceController extends Controller
         return $map;
     }
 
-    private function overviewSales(array $productIds, Carbon $from, Carbon $to): array
+    private function overviewSales(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
     {
         if (empty($productIds)) return [];
 
@@ -967,6 +1045,7 @@ class StockIntelligenceController extends Controller
             ->whereNull('o.deleted_at')
             ->whereNotIn('o.status', ['cancelled', 'refunded'])
             ->whereBetween('o.order_date', [$from, $to])
+            ->when($storeId > 0, fn ($q) => $q->whereRaw('COALESCE(oi.store_id, o.store_id) = ?', [$storeId]))
             ->select([
                 'oi.product_id',
                 DB::raw('COALESCE(oi.store_id, o.store_id) as store_id'),
@@ -989,7 +1068,7 @@ class StockIntelligenceController extends Controller
         return $map;
     }
 
-    private function overviewDispatchOut(array $productIds, Carbon $from, Carbon $to): array
+    private function overviewDispatchOut(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
     {
         if (empty($productIds)) return [];
 
@@ -999,6 +1078,7 @@ class StockIntelligenceController extends Controller
             ->whereIn('pb.product_id', $productIds)
             ->whereNotIn('pd.status', ['cancelled'])
             ->whereBetween('pd.dispatch_date', [$from, $to])
+            ->when($storeId > 0, fn ($q) => $q->where('pd.source_store_id', $storeId))
             ->select([
                 'pb.product_id',
                 'pd.source_store_id as store_id',
@@ -1014,7 +1094,7 @@ class StockIntelligenceController extends Controller
         return $map;
     }
 
-    private function overviewDispatchReceived(array $productIds, Carbon $from, Carbon $to): array
+    private function overviewDispatchReceived(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
     {
         if (empty($productIds)) return [];
 
@@ -1024,6 +1104,7 @@ class StockIntelligenceController extends Controller
             ->whereIn('pb.product_id', $productIds)
             ->whereNotIn('pd.status', ['cancelled'])
             ->whereBetween(DB::raw('COALESCE(pd.actual_delivery_date, pd.dispatch_date)'), [$from, $to])
+            ->when($storeId > 0, fn ($q) => $q->where('pd.destination_store_id', $storeId))
             ->select([
                 'pb.product_id',
                 'pd.destination_store_id as store_id',
@@ -1039,7 +1120,7 @@ class StockIntelligenceController extends Controller
         return $map;
     }
 
-    private function overviewDefects(array $productIds, Carbon $from, Carbon $to): array
+    private function overviewDefects(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
     {
         if (empty($productIds)) return [];
 
@@ -1047,6 +1128,7 @@ class StockIntelligenceController extends Controller
             ->whereNull('dp.deleted_at')
             ->whereIn('dp.product_id', $productIds)
             ->whereBetween(DB::raw('COALESCE(dp.identified_at, dp.created_at)'), [$from, $to])
+            ->when($storeId > 0, fn ($q) => $q->where('dp.store_id', $storeId))
             ->select([
                 'dp.product_id',
                 'dp.store_id',
@@ -1062,7 +1144,7 @@ class StockIntelligenceController extends Controller
         return $map;
     }
 
-    private function overviewBatchDetails(array $productIds, Carbon $from, Carbon $to): Collection
+    private function overviewBatchDetails(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): Collection
     {
         if (empty($productIds)) return collect();
 
@@ -1075,6 +1157,7 @@ class StockIntelligenceController extends Controller
             ->whereNull('p.deleted_at')
             ->where('pb.is_active', true)
             ->whereIn('pb.product_id', $productIds)
+            ->when($storeId > 0, fn ($q) => $q->where('pb.store_id', $storeId))
             ->where(function ($q) use ($from, $to) {
                 $q->whereBetween('pb.created_at', [$from, $to])
                     ->orWhereBetween('po.order_date', [$from, $to])

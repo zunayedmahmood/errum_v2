@@ -62,6 +62,13 @@ const formatPcs = (value: number | null | undefined) => `${number(value || 0)} P
 
 const money = (value: number | null | undefined) => `BDT ${number(value || 0)}`;
 
+const formatSkuList = (item: InventoryOverviewItem) => {
+  const skus = Array.isArray(item.skus) && item.skus.length ? item.skus : (item.sku ? [item.sku] : []);
+  const cleanSkus = Array.from(new Set(skus.map((sku) => String(sku || '').trim()).filter(Boolean)));
+  if (!cleanSkus.length) return '-';
+  return cleanSkus.join(', ');
+};
+
 const globalAvailableStock = (item: InventoryOverviewItem) =>
   Number(item.global_available_stock ?? item.current_stock ?? 0);
 
@@ -268,7 +275,7 @@ function inventoryProductsToCsv(products: InventoryOverviewItem[]) {
     const rows = getSheetRows(item);
     return rows.map(({ store, batch }) => [
       item.product_name,
-      item.sku || '-',
+      formatSkuList(item),
       item.category_name || 'Uncategorized',
       item.subcategory_name || '-',
       variationSummary(item),
@@ -358,15 +365,14 @@ function SheetCell({ children, strong = false, align = 'left', className = '' }:
   );
 }
 
-function ProductFrozenCell({ item, firstProductRow }: { item: InventoryOverviewItem; firstProductRow: boolean }) {
+function ProductFrozenCell({ item, rowSpan }: { item: InventoryOverviewItem; rowSpan: number }) {
   return (
     <td
-      className={`sticky left-0 z-10 min-w-[320px] max-w-[320px] border-b border-r border-gray-200 bg-white px-3 py-2.5 align-top shadow-[8px_0_14px_-14px_rgba(15,23,42,0.9)] group-hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:group-hover:bg-gray-900 ${
-        firstProductRow ? 'border-t-2 border-t-gray-300 dark:border-t-gray-600' : ''
-      }`}
+      rowSpan={rowSpan}
+      className="sticky left-0 z-10 min-w-[320px] max-w-[320px] border-b border-r border-t-2 border-t-gray-300 border-gray-200 bg-white px-3 py-2.5 align-top shadow-[8px_0_14px_-14px_rgba(15,23,42,0.9)] group-hover:bg-gray-50 dark:border-gray-700 dark:border-t-gray-600 dark:bg-gray-800 dark:group-hover:bg-gray-900"
     >
       <p className="line-clamp-2 text-sm font-black leading-snug text-gray-900 dark:text-white">{item.product_name}</p>
-      <p className="mt-1 text-[11px] font-bold text-gray-500 dark:text-gray-400">SKU: {item.sku || '-'}</p>
+      <p className="mt-1 line-clamp-2 text-[11px] font-bold text-gray-500 dark:text-gray-400">SKU: {formatSkuList(item)}</p>
       <div className="mt-2 flex flex-wrap gap-1">
         <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-black text-gray-700 dark:bg-gray-700 dark:text-gray-200">
           Global: {formatPcs(globalAvailableStock(item))}
@@ -442,7 +448,7 @@ function InventorySheetTable({ products }: { products: InventoryOverviewItem[] }
                   key={rowKey}
                   className={`group hover:bg-gray-50 dark:hover:bg-gray-900 ${firstProductRow ? 'border-t-2 border-gray-300' : ''}`}
                 >
-                  <ProductFrozenCell item={item} firstProductRow={firstProductRow} />
+                  {firstProductRow && <ProductFrozenCell item={item} rowSpan={rows.length} />}
                   <SheetCell className="min-w-[160px]">{item.category_name || 'Uncategorized'}</SheetCell>
                   <SheetCell className="min-w-[160px]">{item.subcategory_name || '-'}</SheetCell>
                   <SheetCell className="min-w-[220px] p-1"><VariationStockCell item={item} /></SheetCell>
@@ -499,6 +505,7 @@ function ViewInventoryPageContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<number>(0);
   const [sizeFilter, setSizeFilter] = useState('');
   const [datePreset, setDatePreset] = useState<InventoryDatePreset>('365');
   const [startDate, setStartDate] = useState('');
@@ -530,6 +537,7 @@ function ViewInventoryPageContent() {
         start_date: datePreset === 'custom' ? startDate || undefined : undefined,
         end_date: datePreset === 'custom' ? endDate || undefined : undefined,
         category_ids: selectedCategoryIds.length ? selectedCategoryIds.join(',') : undefined,
+        store_id: selectedStoreId || undefined,
         size: sizeFilter.trim() || undefined,
         search: appliedSearch || undefined,
         page,
@@ -542,7 +550,7 @@ function ViewInventoryPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset, startDate, endDate, selectedCategoryIds, sizeFilter, appliedSearch, page, perPage]);
+  }, [datePreset, startDate, endDate, selectedCategoryIds, selectedStoreId, sizeFilter, appliedSearch, page, perPage]);
 
   useEffect(() => {
     fetchCategories();
@@ -557,6 +565,10 @@ function ViewInventoryPageContent() {
   const summary = data?.summary;
   const products = data?.items || [];
   const categoryOptions = flattenCategoryOptions(categories);
+  const storeOptions = data?.stores || [];
+  const selectedStoreName = selectedStoreId
+    ? storeOptions.find((store) => Number(store.id) === Number(selectedStoreId))?.name || `Store ${selectedStoreId}`
+    : 'All branches';
 
   const fetchFilteredProductsForExport = useCallback(async () => {
     const exportPerPage = 500;
@@ -565,6 +577,7 @@ function ViewInventoryPageContent() {
       start_date: datePreset === 'custom' ? startDate || undefined : undefined,
       end_date: datePreset === 'custom' ? endDate || undefined : undefined,
       category_ids: selectedCategoryIds.length ? selectedCategoryIds.join(',') : undefined,
+      store_id: selectedStoreId || undefined,
       size: sizeFilter.trim() || undefined,
       search: appliedSearch || undefined,
       per_page: exportPerPage,
@@ -588,7 +601,7 @@ function ViewInventoryPageContent() {
     }
 
     return exportProducts;
-  }, [datePreset, startDate, endDate, selectedCategoryIds, sizeFilter, appliedSearch]);
+  }, [datePreset, startDate, endDate, selectedCategoryIds, selectedStoreId, sizeFilter, appliedSearch]);
 
   const handleExportCsv = async () => {
     try {
@@ -601,7 +614,8 @@ function ViewInventoryPageContent() {
       }
 
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      downloadCsvFile(inventoryProductsToCsv(exportProducts), `inventory_selected_view_${stamp}.csv`);
+      const branchSlug = selectedStoreName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'all-branches';
+      downloadCsvFile(inventoryProductsToCsv(exportProducts), `inventory_${branchSlug}_${stamp}.csv`);
     } catch (e) {
       console.error('Failed to export selected inventory view:', e);
       alert('Failed to export the selected inventory view. Please try again.');
@@ -627,7 +641,7 @@ function ViewInventoryPageContent() {
                 </p>
                 {data?.filters && (
                   <p className="mt-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                    Movement period: {formatDate(data.filters.start_date)} to {formatDate(data.filters.end_date)} · Global-available is latest live stock; physical stock is global-available minus reserved.
+                    Movement period: {formatDate(data.filters.start_date)} to {formatDate(data.filters.end_date)} · Branch: {selectedStoreName} · Global-available is latest live stock; physical stock is global-available minus reserved.
                   </p>
                 )}
               </div>
@@ -669,6 +683,26 @@ function ViewInventoryPageContent() {
                   </select>
                 </div>
 
+                <div className="lg:col-span-2">
+                  <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Branch / Store</label>
+                  <select
+                    value={selectedStoreId || ''}
+                    onChange={(e) => {
+                      setSelectedStoreId(Number(e.target.value || 0));
+                      resetToFirstPage();
+                    }}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  >
+                    <option value="">All branches</option>
+                    {storeOptions.map((store) => (
+                      <option key={store.id} value={store.id}>
+                        {store.name}{store.store_code ? ` (${store.store_code})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[10px] font-semibold text-gray-400">Select a branch to show only that branch's live stock and movement.</p>
+                </div>
+
                 {datePreset === 'custom' && (
                   <>
                     <div className="lg:col-span-2">
@@ -692,7 +726,7 @@ function ViewInventoryPageContent() {
                   </>
                 )}
 
-                <div className={datePreset === 'custom' ? 'lg:col-span-3' : 'lg:col-span-4'}>
+                <div className={datePreset === 'custom' ? 'lg:col-span-3' : 'lg:col-span-3'}>
                   <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Categories / Subcategories</label>
                   <select
                     multiple
@@ -777,7 +811,7 @@ function ViewInventoryPageContent() {
                 <div>
                   <p className="text-sm font-black text-gray-900 dark:text-white">Inventory sheet</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    No dropdowns. Scroll right for all columns; the product name column stays frozen on the left. CSV export respects the current date/category/subcategory/size/search filters.
+                    No dropdowns. Scroll right for all columns; the product name column stays frozen on the left. CSV export respects the current branch/date/category/subcategory/size/search filters.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

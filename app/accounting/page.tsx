@@ -15,7 +15,8 @@ import accountingService, {
   TrialBalanceData,
   LedgerData,
   JournalEntry,
-  JournalEntryLine
+  JournalEntryLine,
+  AccountingValidationData
 } from '@/services/accountingService';
 
 export default function AccountingSystem() {
@@ -42,6 +43,7 @@ export default function AccountingSystem() {
   const [ledgerData, setLedgerData] = useState<LedgerData | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState<number | string | undefined>(undefined);
   const [stores, setStores] = useState<Store[]>([]);
+  const [validationData, setValidationData] = useState<AccountingValidationData | null>(null);
 
   // Permissions check
   const isAuthorized = role === 'admin' || role === 'super-admin' || role === 'branch-manager';
@@ -72,6 +74,8 @@ export default function AccountingSystem() {
       fetchTrialBalance();
     } else if (activeTab === 'transactions') {
       fetchTransactions();
+    } else if (activeTab === 'validation') {
+      fetchValidation();
     }
   }, [activeTab, dateRange, selectedStoreId]);
 
@@ -227,6 +231,52 @@ const fetchJournalEntries = async () => {
     }
   };
 
+  const fetchValidation = async () => {
+    try {
+      setLoading(true);
+
+      const response = await accountingService.reports.getValidation({
+        date_from: dateRange.start,
+        date_to: dateRange.end,
+        store_id: selectedStoreId,
+      });
+
+      if (response.success) {
+        setValidationData(response.data);
+        console.log('✅ Accounting validation loaded:', response.data.summary);
+      }
+    } catch (error: any) {
+      console.error('Error fetching accounting validation:', error);
+      alert(error.response?.data?.message || 'Failed to validate accounting records');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRebuildLedger = async () => {
+    const confirmed = window.confirm(
+      'This will rebuild missing operational ledger postings for the selected date range. Existing cash-sheet postings will be refreshed by reference, and cancelled/deleted orders will stay excluded. Continue?'
+    );
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      const response = await accountingService.reports.rebuildOperationalLedger({
+        date_from: dateRange.start,
+        date_to: dateRange.end,
+        store_id: selectedStoreId,
+      });
+
+      alert(response?.message || 'Operational ledger rebuild completed.');
+      await fetchValidation();
+    } catch (error: any) {
+      console.error('Error rebuilding operational ledger:', error);
+      alert(error.response?.data?.message || 'Failed to rebuild missing operational ledger postings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchLedger = async (accountId: number) => {
     try {
       setLoading(true);
@@ -259,6 +309,8 @@ const fetchJournalEntries = async () => {
       await fetchTrialBalance();
     } else if (activeTab === 'transactions') {
       await fetchTransactions();
+    } else if (activeTab === 'validation') {
+      await fetchValidation();
     } else if (activeTab === 'ledger' && selectedAccount) {
       await fetchLedger(selectedAccount);
     }
@@ -282,7 +334,7 @@ const fetchJournalEntries = async () => {
     });
   };
 
-  const handleExport = (type: 'journal' | 'trial-balance' | 'transactions' | 'ledger') => {
+  const handleExport = (type: 'journal' | 'trial-balance' | 'transactions' | 'ledger' | 'validation') => {
     try {
       if (type === 'journal') {
         // Convert journal entries to flat format for CSV
@@ -314,6 +366,28 @@ const fetchJournalEntries = async () => {
           ledgerData.account.name,
           `ledger-${ledgerData.account.account_code}`
         );
+      } else if (type === 'validation' && validationData) {
+        const flatIssues = validationData.checks.flatMap((check) =>
+          (check.issues || []).map((issue) => ({
+            check: check.label,
+            status: check.status,
+            issue_count: check.issue_count,
+            details: JSON.stringify(issue).replace(/"/g, '""'),
+          }))
+        );
+        const csv = [
+          'Check,Status,Issue Count,Details',
+          ...flatIssues.map((row) => `"${row.check}","${row.status}",${row.issue_count},"${row.details}"`)
+        ].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `accounting-validation_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
       }
     } catch (error) {
       console.error('Error exporting:', error);
@@ -402,6 +476,17 @@ const fetchJournalEntries = async () => {
                   >
                     <BookOpen className="w-5 h-5" />
                     Account Ledger
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('validation')}
+                    className={`flex items-center gap-2 px-6 py-3 font-medium transition-colors ${
+                      activeTab === 'validation'
+                        ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                    }`}
+                  >
+                    <RefreshCw className="w-5 h-5" />
+                    Validation
                   </button>
                 </div>
               </div>
@@ -863,6 +948,138 @@ const fetchJournalEntries = async () => {
                       </table>
                     )}
                   </div>
+                </div>
+              )}
+
+              {!loading && activeTab === 'validation' && validationData && (
+                <div className="space-y-6">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                      <div>
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                          Accounting Validation
+                        </h2>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {formatDate(validationData.period.from)} - {formatDate(validationData.period.to)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleRebuildLedger}
+                          className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-gray-900 text-white rounded-lg transition-colors"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                          Rebuild Missing Ledger
+                        </button>
+                        <button
+                          onClick={() => handleExport('validation')}
+                          className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                        >
+                          <Download className="w-4 h-4" />
+                          Export Issues
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-6">
+                      <div className={`rounded-lg p-4 border ${
+                        validationData.summary.total_issues === 0
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                      }`}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className={`text-xl font-bold ${
+                              validationData.summary.total_issues === 0
+                                ? 'text-green-700 dark:text-green-300'
+                                : 'text-yellow-700 dark:text-yellow-300'
+                            }`}>
+                              {validationData.summary.total_issues === 0 ? '✓ Accounting is balanced' : `${validationData.summary.total_issues} issue(s) need attention`}
+                            </p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                              {validationData.summary.note}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 text-center">
+                            <div className="bg-white dark:bg-gray-800 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Passed</p>
+                              <p className="text-lg font-bold text-green-600 dark:text-green-400">{validationData.summary.checks_passed}</p>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Failed</p>
+                              <p className="text-lg font-bold text-red-600 dark:text-red-400">{validationData.summary.checks_failed}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {validationData.checks.map((check) => (
+                    <div key={check.key} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                              check.status === 'pass'
+                                ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                                : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300'
+                            }`}>
+                              {check.status === 'pass' ? 'PASS' : 'FAIL'}
+                            </span>
+                            <h3 className="font-semibold text-gray-900 dark:text-white">{check.label}</h3>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{check.description}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-gray-900 dark:text-white">{check.issue_count}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">issues</p>
+                        </div>
+                      </div>
+
+                      {check.issues.length === 0 ? (
+                        <div className="p-4 text-sm text-green-600 dark:text-green-400">
+                          ✓ No problem found in this check.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-50 dark:bg-gray-750">
+                              <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                                <th className="px-4 py-3">Date</th>
+                                <th className="px-4 py-3">Reference</th>
+                                <th className="px-4 py-3">Amount / Difference</th>
+                                <th className="px-4 py-3">Details</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {check.issues.slice(0, 50).map((issue, idx) => (
+                                <tr key={idx} className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750">
+                                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                                    {issue.date || '-'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                                    {issue.transaction_number || issue.payment_number || issue.order_number || issue.group_key || issue.source || '-'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
+                                    {formatCurrency(Number(issue.difference ?? issue.amount ?? issue.payment_amount ?? 0))}
+                                  </td>
+                                  <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400 max-w-xl">
+                                    <pre className="whitespace-pre-wrap font-sans">{JSON.stringify(issue, null, 2)}</pre>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {check.issues.length > 50 && (
+                            <div className="p-3 text-xs text-gray-500 dark:text-gray-400">
+                              Showing first 50 issues. Export CSV to review the full backend response subset.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 

@@ -23,37 +23,90 @@ export interface CreateEmployeePayload {
   join_date?: string;
 }
 
+type EmployeeListParams = {
+  store_id?: number;
+  role?: string;
+  role_id?: number;
+  is_active?: boolean;
+  is_in_service?: boolean;
+  department?: string;
+  search?: string;
+  page?: number;
+  per_page?: number;
+  sort_by?: string;
+  sort_direction?: 'asc' | 'desc' | string;
+};
+
+const normalizeEmployeeList = (payload: any): Employee[] => {
+  if (Array.isArray(payload)) return payload;
+  if (payload?.data?.data && Array.isArray(payload.data.data)) return payload.data.data;
+  if (payload?.data && Array.isArray(payload.data)) return payload.data;
+  return [];
+};
+
+const getPaginatorMeta = (payload: any) => {
+  const paginator = payload?.data?.data && Array.isArray(payload.data.data)
+    ? payload.data
+    : payload;
+
+  const currentPage = Number(paginator?.current_page || 1);
+  const lastPage = Number(paginator?.last_page || 1);
+
+  return {
+    currentPage: Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1,
+    lastPage: Number.isFinite(lastPage) && lastPage > 0 ? lastPage : 1,
+  };
+};
+
 const employeeService = {
-  /** Get all employees */
-  async getAll(params?: { 
-    store_id?: number; 
-    role?: string; 
-    is_active?: boolean;
-    department?: string;
-  }): Promise<Employee[]> {
+  /**
+   * Get employees.
+   *
+   * The backend /employees endpoint is paginated with a default per_page=15.
+   * HRM branch/attendance screens need every employee in the selected branch,
+   * so this method now follows all paginator pages instead of silently returning
+   * only the first 15 rows.
+   */
+  async getAll(params?: EmployeeListParams): Promise<Employee[]> {
     try {
-      const response = await axiosInstance.get('/employees', { params });
-      const result = response.data;
-      
-      // 1. Direct array? (e.g. unpaginated direct return)
-      if (Array.isArray(result)) return result;
+      const requestParams: EmployeeListParams = {
+        per_page: params?.per_page || 100,
+        ...params,
+      };
 
-      // 2. { success: true, data: [...] } ?
-      if (result && result.data && Array.isArray(result.data)) {
-        return result.data;
+      const firstResponse = await axiosInstance.get('/employees', { params: requestParams });
+      const firstResult = firstResponse.data;
+      const employees = normalizeEmployeeList(firstResult);
+      const { currentPage, lastPage } = getPaginatorMeta(firstResult);
+
+      if (lastPage <= currentPage) {
+        return employees;
       }
 
-      // 3. { success: true, data: { data: [...paginated] } } ?
-      if (result && result.data && result.data.data && Array.isArray(result.data.data)) {
-        return result.data.data;
-      }
-      
-      // 4. { data: [...], current_page: ... } ? (direct paginator)
-      if (result && Array.isArray(result.data)) {
-         return result.data;
+      const remainingRequests = [];
+      for (let page = currentPage + 1; page <= lastPage; page += 1) {
+        remainingRequests.push(
+          axiosInstance.get('/employees', {
+            params: {
+              ...requestParams,
+              page,
+            },
+          })
+        );
       }
 
-      return [];
+      const remainingResponses = await Promise.all(remainingRequests);
+      remainingResponses.forEach((response) => {
+        employees.push(...normalizeEmployeeList(response.data));
+      });
+
+      // Defensive de-duplication in case a backend page changes while loading.
+      const seen = new Set<string | number>();
+      return employees.filter((employee) => {
+        if (seen.has(employee.id)) return false;
+        seen.add(employee.id);
+        return true;
+      });
     } catch (error: any) {
       console.error('Get employees error:', error);
       throw new Error(error.response?.data?.message || 'Failed to fetch employees');

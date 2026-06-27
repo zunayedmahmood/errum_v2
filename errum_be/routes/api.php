@@ -41,6 +41,7 @@ use App\Http\Controllers\BusinessAnalyticsController;
 use App\Http\Controllers\StockIntelligenceController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\ExchangeController;
+use App\Http\Controllers\StockAuditController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -386,6 +387,15 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/intelligence/batch-report', [StockIntelligenceController::class, 'batchReport']); // ← ADD THIS
     Route::get('/intelligence/overview', [StockIntelligenceController::class, 'overview']);
 });
+
+    // Store Stock Audit / Cycle Count Panel
+    Route::prefix('stock-audits')->group(function () {
+        Route::get('/', [StockAuditController::class, 'index']);
+        Route::post('/', [StockAuditController::class, 'store']);
+        Route::get('/{id}', [StockAuditController::class, 'show']);
+        Route::post('/{id}/scan', [StockAuditController::class, 'scan']);
+        Route::patch('/{id}/status', [StockAuditController::class, 'updateStatus']);
+    });
 
     // Store Fulfillment (Store Employee) - Dashboard & Barcode Scanning
     Route::prefix('store/fulfillment')->group(function () {
@@ -939,6 +949,10 @@ Route::middleware('auth:api')->group(function () {
         
         // Journal Entries
         Route::get('/journal-entries', [\App\Http\Controllers\AccountingReportController::class, 'getJournalEntries']);
+
+        // Accounting Validation / operational reconciliation
+        Route::get('/validation', [\App\Http\Controllers\AccountingReportController::class, 'getValidation']);
+        Route::post('/rebuild-operational-ledger', [\App\Http\Controllers\AccountingReportController::class, 'rebuildOperationalLedger']);
     });
 
     // ============================================

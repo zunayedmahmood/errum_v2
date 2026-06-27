@@ -76,7 +76,14 @@ interface PurchaseHistoryOrder {
     status: string;
     processed_by?: string;
     created_at: string;
+    is_split_payment?: boolean;
+    splits?: Array<{
+      payment_method: string;
+      amount: string;
+      status?: string;
+    }>;
   }>;
+  payment_method_summary?: string;
 }
 
 interface Store {
@@ -132,6 +139,7 @@ export default function PurchaseHistoryPage() {
       const filters: OrderFilters = {
         order_type: 'counter',
         per_page: 50,
+        exclude_exchange_replacements: true,
       };
       // Enforce store scoping for branch/store roles
       if (scopedStoreId) {
@@ -623,7 +631,7 @@ export default function PurchaseHistoryPage() {
     return matchesSearch && matchesStore && matchesStartDate && matchesEndDate;
   });
 
-  const totalRevenue = filteredOrders.reduce((sum, order) => {
+  const totalSalesAmount = filteredOrders.reduce((sum, order) => {
     const amount = parseFloat(order.total_amount.replace(/,/g, ''));
     return sum + (isNaN(amount) ? 0 : amount);
   }, 0);
@@ -634,6 +642,25 @@ export default function PurchaseHistoryPage() {
     const amount = parseFloat(order.outstanding_amount.replace(/,/g, ''));
     return sum + (isNaN(amount) ? 0 : amount);
   }, 0);
+
+  const parseMoney = (value: any) => Number(String(value ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+  const money = (value: any) => `৳${parseMoney(value).toFixed(2)}`;
+  const getPaymentSplits = (payment: any) => Array.isArray(payment?.splits) ? payment.splits : [];
+
+  const formatPaymentBreakdown = (order: any) => {
+    if (order?.payment_method_summary) return order.payment_method_summary;
+
+    const payments = Array.isArray(order?.payments) ? order.payments : [];
+    const parts = payments.flatMap((payment: any) => {
+      const splits = getPaymentSplits(payment);
+      if (splits.length > 0) {
+        return splits.map((split: any) => `${split.payment_method || 'Unknown'} ${money(split.amount)}`);
+      }
+      return payment?.payment_method ? [`${payment.payment_method} ${money(payment.amount)}`] : [];
+    });
+
+    return parts.length > 0 ? parts.join(' + ') : 'N/A';
+  };
 
   return (
     <div className={darkMode ? 'dark' : ''}>
@@ -661,9 +688,9 @@ export default function PurchaseHistoryPage() {
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalOrders}</div>
                 </div>
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Revenue</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Sales Amount</div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    ৳{totalRevenue.toFixed(2)}
+                    ৳{totalSalesAmount.toFixed(2)}
                   </div>
                 </div>
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
@@ -1017,16 +1044,47 @@ export default function PurchaseHistoryPage() {
                                   {order.payments && order.payments.length > 0 && (
                                     <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700 space-y-2">
                                       <div className="text-xs font-medium text-gray-700 dark:text-gray-300">Payment History:</div>
-                                      {order.payments?.map((payment: any, payIndex: number) => (
-                                        <div key={payment.id} className="flex justify-between text-xs">
-                                          <span className="text-gray-600 dark:text-gray-400">
-                                            {payment.payment_method} ({payment.payment_type})
-                                          </span>
-                                          <span className="text-gray-900 dark:text-white">
-                                            ৳{Number(String(payment.amount ?? "0").replace(/[^0-9.-]/g, "")).toFixed(2)}
-                                          </span>
-                                        </div>
-                                      ))}
+                                      {order.payments?.map((payment: any) => {
+                                        const splits = getPaymentSplits(payment);
+
+                                        if (splits.length > 0) {
+                                          return (
+                                            <div key={payment.id} className="rounded-md bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700 p-2 space-y-1">
+                                              <div className="flex justify-between text-xs font-medium">
+                                                <span className="text-gray-700 dark:text-gray-300">
+                                                  Split Payment ({payment.payment_type})
+                                                </span>
+                                                <span className="text-gray-900 dark:text-white">
+                                                  {money(payment.amount)}
+                                                </span>
+                                              </div>
+                                              <div className="space-y-1 pl-2 border-l-2 border-blue-200 dark:border-blue-800">
+                                                {splits.map((split: any, splitIndex: number) => (
+                                                  <div key={`${payment.id}-split-${splitIndex}`} className="flex justify-between text-xs">
+                                                    <span className="text-gray-600 dark:text-gray-400">
+                                                      {split.payment_method || 'Unknown method'}
+                                                    </span>
+                                                    <span className="text-gray-900 dark:text-white font-medium">
+                                                      {money(split.amount)}
+                                                    </span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+
+                                        return (
+                                          <div key={payment.id} className="flex justify-between text-xs">
+                                            <span className="text-gray-600 dark:text-gray-400">
+                                              {payment.payment_method} ({payment.payment_type})
+                                            </span>
+                                            <span className="text-gray-900 dark:text-white">
+                                              {money(payment.amount)}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>

@@ -9,7 +9,7 @@ import Sidebar from '@/components/Sidebar';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, BarChart3, X } from 'lucide-react';
 import cashSheetService, { CashSheetRow, CashSheetSummary, DayEntries } from '@/services/cashSheetService';
 
-const fmt  = (n: number) => n === 0 ? '—' : '৳' + Math.round(n).toLocaleString('en-BD');
+const fmt  = (n: number) => n === 0 ? '0' : '৳' + Math.round(n).toLocaleString('en-BD');
 const fmtV = (n: number) => '৳' + Math.round(n).toLocaleString('en-BD');
 
 function currentMonth() {

@@ -70,7 +70,7 @@ export default function BranchHRMPage() {
     setIsLoading(true);
     try {
       const [empData, attToday, perfData] = await Promise.all([
-        employeeService.getAll({ store_id: selectedStoreId!, is_active: true }),
+        employeeService.getAll({ store_id: selectedStoreId!, is_active: true, per_page: 100 }),
         hrmService.getTodayAttendance(selectedStoreId!),
         hrmService.getPerformanceReport({ store_id: selectedStoreId!, month: format(new Date(), 'yyyy-MM') })
       ]);
@@ -80,6 +80,7 @@ export default function BranchHRMPage() {
       setPerformanceReport(perfData);
     } catch (error) {
       console.error('Failed to load branch HRM data:', error);
+      toast.error('Failed to load all branch employees');
     } finally {
       setIsLoading(false);
     }
@@ -234,7 +235,9 @@ export default function BranchHRMPage() {
             <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">Staff Attendance</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Manage daily arrivals and departures</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Manage daily arrivals and departures · Showing {filteredEmployees.length} of {employees.length} staff
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="hidden md:flex flex-col items-end mr-4">

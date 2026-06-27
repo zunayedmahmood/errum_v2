@@ -465,6 +465,33 @@ export interface JournalEntry {
   created_at: string;
 }
 
+export interface AccountingValidationIssue {
+  [key: string]: any;
+}
+
+export interface AccountingValidationCheck {
+  key: string;
+  label: string;
+  description: string;
+  status: 'pass' | 'fail' | 'warning';
+  issue_count: number;
+  issues: AccountingValidationIssue[];
+}
+
+export interface AccountingValidationData {
+  title: string;
+  period: { from: string; to: string };
+  store_id?: number | string;
+  summary: {
+    status: 'pass' | 'attention_required' | string;
+    total_issues: number;
+    checks_passed: number;
+    checks_failed: number;
+    note?: string;
+  };
+  checks: AccountingValidationCheck[];
+}
+
 export interface CreateAccountData {
   account_code: string;
   name: string;
@@ -971,6 +998,30 @@ class FinancialReportsService {
       success: true,
       data: journalEntries,
     };
+  }
+
+  /**
+   * Cross-check ledger consistency against operational cash-sheet/sales records
+   */
+  async getValidation(params?: {
+    date_from?: string;
+    date_to?: string;
+    store_id?: number | string;
+  }): Promise<{ success: boolean; data: AccountingValidationData }> {
+    const response = await axiosInstance.get('/accounting/validation', { params });
+    return response.data;
+  }
+
+  /**
+   * Rebuild missing operational ledger postings for selected period
+   */
+  async rebuildOperationalLedger(params?: {
+    date_from?: string;
+    date_to?: string;
+    store_id?: number | string;
+  }) {
+    const response = await axiosInstance.post('/accounting/rebuild-operational-ledger', params || {});
+    return response.data;
   }
 
   /**
