@@ -83,12 +83,38 @@ export interface PurchaseOrderFilters {
   status?: string;
   payment_status?: string;
   search?: string;
+  product_id?: number;
+  product_search?: string;
+  sku?: string;
+  category_id?: number;
   from_date?: string;
   to_date?: string;
   sort_by?: string;
   sort_direction?: 'asc' | 'desc';
+  report_sort_by?: string;
+  report_sort_direction?: 'asc' | 'desc';
   per_page?: number;
   page?: number;
+}
+
+export interface ProductWisePurchaseOrderReportRow {
+  product_id: number;
+  product_name: string;
+  product_sku?: string;
+  category_id?: number;
+  category_name?: string;
+  po_count: number;
+  ordered_quantity: number;
+  received_quantity: number;
+  pending_quantity: number;
+  gross_ordered_value: number;
+  ordered_value: number;
+  received_value: number;
+  allocated_paid_amount: number;
+  allocated_outstanding_amount: number;
+  received_ap_balance: number;
+  first_po_at?: string;
+  last_po_at?: string;
 }
 
 export interface ReceiveItemData {
@@ -165,6 +191,10 @@ class PurchaseOrderService {
       if (filters.status) cleanFilters.status = filters.status;
       if (filters.payment_status) cleanFilters.payment_status = filters.payment_status;
       if (filters.search) cleanFilters.search = filters.search;
+      if (filters.product_id) cleanFilters.product_id = filters.product_id;
+      if (filters.product_search) cleanFilters.product_search = filters.product_search;
+      if (filters.sku) cleanFilters.sku = filters.sku;
+      if (filters.category_id) cleanFilters.category_id = filters.category_id;
       if (filters.from_date) cleanFilters.from_date = filters.from_date;
       if (filters.to_date) cleanFilters.to_date = filters.to_date;
       if (filters.sort_by) cleanFilters.sort_by = filters.sort_by;
@@ -324,6 +354,84 @@ class PurchaseOrderService {
     const response: AxiosResponse<ApiResponse<PurchaseOrderStatistics>> = await axiosInstance.get(
       `${this.baseURL}/stats`,
       { params: filters }
+    );
+    return response.data;
+  }
+
+  /**
+   * Get product-wise purchase order report using existing PO item data.
+   */
+  async getProductWiseReport(filters?: PurchaseOrderFilters): Promise<PaginatedResponse<ProductWisePurchaseOrderReportRow>> {
+    const cleanFilters: any = {};
+
+    if (filters) {
+      if (filters.vendor_id) cleanFilters.vendor_id = filters.vendor_id;
+      if (filters.store_id) cleanFilters.store_id = filters.store_id;
+      if (filters.status) cleanFilters.status = filters.status;
+      if (filters.payment_status) cleanFilters.payment_status = filters.payment_status;
+      if (filters.search) cleanFilters.search = filters.search;
+      if (filters.product_id) cleanFilters.product_id = filters.product_id;
+      if (filters.product_search) cleanFilters.product_search = filters.product_search;
+      if (filters.sku) cleanFilters.sku = filters.sku;
+      if (filters.category_id) cleanFilters.category_id = filters.category_id;
+      if (filters.from_date) cleanFilters.from_date = filters.from_date;
+      if (filters.to_date) cleanFilters.to_date = filters.to_date;
+      if (filters.report_sort_by) cleanFilters.report_sort_by = filters.report_sort_by;
+      if (filters.report_sort_direction) cleanFilters.report_sort_direction = filters.report_sort_direction;
+      if (filters.per_page) cleanFilters.per_page = filters.per_page;
+      if (filters.page) cleanFilters.page = filters.page;
+    }
+
+    const response: AxiosResponse<any> = await axiosInstance.get(
+      `${this.baseURL}/product-report`,
+      { params: cleanFilters }
+    );
+
+    return {
+      success: response.data.success || true,
+      data: response.data.data || {
+        data: [],
+        current_page: 1,
+        last_page: 1,
+        per_page: 50,
+        total: 0,
+        from: 0,
+        to: 0,
+        first_page_url: '',
+        last_page_url: '',
+        next_page_url: null,
+        prev_page_url: null,
+        path: ''
+      }
+    };
+  }
+
+  /**
+   * Export product-wise purchase order report as CSV.
+   */
+  async exportProductWiseReport(filters?: PurchaseOrderFilters): Promise<Blob> {
+    const cleanFilters: any = {};
+
+    if (filters) {
+      if (filters.vendor_id) cleanFilters.vendor_id = filters.vendor_id;
+      if (filters.store_id) cleanFilters.store_id = filters.store_id;
+      if (filters.status) cleanFilters.status = filters.status;
+      if (filters.payment_status) cleanFilters.payment_status = filters.payment_status;
+      if (filters.search) cleanFilters.search = filters.search;
+      if (filters.product_id) cleanFilters.product_id = filters.product_id;
+      if (filters.product_search) cleanFilters.product_search = filters.product_search;
+      if (filters.sku) cleanFilters.sku = filters.sku;
+      if (filters.category_id) cleanFilters.category_id = filters.category_id;
+      if (filters.from_date) cleanFilters.from_date = filters.from_date;
+      if (filters.to_date) cleanFilters.to_date = filters.to_date;
+    }
+
+    const response: AxiosResponse<Blob> = await axiosInstance.get(
+      `${this.baseURL}/product-report/export`,
+      {
+        params: cleanFilters,
+        responseType: 'blob',
+      }
     );
     return response.data;
   }

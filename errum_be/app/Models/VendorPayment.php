@@ -138,7 +138,7 @@ class VendorPayment extends Model
                 }
 
                 // Create payment item
-                VendorPaymentItem::create([
+                $paymentItem = VendorPaymentItem::create([
                     'vendor_payment_id' => $this->id,
                     'purchase_order_id' => $purchaseOrder->id,
                     'allocated_amount' => $allocatedAmount,
@@ -148,6 +148,12 @@ class VendorPayment extends Model
                     'allocation_type' => $allocationType,
                     'notes' => $allocation['notes'] ?? null,
                 ]);
+
+                // If a previously completed advance/unallocated supplier payment is now
+                // applied to a PO, move it from Vendor Advances to Accounts Payable.
+                if ($this->status === 'completed' && $allocatedAmount > 0) {
+                    \App\Models\Transaction::createFromVendorAdvanceAllocation($paymentItem);
+                }
 
                 // Update purchase order
                 $purchaseOrder->paid_amount += $allocatedAmount;

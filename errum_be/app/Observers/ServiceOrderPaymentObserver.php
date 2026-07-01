@@ -25,18 +25,23 @@ class ServiceOrderPaymentObserver
         // Check if status changed to completed
         if ($serviceOrderPayment->wasChanged('status') && $serviceOrderPayment->status === 'completed') {
             // Find existing transaction or create new one
-            $transaction = AccountingTransaction::byReference(ServiceOrderPayment::class, $serviceOrderPayment->id)->first();
+            $existingQuery = AccountingTransaction::byReference(ServiceOrderPayment::class, $serviceOrderPayment->id);
 
-            if ($transaction) {
-                // Update existing transaction
-                $transaction->update([
+            if ((clone $existingQuery)->exists()) {
+                // Update the full double-entry group, not only the first row.
+                $existingQuery->update([
                     'status' => 'completed',
                     'transaction_date' => $serviceOrderPayment->completed_at ?? now(),
                 ]);
             } else {
-                // Create new transaction if it doesn't exist
+                // Create new transaction group if it doesn't exist
                 AccountingTransaction::createFromServiceOrderPayment($serviceOrderPayment);
             }
+        }
+
+        if ($serviceOrderPayment->wasChanged('status') && in_array($serviceOrderPayment->status, ['cancelled', 'failed'], true)) {
+            AccountingTransaction::byReference(ServiceOrderPayment::class, $serviceOrderPayment->id)
+                ->update(['status' => 'cancelled']);
         }
 
         // Handle payment-level refunds

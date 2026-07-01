@@ -75,6 +75,20 @@ export interface BranchCostEntry {
   created_at: string;
 }
 
+export interface AccountingExpenseEntry {
+  id: number;
+  expense_id: number;
+  payment_number: string;
+  expense_number: string;
+  amount: number;
+  completed_at: string | null;
+  description: string | null;
+  category_name: string | null;
+  payment_method?: { name: string; type: string } | null;
+  store?: StoreLite | null;
+  created_by?: EmployeeLite | null;
+}
+
 export type AdminEntryType = 'salary_setaside' | 'cash_to_bank' | 'sslzc' | 'pathao';
 export interface AdminEntry {
   id: number;
@@ -107,6 +121,7 @@ export interface DayEntries {
   branch_costs: BranchCostEntry[];
   admin_entries: AdminEntry[];
   owner_entries: OwnerEntry[];
+  accounting_expenses: AccountingExpenseEntry[];
 }
 
 // ── Normalizers ───────────────────────────────────────────────────────────────
@@ -137,6 +152,17 @@ function normalizeOwnerEntry(entry: any): OwnerEntry {
   };
 }
 
+function normalizeAccountingExpenseEntry(entry: any): AccountingExpenseEntry {
+  return {
+    ...entry,
+    id: Number(entry?.id ?? 0),
+    expense_id: Number(entry?.expense_id ?? 0),
+    amount: Number(entry?.amount ?? 0),
+    store: entry?.store ? { ...entry.store, id: Number(entry.store.id ?? 0) } : null,
+    created_by: entry?.created_by ?? entry?.createdBy ?? null,
+  };
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 const cashSheetService = {
@@ -152,6 +178,7 @@ const cashSheetService = {
       branch_costs: (res.data?.branch_costs || []).map(normalizeBranchCostEntry),
       admin_entries: (res.data?.admin_entries || []).map(normalizeAdminEntry),
       owner_entries: (res.data?.owner_entries || []).map(normalizeOwnerEntry),
+      accounting_expenses: (res.data?.accounting_expenses || []).map(normalizeAccountingExpenseEntry),
     };
   },
 

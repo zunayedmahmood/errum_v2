@@ -266,6 +266,8 @@ class PurchaseOrder extends Model
                 throw new \Exception('This purchase order has already been received or cannot be received in its current status.');
             }
 
+            $receiptLedgerLines = [];
+
             foreach ($receivedItems as $itemData) {
                 $item = PurchaseOrderItem::where('purchase_order_id', $lockedPo->id)
                     ->where('id', $itemData['item_id'] ?? 0)
@@ -340,6 +342,22 @@ class PurchaseOrder extends Model
                 }
                 $item->save();
 
+                $orderedQuantity = max(1, (int) $item->quantity_ordered);
+                $lineGross = round(((float) $item->unit_cost) * $requestedQuantity, 2);
+                $lineTax = round(((float) $item->tax_amount) * ($requestedQuantity / $orderedQuantity), 2);
+                $lineDiscount = round(((float) $item->discount_amount) * ($requestedQuantity / $orderedQuantity), 2);
+
+                $receiptLedgerLines[] = [
+                    'item_id' => $item->id,
+                    'product_id' => $item->product_id,
+                    'quantity_received' => $requestedQuantity,
+                    'unit_cost' => (float) $item->unit_cost,
+                    'gross_amount' => $lineGross,
+                    'tax_amount' => $lineTax,
+                    'discount_amount' => $lineDiscount,
+                    'net_amount' => round($lineGross + $lineTax - $lineDiscount, 2),
+                ];
+
                 \Log::info("Generated {$requestedQuantity} barcodes for PO {$lockedPo->po_number}, Batch {$batch->batch_number}");
             }
 
@@ -358,6 +376,20 @@ class PurchaseOrder extends Model
             }
 
             $lockedPo->save();
+
+            $receiptLedgerAmount = $lockedPo->calculateReceiptLedgerAmount($receiptLedgerLines);
+            if ($receiptLedgerAmount > 0) {
+                \App\Models\Transaction::createFromPurchaseOrderReceipt(
+                    $lockedPo->loadMissing('vendor', 'store'),
+                    $receiptLedgerAmount,
+                    [
+                        'receipt_type' => 'po_receive',
+                        'received_lines' => $receiptLedgerLines,
+                        'received_gross_amount' => round(array_sum(array_column($receiptLedgerLines, 'gross_amount')), 2),
+                    ]
+                );
+            }
+
             DB::commit();
             $this->refresh();
         } catch (\Exception $e) {
@@ -365,6 +397,31 @@ class PurchaseOrder extends Model
             \Log::error("Failed to receive PO {$this->po_number}: " . $e->getMessage());
             throw $e;
         }
+    }
+
+    /**
+     * Calculate the payable/inventory value for only the quantity received in one receipt event.
+     * Item-level tax/discount is prorated by received quantity. Header-level tax/shipping/discount
+     * is prorated by received gross value so partial receipts do not book the full PO payable early.
+     */
+    public function calculateReceiptLedgerAmount(array $receiptLedgerLines): float
+    {
+        if (empty($receiptLedgerLines)) {
+            return 0.0;
+        }
+
+        $receivedGross = array_sum(array_column($receiptLedgerLines, 'gross_amount'));
+        $receivedLineNet = array_sum(array_column($receiptLedgerLines, 'net_amount'));
+
+        $orderedGross = (float) $this->items()->selectRaw('COALESCE(SUM(unit_cost * quantity_ordered), 0) as gross')->value('gross');
+        $receiptRatio = $orderedGross > 0 ? min(1, max(0, $receivedGross / $orderedGross)) : 0;
+
+        $headerAdjustments = (float) ($this->tax_amount ?? 0)
+            + (float) ($this->shipping_cost ?? 0)
+            + (float) ($this->other_charges ?? 0)
+            - (float) ($this->discount_amount ?? 0);
+
+        return round($receivedLineNet + ($headerAdjustments * $receiptRatio), 2);
     }
 
     /**

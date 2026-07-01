@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\OrderPayment;
 use App\Models\Transaction as AccountingTransaction;
+use Illuminate\Support\Str;
 
 class OrderPaymentObserver
 {
@@ -12,16 +13,14 @@ class OrderPaymentObserver
      */
     public function created(OrderPayment $orderPayment): void
     {
-        if ($this->shouldSkipPayment($orderPayment)) {
+        // Skip exchange balance carryover and store credit payments — these are not
+        // real cash inflows. The cash/revenue side is already handled by createFromExchange().
+        $nonCashTypes = ['exchange_balance', 'store_credit', 'balance_carryover', 'exchange_surplus'];
+        if (in_array($orderPayment->payment_type, $nonCashTypes)) {
             return;
         }
 
-        // Split-payment parent rows are created before their split rows exist.
-        // Wait until the parent becomes completed, then build ledger from the splits.
-        if (empty($orderPayment->payment_method_id)) {
-            return;
-        }
-
+        // Create transaction when payment is created
         AccountingTransaction::createFromOrderPayment($orderPayment);
     }
 
@@ -30,20 +29,28 @@ class OrderPaymentObserver
      */
     public function updated(OrderPayment $orderPayment): void
     {
-        if ($this->shouldSkipPayment($orderPayment)) {
-            $this->cancelPaymentSaleEntries($orderPayment);
-            return;
+        // Check if status changed to completed
+        if ($orderPayment->wasChanged('status') && $orderPayment->status === 'completed') {
+            // Find existing transaction or create new one
+            $existingQuery = AccountingTransaction::byReference(OrderPayment::class, $orderPayment->id);
+
+            if ((clone $existingQuery)->exists()) {
+                // Update the full double-entry group, not only the first row.
+                // Otherwise Cash becomes completed while Revenue/Tax can remain pending,
+                // which makes Trial Balance look empty or unbalanced for completed payments.
+                $existingQuery->update([
+                    'status' => 'completed',
+                    'transaction_date' => $orderPayment->completed_at ?? now(),
+                ]);
+            } else {
+                // Create new transaction group if it doesn't exist
+                AccountingTransaction::createFromOrderPayment($orderPayment);
+            }
         }
 
-        if ($orderPayment->wasChanged('status')) {
-            if ($orderPayment->status === 'completed') {
-                // Rebuild the sale/payment ledger when payment becomes final.
-                // This fixes split payments: cash split goes to Cash, bKash/card/bank split goes to Bank.
-                $this->cancelPaymentSaleEntries($orderPayment);
-                AccountingTransaction::createFromOrderPayment($orderPayment);
-            } elseif (in_array($orderPayment->status, ['cancelled', 'failed', 'refunded'], true)) {
-                $this->cancelPaymentSaleEntries($orderPayment);
-            }
+        if ($orderPayment->wasChanged('status') && in_array($orderPayment->status, ['cancelled', 'failed'], true)) {
+            AccountingTransaction::byReference(OrderPayment::class, $orderPayment->id)
+                ->update(['status' => 'cancelled']);
         }
 
         // Handle payment-level refunds (partial refund applied directly to this payment record)
@@ -52,6 +59,7 @@ class OrderPaymentObserver
             $order         = $orderPayment->order;
             $groupId       = (string) \Illuminate\Support\Str::uuid();
 
+            // Calculate proportional tax reversal (inclusive tax system)
             if ($order && $order->total_amount > 0 && $order->tax_amount > 0) {
                 $taxRatio  = (float) $order->tax_amount / (float) $order->total_amount;
                 $taxAmount = round($refundAmount * $taxRatio, 2);
@@ -61,7 +69,6 @@ class OrderPaymentObserver
             $revenueAmount = $refundAmount - $taxAmount;
 
             $metadata = [
-                'event' => 'payment_refund',
                 'payment_method'  => $orderPayment->paymentMethod->name ?? 'Unknown',
                 'order_number'    => $order->order_number ?? null,
                 'refund_reason'   => 'Payment refund',
@@ -70,6 +77,7 @@ class OrderPaymentObserver
                 'group_id'        => $groupId,
             ];
 
+            // 1. Credit Cash (asset decreases — money returned to customer)
             AccountingTransaction::create([
                 'transaction_date' => now(),
                 'amount'           => $refundAmount,
@@ -84,6 +92,7 @@ class OrderPaymentObserver
                 'status'           => 'completed',
             ]);
 
+            // 2. Debit Sales Revenue (revenue reversal — net of tax)
             AccountingTransaction::create([
                 'transaction_date' => now(),
                 'amount'           => $revenueAmount,
@@ -98,6 +107,7 @@ class OrderPaymentObserver
                 'status'           => 'completed',
             ]);
 
+            // 3. Debit Tax Liability (tax reversal — reduce collected tax)
             if ($taxAmount > 0) {
                 AccountingTransaction::create([
                     'transaction_date' => now(),
@@ -116,41 +126,32 @@ class OrderPaymentObserver
         }
     }
 
+    /**
+     * Handle the OrderPayment "deleted" event.
+     */
     public function deleted(OrderPayment $orderPayment): void
     {
+        // Mark related transactions as cancelled
         AccountingTransaction::byReference(OrderPayment::class, $orderPayment->id)
             ->update(['status' => 'cancelled']);
     }
 
+    /**
+     * Handle the OrderPayment "restored" event.
+     */
     public function restored(OrderPayment $orderPayment): void
     {
-        if ($orderPayment->status === 'completed' && !$this->shouldSkipPayment($orderPayment)) {
-            $this->cancelPaymentSaleEntries($orderPayment);
-            AccountingTransaction::createFromOrderPayment($orderPayment);
-        }
+        // Restore related transactions
+        AccountingTransaction::byReference(OrderPayment::class, $orderPayment->id)
+            ->update(['status' => 'completed']);
     }
 
+    /**
+     * Handle the OrderPayment "force deleted" event.
+     */
     public function forceDeleted(OrderPayment $orderPayment): void
     {
+        // Permanently delete related transactions
         AccountingTransaction::byReference(OrderPayment::class, $orderPayment->id)->delete();
-    }
-
-    private function shouldSkipPayment(OrderPayment $orderPayment): bool
-    {
-        $nonCashTypes = ['exchange_balance', 'store_credit', 'balance_carryover', 'exchange_surplus'];
-        return in_array($orderPayment->payment_type, $nonCashTypes, true);
-    }
-
-    private function cancelPaymentSaleEntries(OrderPayment $orderPayment): void
-    {
-        AccountingTransaction::where('reference_type', OrderPayment::class)
-            ->where('reference_id', $orderPayment->id)
-            ->where(function ($q) {
-                $q->where('metadata->event', 'order_payment')
-                  ->orWhere('description', 'like', 'Order Payment%')
-                  ->orWhere('description', 'like', 'Order Revenue%')
-                  ->orWhere('description', 'like', 'Sales Tax Collected%');
-            })
-            ->update(['status' => 'cancelled']);
     }
 }

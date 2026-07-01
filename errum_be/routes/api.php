@@ -558,6 +558,8 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/', [PurchaseOrderController::class, 'index']);
         Route::post('/', [PurchaseOrderController::class, 'create']);
         Route::get('/stats', [PurchaseOrderController::class, 'statistics']);
+        Route::get('/product-report', [PurchaseOrderController::class, 'productWiseReport']);
+        Route::get('/product-report/export', [PurchaseOrderController::class, 'exportProductWiseReportCsv']);
         Route::get('/report/pdf', [PurchaseOrderController::class, 'exportSummaryPdf']); // Summary report PDF
 
         Route::prefix('{id}')->group(function () {
@@ -949,10 +951,6 @@ Route::middleware('auth:api')->group(function () {
         
         // Journal Entries
         Route::get('/journal-entries', [\App\Http\Controllers\AccountingReportController::class, 'getJournalEntries']);
-
-        // Accounting Validation / operational reconciliation
-        Route::get('/validation', [\App\Http\Controllers\AccountingReportController::class, 'getValidation']);
-        Route::post('/rebuild-operational-ledger', [\App\Http\Controllers\AccountingReportController::class, 'rebuildOperationalLedger']);
     });
 
     // ============================================
@@ -1397,6 +1395,8 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/', [PurchaseOrderController::class, 'index']);
         Route::post('/', [PurchaseOrderController::class, 'create']);
         Route::get('/stats', [PurchaseOrderController::class, 'statistics']);
+        Route::get('/product-report', [PurchaseOrderController::class, 'productWiseReport']);
+        Route::get('/product-report/export', [PurchaseOrderController::class, 'exportProductWiseReportCsv']);
 
         Route::prefix('{id}')->group(function () {
             Route::get('/', [PurchaseOrderController::class, 'show']);

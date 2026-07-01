@@ -105,43 +105,42 @@ class PurchaseOrderController extends Controller
     }
 
     /**
-     * Get all purchase orders with filters
+     * Get all purchase orders with filters.
+     *
+     * No migration is needed for the product-wise filters below. They use the existing
+     * purchase_order_items.product_id/product_name/product_sku columns and, when needed,
+     * the existing products.category_id relation.
      */
     public function index(Request $request)
     {
-        $query = PurchaseOrder::with(['vendor', 'store', 'createdBy']);
+        $query = PurchaseOrder::with(['vendor', 'store', 'createdBy', 'items.product.category']);
 
-        // Filters
-        if ($request->has('vendor_id')) {
-            $query->where('vendor_id', $request->vendor_id);
-        }
+        $this->applyPurchaseOrderListFilters($query, $request);
 
-        if ($request->has('store_id')) {
-            $query->where('store_id', $request->store_id);
-        }
-
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-
-        if ($request->has('payment_status')) {
-            $query->where('payment_status', $request->payment_status);
-        }
-
-        if ($request->has('search')) {
-            $this->whereLike($query, 'po_number', $request->search);
-        }
-
-        if ($request->has('from_date') && $request->has('to_date')) {
-            $query->whereBetween('created_at', [$request->from_date, $request->to_date]);
-        }
-
-        // Sorting
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortDirection = $request->get('sort_direction', 'desc');
+        // Sorting - whitelist so query params cannot break the SQL.
+        $allowedSortFields = [
+            'id',
+            'po_number',
+            'vendor_id',
+            'store_id',
+            'order_date',
+            'expected_delivery_date',
+            'status',
+            'payment_status',
+            'total_amount',
+            'paid_amount',
+            'outstanding_amount',
+            'created_at',
+            'updated_at',
+        ];
+        $sortBy = in_array($request->get('sort_by'), $allowedSortFields, true)
+            ? $request->get('sort_by')
+            : 'created_at';
+        $sortDirection = strtolower($request->get('sort_direction', 'desc')) === 'asc' ? 'asc' : 'desc';
         $query->orderBy($sortBy, $sortDirection);
 
-        $purchaseOrders = $query->paginate($request->get('per_page', 15));
+        $perPage = min(max((int) $request->get('per_page', $request->get('limit', 15)), 1), 200);
+        $purchaseOrders = $query->paginate($perPage);
 
         return response()->json([
             'success' => true,
@@ -573,6 +572,304 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
+
+
+    /**
+     * Product-wise purchase order report.
+     *
+     * This is intentionally built on existing tables only:
+     * purchase_orders, purchase_order_items, products, vendors, stores and categories.
+     * It gives product-wise ordered/received/pending/payment/AP visibility without a migration.
+     */
+    public function productWiseReport(Request $request)
+    {
+        $query = $this->buildProductWiseReportQuery($request);
+
+        $sortBy = $request->get('report_sort_by', 'product_name');
+        $sortDirection = strtolower($request->get('report_sort_direction', 'asc')) === 'desc' ? 'desc' : 'asc';
+        $allowedSortFields = [
+            'product_name',
+            'product_sku',
+            'po_count',
+            'ordered_quantity',
+            'received_quantity',
+            'pending_quantity',
+            'ordered_value',
+            'received_value',
+            'allocated_paid_amount',
+            'allocated_outstanding_amount',
+            'received_ap_balance',
+            'last_po_at',
+        ];
+        if (!in_array($sortBy, $allowedSortFields, true)) {
+            $sortBy = 'product_name';
+        }
+
+        $perPage = min(max((int) $request->get('per_page', 50), 1), 500);
+        $rows = $query->orderBy($sortBy, $sortDirection)->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+        ]);
+    }
+
+    /**
+     * Export the current product-wise PO report as CSV.
+     */
+    public function exportProductWiseReportCsv(Request $request)
+    {
+        $rows = $this->buildProductWiseReportQuery($request)
+            ->orderBy('product_name', 'asc')
+            ->get();
+
+        $filename = 'product-wise-purchase-orders-' . now()->format('Ymd-His') . '.csv';
+
+        return response()->streamDownload(function () use ($rows) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, [
+                'Product ID',
+                'Product Name',
+                'SKU',
+                'Category',
+                'PO Count',
+                'Ordered Qty',
+                'Received Qty',
+                'Pending Qty',
+                'Ordered Value',
+                'Received Value',
+                'Allocated Paid',
+                'Allocated Outstanding',
+                'Received AP Balance',
+                'First PO Date',
+                'Last PO Date',
+            ]);
+
+            foreach ($rows as $row) {
+                fputcsv($out, [
+                    $row->product_id,
+                    $row->product_name,
+                    $row->product_sku,
+                    $row->category_name,
+                    $row->po_count,
+                    $row->ordered_quantity,
+                    $row->received_quantity,
+                    $row->pending_quantity,
+                    number_format((float) $row->ordered_value, 2, '.', ''),
+                    number_format((float) $row->received_value, 2, '.', ''),
+                    number_format((float) $row->allocated_paid_amount, 2, '.', ''),
+                    number_format((float) $row->allocated_outstanding_amount, 2, '.', ''),
+                    number_format((float) $row->received_ap_balance, 2, '.', ''),
+                    $row->first_po_at,
+                    $row->last_po_at,
+                ]);
+            }
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    /**
+     * Apply list filters to the main PO list.
+     */
+    private function applyPurchaseOrderListFilters($query, Request $request): void
+    {
+        if ($request->filled('vendor_id')) {
+            $query->where('vendor_id', $request->vendor_id);
+        }
+
+        if ($request->filled('store_id')) {
+            $query->where('store_id', $request->store_id);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('payment_status')) {
+            $paymentStatus = (string) $request->payment_status;
+            if (in_array($paymentStatus, ['partial', 'partially_paid'], true)) {
+                // Existing data may contain either value depending on older code path.
+                $query->whereIn('payment_status', ['partial', 'partially_paid']);
+            } else {
+                $query->where('payment_status', $paymentStatus);
+            }
+        }
+
+        if ($request->filled('search')) {
+            $this->whereLike($query, 'po_number', (string) $request->search);
+        }
+
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->from_date);
+        }
+
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', $request->to_date);
+        }
+
+        if ($request->filled('product_id')) {
+            $query->whereHas('items', function ($itemQuery) use ($request) {
+                $itemQuery->where('product_id', (int) $request->product_id);
+            });
+        }
+
+        if ($request->filled('product_search')) {
+            $search = trim((string) $request->product_search);
+            $operator = $this->getLikeOperator(false);
+            $pattern = $this->buildLikePattern($search);
+            $query->whereHas('items', function ($itemQuery) use ($operator, $pattern) {
+                $itemQuery->where(function ($q) use ($operator, $pattern) {
+                    $q->where('product_name', $operator, $pattern)
+                        ->orWhere('product_sku', $operator, $pattern)
+                        ->orWhereHas('product', function ($productQuery) use ($operator, $pattern) {
+                            $productQuery->where('name', $operator, $pattern)
+                                ->orWhere('sku', $operator, $pattern);
+                        });
+                });
+            });
+        }
+
+        if ($request->filled('sku')) {
+            $sku = trim((string) $request->sku);
+            $operator = $this->getLikeOperator(false);
+            $pattern = $this->buildLikePattern($sku);
+            $query->whereHas('items', function ($itemQuery) use ($operator, $pattern) {
+                $itemQuery->where(function ($q) use ($operator, $pattern) {
+                    $q->where('product_sku', $operator, $pattern)
+                        ->orWhereHas('product', function ($productQuery) use ($operator, $pattern) {
+                            $productQuery->where('sku', $operator, $pattern);
+                        });
+                });
+            });
+        }
+
+        if ($request->filled('category_id')) {
+            $query->whereHas('items.product', function ($productQuery) use ($request) {
+                $productQuery->where('category_id', (int) $request->category_id);
+            });
+        }
+    }
+
+    /**
+     * Build the grouped product-wise PO report query.
+     */
+    private function buildProductWiseReportQuery(Request $request)
+    {
+        $lineTotal = "COALESCE(purchase_order_items.total_cost, ((COALESCE(purchase_order_items.unit_cost, 0) * COALESCE(purchase_order_items.quantity_ordered, 0)) - COALESCE(purchase_order_items.discount_amount, 0) + COALESCE(purchase_order_items.tax_amount, 0)))";
+        $receivedRatio = "CASE WHEN COALESCE(purchase_order_items.quantity_ordered, 0) > 0 THEN (COALESCE(purchase_order_items.quantity_received, 0) / purchase_order_items.quantity_ordered) ELSE 0 END";
+        $receivedValue = "((COALESCE(purchase_order_items.unit_cost, 0) * COALESCE(purchase_order_items.quantity_received, 0)) - (COALESCE(purchase_order_items.discount_amount, 0) * {$receivedRatio}) + (COALESCE(purchase_order_items.tax_amount, 0) * {$receivedRatio}))";
+        $paidRatio = "CASE WHEN COALESCE(po.total_amount, 0) > 0 THEN (COALESCE(po.paid_amount, 0) / po.total_amount) ELSE 0 END";
+        $outstandingRatio = "CASE WHEN COALESCE(po.total_amount, 0) > 0 THEN (COALESCE(po.outstanding_amount, 0) / po.total_amount) ELSE 0 END";
+        $allocatedPaid = "({$lineTotal} * {$paidRatio})";
+        $allocatedOutstanding = "({$lineTotal} * {$outstandingRatio})";
+        $pendingQty = "CASE WHEN COALESCE(purchase_order_items.quantity_pending, (COALESCE(purchase_order_items.quantity_ordered, 0) - COALESCE(purchase_order_items.quantity_received, 0))) < 0 THEN 0 ELSE COALESCE(purchase_order_items.quantity_pending, (COALESCE(purchase_order_items.quantity_ordered, 0) - COALESCE(purchase_order_items.quantity_received, 0))) END";
+        $receivedApBalance = "CASE WHEN ({$receivedValue} - {$allocatedPaid}) < 0 THEN 0 ELSE ({$receivedValue} - {$allocatedPaid}) END";
+
+        $query = PurchaseOrderItem::query()
+            ->join('purchase_orders as po', 'purchase_order_items.purchase_order_id', '=', 'po.id')
+            ->leftJoin('products as p', 'purchase_order_items.product_id', '=', 'p.id')
+            ->leftJoin('categories as c', 'p.category_id', '=', 'c.id')
+            ->leftJoin('vendors as v', 'po.vendor_id', '=', 'v.id')
+            ->leftJoin('stores as s', 'po.store_id', '=', 's.id')
+            ->selectRaw("
+                purchase_order_items.product_id as product_id,
+                MIN(COALESCE(p.name, purchase_order_items.product_name)) as product_name,
+                MIN(COALESCE(p.sku, purchase_order_items.product_sku)) as product_sku,
+                MIN(p.category_id) as category_id,
+                MIN(c.name) as category_name,
+                COUNT(DISTINCT po.id) as po_count,
+                SUM(COALESCE(purchase_order_items.quantity_ordered, 0)) as ordered_quantity,
+                SUM(COALESCE(purchase_order_items.quantity_received, 0)) as received_quantity,
+                SUM({$pendingQty}) as pending_quantity,
+                SUM(COALESCE(purchase_order_items.unit_cost, 0) * COALESCE(purchase_order_items.quantity_ordered, 0)) as gross_ordered_value,
+                SUM({$lineTotal}) as ordered_value,
+                SUM({$receivedValue}) as received_value,
+                SUM({$allocatedPaid}) as allocated_paid_amount,
+                SUM({$allocatedOutstanding}) as allocated_outstanding_amount,
+                SUM({$receivedApBalance}) as received_ap_balance,
+                MIN(po.created_at) as first_po_at,
+                MAX(po.created_at) as last_po_at
+            ")
+            ->whereNotNull('purchase_order_items.product_id')
+            ->groupBy('purchase_order_items.product_id');
+
+        $this->applyPurchaseOrderJoinFilters($query, $request);
+
+        return $query;
+    }
+
+    /**
+     * Apply the same filters to the grouped report query, where purchase_orders is joined as po.
+     */
+    private function applyPurchaseOrderJoinFilters($query, Request $request): void
+    {
+        if ($request->filled('vendor_id')) {
+            $query->where('po.vendor_id', $request->vendor_id);
+        }
+
+        if ($request->filled('store_id')) {
+            $query->where('po.store_id', $request->store_id);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('po.status', $request->status);
+        }
+
+        if ($request->filled('payment_status')) {
+            $paymentStatus = (string) $request->payment_status;
+            if (in_array($paymentStatus, ['partial', 'partially_paid'], true)) {
+                $query->whereIn('po.payment_status', ['partial', 'partially_paid']);
+            } else {
+                $query->where('po.payment_status', $paymentStatus);
+            }
+        }
+
+        if ($request->filled('search')) {
+            $operator = $this->getLikeOperator(false);
+            $pattern = $this->buildLikePattern((string) $request->search);
+            $query->where('po.po_number', $operator, $pattern);
+        }
+
+        if ($request->filled('from_date')) {
+            $query->whereDate('po.created_at', '>=', $request->from_date);
+        }
+
+        if ($request->filled('to_date')) {
+            $query->whereDate('po.created_at', '<=', $request->to_date);
+        }
+
+        if ($request->filled('product_id')) {
+            $query->where('purchase_order_items.product_id', (int) $request->product_id);
+        }
+
+        if ($request->filled('product_search')) {
+            $operator = $this->getLikeOperator(false);
+            $pattern = $this->buildLikePattern(trim((string) $request->product_search));
+            $query->where(function ($q) use ($operator, $pattern) {
+                $q->where('purchase_order_items.product_name', $operator, $pattern)
+                    ->orWhere('purchase_order_items.product_sku', $operator, $pattern)
+                    ->orWhere('p.name', $operator, $pattern)
+                    ->orWhere('p.sku', $operator, $pattern);
+            });
+        }
+
+        if ($request->filled('sku')) {
+            $operator = $this->getLikeOperator(false);
+            $pattern = $this->buildLikePattern(trim((string) $request->sku));
+            $query->where(function ($q) use ($operator, $pattern) {
+                $q->where('purchase_order_items.product_sku', $operator, $pattern)
+                    ->orWhere('p.sku', $operator, $pattern);
+            });
+        }
+
+        if ($request->filled('category_id')) {
+            $query->where('p.category_id', (int) $request->category_id);
+        }
+    }
+
     /**
      * Delete purchase order permanently
      * Deletes related barcodes, batches, and updates inventory.
@@ -635,12 +932,17 @@ class PurchaseOrderController extends Controller
                 \DB::table('product_batches')->whereIn('id', $batchIdsToDelete)->delete();
             }
 
-            // 4. Delete the purchase order
+            // 4. Cancel accounting entries created for this PO receipt before deleting the PO.
+            \App\Models\Transaction::where('reference_type', PurchaseOrder::class)
+                ->where('reference_id', $po->id)
+                ->update(['status' => 'cancelled']);
+
+            // 5. Delete the purchase order
             $po->delete();
 
             DB::commit();
 
-            // 5. Update quantity of all products affected by this PO
+            // 6. Update quantity of all products affected by this PO
             $productIdsToSync = array_unique($productIdsToSync);
             foreach ($productIdsToSync as $productId) {
                 if (method_exists(\App\Models\MasterInventory::class, 'syncProductInventory')) {

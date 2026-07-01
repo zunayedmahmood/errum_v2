@@ -105,7 +105,7 @@ export default function BranchCostPanel() {
               <Receipt size={20} className="text-indigo-500" /> Branch Daily Cost
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Log operational expenses for your branch. Each entry is recorded separately with details.
+              Log operational expenses for your branch. Each entry is also posted to the accounting expense ledger.
             </p>
           </div>
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Expense;
 use App\Models\ExpensePayment;
 use App\Models\ExpenseReceipt;
+use App\Models\PaymentMethod;
 use App\Traits\DatabaseAgnosticSearch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -78,7 +79,7 @@ class ExpenseController extends Controller
             'description' => 'required|string',
             'reference_number' => 'nullable|string',
             'vendor_invoice_number' => 'nullable|string',
-            'expense_type' => 'required|in:one_time,recurring',
+            'expense_type' => 'nullable|in:vendor_payment,salary_payment,utility_bill,rent_lease,logistics,maintenance,marketing,insurance,taxes,supplies,travel,training,software,bank_charges,depreciation,miscellaneous,one_time,recurring',
             'attachments' => 'nullable|array',
         ]);
 
@@ -87,8 +88,8 @@ class ExpenseController extends Controller
         }
 
         $data = $request->all();
-        $data['created_by'] = Auth::id();
-        $data['status'] = 'pending';
+        $data['created_by'] = Auth::id() ?? DB::table('employees')->value('id');
+        $data['status'] = 'pending_approval';
         $data['payment_status'] = 'unpaid';
         
         // If store_id not provided, use authenticated employee's store
@@ -97,6 +98,15 @@ class ExpenseController extends Controller
             $data['store_id'] = $employee->store_id ?? null;
         }
         
+        // Backward compatibility: older frontend sent one_time/recurring, but the
+        // database stores concrete expense categories such as miscellaneous/logistics.
+        if (($data['expense_type'] ?? null) === 'recurring') {
+            $data['is_recurring'] = true;
+            $data['expense_type'] = 'miscellaneous';
+        } elseif (($data['expense_type'] ?? null) === 'one_time' || empty($data['expense_type'])) {
+            $data['expense_type'] = 'miscellaneous';
+        }
+
         // Calculate total
         $data['total_amount'] = $data['amount'] + ($data['tax_amount'] ?? 0) - ($data['discount_amount'] ?? 0);
         $data['outstanding_amount'] = $data['total_amount'];
@@ -131,7 +141,7 @@ class ExpenseController extends Controller
     {
         $expense = Expense::findOrFail($id);
 
-        if (in_array($expense->status, ['approved', 'completed', 'cancelled'])) {
+        if (in_array($expense->status, ['approved', 'completed', 'cancelled', 'rejected'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot update expense in current status'
@@ -176,7 +186,7 @@ class ExpenseController extends Controller
     {
         $expense = Expense::findOrFail($id);
 
-        if ($expense->status !== 'pending') {
+        if (!in_array($expense->status, ['pending', 'pending_approval'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Can only delete pending expenses'
@@ -195,7 +205,7 @@ class ExpenseController extends Controller
     {
         $expense = Expense::findOrFail($id);
 
-        if ($expense->status !== 'pending') {
+        if (!in_array($expense->status, ['pending', 'pending_approval'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Expense is not in pending status'
@@ -204,7 +214,7 @@ class ExpenseController extends Controller
 
         $expense->update([
             'status' => 'approved',
-            'approved_by' => Auth::id(),
+            'approved_by' => Auth::id() ?? DB::table('employees')->value('id'),
             'approved_at' => now(),
             'approval_notes' => $request->notes,
         ]);
@@ -228,7 +238,7 @@ class ExpenseController extends Controller
 
         $expense = Expense::findOrFail($id);
 
-        if ($expense->status !== 'pending') {
+        if (!in_array($expense->status, ['pending', 'pending_approval'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Expense is not in pending status'
@@ -237,7 +247,7 @@ class ExpenseController extends Controller
 
         $expense->update([
             'status' => 'rejected',
-            'approved_by' => Auth::id(),
+            'approved_by' => Auth::id() ?? DB::table('employees')->value('id'),
             'approved_at' => now(),
             'rejection_reason' => $request->reason,
         ]);
@@ -252,8 +262,9 @@ class ExpenseController extends Controller
     public function addPayment(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
-            'amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|string',
+            'amount' => 'required|numeric|min:0.01',
+            'payment_method_id' => 'nullable|exists:payment_methods,id',
+            'payment_method' => 'nullable|string',
             'payment_date' => 'required|date',
             'reference_number' => 'nullable|string',
             'notes' => 'nullable|string',
@@ -272,7 +283,7 @@ class ExpenseController extends Controller
             ], 400);
         }
 
-        if ($request->amount > $expense->outstanding_amount) {
+        if ((float) $request->amount > (float) $expense->outstanding_amount) {
             return response()->json([
                 'success' => false,
                 'message' => 'Payment amount exceeds outstanding amount'
@@ -281,27 +292,44 @@ class ExpenseController extends Controller
 
         DB::beginTransaction();
         try {
+            $paymentMethod = $this->resolveExpensePaymentMethod($request->payment_method_id, $request->payment_method);
+            $amount = (float) $request->amount;
+            $paymentDate = \Carbon\Carbon::parse($request->payment_date)->endOfDay();
+            $fee = (float) $paymentMethod->calculateFee($amount);
+            $actorId = Auth::id() ?? DB::table('employees')->value('id');
+
             $payment = ExpensePayment::create([
                 'expense_id' => $expense->id,
-                'amount' => $request->amount,
-                'payment_method' => $request->payment_method,
-                'payment_date' => $request->payment_date,
-                'reference_number' => $request->reference_number,
+                'payment_method_id' => $paymentMethod->id,
+                'store_id' => $expense->store_id,
+                'processed_by' => $actorId,
+                'amount' => $amount,
+                'fee_amount' => $fee,
+                'net_amount' => $amount - $fee,
+                'status' => 'completed',
+                'transaction_reference' => $request->reference_number,
+                'processed_at' => $paymentDate,
+                'completed_at' => $paymentDate,
                 'notes' => $request->notes,
-                'processed_by' => Auth::id(),
+                'metadata' => [
+                    'source' => 'expense_module',
+                    'reference_number' => $request->reference_number,
+                ],
             ]);
 
-            $expense->paid_amount += $request->amount;
-            $expense->outstanding_amount -= $request->amount;
-            
+            $expense->paid_amount = (float) $expense->paid_amount + $amount;
+            $expense->outstanding_amount = max(0, (float) $expense->total_amount - (float) $expense->paid_amount);
+
             if ($expense->outstanding_amount <= 0) {
                 $expense->payment_status = 'paid';
                 $expense->status = 'completed';
-                $expense->completed_at = now();
+                $expense->completed_at = $paymentDate;
             } else {
-                $expense->payment_status = 'partial';
+                $expense->payment_status = 'partially_paid';
             }
-            
+
+            $expense->processed_by = $actorId;
+            $expense->processed_at = $paymentDate;
             $expense->save();
 
             DB::commit();
@@ -309,7 +337,7 @@ class ExpenseController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Payment added successfully',
-                'data' => ['expense' => $expense, 'payment' => $payment]
+                'data' => ['expense' => $expense->fresh(['category', 'vendor', 'payments']), 'payment' => $payment]
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -318,6 +346,28 @@ class ExpenseController extends Controller
                 'message' => 'Failed to add payment: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function resolveExpensePaymentMethod($paymentMethodId = null, ?string $paymentMethodName = null): PaymentMethod
+    {
+        if ($paymentMethodId) {
+            return PaymentMethod::findOrFail($paymentMethodId);
+        }
+
+        if ($paymentMethodName) {
+            $method = PaymentMethod::where('code', $paymentMethodName)
+                ->orWhere('name', $paymentMethodName)
+                ->orWhere('type', $paymentMethodName)
+                ->first();
+
+            if ($method) {
+                return $method;
+            }
+        }
+
+        return PaymentMethod::where('type', 'cash')->where('is_active', true)->first()
+            ?: PaymentMethod::where('code', 'cash')->first()
+            ?: PaymentMethod::createCashMethod();
     }
 
     public function getStatistics(Request $request)

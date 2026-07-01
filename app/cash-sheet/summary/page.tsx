@@ -99,6 +99,28 @@ function DayDetailDrawer({ date, onClose }: { date: string; onClose: () => void 
                 </section>
               )}
 
+              {/* Accounting expenses */}
+              {data && data.accounting_expenses.length > 0 && (
+                <section>
+                  <h3 className="text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wide mb-2">Accounting Expenses</h3>
+                  <ul className="space-y-2">
+                    {data.accounting_expenses.map(e => (
+                      <li key={e.id} className="flex items-start justify-between gap-3 bg-rose-50 dark:bg-rose-900/20 rounded-lg px-3 py-2.5">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">{fmtV(Number(e.amount))}</span>
+                            {e.store?.name && <span className="text-[10px] bg-rose-100 dark:bg-rose-800 text-rose-600 dark:text-rose-300 rounded px-1.5">{e.store.name}</span>}
+                            {e.payment_method?.name && <span className="text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-500 rounded px-1.5">{e.payment_method.name}</span>}
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{e.description || e.category_name || e.expense_number}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">{e.created_by?.name}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
               {/* Admin entries */}
               {data && data.admin_entries.length > 0 && (
                 <section>
@@ -150,8 +172,8 @@ function DayDetailDrawer({ date, onClose }: { date: string; onClose: () => void 
                 </section>
               )}
 
-              {data && data.branch_costs.length === 0 && data.admin_entries.length === 0 && data.owner_entries.length === 0 && (
-                <p className="text-center text-sm text-gray-400 py-8">No manual entries for this day.</p>
+              {data && data.branch_costs.length === 0 && data.accounting_expenses.length === 0 && data.admin_entries.length === 0 && data.owner_entries.length === 0 && (
+                <p className="text-center text-sm text-gray-400 py-8">No manual or accounting entries for this day.</p>
               )}
             </>
           )}

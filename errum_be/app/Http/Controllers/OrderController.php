@@ -42,16 +42,6 @@ class OrderController extends Controller
             'salesman',
         ]);
 
-        // Offline sales history should not list exchange replacement orders as
-        // normal sales. Those are operational records and their net settlement
-        // belongs in the cash sheet EX column.
-        if ($request->boolean('exclude_exchange_replacements')) {
-            $query->where(function ($q) {
-                $q->whereNull('metadata')
-                  ->orWhere('metadata', 'not like', '%is_exchange_replacement%');
-            });
-        }
-
         // Filter by order type (counter, social_commerce, ecommerce). Accepts either one order_type
         // or order_types as an array/comma-separated string for breakdown screens.
         if ($request->filled('order_types')) {

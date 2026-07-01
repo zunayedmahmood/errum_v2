@@ -33,21 +33,26 @@ class RefundObserver
         // Check if status changed to completed
         if ($refund->wasChanged('status') && $refund->status === 'completed') {
             // Find existing transaction or create new one
-            $transaction = AccountingTransaction::byReference(Refund::class, $refund->id)->first();
+            $existingQuery = AccountingTransaction::byReference(Refund::class, $refund->id);
 
-            if ($transaction) {
-                // Update existing transaction to completed
-                $transaction->update([
+            if ((clone $existingQuery)->exists()) {
+                // Update the full refund reversal group, not only the first row.
+                $existingQuery->update([
                     'status' => 'completed',
                     'transaction_date' => $refund->completed_at ?? now(),
                 ]);
             } else {
-                // Create new transaction if it doesn't exist
+                // Create new transaction group if it doesn't exist
                 AccountingTransaction::createFromRefund($refund);
             }
 
             // Create COGS/Inventory reversal if applicable (on completion)
             $this->createCOGSReversalIfApplicable($refund);
+        }
+
+        if ($refund->wasChanged('status') && in_array($refund->status, ['cancelled', 'failed'], true)) {
+            AccountingTransaction::byReference(Refund::class, $refund->id)
+                ->update(['status' => 'cancelled']);
         }
     }
 

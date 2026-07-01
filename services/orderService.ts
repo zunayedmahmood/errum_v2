@@ -165,7 +165,6 @@ export interface OrderFilters {
   per_page?: number;
   page?: number;
   skipStoreScope?: boolean;
-  exclude_exchange_replacements?: boolean;
 }
 
 export interface OrderStatistics {

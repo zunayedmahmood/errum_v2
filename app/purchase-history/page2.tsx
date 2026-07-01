@@ -139,7 +139,6 @@ export default function PurchaseHistoryPage() {
       const filters: OrderFilters = {
         order_type: 'counter',
         per_page: 50,
-        exclude_exchange_replacements: true,
       };
       // Enforce store scoping for branch/store roles
       if (scopedStoreId) {

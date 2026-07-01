@@ -9,7 +9,8 @@ import GroupedAllBarcodesPrinter, { BatchBarcodeSource } from '@/components/Grou
 import purchaseOrderService, {
   PurchaseOrder,
   ReceiveItemData,
-  PurchaseOrderFilters
+  PurchaseOrderFilters,
+  ProductWisePurchaseOrderReportRow
 } from '@/services/purchase-order.service';
 import { vendorService, Vendor } from '@/services/vendorService';
 import { productService, Product } from '@/services/productService';
@@ -185,6 +186,19 @@ export default function PurchaseOrdersPage() {
     from: number;
     to: number;
   }>({ current_page: 1, last_page: 1, per_page: 50, total: 0, from: 0, to: 0 });
+
+  const [productReportRows, setProductReportRows] = useState<ProductWisePurchaseOrderReportRow[]>([]);
+  const [productReportLoading, setProductReportLoading] = useState(false);
+  const [showProductReport, setShowProductReport] = useState(false);
+  const [productReportPagination, setProductReportPagination] = useState<{
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    from: number;
+    to: number;
+  }>({ current_page: 1, last_page: 1, per_page: 25, total: 0, from: 0, to: 0 });
+
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [expandedPO, setExpandedPO] = useState<number | null>(null);
@@ -254,6 +268,11 @@ export default function PurchaseOrdersPage() {
     status: '',
     payment_status: '',
     search: '',
+    product_search: '',
+    sku: '',
+    category_id: undefined,
+    from_date: '',
+    to_date: '',
     // ✅ backend seems to default to a very small page size in some environments
     // so we force a sane default here.
     per_page: 50,
@@ -376,30 +395,18 @@ export default function PurchaseOrdersPage() {
   useEffect(() => {
     loadPurchaseOrders();
     loadVendors();
+    loadCategoryOptions();
   }, []);
 
   useEffect(() => {
     loadPurchaseOrders();
-  }, [filters.vendor_id, filters.status, filters.payment_status, filters.page, filters.per_page]);
+    if (showProductReport) loadProductReport(productReportPagination.current_page || 1);
+  }, [filters.vendor_id, filters.status, filters.payment_status, filters.category_id, filters.page, filters.per_page]);
 
-  // Load flat category list when edit modal opens
+  // Ensure categories are available for both PO filtering and edit-modal product browsing.
   useEffect(() => {
-    if (!showEditModal) return;
-    setCategoryListLoading(true);
-    categoryService.getTree(true)
-      .then((tree) => {
-        const flat: CategoryTree[] = [];
-        const flatten = (nodes: CategoryTree[], depth = 0) => {
-          nodes.forEach((n) => {
-            flat.push({ ...n, level: depth });
-            if (n.children?.length) flatten(n.children, depth + 1);
-          });
-        };
-        flatten(tree || []);
-        setCategoryList(flat);
-      })
-      .catch(() => setCategoryList([]))
-      .finally(() => setCategoryListLoading(false));
+    if (!showEditModal || categoryList.length > 0) return;
+    loadCategoryOptions();
   }, [showEditModal]);
 
   // Load products when category or search query changes
@@ -468,10 +475,11 @@ export default function PurchaseOrdersPage() {
   };
 
 
-  const loadPurchaseOrders = async () => {
+  const loadPurchaseOrders = async (overrideFilters?: PurchaseOrderFilters) => {
+    const activeFilters = overrideFilters || filters;
     try {
       setLoading(true);
-      const response = await purchaseOrderService.getAll(filters);
+      const response = await purchaseOrderService.getAll(activeFilters);
 
       // Support both paginated and non-paginated shapes
       const paginated = (response as any)?.data && !Array.isArray((response as any).data) ? (response as any).data : null;
@@ -493,7 +501,7 @@ export default function PurchaseOrdersPage() {
         setPagination({
           current_page: (meta as any).current_page ?? 1,
           last_page: (meta as any).last_page ?? 1,
-          per_page: (meta as any).per_page ?? (filters.per_page ?? 50),
+          per_page: (meta as any).per_page ?? (activeFilters.per_page ?? 50),
           total: (meta as any).total ?? 0,
           from: (meta as any).from ?? 0,
           to: (meta as any).to ?? 0,
@@ -526,6 +534,96 @@ export default function PurchaseOrdersPage() {
       console.error('Failed to load vendors:', error);
       setVendors([]);
     }
+  };
+
+  const loadCategoryOptions = async () => {
+    if (categoryListLoading) return;
+    setCategoryListLoading(true);
+    try {
+      const tree = await categoryService.getTree(true);
+      const flat: CategoryTree[] = [];
+      const flatten = (nodes: CategoryTree[], depth = 0) => {
+        nodes.forEach((n) => {
+          flat.push({ ...n, level: depth });
+          if (n.children?.length) flatten(n.children, depth + 1);
+        });
+      };
+      flatten(tree || []);
+      setCategoryList(flat);
+    } catch {
+      setCategoryList([]);
+    } finally {
+      setCategoryListLoading(false);
+    }
+  };
+
+  const loadProductReport = async (page = 1, overrideFilters?: PurchaseOrderFilters) => {
+    const activeFilters = overrideFilters || filters;
+    try {
+      setProductReportLoading(true);
+      const response = await purchaseOrderService.getProductWiseReport({
+        ...activeFilters,
+        page,
+        per_page: productReportPagination.per_page || 25,
+      });
+
+      const paginated = (response as any)?.data || {};
+      const list = Array.isArray(paginated?.data) ? paginated.data : [];
+      setProductReportRows(list);
+      setProductReportPagination({
+        current_page: paginated.current_page ?? page,
+        last_page: paginated.last_page ?? 1,
+        per_page: paginated.per_page ?? 25,
+        total: paginated.total ?? list.length,
+        from: paginated.from ?? (list.length ? 1 : 0),
+        to: paginated.to ?? list.length,
+      });
+      setShowProductReport(true);
+    } catch (error: any) {
+      console.error('Failed to load product-wise PO report:', error);
+      showAlert('error', error?.response?.data?.message || 'Failed to load product-wise PO report');
+      setProductReportRows([]);
+    } finally {
+      setProductReportLoading(false);
+    }
+  };
+
+  const exportProductReport = async () => {
+    try {
+      setProductReportLoading(true);
+      const blob = await purchaseOrderService.exportProductWiseReport(filters);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `product-wise-purchase-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('Failed to export product-wise PO report:', error);
+      showAlert('error', error?.response?.data?.message || 'Failed to export product-wise PO report');
+    } finally {
+      setProductReportLoading(false);
+    }
+  };
+
+  const resetProductFilters = () => {
+    const nextFilters = {
+      ...filters,
+      product_id: undefined,
+      product_search: '',
+      sku: '',
+      category_id: undefined,
+      from_date: '',
+      to_date: '',
+      search: '',
+      page: 1,
+    };
+    setFilters(nextFilters);
+    setProductReportRows([]);
+    setShowProductReport(false);
+    loadPurchaseOrders(nextFilters);
   };
 
   const handleViewPO = async (po: PurchaseOrder) => {
@@ -907,6 +1005,50 @@ export default function PurchaseOrdersPage() {
 
           {/* Filters */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Purchase Order Filters</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Product-wise filtering uses existing PO item data. No new migration is required.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextFilters = { ...filters, page: 1 };
+                    setFilters(nextFilters);
+                    loadPurchaseOrders(nextFilters);
+                    if (showProductReport) loadProductReport(1, nextFilters);
+                  }}
+                  className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  Apply Filters
+                </button>
+                <button
+                  type="button"
+                  onClick={() => loadProductReport(1)}
+                  className="px-3 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+                >
+                  Product Report
+                </button>
+                <button
+                  type="button"
+                  onClick={exportProductReport}
+                  className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Export Product CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={resetProductFilters}
+                  className="px-3 py-2 text-sm border border-red-300 text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -960,14 +1102,14 @@ export default function PurchaseOrdersPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Search
+                  PO Number
                 </label>
                 <input
                   type="text"
-                  value={filters.search}
+                  value={filters.search || ''}
                   onChange={(e) => updateFilters({ search: e.target.value }, { resetPage: false })}
-                  onKeyPress={(e) => e.key === 'Enter' && loadPurchaseOrders()}
-                  placeholder="Search PO number..."
+                  onKeyDown={(e) => e.key === 'Enter' && loadPurchaseOrders()}
+                  placeholder="PO-2026..."
                   className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
@@ -981,13 +1123,204 @@ export default function PurchaseOrdersPage() {
                   onChange={(e) => updateFilters({ per_page: parseInt(e.target.value), page: 1 })}
                   className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 >
-                  {[15, 30, 50, 100].map((n) => (
+                  {[15, 30, 50, 100, 200].map((n) => (
                     <option key={n} value={n}>{n}</option>
                   ))}
                 </select>
               </div>
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Product Name / SKU
+                </label>
+                <input
+                  type="text"
+                  value={filters.product_search || ''}
+                  onChange={(e) => updateFilters({ product_search: e.target.value, product_id: undefined }, { resetPage: false })}
+                  onKeyDown={(e) => e.key === 'Enter' && loadPurchaseOrders()}
+                  placeholder="Nike / Dunk / SKU..."
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Exact SKU Contains
+                </label>
+                <input
+                  type="text"
+                  value={filters.sku || ''}
+                  onChange={(e) => updateFilters({ sku: e.target.value, product_id: undefined }, { resetPage: false })}
+                  onKeyDown={(e) => e.key === 'Enter' && loadPurchaseOrders()}
+                  placeholder="SKU only..."
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Category
+                </label>
+                <select
+                  value={filters.category_id || ''}
+                  onChange={(e) => updateFilters({ category_id: e.target.value ? parseInt(e.target.value) : undefined, product_id: undefined })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="">All Categories</option>
+                  {categoryList.map((cat: any) => (
+                    <option key={cat.id} value={cat.id}>{`${'— '.repeat(cat.level || 0)}${cat.name}`}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  From Date
+                </label>
+                <input
+                  type="date"
+                  value={filters.from_date || ''}
+                  onChange={(e) => updateFilters({ from_date: e.target.value }, { resetPage: false })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  To Date
+                </label>
+                <input
+                  type="date"
+                  value={filters.to_date || ''}
+                  onChange={(e) => updateFilters({ to_date: e.target.value }, { resetPage: false })}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+            </div>
           </div>
+
+          {showProductReport && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Product-wise Purchase Order Report</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Ordered, received, pending, paid allocation, outstanding allocation and received AP balance by product.
+                  </p>
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Showing {productReportPagination.from}–{productReportPagination.to} of {productReportPagination.total}
+                </div>
+              </div>
+
+              {productReportLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-500" />
+                </div>
+              ) : productReportRows.length === 0 ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center border border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
+                  No product-wise PO rows found for the selected filters.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 dark:bg-gray-700">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-gray-900 dark:text-gray-100">Product</th>
+                        <th className="px-3 py-2 text-left text-gray-900 dark:text-gray-100">Category</th>
+                        <th className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">POs</th>
+                        <th className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">Ordered</th>
+                        <th className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">Received</th>
+                        <th className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">Pending</th>
+                        <AccessControl roles={['super-admin', 'admin']}>
+                          <th className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">Ordered Value</th>
+                        </AccessControl>
+                        <AccessControl roles={['super-admin', 'admin']}>
+                          <th className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">Received Value</th>
+                        </AccessControl>
+                        <AccessControl roles={['super-admin', 'admin']}>
+                          <th className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">Allocated Paid</th>
+                        </AccessControl>
+                        <AccessControl roles={['super-admin', 'admin']}>
+                          <th className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">Outstanding</th>
+                        </AccessControl>
+                        <AccessControl roles={['super-admin', 'admin']}>
+                          <th className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">Received AP</th>
+                        </AccessControl>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {productReportRows.map((row) => (
+                        <tr key={row.product_id} className="border-t border-gray-200 dark:border-gray-700">
+                          <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextFilters = { ...filters, product_id: Number(row.product_id), product_search: row.product_name || '', page: 1 };
+                                setFilters(nextFilters);
+                                loadPurchaseOrders(nextFilters);
+                              }}
+                              className="text-left hover:text-blue-600 dark:hover:text-blue-400 font-medium"
+                              title="Filter PO list by this product"
+                            >
+                              {row.product_name || `Product #${row.product_id}`}
+                            </button>
+                            <span className="block text-xs text-gray-500 dark:text-gray-400">SKU: {row.product_sku || 'N/A'}</span>
+                          </td>
+                          <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.category_name || 'N/A'}</td>
+                          <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">{Number(row.po_count || 0)}</td>
+                          <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">{Number(row.ordered_quantity || 0)}</td>
+                          <td className="px-3 py-2 text-right text-green-700 dark:text-green-400">{Number(row.received_quantity || 0)}</td>
+                          <td className="px-3 py-2 text-right text-yellow-700 dark:text-yellow-400">{Number(row.pending_quantity || 0)}</td>
+                          <AccessControl roles={['super-admin', 'admin']}>
+                            <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">৳{formatCurrency(row.ordered_value)}</td>
+                          </AccessControl>
+                          <AccessControl roles={['super-admin', 'admin']}>
+                            <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">৳{formatCurrency(row.received_value)}</td>
+                          </AccessControl>
+                          <AccessControl roles={['super-admin', 'admin']}>
+                            <td className="px-3 py-2 text-right text-green-700 dark:text-green-400">৳{formatCurrency(row.allocated_paid_amount)}</td>
+                          </AccessControl>
+                          <AccessControl roles={['super-admin', 'admin']}>
+                            <td className="px-3 py-2 text-right text-yellow-700 dark:text-yellow-400">৳{formatCurrency(row.allocated_outstanding_amount)}</td>
+                          </AccessControl>
+                          <AccessControl roles={['super-admin', 'admin']}>
+                            <td className="px-3 py-2 text-right text-red-700 dark:text-red-400">৳{formatCurrency(row.received_ap_balance)}</td>
+                          </AccessControl>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {productReportPagination.last_page > 1 && (
+                <div className="flex items-center justify-end gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => loadProductReport(Math.max(1, productReportPagination.current_page - 1))}
+                    disabled={productReportPagination.current_page <= 1 || productReportLoading}
+                    className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Prev
+                  </button>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    Page {productReportPagination.current_page} / {productReportPagination.last_page}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => loadProductReport(Math.min(productReportPagination.last_page, productReportPagination.current_page + 1))}
+                    disabled={productReportPagination.current_page >= productReportPagination.last_page || productReportLoading}
+                    className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Purchase Orders List */}
           {loading && purchaseOrders.length === 0 ? (
