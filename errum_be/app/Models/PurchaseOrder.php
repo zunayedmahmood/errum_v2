@@ -256,13 +256,21 @@ class PurchaseOrder extends Model
     /**
      * Mark PO as received and create product batches with barcodes
      */
-    public function markAsReceived(array $receivedItems = []): void
+    public function markAsReceived(array $receivedItems = [], ?int $receivedById = null): void
     {
         DB::beginTransaction();
         try {
             /** @var self $lockedPo */
             $lockedPo = static::whereKey($this->id)->lockForUpdate()->firstOrFail();
             if (!in_array($lockedPo->status, ['approved', 'partially_received'], true)) {
+                // Treat a retry of an already-finished receive as idempotent. This protects the UI from
+                // creating duplicate stock when the previous HTTP response timed out after the backend finished.
+                if ($lockedPo->status === 'received') {
+                    DB::commit();
+                    $this->refresh();
+                    return;
+                }
+
                 throw new \Exception('This purchase order has already been received or cannot be received in its current status.');
             }
 
@@ -286,54 +294,16 @@ class PurchaseOrder extends Model
                     throw new \Exception("Cannot receive {$requestedQuantity} units for {$item->product?->name}. Remaining quantity is {$remainingQuantity}.");
                 }
 
-                // Create product batch only for the quantity that is still pending.
-                $batch = ProductBatch::create([
-                    'product_id' => $item->product_id,
-                    'batch_number' => $itemData['batch_number'] ?? $lockedPo->po_number . '-' . $item->id . '-' . now()->format('His'),
-                    'quantity' => $requestedQuantity,
-                    'cost_price' => $item->unit_cost,
-                    'sell_price' => $item->unit_sell_price,
-                    'store_id' => $lockedPo->store_id,
-                    'manufactured_date' => $itemData['manufactured_date'] ?? null,
-                    'expiry_date' => $itemData['expiry_date'] ?? null,
-                ]);
+                [$batch, $reusedExistingBatch] = $this->findOrCreateReceiptBatch($lockedPo, $item, $itemData, $requestedQuantity);
 
-                $store = $lockedPo->store;
-                $initialStatus = $store && $store->is_warehouse ? 'in_warehouse' : 'in_shop';
-
-                $generatedBarcodes = [];
-                for ($i = 0; $i < $requestedQuantity; $i++) {
-                    $barcode = ProductBarcode::create([
-                        'product_id' => $item->product_id,
-                        'batch_id' => $batch->id,
-                        'type' => 'CODE128',
-                        'is_primary' => ($i === 0),
-                        'is_active' => true,
-                        'generated_at' => now(),
-                        'current_store_id' => $lockedPo->store_id,
-                        'current_status' => $initialStatus,
-                        'location_updated_at' => now(),
-                        'location_metadata' => [
-                            'source' => 'purchase_order',
-                            'po_number' => $lockedPo->po_number,
-                            'received_date' => now()->format('Y-m-d H:i:s'),
-                        ],
-                    ]);
-
-                    $generatedBarcodes[] = $barcode;
-                }
-
-                if (!empty($generatedBarcodes)) {
-                    $batch->barcode_id = $generatedBarcodes[0]->id;
-                    $batch->save();
-                }
+                $this->ensureReceiptBatchBarcodes($lockedPo, $item, $batch, $requestedQuantity);
 
                 $item->product_batch_id = $batch->id;
                 $item->batch_number = $batch->batch_number;
                 $item->quantity_received = (int) $item->quantity_received + $requestedQuantity;
                 $item->quantity_pending = max(0, (int) $item->quantity_ordered - (int) $item->quantity_received);
-                $item->manufactured_date = $itemData['manufactured_date'] ?? null;
-                $item->expiry_date = $itemData['expiry_date'] ?? null;
+                $item->manufactured_date = $itemData['manufactured_date'] ?? $item->manufactured_date;
+                $item->expiry_date = $itemData['expiry_date'] ?? $item->expiry_date;
 
                 if ($item->quantity_received >= $item->quantity_ordered) {
                     $item->receive_status = 'fully_received';
@@ -356,9 +326,10 @@ class PurchaseOrder extends Model
                     'tax_amount' => $lineTax,
                     'discount_amount' => $lineDiscount,
                     'net_amount' => round($lineGross + $lineTax - $lineDiscount, 2),
+                    'reused_existing_batch' => $reusedExistingBatch,
                 ];
 
-                \Log::info("Generated {$requestedQuantity} barcodes for PO {$lockedPo->po_number}, Batch {$batch->batch_number}");
+                \Log::info(($reusedExistingBatch ? 'Reconciled' : 'Generated') . " {$requestedQuantity} PO units for {$lockedPo->po_number}, Batch {$batch->batch_number}");
             }
 
             $totals = $lockedPo->items()
@@ -373,6 +344,13 @@ class PurchaseOrder extends Model
                 $lockedPo->received_at = $lockedPo->received_at ?: now();
             } elseif ($totalReceived > 0) {
                 $lockedPo->status = 'partially_received';
+            }
+
+            if ($receivedById && !$lockedPo->received_by) {
+                $lockedPo->received_by = $receivedById;
+            }
+            if ($totalReceived > 0 && !$lockedPo->received_at) {
+                $lockedPo->received_at = now();
             }
 
             $lockedPo->save();
@@ -396,6 +374,119 @@ class PurchaseOrder extends Model
             DB::rollBack();
             \Log::error("Failed to receive PO {$this->po_number}: " . $e->getMessage());
             throw $e;
+        }
+    }
+
+    /**
+     * Build a stable auto batch number for PO receipts. It includes the cumulative received
+     * quantity after this receipt, so partial receipts can create separate batches while
+     * a retry of the same failed/timed-out request resolves to the same batch number.
+     */
+    protected function buildReceiptBatchNumber(self $po, PurchaseOrderItem $item, int $requestedQuantity): string
+    {
+        $targetReceivedQuantity = (int) $item->quantity_received + $requestedQuantity;
+        return "{$po->po_number}-{$item->id}-{$targetReceivedQuantity}";
+    }
+
+    protected function findOrCreateReceiptBatch(self $po, PurchaseOrderItem $item, array $itemData, int $requestedQuantity): array
+    {
+        $manualBatchNumber = trim((string) ($itemData['batch_number'] ?? ''));
+        $batchNumber = $manualBatchNumber !== ''
+            ? $manualBatchNumber
+            : $this->buildReceiptBatchNumber($po, $item, $requestedQuantity);
+
+        $batch = ProductBatch::where('batch_number', $batchNumber)->lockForUpdate()->first();
+
+        // Recovery path for older builds that created stock with PO-ITEM-HHMMSS before the
+        // item/PO rows were marked received. This lets a retry reconcile instead of duplicating stock.
+        if (!$batch && $manualBatchNumber === '' && (int) $item->quantity_received === 0) {
+            $legacyPrefix = "{$po->po_number}-{$item->id}-";
+            $batch = ProductBatch::where('product_id', $item->product_id)
+                ->where('store_id', $po->store_id)
+                ->where('quantity', $requestedQuantity)
+                ->where('batch_number', 'like', $legacyPrefix . '%')
+                ->lockForUpdate()
+                ->latest('id')
+                ->first();
+        }
+
+        if ($batch) {
+            if ((int) $batch->product_id !== (int) $item->product_id || (int) $batch->store_id !== (int) $po->store_id) {
+                throw new \Exception("Batch number {$batch->batch_number} already exists for a different product or store.");
+            }
+
+            if ((int) $batch->quantity < $requestedQuantity) {
+                throw new \Exception("Existing batch {$batch->batch_number} has only {$batch->quantity} units, but {$requestedQuantity} units were requested.");
+            }
+
+            return [$batch, true];
+        }
+
+        $batch = ProductBatch::create([
+            'product_id' => $item->product_id,
+            'batch_number' => $batchNumber,
+            'quantity' => $requestedQuantity,
+            'cost_price' => $item->unit_cost,
+            'sell_price' => $item->unit_sell_price,
+            'store_id' => $po->store_id,
+            'manufactured_date' => $itemData['manufactured_date'] ?? null,
+            'expiry_date' => $itemData['expiry_date'] ?? null,
+        ]);
+
+        return [$batch, false];
+    }
+
+    protected function ensureReceiptBatchBarcodes(self $po, PurchaseOrderItem $item, ProductBatch $batch, int $expectedQuantity): void
+    {
+        $existingCount = ProductBarcode::where('batch_id', $batch->id)->count();
+        $missingCount = max(0, $expectedQuantity - $existingCount);
+
+        if ($missingCount > 0) {
+            $store = $po->store;
+            $initialStatus = $store && $store->is_warehouse ? 'in_warehouse' : 'in_shop';
+            $now = now();
+            $seen = [];
+            $rows = [];
+
+            for ($i = 0; $i < $missingCount; $i++) {
+                do {
+                    $barcodeValue = ProductBarcode::generateUniqueBarcode();
+                } while (isset($seen[$barcodeValue]));
+                $seen[$barcodeValue] = true;
+
+                $rows[] = [
+                    'product_id' => $item->product_id,
+                    'batch_id' => $batch->id,
+                    'barcode' => $barcodeValue,
+                    'type' => 'CODE128',
+                    'is_primary' => $existingCount === 0 && $i === 0,
+                    'is_active' => true,
+                    'is_defective' => false,
+                    'generated_at' => $now,
+                    'current_store_id' => $po->store_id,
+                    'current_status' => $initialStatus,
+                    'location_updated_at' => $now,
+                    'location_metadata' => json_encode([
+                        'source' => 'purchase_order',
+                        'po_number' => $po->po_number,
+                        'received_date' => $now->format('Y-m-d H:i:s'),
+                    ]),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+
+            ProductBarcode::withoutEvents(function () use ($rows) {
+                ProductBarcode::insert($rows);
+            });
+        }
+
+        if (!$batch->barcode_id) {
+            $firstBarcodeId = ProductBarcode::where('batch_id', $batch->id)->orderBy('id')->value('id');
+            if ($firstBarcodeId) {
+                $batch->barcode_id = $firstBarcodeId;
+                $batch->save();
+            }
         }
     }
 

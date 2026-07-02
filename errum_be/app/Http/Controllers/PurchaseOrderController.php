@@ -469,7 +469,17 @@ class PurchaseOrderController extends Controller
      */
     public function receive(Request $request, $id)
     {
-        $po = PurchaseOrder::findOrFail($id);
+        $po = PurchaseOrder::with('items.productBatch')->findOrFail($id);
+
+        // Idempotent retry: if a previous receive request finished on the backend
+        // but the browser/API call timed out, do not return an error or duplicate stock.
+        if ($po->status === 'received') {
+            return response()->json([
+                'success' => true,
+                'message' => 'Purchase order is already marked as received.',
+                'data' => $po->load('items.productBatch')
+            ]);
+        }
 
         if (!in_array($po->status, ['approved', 'partially_received'])) {
             return response()->json([
@@ -488,17 +498,12 @@ class PurchaseOrderController extends Controller
         ]);
 
         try {
-            $po->markAsReceived($validated['items']);
-            
-            // Update received_by and received_at
-            $po->received_by = auth()->id();
-            $po->received_at = now();
-            $po->save();
+            $po->markAsReceived($validated['items'], auth()->id());
 
             return response()->json([
                 'success' => true,
                 'message' => 'Products received successfully',
-                'data' => $po->load('items.productBatch')
+                'data' => $po->fresh()->load('items.productBatch')
             ]);
         } catch (\Exception $e) {
             return response()->json([
