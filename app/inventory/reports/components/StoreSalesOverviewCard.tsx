@@ -20,7 +20,7 @@ export default function StoreSalesOverviewCard({ data }: { data: StorePerformanc
     return (
         <ReportCard
             title="Store-wise Sales"
-            subtitle="Compare each store's sales, order count, and contribution for the selected dates"
+            subtitle="Compare each branch for the selected dates, store/product/category filters"
         >
             <div className="space-y-5">
                 {topStore ? (
@@ -45,6 +45,7 @@ export default function StoreSalesOverviewCard({ data }: { data: StorePerformanc
                                 <th className="py-3 pr-4">Store</th>
                                 <th className="py-3 px-4 text-right">Sales</th>
                                 <th className="py-3 px-4 text-right">Orders</th>
+                                <th className="py-3 px-4 text-right">Units</th>
                                 <th className="py-3 px-4 text-right">Profit</th>
                                 <th className="py-3 pl-4 text-right">Share</th>
                             </tr>
@@ -62,13 +63,14 @@ export default function StoreSalesOverviewCard({ data }: { data: StorePerformanc
                                         </td>
                                         <td className="py-4 px-4 text-right font-black text-gray-900 dark:text-white">{currency(row.net_sales)}</td>
                                         <td className="py-4 px-4 text-right text-gray-700 dark:text-gray-300">{row.orders}</td>
+                                        <td className="py-4 px-4 text-right text-gray-700 dark:text-gray-300">{row.units || 0}</td>
                                         <td className="py-4 px-4 text-right text-indigo-600 dark:text-indigo-400 font-bold">{currency(row.profit)}</td>
                                         <td className="py-4 pl-4 text-right font-semibold text-gray-700 dark:text-gray-300">{share.toFixed(1)}%</td>
                                     </tr>
                                 );
                             }) : (
                                 <tr>
-                                    <td colSpan={5} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">No store sales found for this date range.</td>
+                                    <td colSpan={6} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">No store sales found for this date range.</td>
                                 </tr>
                             )}
                         </tbody>

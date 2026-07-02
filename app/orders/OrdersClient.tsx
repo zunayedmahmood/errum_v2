@@ -1615,7 +1615,7 @@ export default function OrdersDashboard() {
 
   const buildOnlineSummaryHtml = (sourceOrders: any[], rows: Record<string, any>[], autoPrint = false) => {
     const total = rows.reduce((sum, row) => sum + parseMoney((row as any).Total), 0);
-    return `<!doctype html><html><head><meta charset="utf-8" /><title>Online Order History</title><style>${buildOnlineReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Print / Save as PDF</button></div>' : ''}<h1>Online Order History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getOnlineExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Amount</div><div class="value">৳${total.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">Summary</div></div></div><table><thead><tr>${onlineSummaryColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${onlineSummaryColumns.map((col) => `<td class="${['Subtotal','Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>Online Order History</title><style>${buildOnlineReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Save / Download PDF</button></div>' : ''}<h1>Online Order History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getOnlineExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Amount</div><div class="value">৳${total.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">Summary</div></div></div><table><thead><tr>${onlineSummaryColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${onlineSummaryColumns.map((col) => `<td class="${['Subtotal','Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
   };
 
   const buildOnlineDetailedHtml = (sourceOrders: any[], autoPrint = false) => {
@@ -1642,7 +1642,7 @@ export default function OrdersDashboard() {
       return `<div class="order-block"><div class="order-row"><div><div class="order-no">${index + 1}. ${escapeHtml(summary['Order #'])}</div><div class="order-meta">${escapeHtml(summary.Date)}</div></div><div><span class="badge">${escapeHtml(summary.Type)}</span> <span class="badge green">${escapeHtml(summary['Payment Status'])}</span></div><div class="order-total">৳${escapeHtml(summary.Total)}<div class="order-meta">Due ৳${escapeHtml(summary.Due)}</div></div><div class="order-meta" style="text-align:right">${escapeHtml(summary.Source)} / ${escapeHtml(summary.Status)}</div></div><div class="expanded"><div class="info-grid"><div class="info-box"><div class="label">Customer</div><div>${escapeHtml(summary.Customer)}</div></div><div class="info-box"><div class="label">Phone</div><div>${escapeHtml(summary.Phone)}</div></div><div class="info-box"><div class="label">Store</div><div>${escapeHtml(summary.Store)}</div></div><div class="info-box"><div class="label">Marker</div><div>${escapeHtml(summary.Marker)}</div></div><div class="info-box" style="grid-column:1/-1"><div class="label">Shipping Address</div><div>${escapeHtml(summary['Shipping Address'] || 'N/A')}</div></div>${summary.Note ? `<div class="info-box" style="grid-column:1/-1"><div class="label">Note</div><div>${escapeHtml(summary.Note)}</div></div>` : ''}</div><div class="section-title">Ordered Products</div>${productTable}${serviceTable}<table class="totals-table"><tbody><tr><td>Subtotal</td><td class="money">৳${escapeHtml(summary.Subtotal)}</td></tr><tr><td>Discount</td><td class="money">৳${escapeHtml(summary.Discount)}</td></tr><tr><td>Shipping</td><td class="money">৳${escapeHtml(summary.Shipping)}</td></tr><tr><td><strong>Total</strong></td><td class="money"><strong>৳${escapeHtml(summary.Total)}</strong></td></tr><tr><td>Paid</td><td class="money">৳${escapeHtml(summary.Paid)}</td></tr><tr><td>Due</td><td class="money">৳${escapeHtml(summary.Due)}</td></tr></tbody></table><div class="section-title">Payment History</div>${paymentsTable}</div></div>`;
     }).join('');
 
-    return `<!doctype html><html><head><meta charset="utf-8" /><title>Online Order History - Details</title><style>${buildOnlineReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Print / Save as PDF</button></div>' : ''}<h1>Online Order History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getOnlineExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Orders</div><div class="value">${sourceOrders.length}</div></div><div class="card"><div class="label">Total Amount</div><div class="value">৳${total.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">With Details</div></div></div>${blocks}</div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>Online Order History - Details</title><style>${buildOnlineReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Save / Download PDF</button></div>' : ''}<h1>Online Order History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getOnlineExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Orders</div><div class="value">${sourceOrders.length}</div></div><div class="card"><div class="label">Total Amount</div><div class="value">৳${total.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">With Details</div></div></div>${blocks}</div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
   };
 
   const buildOnlineExcelReportHtml = (sourceOrders: any[], rows: Record<string, any>[]) => {
@@ -1727,7 +1727,7 @@ export default function OrdersDashboard() {
 
       const w = window.open('', '_blank', 'width=1200,height=800');
       if (!w) {
-        alert('Popup blocked. Please allow popups to export PDF.');
+        alert('Popup blocked. Please allow popups to save/download PDF.');
         return;
       }
       w.document.open();
@@ -2730,10 +2730,10 @@ export default function OrdersDashboard() {
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
 
-      // If QZ is offline, open ONE bulk preview window (Print → Save as PDF).
+      // If QZ is offline, open ONE bulk preview window (Save as PDF).
       if (!status.connected) {
         await printBulkReceipts(fullOrders, undefined, { template: 'social_invoice', title: 'Invoices' });
-        alert('Opened invoice preview. Use Print → Save as PDF.');
+        alert('Opened invoice preview. Use Save as PDF.');
         return;
       }
 
@@ -2826,10 +2826,10 @@ export default function OrdersDashboard() {
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
 
-      // If QZ is offline, open ONE bulk preview window (Print → Save as PDF).
+      // If QZ is offline, open ONE bulk preview window (Save as PDF).
       if (!status.connected) {
         await printBulkReceipts(fullOrders);
-        alert('Opened receipt preview. Use Print → Save as PDF.');
+        alert('Opened receipt preview. Use Save as PDF.');
         return;
       }
 
@@ -2953,7 +2953,7 @@ export default function OrdersDashboard() {
       }
 
       if (!status.connected) {
-        alert('QZ Tray is offline. Opening receipt preview (Print → Save as PDF).');
+        alert('QZ Tray is offline. Opening receipt preview (Save as PDF).');
       }
 
       const fullOrder = await orderService.getById(order.id);
@@ -2992,7 +2992,7 @@ export default function OrdersDashboard() {
       } catch { }
 
       if (!status.connected) {
-        alert('QZ Tray is offline. Opening invoice preview (Print → Save as PDF).');
+        alert('QZ Tray is offline. Opening invoice preview (Save as PDF).');
       }
 
       const fullOrder = await orderService.getById(order.id);

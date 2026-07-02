@@ -5,6 +5,8 @@ export interface ReportingFilters {
   to?: string;
   store_id?: number | string;
   sku?: string;
+  product_id?: number | string;
+  category_id?: number | string;
   interval?: string;
 }
 
@@ -29,6 +31,7 @@ export interface KPIBlock {
 export interface TrendPoint {
   date: string;
   orders: number;
+  units?: number;
   net_sales: number;
   gross_profit: number;
 }
@@ -36,15 +39,27 @@ export interface TrendPoint {
 export interface NamedValue {
   label: string;
   value: number;
+  rank?: number;
+  category_id?: number | null;
+  units?: number;
+  orders?: number;
+  gross_profit?: number;
+  margin_pct?: number;
+  stock_on_hand?: number;
 }
 
 export interface TopProductRow {
   product_id: number;
+  rank?: number;
   name: string;
   sku: string;
+  category?: string;
+  category_id?: number | null;
+  orders?: number;
   units: number;
   revenue: number;
   gross_profit: number;
+  margin_pct?: number;
   stock_on_hand: number;
 }
 
@@ -63,6 +78,7 @@ export interface StorePerformanceRow {
   store_id: number;
   store_name: string;
   orders: number;
+  units?: number;
   net_sales: number;
   profit: number;
   margin_pct: number;
@@ -94,8 +110,8 @@ const businessAnalyticsService = {
   getSalesTrend(params: ReportingFilters & { interval?: string } = {}) {
     return axiosInstance.get<{ success: boolean; data: TrendPoint[] }>('/reporting/sales-trend', { params }).then(r => r.data);
   },
-  getTopProducts(params: ReportingFilters & { category_id?: number | string; min_price?: number; max_price?: number } = {}) {
-    return axiosInstance.get<{ success: boolean; data: TopProductRow[] }>('/reporting/top-products', { params }).then(r => r.data);
+  getTopProducts(params: ReportingFilters & { category_id?: number | string; min_price?: number; max_price?: number; page?: number; per_page?: number; sort_by?: string; sort_direction?: 'asc' | 'desc' } = {}) {
+    return axiosInstance.get<{ success: boolean; data: TopProductRow[]; meta?: { current_page: number; last_page: number; per_page: number; total: number; from: number; to: number } }>('/reporting/top-products', { params }).then(r => r.data);
   },
   getStockWatchlist(params: ReportingFilters = {}) {
     return axiosInstance.get<{ success: boolean; data: StockWatchRow[] }>('/reporting/stock-watchlist', { params }).then(r => r.data);

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import businessAnalyticsService, { StockWatchRow } from '@/services/businessAnalyticsService';
+import businessAnalyticsService, { StockWatchRow, ReportingFilters } from '@/services/businessAnalyticsService';
 import ReportCard from './ReportCard';
 import { AlertTriangle, Clock, TrendingUp } from 'lucide-react';
 
@@ -11,10 +11,10 @@ function currency(value: number) {
 
 export default function StockWatchlistCard({
   initialData,
-  storeId
+  filters
 }: {
   initialData: StockWatchRow[],
-  storeId?: string | number
+  filters?: ReportingFilters
 }) {
   const [data, setData] = useState<StockWatchRow[]>(initialData);
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ export default function StockWatchlistCard({
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await businessAnalyticsService.getStockWatchlist({ store_id: storeId });
+      const res = await businessAnalyticsService.getStockWatchlist(filters || {});
       setData(res.data);
     } catch (error) {
       console.error('Failed to fetch stock watchlist:', error);

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import businessAnalyticsService, { TrendPoint } from '@/services/businessAnalyticsService';
+import businessAnalyticsService, { TrendPoint, ReportingFilters } from '@/services/businessAnalyticsService';
 import ReportCard from './ReportCard';
 
 function currency(value: number) {
@@ -13,10 +13,10 @@ export default function SalesTrendCard({
   initialFilters
 }: {
   initialData: TrendPoint[],
-  initialFilters: { from: string, to: string, store_id?: string | number, sku?: string }
+  initialFilters: ReportingFilters
 }) {
   const [data, setData] = useState<TrendPoint[]>(initialData);
-  const [filters, setFilters] = useState<{ from: string, to: string, store_id?: string | number, sku?: string }>(initialFilters);
+  const [filters, setFilters] = useState<ReportingFilters>(initialFilters);
   const [interval, setInterval] = useState('day');
   const [loading, setLoading] = useState(false);
 

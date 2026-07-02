@@ -6,6 +6,7 @@ import Header from '@/components/Header';
 import { useTheme } from '@/contexts/ThemeContext';
 import businessAnalyticsService, { type CommandCenterResponse, type ReportingFilters } from '@/services/businessAnalyticsService';
 import storeService, { type Store } from '@/services/storeService';
+import categoryService from '@/services/categoryService';
 import {
   AlertTriangle,
   CalendarDays,
@@ -24,6 +25,8 @@ import BestSellersCard from './components/BestSellersCard';
 import ProductSelectModal from './components/ProductSelectModal';
 import CategoryPerformanceCard from './components/CategoryPerformanceCard';
 import StoreSalesOverviewCard from './components/StoreSalesOverviewCard';
+import StockWatchlistCard from './components/StockWatchlistCard';
+import MixChartsSection from './components/MixChartsSection';
 
 function currency(value: number) {
   return new Intl.NumberFormat('en-BD', { maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -49,6 +52,7 @@ export default function InventoryReportsPage() {
   const [error, setError] = useState('');
   const [data, setData] = useState<CommandCenterResponse['data'] | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [filters, setFilters] = useState<ReportingFilters>({ from: todayStr(-29), to: todayStr() });
   const [showProductModal, setShowProductModal] = useState(false);
 
@@ -57,6 +61,7 @@ export default function InventoryReportsPage() {
   useEffect(() => {
     loadData();
     loadStores();
+    loadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -73,6 +78,21 @@ export default function InventoryReportsPage() {
       setStores(nextStores);
     } catch (err) {
       console.error('Failed to load stores', err);
+    }
+  };
+
+
+  const loadCategories = async () => {
+    try {
+      const response: any = await categoryService.getAll({ tree: true, per_page: 1000 });
+      const nextCategories = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
+      setCategories(nextCategories);
+    } catch (err) {
+      console.error('Failed to load categories', err);
     }
   };
 
@@ -176,6 +196,27 @@ export default function InventoryReportsPage() {
     return stores.find((store) => String(store.id) === String(filters.store_id))?.name || `Store ${filters.store_id}`;
   }, [filters.store_id, stores]);
 
+
+  const flattenedCategories = useMemo(() => {
+    const flat: { id: number; title: string }[] = [];
+    const traverse = (list: any[], level = 0, parents: string[] = []) => {
+      list.forEach((category) => {
+        const title = category.title || category.name || `Category ${category.id}`;
+        const path = [...parents, title].join(' > ');
+        flat.push({ id: category.id, title: `${'— '.repeat(level)}${path}` });
+        const children = category.children || category.all_children || [];
+        if (children.length > 0) traverse(children, level + 1, [...parents, title]);
+      });
+    };
+    traverse(categories);
+    return flat;
+  }, [categories]);
+
+  const selectedCategoryName = useMemo(() => {
+    if (!filters.category_id) return 'All categories';
+    return flattenedCategories.find((category) => String(category.id) === String(filters.category_id))?.title.replace(/^—\s*/g, '') || `Category ${filters.category_id}`;
+  }, [filters.category_id, flattenedCategories]);
+
   return (
     <div className={darkMode ? 'dark' : ''}>
       <div className="flex min-h-screen bg-gray-50 dark:bg-gray-950">
@@ -190,19 +231,19 @@ export default function InventoryReportsPage() {
                     <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
                       Inventory Reports
                     </div>
-                    <h1 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white md:text-4xl">Simple Sales Overview</h1>
+                    <h1 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white md:text-4xl">Inventory Performance Reports</h1>
                     <p className="mt-2 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-                      Clear view of store-wise sales, best selling categories, best sellers, and daily or monthly sales without the clutter.
+                      Company-ready view of product performance, category ranking, branch contribution, stock risk, and sales trend with store/product/category filters.
                     </p>
                     {data ? (
                       <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">
-                        Viewing {selectedStoreName} • {formatDateLabel(data.period.from)} to {formatDateLabel(data.period.to)}
+                        Viewing {selectedStoreName} • {selectedCategoryName} • {filters.sku ? `SKU ${filters.sku} • ` : ''}{formatDateLabel(data.period.from)} to {formatDateLabel(data.period.to)}
                       </p>
                     ) : null}
                   </div>
 
                   <div className="flex flex-col gap-3 xl:items-end">
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                       <input
                         type="date"
                         value={filters.from || ''}
@@ -225,12 +266,22 @@ export default function InventoryReportsPage() {
                           <option key={store.id} value={store.id}>{store.name}</option>
                         ))}
                       </select>
+                      <select
+                        value={filters.category_id ? String(filters.category_id) : ''}
+                        onChange={(e) => setFilters((prev) => ({ ...prev, category_id: e.target.value || undefined, sku: e.target.value ? undefined : prev.sku }))}
+                        className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 outline-none transition focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"
+                      >
+                        <option value="">All categories</option>
+                        {flattenedCategories.map((category) => (
+                          <option key={category.id} value={category.id}>{category.title}</option>
+                        ))}
+                      </select>
                       <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-950">
                         <input
                           type="text"
-                          placeholder="SKU filter"
+                          placeholder="Product / SKU filter"
                           value={filters.sku || ''}
-                          onChange={(e) => setFilters((prev) => ({ ...prev, sku: e.target.value }))}
+                          onChange={(e) => setFilters((prev) => ({ ...prev, sku: e.target.value || undefined }))}
                           onKeyDown={(e) => e.key === 'Enter' && loadData()}
                           className="w-full bg-transparent text-sm font-medium text-gray-700 outline-none placeholder:text-gray-400 dark:text-gray-200"
                         />
@@ -302,6 +353,8 @@ export default function InventoryReportsPage() {
                       to: filters.to as string,
                       store_id: filters.store_id,
                       sku: filters.sku,
+                      category_id: filters.category_id,
+                      product_id: filters.product_id,
                     }}
                   />
 
@@ -310,12 +363,26 @@ export default function InventoryReportsPage() {
                     <CategoryPerformanceCard data={data.category_performance} />
                   </div>
 
+                  <MixChartsSection
+                    statusMix={data.status_mix}
+                    channelMix={data.order_type_mix}
+                    paymentMix={data.payment_status_mix}
+                  />
+
+                  <StockWatchlistCard
+                    initialData={data.stock_watchlist}
+                    filters={filters}
+                  />
+
                   <BestSellersCard
                     initialData={data.top_products}
                     initialFilters={{
                       from: filters.from as string,
                       to: filters.to as string,
                       store_id: filters.store_id,
+                      sku: filters.sku,
+                      category_id: filters.category_id,
+                      product_id: filters.product_id,
                     }}
                   />
                 </div>
@@ -329,7 +396,7 @@ export default function InventoryReportsPage() {
         <ProductSelectModal
           onClose={() => setShowProductModal(false)}
           onSelect={(sku) => {
-            applyFilters({ sku });
+            applyFilters({ sku, product_id: undefined });
             setShowProductModal(false);
           }}
         />
