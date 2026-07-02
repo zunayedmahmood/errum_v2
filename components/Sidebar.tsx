@@ -161,6 +161,7 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
       subMenu: [
         { label: 'Manage Stock', href: '/inventory/manage_stock' },
         { label: 'View Inventory', href: '/inventory/view' },
+        { label: 'View Inventory New', href: '/inventory/view-new' },
         { label: 'Stock Audit', href: '/inventory/stock-audit' },
         { label: 'Price Adjustment', href: '/inventory/batch-price-update' },
         { label: 'Dispatches', href: '/inventory/outlet-stock' },

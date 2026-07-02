@@ -329,7 +329,7 @@ const orderService = {
     }
   },
 
-  /** Safely delete/void an offline POS sale and restore stock where applicable */
+  /** Delete/void an offline POS sale from history without changing stock/barcode state. */
   async voidOfflineSale(orderId: number, reason?: string): Promise<any> {
     try {
       const response = await axiosInstance.delete(`/orders/${orderId}/void-offline-sale`, {

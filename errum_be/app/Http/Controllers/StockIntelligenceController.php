@@ -610,7 +610,7 @@ class StockIntelligenceController extends Controller
             $dispatchOut = $this->overviewDispatchOut($pageProductIds, $from, $to, $selectedStoreId);
             $dispatchReceived = $this->overviewDispatchReceived($pageProductIds, $from, $to, $selectedStoreId);
             $defects = $this->overviewDefects($pageProductIds, $from, $to, $selectedStoreId);
-            $batches = $this->overviewBatchDetails($pageProductIds, $from, $to, $selectedStoreId);
+            $batches = $this->overviewBatchDetails($pageProductIds, $from, $to, $selectedStoreId, $this->canViewInventoryCostPrice());
 
             $allStoreIds = $selectedStoreId > 0
                 ? collect([$selectedStoreId])
@@ -1144,7 +1144,20 @@ class StockIntelligenceController extends Controller
         return $map;
     }
 
-    private function overviewBatchDetails(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): Collection
+    private function canViewInventoryCostPrice(): bool
+    {
+        $user = auth()->user();
+        if (!$user) return false;
+
+        try {
+            $roleSlug = optional($user->role)->slug;
+            return in_array($roleSlug, ['super-admin', 'super_admin', 'superadmin', 'admin'], true);
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function overviewBatchDetails(array $productIds, Carbon $from, Carbon $to, int $storeId = 0, bool $includeCostPrice = false): Collection
     {
         if (empty($productIds)) return collect();
 
@@ -1208,7 +1221,7 @@ class StockIntelligenceController extends Controller
             ->get()
             ->keyBy('batch_id');
 
-        return $rows->map(function ($batch) use ($salesPerBatch, $from) {
+        return $rows->map(function ($batch) use ($salesPerBatch, $from, $includeCostPrice) {
             $sales = $salesPerBatch->get($batch->batch_id);
             $unitsSold = $sales ? (int) $sales->units_sold : 0;
             $originalQty = $batch->po_qty_received ?: ((int) $batch->remaining_stock + $unitsSold);
@@ -1233,7 +1246,7 @@ class StockIntelligenceController extends Controller
                 'vendor_name' => $batch->vendor_name,
                 'original_qty' => (int) $originalQty,
                 'remaining_stock' => (int) $batch->remaining_stock,
-                'cost_price' => round((float) $batch->cost_price, 2),
+                'cost_price' => $includeCostPrice ? round((float) $batch->cost_price, 2) : null,
                 'sell_price' => round((float) $batch->sell_price, 2),
                 'units_sold' => $unitsSold,
                 'order_count' => $sales ? (int) $sales->order_count : 0,

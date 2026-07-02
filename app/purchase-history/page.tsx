@@ -265,17 +265,17 @@ export default function PurchaseHistoryPage() {
     const order = orders.find(o => o.id === orderId);
     const label = order?.order_number ? ` ${order.order_number}` : '';
     const ok = confirm(
-      `Delete offline sale${label}?\n\nThis will safely void the POS sale, restore stock where applicable, and keep an audit notice in Lookup. This action should only be used for wrong/duplicate offline sale entries.`
+      `Delete offline sale${label}?\n\nThis will remove the POS sale from Offline Sale History only. It will NOT restock the barcode or change inventory. Lookup will keep a clear deleted-sale audit notice.`
     );
     if (!ok) return;
 
     try {
       await orderService.voidOfflineSale(orderId, 'Deleted from Offline Sale History');
       setOrders(orders.filter(o => o.id !== orderId));
-      alert('Offline sale deleted safely. Stock was restored where applicable.');
+      alert('Offline sale deleted from history. Stock and barcode states were left unchanged.');
     } catch (error: any) {
       console.error('Error deleting offline sale:', error);
-      alert(error?.response?.data?.message || error?.message || 'Failed to delete offline sale safely. Please try again.');
+      alert(error?.response?.data?.message || error?.message || 'Failed to delete offline sale. Please try again.');
     }
   };
 

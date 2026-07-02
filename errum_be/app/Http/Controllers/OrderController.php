@@ -1696,7 +1696,7 @@ class OrderController extends Controller
         try {
             /** @var Order|null $order */
             $order = Order::withTrashed()
-                ->with(['items.batch', 'items.barcode', 'returns'])
+                ->with(['items', 'returns'])
                 ->where('id', $id)
                 ->lockForUpdate()
                 ->first();
@@ -1713,7 +1713,7 @@ class OrderController extends Controller
                 DB::commit();
                 return response()->json([
                     'success' => true,
-                    'message' => 'Offline sale was already deleted/voided earlier.',
+                    'message' => 'Offline sale was already deleted earlier.',
                     'data' => $this->formatOrderResponse($order, true),
                 ]);
             }
@@ -1731,100 +1731,45 @@ class OrderController extends Controller
             }
 
             $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
-            $alreadyRestored = !empty($metadata['offline_sale_voided']['stock_restored_at']);
-            $restoredItems = [];
 
-            if (!$alreadyRestored && in_array($order->status, ['completed', 'delivered', 'confirmed'], true)) {
-                foreach ($order->items as $item) {
-                    $isDefectiveResale = in_array((int) $item->id, array_map('intval', (array) ($metadata['defective_order_item_ids'] ?? [])), true)
-                        || str_contains(strtolower((string) $item->product_name), '[defective/used resale]')
-                        || str_contains(strtolower((string) $item->product_name), '[defective]');
+            // Client decision: deleting an offline sale from history must only remove
+            // the wrong/duplicate order record from active history. It must NOT restock
+            // the batch, reactivate the barcode, release reservation rows, or create
+            // product movements. If the product really needs stock correction, users
+            // should use inventory adjustment/return/exchange instead.
+            $deletedItems = $order->items->map(fn ($item) => [
+                'order_item_id' => (int) $item->id,
+                'product_id' => (int) $item->product_id,
+                'product_batch_id' => $item->product_batch_id ? (int) $item->product_batch_id : null,
+                'product_barcode_id' => $item->product_barcode_id ? (int) $item->product_barcode_id : null,
+                'quantity' => (int) $item->quantity,
+            ])->values()->toArray();
 
-                    if ($isDefectiveResale) {
-                        $restoredItems[] = [
-                            'order_item_id' => $item->id,
-                            'product_id' => $item->product_id,
-                            'quantity' => (int) $item->quantity,
-                            'restored' => false,
-                            'reason' => 'Display/Faulty unit resale stock was already outside normal inventory.',
-                        ];
-                        continue;
-                    }
-
-                    $batch = $item->product_batch_id
-                        ? ProductBatch::where('id', $item->product_batch_id)->lockForUpdate()->first()
-                        : null;
-
-                    if (!$batch) {
-                        throw new \Exception("Cannot safely delete this sale because batch is missing for item '{$item->product_name}'. Use a manual inventory correction instead.");
-                    }
-
-                    $batch->addStock((int) $item->quantity);
-
-                    $barcodeRestored = null;
-                    if ($item->product_barcode_id) {
-                        $barcode = ProductBarcode::where('id', $item->product_barcode_id)->lockForUpdate()->first();
-                        if ($barcode) {
-                            $oldMetadata = is_array($barcode->location_metadata ?? null) ? $barcode->location_metadata : [];
-                            $barcode->update([
-                                'is_active' => true,
-                                'current_status' => 'available',
-                                'current_store_id' => $order->store_id ?: $batch->store_id,
-                                'location_updated_at' => now(),
-                                'location_metadata' => array_merge($oldMetadata, [
-                                    'voided_order_id' => $order->id,
-                                    'voided_order_number' => $order->order_number,
-                                    'voided_at' => now()->toISOString(),
-                                    'voided_by' => auth()->id(),
-                                    'previous_sale_metadata' => $oldMetadata,
-                                ]),
-                            ]);
-                            $barcodeRestored = $barcode->barcode;
-                        }
-                    }
-
-                    ProductMovement::create([
-                        'product_batch_id' => $batch->id,
-                        'product_barcode_id' => $item->product_barcode_id,
-                        'to_store_id' => $order->store_id ?: $batch->store_id,
-                        'movement_type' => 'adjustment',
-                        'quantity' => (int) $item->quantity,
-                        'unit_cost' => $batch->cost_price ?? 0,
-                        'unit_price' => $item->unit_price ?? 0,
-                        'total_cost' => (float) ($batch->cost_price ?? 0) * (int) $item->quantity,
-                        'total_value' => (float) ($item->unit_price ?? 0) * (int) $item->quantity,
-                        'reference_type' => 'offline_sale_void',
-                        'reference_id' => $order->id,
-                        'notes' => "Stock restored because offline sale #{$order->order_number} was deleted/voided.",
-                        'performed_by' => auth()->id(),
-                    ]);
-
-                    $restoredItems[] = [
-                        'order_item_id' => $item->id,
-                        'product_id' => $item->product_id,
-                        'batch_id' => $batch->id,
-                        'quantity' => (int) $item->quantity,
-                        'barcode' => $barcodeRestored,
-                        'restored' => true,
-                    ];
-                }
-            } elseif (!$alreadyRestored) {
-                $reservationRelease = app(InventoryReservationService::class)
-                    ->releaseForCancelledOrder($order->loadMissing('items'));
-                $metadata['reservation_release_on_delete'] = $reservationRelease;
-            }
-
-            $metadata['offline_sale_voided'] = [
-                'voided_at' => now()->toISOString(),
-                'voided_by' => auth()->id(),
+            $metadata['offline_sale_deleted'] = [
+                'deleted_at' => now()->toISOString(),
+                'deleted_by' => auth()->id(),
                 'reason' => $request->reason ?: 'Deleted from Offline Sale History',
-                'stock_restored_at' => $alreadyRestored ? ($metadata['offline_sale_voided']['stock_restored_at'] ?? null) : now()->toISOString(),
-                'restored_items' => $restoredItems,
+                'inventory_action' => 'none',
+                'barcode_action' => 'none',
+                'note' => 'History delete only. Stock and barcode states were intentionally left unchanged.',
+                'items' => $deletedItems,
+            ];
+
+            // Keep the old metadata key too, because /lookup already checks it to show
+            // the graceful deleted-sale notice for trashed offline orders.
+            $metadata['offline_sale_voided'] = [
+                'voided_at' => $metadata['offline_sale_deleted']['deleted_at'],
+                'voided_by' => auth()->id(),
+                'reason' => $metadata['offline_sale_deleted']['reason'],
+                'stock_restored_at' => null,
+                'restored_items' => [],
+                'inventory_action' => 'none',
+                'barcode_action' => 'none',
             ];
 
             $order->status = 'cancelled';
             $order->cancelled_at = $order->cancelled_at ?: now();
-            $order->notes = trim(($order->notes ? $order->notes . "\n" : '') . 'Deleted/voided offline sale: ' . ($request->reason ?: 'No reason provided'));
+            $order->notes = trim(($order->notes ? $order->notes . "\n" : '') . 'Deleted offline sale from history without inventory/barcode restock: ' . ($request->reason ?: 'No reason provided'));
             $order->metadata = $metadata;
             $order->save();
             $order->delete();
@@ -1833,11 +1778,13 @@ class OrderController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Offline sale deleted safely. Stock was restored where applicable and lookup will show a clear deleted-sale notice.',
+                'message' => 'Offline sale deleted from history. Stock and barcode states were left unchanged.',
                 'data' => [
                     'order_id' => $order->id,
                     'order_number' => $order->order_number,
-                    'restored_items' => $restoredItems,
+                    'inventory_action' => 'none',
+                    'barcode_action' => 'none',
+                    'deleted_items' => $deletedItems,
                 ],
             ]);
         } catch (\Exception $e) {
