@@ -73,10 +73,10 @@ export default function RewardFineDialog({ isOpen, onClose, storeId, employee, o
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
       <div className="w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl"
-        style={{ background: '#0e0e18', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 40px 100px rgba(0,0,0,0.6)' }}>
+        style={{ background: '#0e0e18', border: '1px solid rgba(148,163,184,0.28)', boxShadow: '0 40px 100px rgba(0,0,0,0.6)' }}>
         <div className="h-1 w-full" style={{ background: `linear-gradient(90deg, ${accentColor}00, ${accentColor}, ${accentColor}00)` }} />
 
-        <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: accentBg, border: `1px solid ${accentBorder}` }}>
               <Zap className="w-4 h-4" style={{ color: accentColor }} />
@@ -86,19 +86,19 @@ export default function RewardFineDialog({ isOpen, onClose, storeId, employee, o
             </h3>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center"
-            style={{ background: 'rgba(255,255,255,0.04)' }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}>
+            style={{ background: 'rgba(148,163,184,0.18)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(148,163,184,0.28)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(148,163,184,0.18)')}>
             <X className="w-3.5 h-3.5 text-muted" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Employee */}
-          <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
             <div className="avatar-ring w-8 h-8 shrink-0">
               <div className="w-full h-full rounded-full flex items-center justify-center text-xs font-700"
-                style={{ background: '#0a0a0f', color: '#f0d080', fontFamily: 'Syne, sans-serif' }}>
+                style={{ background: 'var(--hrm-bg-soft)', color: 'var(--hrm-accent)', fontFamily: 'Syne, sans-serif' }}>
                 {employee.name.charAt(0)}
               </div>
             </div>
@@ -111,9 +111,9 @@ export default function RewardFineDialog({ isOpen, onClose, storeId, employee, o
               <button key={t} type="button" onClick={() => setType(t)}
                 className="py-2.5 rounded-xl text-xs font-700 transition-all"
                 style={{
-                  background: type === t ? (t === 'reward' ? 'rgba(52,211,153,0.15)' : 'rgba(239,68,68,0.15)') : 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${type === t ? (t === 'reward' ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.3)') : 'rgba(255,255,255,0.06)'}`,
-                  color: type === t ? (t === 'reward' ? '#34d399' : '#f87171') : 'rgba(255,255,255,0.4)'
+                  background: type === t ? (t === 'reward' ? 'rgba(52,211,153,0.15)' : 'rgba(239,68,68,0.15)') : 'rgba(148,163,184,0.14)',
+                  border: `1px solid ${type === t ? (t === 'reward' ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.3)') : 'rgba(148,163,184,0.22)'}`,
+                  color: type === t ? (t === 'reward' ? '#34d399' : '#f87171') : 'var(--hrm-text-muted)'
                 }}>
                 {t === 'reward' ? '+ Reward' : '− Fine'}
               </button>
@@ -146,9 +146,9 @@ export default function RewardFineDialog({ isOpen, onClose, storeId, employee, o
                   onClick={() => setTitle(preset)}
                   className="px-2.5 py-1 rounded-full text-[10px] font-700 transition-all"
                   style={{
-                    background: title === preset ? accentBg : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${title === preset ? accentBorder : 'rgba(255,255,255,0.06)'}`,
-                    color: title === preset ? accentColor : 'rgba(255,255,255,0.65)',
+                    background: title === preset ? accentBg : 'rgba(148,163,184,0.14)',
+                    border: `1px solid ${title === preset ? accentBorder : 'rgba(148,163,184,0.22)'}`,
+                    color: title === preset ? accentColor : 'var(--hrm-text-main)',
                   }}
                 >
                   {preset}
@@ -172,7 +172,7 @@ export default function RewardFineDialog({ isOpen, onClose, storeId, employee, o
 
           <button type="submit" disabled={isLoading}
             className="w-full py-3.5 rounded-2xl text-sm font-700 transition-all disabled:opacity-50"
-            style={{ background: isReward ? 'linear-gradient(135deg, #059669, #34d399)' : 'linear-gradient(135deg, #dc2626, #f87171)', color: 'white', boxShadow: `0 8px 24px ${accentColor}30` }}>
+            style={{ background: isReward ? 'linear-gradient(135deg, #059669, #34d399)' : 'linear-gradient(135deg, #dc2626, #f87171)', color: 'var(--hrm-text-main)', boxShadow: `0 8px 24px ${accentColor}30` }}>
             {isLoading ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

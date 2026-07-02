@@ -77,8 +77,8 @@ export default function SalesTargetsPage() {
 
   if (!selectedStoreId) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 rounded-2xl" style={{ border: '1px dashed rgba(255,255,255,0.08)' }}>
-        <Target className="w-14 h-14 mb-4" style={{ color: 'rgba(201,168,76,0.3)' }} />
+      <div className="flex flex-col items-center justify-center h-96 rounded-2xl" style={{ border: '1px dashed rgba(148,163,184,0.28)' }}>
+        <Target className="w-14 h-14 mb-4" style={{ color: 'rgba(59,130,246,0.35)' }} />
         <h3 className="text-lg font-700 text-white mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>No Store Selected</h3>
         <p className="text-muted text-sm">Select a store to manage sales targets</p>
       </div>
@@ -102,8 +102,8 @@ export default function SalesTargetsPage() {
               <Copy className="w-3.5 h-3.5" /> {isCopying ? 'Copying...' : 'Copy Last Month'}
             </button>
           </AccessControl>
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl" style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.15)' }}>
-            <Calendar className="w-3.5 h-3.5" style={{ color: '#f0d080' }} />
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl" style={{ background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.18)' }}>
+            <Calendar className="w-3.5 h-3.5" style={{ color: 'var(--hrm-accent)' }} />
             <input
               type="month"
               value={selectedMonth}
@@ -130,7 +130,7 @@ export default function SalesTargetsPage() {
           <p className="text-3xl font-800 text-white" style={{ fontFamily: 'Syne, sans-serif' }}>৳{(report?.remaining_target || 0).toLocaleString()}</p>
           <p className="text-muted text-[10px] mt-2 flex items-center gap-1"><Wallet className="w-3 h-3" /> {employeesWithNoTarget} without target</p>
         </div>
-        <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(135deg, rgba(201,168,76,0.12), rgba(201,168,76,0.04))', border: '1px solid rgba(201,168,76,0.2)' }}>
+        <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.14), rgba(59,130,246,0.05))', border: '1px solid rgba(59,130,246,0.25)' }}>
           <div className="flex justify-between items-end mb-3">
             <p className="text-muted text-[10px] uppercase tracking-widest font-600">Progress</p>
             <p className="gold-shimmer text-lg font-800" style={{ fontFamily: 'Syne, sans-serif' }}>{report?.branch_achievement || 0}%</p>
@@ -143,7 +143,7 @@ export default function SalesTargetsPage() {
       </div>
 
       <div className="hrm-card rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
           <div>
             <h3 className="text-white font-700 text-sm" style={{ fontFamily: 'Syne, sans-serif' }}>Employee-wise Progress</h3>
             <p className="text-muted text-[11px] mt-1">Each employee gets credit from the POS employee selected during billing.</p>
@@ -162,7 +162,7 @@ export default function SalesTargetsPage() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <tr style={{ borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
                 {['Employee', 'Target', 'Achieved', 'Remaining', 'Orders', 'Progress', ''].map((h) => (
                   <th key={h} className="px-5 py-3 text-left text-[10px] uppercase tracking-widest text-muted font-600">{h}</th>
                 ))}
@@ -171,10 +171,10 @@ export default function SalesTargetsPage() {
             <tbody>
               {isLoading ? (
                 [...Array(5)].map((_, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
                     {[...Array(7)].map((_, j) => (
                       <td key={j} className="px-5 py-4">
-                        <div className="h-4 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.05)', width: j === 0 ? '140px' : '90px' }} />
+                        <div className="h-4 rounded-lg animate-pulse" style={{ background: 'rgba(148,163,184,0.20)', width: j === 0 ? '140px' : '90px' }} />
                       </td>
                     ))}
                   </tr>
@@ -187,11 +187,11 @@ export default function SalesTargetsPage() {
                 const pct = item.achievement_percentage || 0;
                 const barColor = pct >= 100 ? 'progress-gold' : pct >= 50 ? 'progress-green' : 'progress-blue';
                 return (
-                  <tr key={item.employee.id} className="table-row-hover" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                  <tr key={item.employee.id} className="table-row-hover" style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className="avatar-ring w-8 h-8 shrink-0">
-                          <div className="w-full h-full rounded-full flex items-center justify-center text-[10px] font-700" style={{ background: '#0a0a0f', color: '#f0d080' }}>
+                          <div className="w-full h-full rounded-full flex items-center justify-center text-[10px] font-700" style={{ background: 'var(--hrm-bg-soft)', color: 'var(--hrm-accent)' }}>
                             {item.employee.name.charAt(0)}
                           </div>
                         </div>
@@ -212,7 +212,7 @@ export default function SalesTargetsPage() {
                       <span className="text-xs font-700 text-white">৳{Number(item.achieved_amount || 0).toLocaleString()}</span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="text-xs font-600" style={{ color: '#f0d080' }}>৳{Number(item.remaining_amount || 0).toLocaleString()}</span>
+                      <span className="text-xs font-600" style={{ color: 'var(--hrm-accent)' }}>৳{Number(item.remaining_amount || 0).toLocaleString()}</span>
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="text-xs font-600 text-white">{item.order_count || 0}</span>
@@ -222,7 +222,7 @@ export default function SalesTargetsPage() {
                         <div className="progress-track flex-1 h-1.5">
                           <div className={`h-1.5 ${barColor} transition-all duration-700`} style={{ width: `${Math.min(pct, 100)}%` }} />
                         </div>
-                        <span className="text-[10px] font-700 w-10 text-right" style={{ color: pct >= 100 ? '#f0d080' : pct >= 50 ? '#34d399' : '#818cf8' }}>{pct}%</span>
+                        <span className="text-[10px] font-700 w-10 text-right" style={{ color: pct >= 100 ? 'var(--hrm-accent)' : pct >= 50 ? '#34d399' : '#818cf8' }}>{pct}%</span>
                       </div>
                     </td>
                     <td className="px-5 py-3.5">

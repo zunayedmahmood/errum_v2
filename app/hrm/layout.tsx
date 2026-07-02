@@ -1,225 +1,163 @@
 'use client';
 
+import React, { useState } from 'react';
 import { StoreProvider, useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { usePathname, useRouter } from 'next/navigation';
+import RouteGuard from '@/components/RouteGuard';
+import Sidebar from '@/components/Sidebar';
+import Header from '@/components/Header';
+import { PAGE_ACCESS } from '@/lib/accessMap';
 import { LayoutDashboard, Users, BarChart3, Target, Zap, CreditCard, ChevronDown, Building2 } from 'lucide-react';
 
 function HRMLayoutContent({ children }: { children: React.ReactNode }) {
   const { isGlobal, user } = useAuth();
+  const { darkMode, setDarkMode } = useTheme();
   const { selectedStoreId, setSelectedStoreId, availableStores, isLoadingStores } = useStore();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
 
   const tabs = [
     { label: 'My Dashboard', href: '/hrm/my', icon: LayoutDashboard, roles: ['employee', 'pos-salesman', 'branch-manager', 'admin', 'super-admin', 'online-moderator'] },
     { label: 'Staff', href: '/hrm/branch', icon: Users, roles: ['branch-manager', 'admin', 'super-admin', 'online-moderator'] },
-    { label: 'Reports', href: '/hrm/attendance', icon: BarChart3, roles: ['branch-manager', 'admin', 'super-admin', 'online-moderator'] },
+    { label: 'Attendance Logs', href: '/hrm/attendance', icon: BarChart3, roles: ['branch-manager', 'admin', 'super-admin', 'online-moderator'] },
     { label: 'Sales Targets', href: '/hrm/sales-targets', icon: Target, roles: ['branch-manager', 'admin', 'super-admin', 'online-moderator'] },
     { label: 'Rewards & Fines', href: '/hrm/rewards-fines', icon: Zap, roles: ['branch-manager', 'admin', 'super-admin', 'online-moderator'] },
     { label: 'Payroll', href: '/hrm/payroll', icon: CreditCard, roles: ['branch-manager', 'admin', 'super-admin', 'online-moderator'] },
   ];
 
-  const filteredTabs = tabs.filter(tab => {
-    if (!user?.role?.slug) return false;
-    return tab.roles.includes(user.role.slug);
-  });
+  const filteredTabs = tabs.filter((tab) => !!user?.role?.slug && tab.roles.includes(user.role.slug));
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0a0f]">
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap');
-        .hrm-root { font-family: 'DM Sans', sans-serif; }
-        .hrm-display { font-family: 'Syne', sans-serif; }
-        .gold-shimmer {
-          background: linear-gradient(105deg, #c9a84c 0%, #f0d080 40%, #c9a84c 60%, #a07830 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-        .tab-active-line::after {
-          content: '';
-          position: absolute;
-          bottom: -1px;
-          left: 0;
-          right: 0;
-          height: 2px;
-          background: linear-gradient(90deg, #c9a84c, #f0d080);
-          border-radius: 2px 2px 0 0;
-        }
-        .noise-bg::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-          pointer-events: none;
-          opacity: 0.4;
-        }
-        .glow-gold { box-shadow: 0 0 30px rgba(201,168,76,0.15); }
-        .hrm-card { 
-          background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%);
-          border: 1px solid rgba(255,255,255,0.06);
-          backdrop-filter: blur(12px);
-        }
-        .hrm-card-hover:hover {
-          border-color: rgba(201,168,76,0.2);
-          background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
-          transition: all 0.2s ease;
-        }
-        .stat-glow-green { box-shadow: 0 0 40px rgba(52,211,153,0.08); }
-        .stat-glow-red { box-shadow: 0 0 40px rgba(239,68,68,0.08); }
-        .stat-glow-gold { box-shadow: 0 0 40px rgba(201,168,76,0.1); }
-        .pill-gold {
-          background: linear-gradient(105deg, rgba(201,168,76,0.15), rgba(240,208,128,0.1));
-          border: 1px solid rgba(201,168,76,0.25);
-          color: #f0d080;
-        }
-        .pill-green {
-          background: rgba(52,211,153,0.1);
-          border: 1px solid rgba(52,211,153,0.2);
-          color: #34d399;
-        }
-        .pill-red {
-          background: rgba(239,68,68,0.1);
-          border: 1px solid rgba(239,68,68,0.2);
-          color: #f87171;
-        }
-        .pill-blue {
-          background: rgba(99,102,241,0.1);
-          border: 1px solid rgba(99,102,241,0.2);
-          color: #818cf8;
-        }
-        .pill-amber {
-          background: rgba(245,158,11,0.1);
-          border: 1px solid rgba(245,158,11,0.2);
-          color: #fbbf24;
-        }
-        .btn-primary {
-          background: linear-gradient(135deg, #c9a84c 0%, #f0d080 50%, #c9a84c 100%);
-          color: #0a0a0f;
-          font-weight: 700;
-          transition: all 0.2s;
-        }
-        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(201,168,76,0.3); }
-        .btn-primary:active { transform: translateY(0); }
-        .btn-ghost {
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.08);
-          color: rgba(255,255,255,0.7);
-          transition: all 0.2s;
-        }
-        .btn-ghost:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); color: white; }
-        .input-dark {
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.08);
-          color: white;
-          transition: all 0.2s;
-        }
-        .input-dark:focus { outline: none; border-color: rgba(201,168,76,0.4); background: rgba(255,255,255,0.06); box-shadow: 0 0 0 3px rgba(201,168,76,0.08); }
-        .input-dark::placeholder { color: rgba(255,255,255,0.25); }
-        .divider { border-color: rgba(255,255,255,0.06); }
-        .text-muted { color: rgba(255,255,255,0.4); }
-        .text-sub { color: rgba(255,255,255,0.6); }
-        .text-main { color: rgba(255,255,255,0.9); }
-        .progress-track { background: rgba(255,255,255,0.06); border-radius: 99px; overflow: hidden; }
-        .progress-gold { background: linear-gradient(90deg, #c9a84c, #f0d080); border-radius: 99px; }
-        .progress-green { background: linear-gradient(90deg, #059669, #34d399); border-radius: 99px; }
-        .progress-blue { background: linear-gradient(90deg, #4f46e5, #818cf8); border-radius: 99px; }
-        .table-row-hover:hover { background: rgba(255,255,255,0.03); }
-        .select-dark {
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.08);
-          color: white;
-          -webkit-appearance: none;
-        }
-        .select-dark:focus { outline: none; border-color: rgba(201,168,76,0.4); }
-        .select-dark option { background: #1a1a2e; color: white; }
-        .avatar-ring {
-          background: linear-gradient(135deg, #c9a84c, #f0d080);
-          padding: 1.5px;
-          border-radius: 50%;
-        }
-        .scroll-custom::-webkit-scrollbar { width: 4px; height: 4px; }
-        .scroll-custom::-webkit-scrollbar-track { background: transparent; }
-        .scroll-custom::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.3); border-radius: 99px; }
-      `}</style>
+    <div className={darkMode ? 'dark' : ''}>
+      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+        <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Header
+            darkMode={darkMode}
+            setDarkMode={setDarkMode}
+            toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          />
 
-      {/* Header */}
-      <div className="hrm-root noise-bg relative border-b border-white/[0.06] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4"
-        style={{ background: 'linear-gradient(180deg, rgba(201,168,76,0.05) 0%, transparent 100%)' }}>
-        <div>
-          <div className="flex items-center gap-3 mb-0.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg, rgba(201,168,76,0.2), rgba(240,208,128,0.1))', border: '1px solid rgba(201,168,76,0.3)' }}>
-              <Users className="w-4 h-4" style={{ color: '#f0d080' }} />
+          <div className="border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">HRM Management</h1>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Attendance, performance, rewards and payroll</p>
+                  </div>
+                </div>
+              </div>
+
+              {isGlobal && (
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <Building2 className="h-4 w-4" />
+                    Branch / Outlet
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedStoreId || ''}
+                      onChange={(e) => setSelectedStoreId(e.target.value ? Number(e.target.value) : null)}
+                      disabled={isLoadingStores}
+                      className="w-full min-w-56 rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-9 text-sm text-gray-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    >
+                      <option value="">Select branch/outlet</option>
+                      {availableStores.map((store) => (
+                        <option key={store.id} value={store.id}>{store.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  </div>
+                </div>
+              )}
             </div>
-            <h1 className="hrm-display text-xl font-700 text-white tracking-tight">HRM <span className="gold-shimmer">Management</span></h1>
+
+            <div className="mt-4 overflow-x-auto">
+              <nav className="flex gap-2">
+                {filteredTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = pathname === tab.href || (tab.href === '/hrm/branch' && pathname === '/hrm');
+                  return (
+                    <button
+                      key={tab.href}
+                      onClick={() => router.push(tab.href)}
+                      className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition whitespace-nowrap ${isActive
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
           </div>
-          <p className="text-xs text-muted ml-11">Attendance · Performance · Payroll</p>
+
+          <main className="hrm-root flex-1 overflow-y-auto bg-gray-50 p-6 dark:bg-gray-900">
+            <style>{`
+              .hrm-root { --hrm-text-main: rgb(17 24 39); --hrm-text-muted: rgb(107 114 128); --hrm-border-soft: rgb(229 231 235); --hrm-bg-soft: rgb(249 250 251); --hrm-accent: rgb(37 99 235); }
+              .dark .hrm-root { --hrm-text-main: rgb(255 255 255); --hrm-text-muted: rgb(156 163 175); --hrm-border-soft: rgb(55 65 81); --hrm-bg-soft: rgb(31 41 55); --hrm-accent: rgb(96 165 250); }
+              .hrm-root .hrm-card { background: #ffffff; border: 1px solid rgb(229 231 235); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+              .dark .hrm-root .hrm-card { background: rgb(31 41 55); border-color: rgb(55 65 81); box-shadow: none; }
+              .hrm-root .text-muted { color: rgb(107 114 128) !important; }
+              .dark .hrm-root .text-muted { color: rgb(156 163 175) !important; }
+              .hrm-root .text-sub { color: rgb(75 85 99) !important; }
+              .dark .hrm-root .text-sub { color: rgb(209 213 219) !important; }
+              .hrm-root .text-main, .hrm-root .text-white { color: rgb(17 24 39) !important; }
+              .dark .hrm-root .text-main, .dark .hrm-root .text-white { color: rgb(255 255 255) !important; }
+              .hrm-root .divider { border-color: rgb(229 231 235) !important; }
+              .dark .hrm-root .divider { border-color: rgb(55 65 81) !important; }
+              .hrm-root .input-dark, .hrm-root .select-dark { width: 100%; background: #ffffff; border: 1px solid rgb(209 213 219); color: rgb(17 24 39); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+              .dark .hrm-root .input-dark, .dark .hrm-root .select-dark { background: rgb(55 65 81); border-color: rgb(75 85 99); color: #ffffff; }
+              .hrm-root .input-dark:focus, .hrm-root .select-dark:focus { outline: none; border-color: rgb(59 130 246); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+              .hrm-root .input-dark::placeholder { color: rgb(156 163 175); }
+              .hrm-root .btn-primary { background: rgb(37 99 235); color: #ffffff; font-weight: 700; transition: all .2s ease; }
+              .hrm-root .btn-primary:hover { background: rgb(29 78 216); }
+              .hrm-root .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+              .hrm-root .btn-ghost { background: #ffffff; border: 1px solid rgb(209 213 219); color: rgb(55 65 81); transition: all .2s ease; }
+              .hrm-root .btn-ghost:hover { background: rgb(249 250 251); color: rgb(17 24 39); }
+              .dark .hrm-root .btn-ghost { background: rgb(31 41 55); border-color: rgb(75 85 99); color: rgb(229 231 235); }
+              .dark .hrm-root .btn-ghost:hover { background: rgb(55 65 81); color: #ffffff; }
+              .hrm-root .table-row-hover:hover { background: rgb(249 250 251); }
+              .dark .hrm-root .table-row-hover:hover { background: rgba(55,65,81,0.45); }
+              .hrm-root .progress-track { background: rgb(229 231 235); border-radius: 999px; overflow: hidden; }
+              .dark .hrm-root .progress-track { background: rgb(55 65 81); }
+              .hrm-root .progress-gold, .hrm-root .progress-blue { background: rgb(37 99 235); border-radius: 999px; }
+              .hrm-root .progress-green { background: rgb(22 163 74); border-radius: 999px; }
+              .hrm-root .pill-gold { background: rgb(239 246 255); border: 1px solid rgb(191 219 254); color: rgb(29 78 216); }
+              .dark .hrm-root .pill-gold { background: rgba(37,99,235,.15); border-color: rgba(59,130,246,.35); color: rgb(147 197 253); }
+              .hrm-root .pill-green { background: rgb(240 253 244); border: 1px solid rgb(187 247 208); color: rgb(22 101 52); }
+              .dark .hrm-root .pill-green { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.25); color: rgb(134 239 172); }
+              .hrm-root .pill-red { background: rgb(254 242 242); border: 1px solid rgb(254 202 202); color: rgb(185 28 28); }
+              .dark .hrm-root .pill-red { background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.25); color: rgb(252 165 165); }
+              .hrm-root .pill-blue { background: rgb(239 246 255); border: 1px solid rgb(191 219 254); color: rgb(29 78 216); }
+              .dark .hrm-root .pill-blue { background: rgba(59,130,246,.12); border-color: rgba(59,130,246,.25); color: rgb(147 197 253); }
+              .hrm-root .pill-amber { background: rgb(255 251 235); border: 1px solid rgb(253 230 138); color: rgb(146 64 14); }
+              .dark .hrm-root .pill-amber { background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.25); color: rgb(252 211 77); }
+            `}</style>
+            {children}
+          </main>
         </div>
-
-        {isGlobal && (
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-muted text-xs font-medium">
-              <Building2 className="w-3.5 h-3.5" />
-              Branch
-            </div>
-            <div className="relative">
-              <select
-                value={selectedStoreId || ''}
-                onChange={(e) => setSelectedStoreId(Number(e.target.value))}
-                disabled={isLoadingStores}
-                className="select-dark pl-3 pr-8 py-2 text-sm rounded-xl cursor-pointer w-48"
-              >
-                <option value="" disabled>Select Store</option>
-                {availableStores.map((store) => (
-                  <option key={store.id} value={store.id}>{store.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
-            </div>
-          </div>
-        )}
       </div>
-
-      {/* Tabs */}
-      <div className="hrm-root border-b border-white/[0.06] px-6 overflow-x-auto scroll-custom"
-        style={{ background: 'rgba(10,10,15,0.8)' }}>
-        <nav className="flex gap-1">
-          {filteredTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = pathname === tab.href;
-            return (
-              <button
-                key={tab.href}
-                onClick={() => router.push(tab.href)}
-                className={`relative flex items-center gap-2 py-3.5 px-4 text-xs font-600 transition-all whitespace-nowrap rounded-t-lg ${isActive
-                    ? 'tab-active-line text-white'
-                    : 'text-muted hover:text-sub'
-                  }`}
-                style={isActive ? { fontFamily: 'Syne, sans-serif', fontWeight: 600 } : { fontFamily: 'DM Sans, sans-serif' }}
-              >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? '' : 'opacity-50'}`}
-                  style={isActive ? { color: '#f0d080' } : {}} />
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-
-      {/* Content */}
-      <main className="hrm-root flex-1 overflow-y-auto p-6 scroll-custom" style={{ background: '#0a0a0f' }}>
-        {children}
-      </main>
     </div>
   );
 }
 
 export default function HRMLayout({ children }: { children: React.ReactNode }) {
   return (
-    <StoreProvider>
-      <HRMLayoutContent>{children}</HRMLayoutContent>
-    </StoreProvider>
+    <RouteGuard allowedRoles={PAGE_ACCESS['/hrm']}>
+      <StoreProvider>
+        <HRMLayoutContent children={children} />
+      </StoreProvider>
+    </RouteGuard>
   );
 }

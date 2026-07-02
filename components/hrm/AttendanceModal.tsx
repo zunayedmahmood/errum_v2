@@ -72,13 +72,13 @@ export default function AttendanceModal({ isOpen, onClose, employee, type, recor
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
       <div className="w-full max-w-sm overflow-hidden rounded-3xl shadow-2xl"
-        style={{ background: '#0e0e18', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 40px 100px rgba(0,0,0,0.6)' }}>
+        style={{ background: '#0e0e18', border: '1px solid rgba(148,163,184,0.28)', boxShadow: '0 40px 100px rgba(0,0,0,0.6)' }}>
 
         {/* Top accent bar */}
         <div className="h-1 w-full" style={{ background: `linear-gradient(90deg, ${accentColor}00, ${accentColor}, ${accentColor}00)` }} />
 
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: accentBg, border: `1px solid ${accentBorder}` }}>
               {isEdit ? <Edit3 className="w-4 h-4" style={{ color: accentColor }} /> : <Clock className="w-4 h-4" style={{ color: accentColor }} />}
@@ -86,19 +86,19 @@ export default function AttendanceModal({ isOpen, onClose, employee, type, recor
             <h3 className="text-white font-700 text-base" style={{ fontFamily: 'Syne, sans-serif' }}>{typeLabel}</h3>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
-            style={{ background: 'rgba(255,255,255,0.04)' }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}>
+            style={{ background: 'rgba(148,163,184,0.18)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(148,163,184,0.28)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(148,163,184,0.18)')}>
             <X className="w-3.5 h-3.5 text-muted" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Employee chip */}
-          <div className="flex items-center gap-3 p-3.5 rounded-2xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="flex items-center gap-3 p-3.5 rounded-2xl" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
             <div className="avatar-ring w-9 h-9 shrink-0">
               <div className="w-full h-full rounded-full flex items-center justify-center text-sm font-700"
-                style={{ background: '#0a0a0f', color: '#f0d080', fontFamily: 'Syne, sans-serif' }}>
+                style={{ background: 'var(--hrm-bg-soft)', color: 'var(--hrm-accent)', fontFamily: 'Syne, sans-serif' }}>
                 {employee.name.charAt(0).toUpperCase()}
               </div>
             </div>
@@ -116,7 +116,7 @@ export default function AttendanceModal({ isOpen, onClose, employee, type, recor
               </label>
               <input type="time" value={time} onChange={(e) => setTime(e.target.value)} required
                 className="w-full text-center text-4xl font-800 py-4 rounded-2xl border-none outline-none focus:ring-2"
-                style={{ background: 'rgba(255,255,255,0.04)', color: accentColor, fontFamily: 'Syne, sans-serif', focusRingColor: accentColor }}
+                style={{ background: 'rgba(148,163,184,0.18)', color: accentColor, fontFamily: 'Syne, sans-serif', focusRingColor: accentColor }}
                 onFocus={e => (e.currentTarget.style.boxShadow = `0 0 0 2px ${accentBorder}`)}
                 onBlur={e => (e.currentTarget.style.boxShadow = 'none')} />
               <p className="text-muted text-[10px] text-center mt-1.5">Now: {format(now, 'hh:mm a')}</p>
@@ -176,7 +176,7 @@ export default function AttendanceModal({ isOpen, onClose, employee, type, recor
           {/* Submit */}
           <button type="submit" disabled={isLoading}
             className="w-full py-3.5 rounded-2xl text-sm font-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: btnBg, color: 'white', boxShadow: `0 8px 24px ${accentColor}30` }}
+            style={{ background: btnBg, color: 'var(--hrm-text-main)', boxShadow: `0 8px 24px ${accentColor}30` }}
             onMouseEnter={e => !isLoading && ((e.currentTarget as HTMLElement).style.opacity = '0.9')}
             onMouseLeave={e => !isLoading && ((e.currentTarget as HTMLElement).style.opacity = '1')}>
             {isLoading ? (

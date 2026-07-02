@@ -98,8 +98,8 @@ export default function PayrollPage() {
 
   if (!selectedStoreId) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 rounded-2xl" style={{ border: '1px dashed rgba(255,255,255,0.08)' }}>
-        <CreditCard className="w-14 h-14 mb-4" style={{ color: 'rgba(201,168,76,0.3)' }} />
+      <div className="flex flex-col items-center justify-center h-96 rounded-2xl" style={{ border: '1px dashed rgba(148,163,184,0.28)' }}>
+        <CreditCard className="w-14 h-14 mb-4" style={{ color: 'rgba(59,130,246,0.35)' }} />
         <h3 className="text-lg font-700 text-white mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>No Store Selected</h3>
         <p className="text-muted text-sm">Select a store to manage payroll</p>
       </div>
@@ -115,7 +115,7 @@ export default function PayrollPage() {
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative">
-            <Calendar className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#f0d080' }} />
+            <Calendar className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--hrm-accent)' }} />
             <input
               type="month"
               value={selectedMonth}
@@ -138,7 +138,7 @@ export default function PayrollPage() {
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
-          { label: 'Total Payable', value: `৳${totalPayable.toLocaleString()}`, color: '#f0d080', bg: 'rgba(201,168,76,0.08)', border: 'rgba(201,168,76,0.12)' },
+          { label: 'Total Payable', value: `৳${totalPayable.toLocaleString()}`, color: 'var(--hrm-accent)', bg: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.14)' },
           { label: 'Total Staff', value: filteredSheet.length, color: '#818cf8', bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.12)' },
           { label: 'Paid', value: paidCount, color: '#34d399', bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.12)' },
           { label: 'Pending', value: pendingCount, color: '#f87171', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.12)' },
@@ -155,7 +155,7 @@ export default function PayrollPage() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <tr style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
                 {['Employee', 'Basic', 'Rewards', 'Overtime', 'Fines', 'Late Fees', 'Net Payable', 'Payroll Status', 'Accounting Status', 'Action'].map((h) => (
                   <th key={h} className="px-5 py-3.5 text-left text-[10px] uppercase tracking-widest text-muted font-600 whitespace-nowrap">{h}</th>
                 ))}
@@ -164,10 +164,10 @@ export default function PayrollPage() {
             <tbody>
               {isLoading ? (
                 [...Array(5)].map((_, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
                     {[...Array(10)].map((__, j) => (
                       <td key={j} className="px-5 py-4">
-                        <div className="h-4 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.05)', width: j === 0 ? '120px' : '72px' }} />
+                        <div className="h-4 rounded-lg animate-pulse" style={{ background: 'rgba(148,163,184,0.20)', width: j === 0 ? '120px' : '72px' }} />
                       </td>
                     ))}
                   </tr>
@@ -184,11 +184,11 @@ export default function PayrollPage() {
                 const txnLabel = paidInfo?.transaction_numbers?.length ? paidInfo.transaction_numbers.join(', ') : 'No txn found';
 
                 return (
-                  <tr key={row.employee.id} className="table-row-hover" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                  <tr key={row.employee.id} className="table-row-hover" style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className="avatar-ring w-7 h-7 shrink-0">
-                          <div className="w-full h-full rounded-full flex items-center justify-center text-[10px] font-700" style={{ background: '#0a0a0f', color: '#f0d080' }}>
+                          <div className="w-full h-full rounded-full flex items-center justify-center text-[10px] font-700" style={{ background: 'var(--hrm-bg-soft)', color: 'var(--hrm-accent)' }}>
                             {row.employee.name.charAt(0)}
                           </div>
                         </div>
@@ -252,7 +252,7 @@ export default function PayrollPage() {
                       >
                         {payingEmployeeId === row.employee.id ? (
                           <span className="flex items-center gap-1.5">
-                            <span className="w-3 h-3 border border-t-transparent rounded-full animate-spin" style={{ borderColor: '#0a0a0f' }} />
+                            <span className="w-3 h-3 border border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--hrm-bg-soft)' }} />
                             Processing
                           </span>
                         ) : row.is_paid ? 'Settled' : 'Mark Paid'}

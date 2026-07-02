@@ -50,10 +50,11 @@ export default function EmployeeManagement() {
   const [selectedEmployees, setSelectedEmployees] = useState<number[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [allStores, setAllStores] = useState<Store[]>([]);
+  const [bulkStoreId, setBulkStoreId] = useState<number | ''>('');
   
   // Filters
   const [filters, setFilters] = useState<EmployeeFilters>({
-    per_page: 15,
+    per_page: 100,
     page: 1,
     sort_by: 'created_at',
     sort_direction: 'desc',
@@ -86,7 +87,8 @@ export default function EmployeeManagement() {
     try {
       const response = await storeService.getStores({ is_active: true });
       if (response.success) {
-        setAllStores(response.data.data || []);
+        const storeData = response.data?.data || response.data || [];
+        setAllStores(Array.isArray(storeData) ? storeData : []);
       }
     } catch (error) {
       console.error('Failed to fetch stores:', error);
@@ -114,7 +116,7 @@ export default function EmployeeManagement() {
   const fetchStats = async () => {
     try {
       // If branch manager, pass store_id to stats too (if backend supports it, else it will just show global stats)
-      const response = await employeeService.getEmployeeStats();
+      const response = await employeeService.getEmployeeStats(isGlobal && filters.store_id ? { store_id: filters.store_id } : undefined);
       if (response.success) {
         // If branch manager, we might need to filter stats manually if backend doesn't support store-scoped stats result
         // But for now we use what the API gives
@@ -210,6 +212,39 @@ export default function EmployeeManagement() {
     } catch (error) {
       console.error('Failed to update employee status:', error);
       alert('Failed to update employee status');
+    }
+  };
+
+
+
+  const handleBulkStoreAssign = async () => {
+    if (!isGlobal) {
+      alert('Only admin users can assign employees to another branch/outlet.');
+      return;
+    }
+    if (selectedEmployees.length === 0) {
+      alert('Please select employees first');
+      return;
+    }
+    if (!bulkStoreId) {
+      alert('Please select the target branch/outlet');
+      return;
+    }
+
+    const targetStore = allStores.find(store => Number(store.id) === Number(bulkStoreId));
+    if (!confirm(`Assign ${selectedEmployees.length} employee(s) to ${targetStore?.name || 'the selected branch'}?`)) {
+      return;
+    }
+
+    try {
+      await employeeService.bulkAssignStore(selectedEmployees, Number(bulkStoreId));
+      setSelectedEmployees([]);
+      setBulkStoreId('');
+      fetchEmployees();
+      fetchStats();
+    } catch (error: any) {
+      console.error('Failed to assign branch:', error);
+      alert(error.response?.data?.message || 'Failed to assign employees to branch');
     }
   };
 
@@ -332,6 +367,20 @@ export default function EmployeeManagement() {
             />
           </div>
 
+          {isGlobal && (
+            <select
+              value={filters.store_id || ''}
+              onChange={(e) => handleFilterChange('store_id', e.target.value === '' ? undefined : Number(e.target.value))}
+              className="min-w-56 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+              title="Filter employees by branch/outlet"
+            >
+              <option value="">All Branches / Outlets</option>
+              {allStores.map(store => (
+                <option key={store.id} value={store.id}>{store.name}</option>
+              ))}
+            </select>
+          )}
+
           {/* Filter Button */}
           <button
             onClick={() => setShowFilters(!showFilters)}
@@ -356,22 +405,10 @@ export default function EmployeeManagement() {
               onChange={(e) => handleFilterChange('is_active', e.target.value === '' ? undefined : e.target.value === 'true')}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
             >
+              <option value="">All Statuses</option>
               <option value="true">Active</option>
               <option value="false">Inactive</option>
             </select>
-
-            {isGlobal && (
-              <select
-                value={filters.store_id || ''}
-                onChange={(e) => handleFilterChange('store_id', e.target.value === '' ? undefined : Number(e.target.value))}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-              >
-                <option value="">All Stores</option>
-                {allStores.map(store => (
-                  <option key={store.id} value={store.id}>{store.name}</option>
-                ))}
-              </select>
-            )}
 
             <input
               type="text"
@@ -412,7 +449,27 @@ export default function EmployeeManagement() {
             <p className="text-sm text-blue-900 dark:text-blue-100">
               {selectedEmployees.length} employee(s) selected
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {isGlobal && (
+                <>
+                  <select
+                    value={bulkStoreId}
+                    onChange={(e) => setBulkStoreId(e.target.value ? Number(e.target.value) : '')}
+                    className="min-w-52 px-3 py-2 border border-blue-200 dark:border-blue-700 rounded-lg text-sm bg-white dark:bg-gray-800 dark:text-white"
+                  >
+                    <option value="">Assign to branch...</option>
+                    {allStores.map(store => (
+                      <option key={store.id} value={store.id}>{store.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleBulkStoreAssign}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                  >
+                    Assign Branch
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => handleBulkStatusUpdate(true)}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
@@ -589,8 +646,8 @@ export default function EmployeeManagement() {
         {!loading && employees.length > 0 && (
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <div className="text-sm text-gray-500 dark:text-gray-400">
-              Showing {((currentPage - 1) * (filters.per_page || 15)) + 1} to{' '}
-              {Math.min(currentPage * (filters.per_page || 15), totalEmployees)} of{' '}
+              Showing {((currentPage - 1) * (filters.per_page || 100)) + 1} to{' '}
+              {Math.min(currentPage * (filters.per_page || 100), totalEmployees)} of{' '}
               {totalEmployees} employees
             </div>
             <div className="flex gap-2">

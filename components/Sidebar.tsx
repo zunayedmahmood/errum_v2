@@ -201,6 +201,7 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
         { label: 'Attendance Logs', href: '/hrm/attendance' },
         { label: 'Sales Targets', href: '/hrm/sales-targets' },
         { label: 'Rewards & Fines', href: '/hrm/rewards-fines' },
+        { label: 'Payroll', href: '/hrm/payroll' },
         { label: 'Employee Passwords', href: '/employees/password' },
       ],
     },

@@ -8,6 +8,7 @@ use App\Models\Store;
 use App\Traits\DatabaseAgnosticSearch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class EmployeeController extends Controller
@@ -308,7 +309,7 @@ class EmployeeController extends Controller
         ]);
     }
 
-    public function getEmployeeStats()
+    public function getEmployeeStats(Request $request)
     {
         $authUser = auth()->user();
         $isGlobal = $authUser && $authUser->isGlobal();
@@ -316,6 +317,9 @@ class EmployeeController extends Controller
         $query = Employee::query();
         if (!$isGlobal && $authUser) {
             $query->where('store_id', $authUser->store_id);
+        } elseif ($request->filled('store_id')) {
+            $request->validate(['store_id' => 'integer|exists:stores,id']);
+            $query->where('store_id', (int) $request->get('store_id'));
         }
 
         $stats = [
@@ -442,6 +446,71 @@ class EmployeeController extends Controller
                 'name' => $employee->name,
                 'email' => $employee->email,
             ]
+        ]);
+    }
+
+
+    /**
+     * Bulk assign employees to a branch/outlet.
+     * This keeps current HRM features usable when a client needs to attach many existing employees
+     * to the correct branch without editing them one by one.
+     */
+    public function bulkAssignStore(Request $request)
+    {
+        $authUser = auth()->user();
+        if (!$authUser || !$authUser->isGlobal()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only admin users can assign employees to branches.'
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'employee_ids' => 'required|array|min:1',
+            'employee_ids.*' => 'integer|exists:employees,id',
+            'store_id' => 'required|integer|exists:stores,id',
+        ]);
+
+        $employeeIds = array_values(array_unique(array_map('intval', $validated['employee_ids'])));
+        $targetStoreId = (int) $validated['store_id'];
+        $targetStore = Store::findOrFail($targetStoreId);
+
+        $updatedCount = DB::transaction(function () use ($employeeIds, $targetStoreId) {
+            $employees = Employee::query()
+                ->whereIn('id', $employeeIds)
+                ->lockForUpdate()
+                ->get();
+
+            $updated = 0;
+            foreach ($employees as $employee) {
+                $payload = ['store_id' => $targetStoreId];
+
+                // Avoid broken reporting chains: if the employee's current manager belongs
+                // to another branch, clear the manager and let admin reassign later.
+                if ($employee->manager_id) {
+                    $managerStoreId = Employee::query()->whereKey($employee->manager_id)->value('store_id');
+                    if ($managerStoreId && (int) $managerStoreId !== $targetStoreId) {
+                        $payload['manager_id'] = null;
+                    }
+                }
+
+                if ((int) $employee->store_id !== $targetStoreId || array_key_exists('manager_id', $payload)) {
+                    $employee->update($payload);
+                    $updated++;
+                }
+            }
+
+            return $updated;
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => "Assigned {$updatedCount} employee(s) to {$targetStore->name}.",
+            'data' => [
+                'updated_count' => $updatedCount,
+                'store_id' => $targetStore->id,
+                'store_name' => $targetStore->name,
+            ],
         ]);
     }
 

@@ -68,8 +68,8 @@ export default function RewardsFinesPage() {
   const topFine = [...filteredEmployees].sort((a, b) => Number(b.total_fine || 0) - Number(a.total_fine || 0))[0];
 
   if (!selectedStoreId) return (
-    <div className="flex flex-col items-center justify-center h-96 rounded-2xl" style={{ border: '1px dashed rgba(255,255,255,0.08)' }}>
-      <Zap className="w-14 h-14 mb-4" style={{ color: 'rgba(201,168,76,0.3)' }} />
+    <div className="flex flex-col items-center justify-center h-96 rounded-2xl" style={{ border: '1px dashed rgba(148,163,184,0.28)' }}>
+      <Zap className="w-14 h-14 mb-4" style={{ color: 'rgba(59,130,246,0.35)' }} />
       <h3 className="text-lg font-700 text-white mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>No Store Selected</h3>
       <p className="text-muted text-sm">Select a store to manage rewards and fines</p>
     </div>
@@ -83,12 +83,12 @@ export default function RewardsFinesPage() {
           <p className="text-muted text-xs mt-0.5">Stack monthly bonuses and penalties per employee and preview salary impact before payroll.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl" style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.15)' }}>
-            <Calendar className="w-3.5 h-3.5" style={{ color: '#f0d080' }} />
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl" style={{ background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.18)' }}>
+            <Calendar className="w-3.5 h-3.5" style={{ color: 'var(--hrm-accent)' }} />
             <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}
               className="bg-transparent text-white text-xs font-600 border-none outline-none" />
           </div>
-          <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.22)' }}>
             {[
               { key: 'all', label: 'All Staff' },
               { key: 'reward', label: 'Reward Holders' },
@@ -99,8 +99,8 @@ export default function RewardsFinesPage() {
                 onClick={() => setEntryTypeFilter(tab.key as any)}
                 className="px-3 py-1.5 rounded-lg text-[11px] font-700 transition-all"
                 style={{
-                  background: entryTypeFilter === tab.key ? 'rgba(201,168,76,0.16)' : 'transparent',
-                  color: entryTypeFilter === tab.key ? '#f0d080' : 'rgba(255,255,255,0.6)',
+                  background: entryTypeFilter === tab.key ? 'rgba(59,130,246,0.18)' : 'transparent',
+                  color: entryTypeFilter === tab.key ? 'var(--hrm-accent)' : 'var(--hrm-text-muted)',
                 }}
               >
                 {tab.label}
@@ -114,7 +114,7 @@ export default function RewardsFinesPage() {
         {[
           { label: 'Total Rewards', value: `৳${Number(summaryData?.total_reward || 0).toLocaleString()}`, icon: PlusCircle, color: '#34d399', bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.14)' },
           { label: 'Total Fines', value: `৳${Number(summaryData?.total_fine || 0).toLocaleString()}`, icon: MinusCircle, color: '#f87171', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.14)' },
-          { label: 'Net Adjustment', value: `${Number(summaryData?.net || 0) >= 0 ? '+' : ''}৳${Number(summaryData?.net || 0).toLocaleString()}`, icon: Award, color: Number(summaryData?.net || 0) >= 0 ? '#34d399' : '#f87171', bg: 'rgba(201,168,76,0.08)', border: 'rgba(201,168,76,0.18)' },
+          { label: 'Net Adjustment', value: `${Number(summaryData?.net || 0) >= 0 ? '+' : ''}৳${Number(summaryData?.net || 0).toLocaleString()}`, icon: Award, color: Number(summaryData?.net || 0) >= 0 ? '#34d399' : '#f87171', bg: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.24)' },
           { label: 'Pending Entries', value: Number(summaryData?.total_entries || 0), icon: ReceiptText, color: '#818cf8', bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.14)' },
         ].map((card) => (
           <div key={card.label} className="rounded-2xl p-5" style={{ background: card.bg, border: `1px solid ${card.border}` }}>
@@ -123,7 +123,7 @@ export default function RewardsFinesPage() {
                 <p className="text-muted text-[10px] uppercase tracking-widest font-600 mb-2">{card.label}</p>
                 <p className="text-2xl font-800" style={{ fontFamily: 'Syne, sans-serif', color: card.color }}>{card.value}</p>
               </div>
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.06)' }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(148,163,184,0.22)' }}>
                 <card.icon className="w-5 h-5" style={{ color: card.color }} />
               </div>
             </div>
@@ -134,32 +134,32 @@ export default function RewardsFinesPage() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="rounded-2xl p-5 hrm-card xl:col-span-2">
           <div className="flex items-center gap-3 mb-2">
-            <Wallet className="w-5 h-5" style={{ color: '#f0d080' }} />
+            <Wallet className="w-5 h-5" style={{ color: 'var(--hrm-accent)' }} />
             <div>
               <p className="text-white text-sm font-700" style={{ fontFamily: 'Syne, sans-serif' }}>Salary Effect Snapshot</p>
               <p className="text-muted text-xs">Base salary plus this month&apos;s pending reward/fine stack.</p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-            <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="rounded-xl p-4" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
               <p className="text-muted text-[10px] uppercase tracking-widest font-600 mb-2">Projected payout pool</p>
               <p className="text-white text-2xl font-800" style={{ fontFamily: 'Syne, sans-serif' }}>৳{Number(summaryData?.total_projected_salary || 0).toLocaleString()}</p>
             </div>
-            <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="rounded-xl p-4" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
               <p className="text-muted text-[10px] uppercase tracking-widest font-600 mb-2">Top positive impact</p>
               <p className="text-white text-sm font-700">{topPositive?.employee?.name || '—'}</p>
               <p className="text-[11px] mt-1" style={{ color: '#34d399' }}>{topPositive ? `+৳${Number(topPositive.net_adjustment || 0).toLocaleString()}` : 'No bonus yet'}</p>
             </div>
-            <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="rounded-xl p-4" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
               <p className="text-muted text-[10px] uppercase tracking-widest font-600 mb-2">Highest deduction</p>
               <p className="text-white text-sm font-700">{topFine?.employee?.name || '—'}</p>
               <p className="text-[11px] mt-1" style={{ color: '#f87171' }}>{topFine && Number(topFine.total_fine || 0) > 0 ? `-৳${Number(topFine.total_fine || 0).toLocaleString()}` : 'No fines yet'}</p>
             </div>
           </div>
         </div>
-        <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(180deg, rgba(148,163,184,0.18), rgba(148,163,184,0.10))', border: '1px solid rgba(148,163,184,0.22)' }}>
           <div className="flex items-center gap-3 mb-4">
-            <ShieldAlert className="w-5 h-5" style={{ color: '#f0d080' }} />
+            <ShieldAlert className="w-5 h-5" style={{ color: 'var(--hrm-accent)' }} />
             <div>
               <p className="text-white text-sm font-700" style={{ fontFamily: 'Syne, sans-serif' }}>How this stacks</p>
               <p className="text-muted text-xs">Everything in this month stays pending until payroll marks it applied.</p>
@@ -171,7 +171,7 @@ export default function RewardsFinesPage() {
               'Disciplinary fine, cash shortage, damage recovery and other penalties keep stacking in the same month too.',
               'Payroll will pick the month’s pending reward/fine totals and add or deduct them from salary.',
             ].map((item) => (
-              <div key={item} className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div key={item} className="rounded-xl p-3" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
                 <p className="text-sub leading-5">{item}</p>
               </div>
             ))}
@@ -180,7 +180,7 @@ export default function RewardsFinesPage() {
       </div>
 
       <div className="hrm-card rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
           <div>
             <h3 className="text-white font-700 text-sm" style={{ fontFamily: 'Syne, sans-serif' }}>Employee Breakdown</h3>
             <p className="text-muted text-[11px] mt-1">See who is getting extra benefits, who is getting deductions, and what their salary would look like before payroll.</p>
@@ -195,7 +195,7 @@ export default function RewardsFinesPage() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <tr style={{ borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
                 {['Employee', 'Base Salary', 'Rewards', 'Fines', 'Net Adj.', 'Projected Salary', 'Actions'].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-[10px] uppercase tracking-widest text-muted font-600 whitespace-nowrap">{h}</th>
                 ))}
@@ -204,10 +204,10 @@ export default function RewardsFinesPage() {
             <tbody>
               {isLoading ? (
                 [...Array(4)].map((_, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
                     {[...Array(7)].map((_, j) => (
                       <td key={j} className="px-5 py-4">
-                        <div className="h-4 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.05)', width: j === 0 ? '140px' : '85px' }} />
+                        <div className="h-4 rounded-lg animate-pulse" style={{ background: 'rgba(148,163,184,0.20)', width: j === 0 ? '140px' : '85px' }} />
                       </td>
                     ))}
                   </tr>
@@ -219,13 +219,13 @@ export default function RewardsFinesPage() {
                 const projectedSalary = salary + Number(row.net_adjustment || 0);
                 return (
                   <React.Fragment key={row.employee.id}>
-                    <tr className="table-row-hover cursor-pointer" style={{ borderBottom: expandedEmployeeId === row.employee.id ? 'none' : '1px solid rgba(255,255,255,0.03)' }}
+                    <tr className="table-row-hover cursor-pointer" style={{ borderBottom: expandedEmployeeId === row.employee.id ? 'none' : '1px solid rgba(148,163,184,0.14)' }}
                       onClick={() => toggleRow(row.employee.id)}>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2.5">
                           <div className="avatar-ring w-7 h-7 shrink-0">
                             <div className="w-full h-full rounded-full flex items-center justify-center text-[10px] font-700"
-                              style={{ background: '#0a0a0f', color: '#f0d080' }}>
+                              style={{ background: 'var(--hrm-bg-soft)', color: 'var(--hrm-accent)' }}>
                               {row.employee.name.charAt(0)}
                             </div>
                           </div>
@@ -263,10 +263,10 @@ export default function RewardsFinesPage() {
                       </td>
                     </tr>
                     {expandedEmployeeId === row.employee.id && (
-                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                      <tr style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
                         <td colSpan={7} className="px-5 pb-4 pt-0">
-                          <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                            <div className="px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(148,163,184,0.10)', border: '1px solid rgba(148,163,184,0.18)' }}>
+                            <div className="px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3" style={{ borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
                               <div>
                                 <p className="text-muted text-[10px] uppercase tracking-widest font-600">Entries — {format(new Date(selectedMonth + '-01'), 'MMMM yyyy')}</p>
                                 <p className="text-white text-xs font-700 mt-1">Projected salary after pending stack: ৳{projectedSalary.toLocaleString()}</p>
@@ -285,7 +285,7 @@ export default function RewardsFinesPage() {
                               <table className="w-full">
                                 <tbody>
                                   {employeeDetails.map((entry: any) => (
-                                    <tr key={entry.id} className="table-row-hover" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                    <tr key={entry.id} className="table-row-hover" style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
                                       <td className="px-4 py-2.5 text-muted text-[10px] whitespace-nowrap">{format(new Date(entry.entry_date), 'dd MMM yyyy')}</td>
                                       <td className="px-4 py-2.5">
                                         <span className={`text-[10px] font-700 px-2 py-0.5 rounded-full ${entry.entry_type === 'reward' ? 'pill-green' : 'pill-red'}`}>

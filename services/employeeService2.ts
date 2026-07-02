@@ -417,8 +417,8 @@ class EmployeeService {
   /**
    * Get employee statistics
    */
-  async getEmployeeStats(): Promise<ApiResponse<EmployeeStats>> {
-    const response = await axiosInstance.get<ApiResponse<EmployeeStats>>('/employees/stats');
+  async getEmployeeStats(params?: { store_id?: number }): Promise<ApiResponse<EmployeeStats>> {
+    const response = await axiosInstance.get<ApiResponse<EmployeeStats>>('/employees/stats', { params });
     return response.data;
   }
 
@@ -519,6 +519,23 @@ class EmployeeService {
   }
 
   // ==================== Bulk Operations ====================
+
+
+
+  /**
+   * Bulk assign selected employees to one branch/outlet.
+   * Used by Employee Management to fix branch ownership/data tracking without editing employees one by one.
+   */
+  async bulkAssignStore(employeeIds: number[], storeId: number): Promise<ApiResponse<{ updated_count: number }>> {
+    const response = await axiosInstance.patch<ApiResponse<{ updated_count: number }>>(
+      '/employees/bulk/store',
+      {
+        employee_ids: employeeIds,
+        store_id: storeId,
+      }
+    );
+    return response.data;
+  }
 
   /**
    * Bulk update employee status

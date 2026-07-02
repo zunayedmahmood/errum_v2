@@ -44,12 +44,12 @@ export default function MyHRMPage() {
     if (s === 'late') return <span className="pill-amber text-[10px] font-700 px-2.5 py-0.5 rounded-full uppercase tracking-wider">Late</span>;
     if (s === 'absent') return <span className="pill-red text-[10px] font-700 px-2.5 py-0.5 rounded-full uppercase tracking-wider">Absent</span>;
     if (s === 'leave') return <span className="pill-blue text-[10px] font-700 px-2.5 py-0.5 rounded-full uppercase tracking-wider">Leave</span>;
-    return <span className="text-[10px] font-700 px-2.5 py-0.5 rounded-full uppercase tracking-wider" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}>Not Marked</span>;
+    return <span className="text-[10px] font-700 px-2.5 py-0.5 rounded-full uppercase tracking-wider" style={{ background: 'rgba(148,163,184,0.22)', color: 'var(--hrm-text-muted)' }}>Not Marked</span>;
   };
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'rgba(201,168,76,0.3)', borderTopColor: '#f0d080' }} />
+      <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'rgba(59,130,246,0.35)', borderTopColor: 'var(--hrm-accent)' }} />
     </div>
   );
 
@@ -57,13 +57,13 @@ export default function MyHRMPage() {
     <div className="space-y-5">
       {/* Welcome Banner */}
       <div className="relative rounded-2xl overflow-hidden p-6"
-        style={{ background: 'linear-gradient(135deg, rgba(201,168,76,0.12) 0%, rgba(99,102,241,0.08) 100%)', border: '1px solid rgba(201,168,76,0.15)' }}>
+        style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.14) 0%, rgba(99,102,241,0.08) 100%)', border: '1px solid rgba(59,130,246,0.18)' }}>
         <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, #f0d080, transparent)', transform: 'translate(30%,-30%)' }} />
+          style={{ background: 'radial-gradient(circle, var(--hrm-accent), transparent)', transform: 'translate(30%,-30%)' }} />
         <div className="flex items-center gap-4">
           <div className="avatar-ring w-14 h-14 shrink-0">
             <div className="w-full h-full rounded-full flex items-center justify-center text-xl font-800"
-              style={{ background: '#0a0a0f', color: '#f0d080', fontFamily: 'Syne, sans-serif' }}>
+              style={{ background: 'var(--hrm-bg-soft)', color: 'var(--hrm-accent)', fontFamily: 'Syne, sans-serif' }}>
               {user?.name?.charAt(0)?.toUpperCase()}
             </div>
           </div>
@@ -84,7 +84,7 @@ export default function MyHRMPage() {
         {[
           { label: 'Days Present', value: presentCount, color: '#34d399', bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.12)' },
           { label: 'Late Arrivals', value: lateCount, color: '#fbbf24', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.12)' },
-          { label: 'Sales Achieved', value: `৳${(performance?.achieved || 0).toLocaleString()}`, color: '#f0d080', bg: 'rgba(201,168,76,0.08)', border: 'rgba(201,168,76,0.12)' },
+          { label: 'Sales Achieved', value: `৳${(performance?.achieved || 0).toLocaleString()}`, color: 'var(--hrm-accent)', bg: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.14)' },
           { label: 'Target %', value: `${percent}%`, color: '#818cf8', bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.12)' },
         ].map(s => (
           <div key={s.label} className="hrm-card rounded-2xl p-4" style={{ background: s.bg, borderColor: s.border }}>
@@ -108,9 +108,9 @@ export default function MyHRMPage() {
               { label: 'Clock Out', value: todayRecord?.clock_out, color: '#f87171' },
             ].map(item => (
               <div key={item.label} className="flex items-center justify-between px-3.5 py-2.5 rounded-xl"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
                 <span className="text-muted text-xs font-500">{item.label}</span>
-                <span className="text-sm font-700" style={{ color: item.value ? item.color : 'rgba(255,255,255,0.2)', fontFamily: 'Syne, sans-serif' }}>
+                <span className="text-sm font-700" style={{ color: item.value ? item.color : 'rgba(148,163,184,0.40)', fontFamily: 'Syne, sans-serif' }}>
                   {item.value || '--:--'}
                 </span>
               </div>
@@ -167,14 +167,14 @@ export default function MyHRMPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Attendance History */}
         <div className="hrm-card rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
             <h3 className="text-white font-700 text-sm" style={{ fontFamily: 'Syne, sans-serif' }}>Attendance History</h3>
             <span className="text-muted text-[10px]">{attendance.length} records</span>
           </div>
           {attendance.length === 0 ? (
             <div className="p-8 text-center text-muted text-xs">No attendance records found</div>
           ) : (
-            <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.03)' }}>
+            <div className="divide-y" style={{ borderColor: 'rgba(148,163,184,0.14)' }}>
               {attendance.slice(0, 7).map((record) => {
                 const s = record.status?.toLowerCase();
                 const isGood = s === 'present';
@@ -218,8 +218,8 @@ export default function MyHRMPage() {
               </div>
             )}
             {percent >= 100 && (
-              <div className="flex items-start gap-3 p-3.5 rounded-xl" style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.15)' }}>
-                <Zap className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#f0d080' }} />
+              <div className="flex items-start gap-3 p-3.5 rounded-xl" style={{ background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.18)' }}>
+                <Zap className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--hrm-accent)' }} />
                 <div>
                   <p className="text-xs font-700 mb-0.5 gold-shimmer">Target Reached! 🎉</p>
                   <p className="text-[11px] text-muted">You've hit 100%+ this month. Outstanding work!</p>
@@ -244,9 +244,9 @@ export default function MyHRMPage() {
 
           <button onClick={() => setIsHistoryOpen(!isHistoryOpen)}
             className="w-full mt-4 flex items-center justify-between p-3.5 rounded-xl transition-all"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(201,168,76,0.2)')}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)')}>
+            style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(59,130,246,0.25)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(148,163,184,0.20)')}>
             <div className="flex items-center gap-2">
               <Award className="w-4 h-4" style={{ color: '#a78bfa' }} />
               <span className="text-xs font-600 text-white">Reward / Fine History</span>
@@ -260,7 +260,7 @@ export default function MyHRMPage() {
                 <p className="text-muted text-xs py-2">No entries this month</p>
               ) : rewardsFines.map(entry => (
                 <div key={entry.id} className="flex justify-between items-center p-2.5 rounded-lg"
-                  style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                  style={{ background: 'rgba(148,163,184,0.10)', border: '1px solid rgba(148,163,184,0.18)' }}>
                   <div>
                     <p className="text-white text-xs font-600">{entry.title}</p>
                     <p className="text-muted text-[10px]">{format(new Date(entry.entry_date), 'MMM dd, yyyy')}</p>

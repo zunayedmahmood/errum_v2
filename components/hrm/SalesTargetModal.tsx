@@ -43,30 +43,30 @@ export default function SalesTargetModal({ isOpen, onClose, employee, onSuccess,
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
       <div className="w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl"
-        style={{ background: '#0e0e18', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 40px 100px rgba(0,0,0,0.6)' }}>
-        <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #c9a84c00, #f0d080, #c9a84c00)' }} />
+        style={{ background: '#0e0e18', border: '1px solid rgba(148,163,184,0.28)', boxShadow: '0 40px 100px rgba(0,0,0,0.6)' }}>
+        <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, rgba(59,130,246,0), var(--hrm-accent), rgba(59,130,246,0))' }} />
 
-        <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.2)' }}>
-              <Target className="w-4 h-4" style={{ color: '#f0d080' }} />
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(59,130,246,0.14)', border: '1px solid rgba(59,130,246,0.25)' }}>
+              <Target className="w-4 h-4" style={{ color: 'var(--hrm-accent)' }} />
             </div>
             <h3 className="text-white font-700 text-base" style={{ fontFamily: 'Syne, sans-serif' }}>Set Sales Target</h3>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center"
-            style={{ background: 'rgba(255,255,255,0.04)' }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}>
+            style={{ background: 'rgba(148,163,184,0.18)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(148,163,184,0.28)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(148,163,184,0.18)')}>
             <X className="w-3.5 h-3.5 text-muted" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Employee */}
-          <div className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
             <div className="avatar-ring w-9 h-9 shrink-0">
               <div className="w-full h-full rounded-full flex items-center justify-center text-sm font-700"
-                style={{ background: '#0a0a0f', color: '#f0d080', fontFamily: 'Syne, sans-serif' }}>
+                style={{ background: 'var(--hrm-bg-soft)', color: 'var(--hrm-accent)', fontFamily: 'Syne, sans-serif' }}>
                 {employee.name.charAt(0)}
               </div>
             </div>
@@ -91,12 +91,12 @@ export default function SalesTargetModal({ isOpen, onClose, employee, onSuccess,
               <input type="number" value={targetAmount} onChange={(e) => setTargetAmount(e.target.value)}
                 placeholder="0" required min="1"
                 className="input-dark w-full pl-9 pr-4 py-4 rounded-xl text-3xl font-800 text-center"
-                style={{ fontFamily: 'Syne, sans-serif', color: '#f0d080' }} />
+                style={{ fontFamily: 'Syne, sans-serif', color: 'var(--hrm-accent)' }} />
             </div>
           </div>
 
-          <div className="flex items-start gap-2.5 p-3 rounded-xl" style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.12)' }}>
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#f0d080' }} />
+          <div className="flex items-start gap-2.5 p-3 rounded-xl" style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.14)' }}>
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--hrm-accent)' }} />
             <p className="text-[11px]" style={{ color: 'rgba(240,208,128,0.7)' }}>
               This will overwrite any existing target for the selected month.
             </p>
@@ -104,10 +104,10 @@ export default function SalesTargetModal({ isOpen, onClose, employee, onSuccess,
 
           <button type="submit" disabled={isLoading}
             className="w-full py-3.5 rounded-2xl text-sm font-700 disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #c9a84c 0%, #f0d080 50%, #c9a84c 100%)', color: '#0a0a0f', boxShadow: '0 8px 24px rgba(201,168,76,0.3)' }}>
+            style={{ background: 'linear-gradient(135deg, var(--hrm-accent) 0%, var(--hrm-accent) 50%, var(--hrm-accent) 100%)', color: 'var(--hrm-bg-soft)', boxShadow: '0 8px 24px rgba(59,130,246,0.35)' }}>
             {isLoading ? (
               <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(10,10,15,0.3)', borderTopColor: '#0a0a0f' }} />
+                <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(10,10,15,0.3)', borderTopColor: 'var(--hrm-bg-soft)' }} />
                 Saving...
               </span>
             ) : 'Set Monthly Target'}
