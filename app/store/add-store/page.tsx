@@ -28,6 +28,8 @@ export default function AddStorePage({ searchParams }: AddStorePageProps) {
   const [formData, setFormData] = useState<StoreFormData>({
     name: '',
     address: '',
+    phone: '',
+    contact_person: '',
     pathao_key: '',
     type: 'store',
     is_online: false,
@@ -48,11 +50,13 @@ export default function AddStorePage({ searchParams }: AddStorePageProps) {
       
       setFormData({
         id: store.id,
-        name: store.name,
-        address: store.address,
-        pathao_key: store.pathao_key,
+        name: store.name || '',
+        address: store.address || '',
+        phone: store.phone || '',
+        contact_person: store.contact_person || '',
+        pathao_key: store.pathao_key || '',
         type: store.is_warehouse ? 'warehouse' : 'store',
-        is_online: store.is_online,
+        is_online: Boolean(store.is_online),
       });
     } catch (err: any) {
       console.error('Error loading store:', err);
@@ -169,6 +173,38 @@ export default function AddStorePage({ searchParams }: AddStorePageProps) {
                       required
                       rows={2}
                       className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors resize-none"
+                    />
+                  </div>
+
+                  {/* Contact */}
+                  <div>
+                    <label htmlFor="contact_person" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Contact
+                    </label>
+                    <input
+                      type="text"
+                      id="contact_person"
+                      name="contact_person"
+                      value={formData.contact_person || ''}
+                      onChange={handleChange}
+                      placeholder="Enter contact person"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
+                    />
+                  </div>
+
+                  {/* Phone */}
+                  <div>
+                    <label htmlFor="phone" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Phone
+                    </label>
+                    <input
+                      type="text"
+                      id="phone"
+                      name="phone"
+                      value={formData.phone || ''}
+                      onChange={handleChange}
+                      placeholder="Enter phone number"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-500 transition-colors"
                     />
                   </div>
 

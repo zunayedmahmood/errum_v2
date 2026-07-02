@@ -1595,8 +1595,7 @@ export default function POSPage() {
                         setSelectedEmployee(e.target.value);
                       }
                     }}
-                    disabled={role === 'pos-salesman'}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-75 disabled:bg-gray-200 dark:disabled:bg-gray-800"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
                     <option value="">Select Employee</option>
                     {employees.map((emp) => (

@@ -227,11 +227,25 @@ export function normalizeOrderForReceipt(order: any): ReceiptOrder {
     parseMoney(order?.subtotal) ||
     items.reduce((s, i) => s + i.lineTotal, 0);
 
-  const discount =
-    parseMoney(order?.amounts?.totalDiscount) ||
-    parseMoney(order?.discount_amount) ||
-    parseMoney(order?.discount) ||
-    0;
+  // Total discount shown on the POS memo must include item-level discounts.
+  // Newer backend orders store only the order-level discount in orders.discount_amount
+  // and mark that with metadata.discount_amount_role = 'order_level'. Older builds sometimes
+  // stored the full/item discount in orders.discount_amount, so avoid double-counting those.
+  const itemLevelDiscount = items.reduce((s, i) => s + parseMoney(i.discount), 0);
+  const explicitTotalDiscount = parseMoney(order?.amounts?.totalDiscount);
+  const storedDiscount = parseMoney(order?.discount_amount) || parseMoney(order?.discount);
+  const discountRole = order?.metadata?.discount_amount_role;
+  const discount = explicitTotalDiscount > 0
+    ? explicitTotalDiscount
+    : discountRole === 'order_level'
+      ? itemLevelDiscount + storedDiscount
+      : itemLevelDiscount > 0
+        ? (Math.abs(storedDiscount - itemLevelDiscount) < 0.01
+          ? itemLevelDiscount
+          : storedDiscount > itemLevelDiscount
+            ? storedDiscount
+            : itemLevelDiscount + storedDiscount)
+        : storedDiscount;
 
   const tax = parseMoney(order?.amounts?.vat) || parseMoney(order?.tax_amount) || 0;
   const shipping =
