@@ -2298,13 +2298,22 @@ export default function OrdersDashboard() {
     }
   };
 
-  const isSocialOrder = (o: Order | any) => {
+  const isOnlineInvoiceOrder = (o: Order | any) => {
     const t = String((o as any)?.orderType || (o as any)?.order_type || '').toLowerCase();
     const lbl = String((o as any)?.orderTypeLabel || '').toLowerCase();
-    return t === 'social_commerce' || t === 'social' || lbl.includes('social');
+    return (
+      t === 'social_commerce' ||
+      t === 'social' ||
+      t === 'ecommerce' ||
+      t === 'e-commerce' ||
+      t === 'e_commerce' ||
+      lbl.includes('social') ||
+      lbl.includes('e-commerce') ||
+      lbl.includes('ecommerce')
+    );
   };
 
-  // ✅ Bulk: Print social commerce invoices (A5)
+  // ✅ Bulk: Print online order invoices (A5)
   const handleBulkPrintInvoices = async () => {
     if (selectedOrders.size === 0) {
       alert('Please select at least one order to print.');
@@ -2312,10 +2321,10 @@ export default function OrdersDashboard() {
     }
 
     const selectedOrdersList = filteredOrders.filter((o) => selectedOrders.has(o.id));
-    const socialList = selectedOrdersList.filter(isSocialOrder);
+    const invoiceList = selectedOrdersList.filter(isOnlineInvoiceOrder);
 
-    if (socialList.length === 0) {
-      alert('No Social Commerce orders selected. Please select Social Commerce orders to print invoices.');
+    if (invoiceList.length === 0) {
+      alert('No Social Commerce/E-commerce orders selected. Please select online orders to print invoices.');
       return;
     }
 
@@ -2333,14 +2342,14 @@ export default function OrdersDashboard() {
     } catch { }
 
     setIsPrintingBulk(true);
-    setBulkPrintProgress({ show: true, current: 0, total: socialList.length, success: 0, failed: 0 });
+    setBulkPrintProgress({ show: true, current: 0, total: invoiceList.length, success: 0, failed: 0 });
 
     try {
       const fullOrders: any[] = [];
 
       // fetch full orders one-by-one (keeps backend load safe)
-      for (let i = 0; i < socialList.length; i++) {
-        const o = socialList[i];
+      for (let i = 0; i < invoiceList.length; i++) {
+        const o = invoiceList[i];
         setBulkPrintProgress((prev) => ({ ...prev, current: i + 1 }));
 
         try {
@@ -2356,7 +2365,7 @@ export default function OrdersDashboard() {
 
       // If QZ is offline, open ONE bulk preview window (Print → Save as PDF).
       if (!status.connected) {
-        await printBulkReceipts(fullOrders, undefined, { template: 'pos_receipt', title: 'Invoices' });
+        await printBulkReceipts(fullOrders, undefined, { template: 'social_invoice', title: 'Invoices' });
         alert('Opened invoice preview. Use Print → Save as PDF.');
         return;
       }
@@ -2370,7 +2379,7 @@ export default function OrdersDashboard() {
         setBulkPrintProgress((prev) => ({ ...prev, current: i + 1 }));
 
         try {
-          await printReceipt(fullOrder as any, selectedPrinter, { template: 'pos_receipt', title: 'Invoice' });
+          await printReceipt(fullOrder as any, selectedPrinter, { template: 'social_invoice', title: 'Invoice' });
           successCount++;
           setBulkPrintProgress((prev) => ({ ...prev, success: successCount }));
         } catch {
@@ -2589,8 +2598,8 @@ export default function OrdersDashboard() {
   };
 
   const handleSinglePrintInvoice = async (order: Order) => {
-    if (!isSocialOrder(order)) {
-      alert('Invoice printing is only available for Social Commerce orders.');
+    if (!isOnlineInvoiceOrder(order)) {
+      alert('Invoice printing is available only for Social Commerce and E-commerce orders.');
       return;
     }
 
@@ -2617,7 +2626,7 @@ export default function OrdersDashboard() {
 
       const fullOrder = await orderService.getById(order.id);
       await printReceipt(fullOrder as any, status.connected ? selectedPrinter : undefined, {
-        template: 'pos_receipt',
+        template: 'social_invoice',
         title: 'Invoice',
       });
 
@@ -3583,7 +3592,7 @@ export default function OrdersDashboard() {
                           onClick={handleBulkPrintInvoices}
                           disabled={isPrintingBulk}
                           className="flex items-center gap-1 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded transition-colors disabled:opacity-50 text-[10px] font-medium"
-                          title="Print A5 invoices for selected Social Commerce orders"
+                          title="Print A5 invoices for selected online orders"
                         >
                           <Printer className="w-3 h-3" />
                           {isPrintingBulk ? 'Printing' : 'Invoices'}
@@ -4173,6 +4182,26 @@ export default function OrdersDashboard() {
             <Eye className="h-5 w-5 flex-shrink-0" />
             <span>View Details</span>
           </button>
+
+
+          {(() => {
+            const order = filteredOrders.find((o) => o.id === activeMenu);
+            if (!order || !isOnlineInvoiceOrder(order)) return null;
+
+            return (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSinglePrintInvoice(order);
+                }}
+                disabled={isSingleLoading(order.id, 'print')}
+                className="w-full px-4 py-3 text-left text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors flex items-center gap-3 border-b border-gray-100 dark:border-gray-700 disabled:opacity-50"
+              >
+                <Printer className="h-5 w-5 flex-shrink-0" />
+                <span>{isSingleLoading(order.id, 'print') ? 'Preparing...' : 'Print Invoice'}</span>
+              </button>
+            );
+          })()}
 
           <button
             onClick={(e) => {

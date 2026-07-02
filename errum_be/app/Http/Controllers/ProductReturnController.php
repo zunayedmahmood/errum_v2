@@ -175,8 +175,14 @@ class ProductReturnController extends Controller
                     throw new \Exception("Unable to identify sold barcode units for {$orderItem->product_name}.");
                 }
 
-                $unitPrice = isset($item['unit_price']) ? (float) $item['unit_price'] : $orderItem->unit_price;
-                $itemReturnValue = isset($item['total_price']) ? (float) $item['total_price'] : ($item['quantity'] * $unitPrice);
+                $netSoldUnitPrice = $this->netSoldUnitPrice($orderItem);
+                $quantity = (int) $item['quantity'];
+                $itemReturnValue = array_key_exists('total_price', $item)
+                    ? (float) $item['total_price']
+                    : ($quantity * (array_key_exists('unit_price', $item) ? (float) $item['unit_price'] : $netSoldUnitPrice));
+                $maxReturnValue = round($netSoldUnitPrice * $quantity, 2);
+                $itemReturnValue = round(max(0, min($itemReturnValue, $maxReturnValue)), 2);
+                $unitPrice = $quantity > 0 ? round($itemReturnValue / $quantity, 2) : 0;
                 $totalReturnValue += $itemReturnValue;
 
                 $returnItems[] = [
@@ -318,8 +324,14 @@ class ProductReturnController extends Controller
                     throw new \Exception("Unable to identify {$item['quantity']} sold barcode unit(s) for {$orderItem->product_name}. Return requires sold barcode tracking.");
                 }
 
-                $unitPrice = isset($item['unit_price']) ? (float) $item['unit_price'] : $orderItem->unit_price;
-                $itemReturnValue = isset($item['total_price']) ? (float) $item['total_price'] : ($item['quantity'] * $unitPrice);
+                $netSoldUnitPrice = $this->netSoldUnitPrice($orderItem);
+                $quantity = (int) $item['quantity'];
+                $itemReturnValue = array_key_exists('total_price', $item)
+                    ? (float) $item['total_price']
+                    : ($quantity * (array_key_exists('unit_price', $item) ? (float) $item['unit_price'] : $netSoldUnitPrice));
+                $maxReturnValue = round($netSoldUnitPrice * $quantity, 2);
+                $itemReturnValue = round(max(0, min($itemReturnValue, $maxReturnValue)), 2);
+                $unitPrice = $quantity > 0 ? round($itemReturnValue / $quantity, 2) : 0;
                 $totalReturnValue += $itemReturnValue;
 
                 $returnItems[] = [
@@ -1159,6 +1171,25 @@ class ProductReturnController extends Controller
             // Fallback to UUID if all attempts fail
             return 'RET-' . $date . '-' . strtoupper(substr(uniqid(), -8));
         });
+    }
+
+    /**
+     * Net amount the customer actually paid per unit for this order item.
+     * This keeps 100% item-discount orders return/exchange safe: return value becomes 0, not unit_price.
+     */
+    private function netSoldUnitPrice(OrderItem $orderItem): float
+    {
+        $qty = max(1, (int) $orderItem->quantity);
+
+        if ($orderItem->total_amount !== null) {
+            return round(max(0, (float) $orderItem->total_amount) / $qty, 2);
+        }
+
+        $lineSubtotal = ((float) $orderItem->unit_price * $qty)
+            - (float) ($orderItem->discount_amount ?? 0)
+            + (float) ($orderItem->tax_amount ?? 0);
+
+        return round(max(0, $lineSubtotal) / $qty, 2);
     }
 
     /**

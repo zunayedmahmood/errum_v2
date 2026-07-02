@@ -856,8 +856,9 @@ function ViewInventoryPageContent() {
                                 checked={checked}
                                 onChange={(e) => {
                                   const categoryId = category.id;
+                                  const isChecked = e.currentTarget.checked;
                                   setSelectedCategoryIds((prev) =>
-                                    e.currentTarget.checked
+                                    isChecked
                                       ? Array.from(new Set([...prev, categoryId]))
                                       : prev.filter((id) => id !== categoryId)
                                   );

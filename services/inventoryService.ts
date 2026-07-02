@@ -353,6 +353,17 @@ const inventoryService = {
   },
 
   /**
+   * Check reservations for a specific product/variant.
+   */
+  getReserveCheck: async (productId: number) => {
+    const response = await axiosInstance.get<ApiResponse<any>>(
+      `/inventory/reserve-check/${productId}`,
+      { skipStoreScope: true }
+    );
+    return response.data;
+  },
+
+  /**
    * Get inventory for a specific store
    */
   getStoreInventory: async (storeId: number) => {

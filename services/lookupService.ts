@@ -18,6 +18,11 @@ const lookupService = {
     return res.data;
   },
 
+  async getOrderByNumber(orderNumber: string): Promise<LookupApiResponse<LookupOrder>> {
+    const res = await axios.get(`${this.basePath}/order-number/${encodeURIComponent(orderNumber)}`);
+    return res.data;
+  },
+
   async getProductByBarcode(barcode: string): Promise<LookupApiResponse<any>> {
     const res = await axios.get(`${this.basePath}/product`, {
       params: { barcode },

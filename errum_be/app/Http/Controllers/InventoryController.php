@@ -7,6 +7,8 @@ use App\Models\ReservedProduct;
 use App\Models\Product;
 use App\Models\Store;
 use App\Models\MasterInventory;
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Traits\DatabaseAgnosticSearch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -426,4 +428,177 @@ class InventoryController extends Controller
             ], 500);
         }
     }
+
+
+    /**
+     * Check why stock is reserved for a product/variant.
+     * Shows physical branch stock and the pending online/social orders that still hold reservation.
+     */
+    public function reserveCheck(Request $request, $productId)
+    {
+        try {
+            $product = Product::with(['category.parent'])->find($productId);
+            if (!$product) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product/variant not found.',
+                ], 404);
+            }
+
+            $heldStatuses = ['pending', 'pending_assignment', 'assigned_to_store'];
+            $orderTypes = ['social_commerce', 'ecommerce'];
+
+            $reservedRecord = ReservedProduct::where('product_id', $product->id)->first();
+
+            $batches = ProductBatch::with('store')
+                ->where('product_id', $product->id)
+                ->where('quantity', '>', 0)
+                ->orderBy('store_id')
+                ->orderBy('expiry_date')
+                ->get();
+
+            $storesById = Store::query()
+                ->where(function ($q) use ($batches) {
+                    $q->where('is_active', true);
+                    $batchStoreIds = $batches->pluck('store_id')->filter()->unique()->values();
+                    if ($batchStoreIds->count() > 0) {
+                        $q->orWhereIn('id', $batchStoreIds->all());
+                    }
+                })
+                ->get()
+                ->keyBy('id');
+
+            $orders = Order::query()
+                ->with(['customer', 'store', 'items' => function ($q) use ($product) {
+                    $q->where('product_id', $product->id);
+                }])
+                ->whereIn('order_type', $orderTypes)
+                ->whereIn('status', $heldStatuses)
+                ->whereHas('items', function ($q) use ($product) {
+                    $q->where('product_id', $product->id);
+                })
+                ->orderByDesc('order_date')
+                ->limit(500)
+                ->get();
+
+            foreach ($orders as $order) {
+                if ($order->store_id && !$storesById->has($order->store_id) && $order->store) {
+                    $storesById->put($order->store_id, $order->store);
+                }
+            }
+
+            $reservedByStore = $orders
+                ->filter(fn ($order) => !empty($order->store_id))
+                ->groupBy('store_id')
+                ->map(function ($storeOrders) {
+                    return (int) $storeOrders->sum(function ($order) {
+                        return $order->items->sum('quantity');
+                    });
+                });
+
+            $unassignedReservedQty = (int) $orders
+                ->filter(fn ($order) => empty($order->store_id))
+                ->sum(function ($order) {
+                    return $order->items->sum('quantity');
+                });
+
+            $batchGroups = $batches->groupBy('store_id');
+
+            $branchRows = $storesById->map(function ($store) use ($batchGroups, $reservedByStore) {
+                $storeBatches = $batchGroups->get($store->id, collect());
+                $physical = (int) $storeBatches->sum('quantity');
+                $reserved = (int) ($reservedByStore->get($store->id) ?? 0);
+
+                return [
+                    'store_id' => $store->id,
+                    'store_name' => $store->name,
+                    'store_code' => $store->store_code,
+                    'store_address' => $store->address,
+                    'physical_quantity' => $physical,
+                    'reserved_quantity' => $reserved,
+                    'available_after_reserved' => max(0, $physical - $reserved),
+                    'batches' => $storeBatches->map(function ($batch) {
+                        return [
+                            'batch_id' => $batch->id,
+                            'batch_number' => $batch->batch_number,
+                            'quantity' => (int) $batch->quantity,
+                            'sell_price' => (float) $batch->sell_price,
+                            'cost_price' => (float) $batch->cost_price,
+                            'expiry_date' => optional($batch->expiry_date)->format('Y-m-d'),
+                            'availability' => (bool) $batch->availability,
+                        ];
+                    })->values(),
+                ];
+            })->values();
+
+            $orderRows = $orders->map(function ($order) {
+                $qty = (int) $order->items->sum('quantity');
+                return [
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'order_type' => $order->order_type,
+                    'status' => $order->status,
+                    'payment_status' => $order->payment_status,
+                    'order_date' => optional($order->order_date)->format('Y-m-d H:i:s'),
+                    'customer_name' => optional($order->customer)->name,
+                    'customer_phone' => optional($order->customer)->phone,
+                    'store_id' => $order->store_id,
+                    'store_name' => optional($order->store)->name ?: 'Unassigned',
+                    'quantity_reserved' => $qty,
+                    'total_amount' => (float) $order->total_amount,
+                    'items' => $order->items->map(function ($item) {
+                        return [
+                            'order_item_id' => $item->id,
+                            'quantity' => (int) $item->quantity,
+                            'unit_price' => (float) $item->unit_price,
+                            'discount_amount' => (float) $item->discount_amount,
+                            'total_amount' => (float) $item->total_amount,
+                        ];
+                    })->values(),
+                ];
+            })->values();
+
+            $totalPhysical = (int) $batches->sum('quantity');
+            $totalReservedFromOrders = (int) $orders->sum(function ($order) {
+                return $order->items->sum('quantity');
+            });
+
+            $category = $product->category;
+            $parent = $category ? $category->parent : null;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'product' => [
+                        'id' => $product->id,
+                        'name' => $product->name,
+                        'base_name' => $product->base_name,
+                        'variation_suffix' => $product->variation_suffix,
+                        'sku' => $product->sku,
+                        'category_name' => $parent ? $parent->title : ($category ? $category->title : null),
+                        'subcategory_name' => $parent ? $category->title : null,
+                    ],
+                    'summary' => [
+                        'total_physical_stock' => $totalPhysical,
+                        'reserved_products_reserved' => (int) ($reservedRecord->reserved_inventory ?? 0),
+                        'reserved_products_available' => (int) ($reservedRecord->available_inventory ?? $totalPhysical),
+                        'reserved_products_total' => (int) ($reservedRecord->total_inventory ?? $totalPhysical),
+                        'reserved_from_listed_orders' => $totalReservedFromOrders,
+                        'unassigned_reserved_quantity' => $unassignedReservedQty,
+                        'open_reservation_orders' => $orders->count(),
+                    ],
+                    'branches' => $branchRows,
+                    'orders' => $orderRows,
+                    'statuses_included' => $heldStatuses,
+                    'order_types_included' => $orderTypes,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to check reserved stock: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
 }

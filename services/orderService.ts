@@ -329,6 +329,25 @@ const orderService = {
     }
   },
 
+  /** Safely delete/void an offline POS sale and restore stock where applicable */
+  async voidOfflineSale(orderId: number, reason?: string): Promise<any> {
+    try {
+      const response = await axiosInstance.delete(`/orders/${orderId}/void-offline-sale`, {
+        data: { reason },
+      });
+      const result = response.data;
+
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to delete offline sale');
+      }
+
+      return result.data;
+    } catch (error: any) {
+      console.error('Void offline sale error:', error);
+      throw new Error(error.response?.data?.message || 'Failed to delete offline sale');
+    }
+  },
+
   /** Add item to order using barcode (for counter orders at POS) */
   async addItem(
     orderId: number,

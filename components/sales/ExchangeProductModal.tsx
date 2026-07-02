@@ -288,7 +288,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
       // Auto-fill sold at price if not set
       if (!soldAtPrices[targetItem.id]) {
-        setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: targetItem.unit_price }));
+        setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: getEffectiveSoldUnitPrice(targetItem) }));
       }
       return;
     }
@@ -353,7 +353,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
         const item = order.items.find(i => i.id === itemId);
         if (item) {
           // Initialize values so manual edits work immediately
-          setSoldAtPrices(prevPrices => ({ ...prevPrices, [itemId]: item.unit_price }));
+          setSoldAtPrices(prevPrices => ({ ...prevPrices, [itemId]: getEffectiveSoldUnitPrice(item) }));
           setExchangeQuantities(prevQty => ({ ...prevQty, [itemId]: Math.max(prevQty[itemId] || 0, 1) }));
         }
         return [...prev, itemId];
@@ -404,36 +404,44 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     return isNaN(n) ? 0 : n;
   };
 
-  const outstandingAmount = parsePrice(order.total_amount) - parsePrice(order.paid_amount);
+  const getEffectiveSoldUnitPrice = (item: OrderItem) => {
+    const qty = Math.max(1, Number(item.quantity || 1));
+    const lineTotal = parsePrice(item.total_amount);
+    if (Number.isFinite(lineTotal) && lineTotal >= 0) {
+      return String(Number((lineTotal / qty).toFixed(2)));
+    }
+
+    const gross = parsePrice(item.unit_price);
+    const discountPerUnit = parsePrice(item.discount_amount) / qty;
+    const taxPerUnit = parsePrice(item.tax_amount) / qty;
+    return String(Number(Math.max(0, gross - discountPerUnit + taxPerUnit).toFixed(2)));
+  };
+
+  const outstandingAmount = order.outstanding_amount !== undefined && order.outstanding_amount !== null
+    ? parsePrice(order.outstanding_amount)
+    : Math.max(0, parsePrice(order.total_amount) - parsePrice(order.paid_amount));
   const isFullyPaid = Math.abs(outstandingAmount) < 0.01;
 
   const calculateTotals = () => {
-    // Calculate original amount for exchanged items
+    // Use actual net sold-at value. For 100% item-level discount orders, originalAmount is 0.
     const originalAmount = selectedProducts.reduce((sum, itemId) => {
       const item = order.items.find(i => i.id === itemId);
       if (!item) return sum;
       const qty = exchangeQuantities[itemId] || 0;
-      const price = parsePrice(soldAtPrices[itemId] || 0);
+      const price = parsePrice(soldAtPrices[itemId] ?? getEffectiveSoldUnitPrice(item));
       return sum + (price * qty);
     }, 0);
 
-    // Calculate new products subtotal
     const newSubtotal = replacementProducts.reduce((sum, p) => sum + p.amount, 0);
-
-    // Calculate VAT based on order's VAT rate
-    const orderSubtotal = parsePrice(order.subtotal_amount);
-    const orderTotal = parsePrice(order.total_amount);
-    const orderVat = orderTotal - orderSubtotal;
-    const vatRate = orderSubtotal > 0 ? (orderVat / orderSubtotal) : 0;
-
-    const vatAmount = newSubtotal * vatRate;
-    const totalNewAmount = newSubtotal + vatAmount;
+    const vatAmount = 0;
+    const vatRate = 0;
+    const totalNewAmount = newSubtotal;
     const difference = totalNewAmount - originalAmount;
 
     return {
       originalAmount,
       newSubtotal,
-      vatRate: vatRate * 100,
+      vatRate,
       vatAmount,
       totalNewAmount,
       difference,
@@ -482,11 +490,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
     const hasMissingPrices = selectedProducts.some(id => {
       const price = soldAtPrices[id];
-      return !price || parseFloat(price) < 0;
+      return price === undefined || price === null || String(price).trim() === '' || parsePrice(price) < 0;
     });
 
     if (hasMissingPrices) {
-      alert('Please enter the manual "Sold At" price for all items being exchanged as per the historical record.');
+      alert('Please enter the manual "Sold At" price for all items being exchanged as per the historical record. Zero is allowed for 100% discount items.');
       return;
     }
 

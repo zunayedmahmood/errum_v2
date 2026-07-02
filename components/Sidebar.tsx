@@ -150,6 +150,7 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
       subMenu: [
         { label: 'Field', href: '/product/field' },
         { label: 'Product List', href: '/product/list' },
+        { label: 'Check Reserve', href: '/product/check-reserve' },
         { label: 'Archived Products', href: '/product/archived' },
         { label: 'Batch', href: '/product/batch' },
       ],

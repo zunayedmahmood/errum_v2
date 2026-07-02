@@ -1,5 +1,5 @@
 // lib/socialInvoiceHtml.ts
-// Social commerce invoice (A5 / Half A4), cleaner print-first layout.
+// Online order invoice (A5 / Half A4), cleaner print-first layout.
 // - Includes Delivery Fee
 // - No VAT row
 // - Invoice No = part after 'ORD' prefix from Order No
@@ -141,7 +141,7 @@ function render(order: any) {
     <div class="top">
       <div>
         <h1 class="invoiceTitle">INVOICE</h1>
-        <div class="subtle" style="margin-top:4px; font-size:12px;">Social Commerce Order Document</div>
+        <div class="subtle" style="margin-top:4px; font-size:12px;">Online Order Document</div>
         <div style="margin-top:10px;"><span class="tag">${escapeHtml(paymentLabel)}</span></div>
       </div>
       ${companyInfoBlock()}
@@ -211,12 +211,12 @@ function render(order: any) {
 }
 
 export function socialInvoiceHtml(order: any, opts?: { embed?: boolean }) {
-  return wrapHtml('Social Invoice', render(order), opts);
+  return wrapHtml('Online Invoice', render(order), opts);
 }
 
 export function socialInvoiceBulkHtml(orders: any[], opts?: { embed?: boolean }) {
   const pages = (orders || [])
     .map((o) => `<div style="page-break-after: always;">${render(o)}</div>`)
     .join('');
-  return wrapHtml('Social Invoices', pages || '<p>No orders</p>', opts);
+  return wrapHtml('Online Invoices', pages || '<p>No orders</p>', opts);
 }

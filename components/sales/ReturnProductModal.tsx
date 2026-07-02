@@ -14,6 +14,8 @@ interface OrderItem {
   barcode?: string;
   quantity: number;
   unit_price: string;
+  discount_amount?: string | number;
+  tax_amount?: string | number;
   total_amount: string;
 }
 
@@ -234,7 +236,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       }
 
       if (!soldAtPrices[targetItem.id]) {
-        setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: targetItem.unit_price }));
+        setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: getEffectiveSoldUnitPrice(targetItem) }));
       }
       return;
     }
@@ -270,7 +272,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       } else {
         const item = order.items.find(i => i.id === itemId);
         if (item) {
-          setSoldAtPrices(p => ({ ...p, [itemId]: item.unit_price }));
+          setSoldAtPrices(p => ({ ...p, [itemId]: getEffectiveSoldUnitPrice(item) }));
           setReturnedQuantities(q => ({ ...q, [itemId]: Math.max(q[itemId] || 0, 1) }));
         }
         return [...prev, itemId];
@@ -288,26 +290,30 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     return isNaN(n) ? 0 : n;
   }
 
+  const getEffectiveSoldUnitPrice = (item: OrderItem) => {
+    const qty = Math.max(1, Number(item.quantity || 1));
+    const lineTotal = parseFloatValue(item.total_amount);
+    if (Number.isFinite(lineTotal) && lineTotal >= 0) {
+      return String(Number((lineTotal / qty).toFixed(2)));
+    }
+
+    const gross = parseFloatValue(item.unit_price);
+    const discountPerUnit = parseFloatValue(item.discount_amount) / qty;
+    const taxPerUnit = parseFloatValue(item.tax_amount) / qty;
+    return String(Number(Math.max(0, gross - discountPerUnit + taxPerUnit).toFixed(2)));
+  };
+
   const calculateTotals = () => {
-    const orderSubtotal = order.items.reduce((sum, item) => {
-      const price = parseFloatValue(item.unit_price);
-      return sum + (price * item.quantity);
-    }, 0);
-
-    const orderTotal = parseFloatValue(order.total_amount);
-    const orderVat = orderTotal - orderSubtotal;
-    const vatRate = orderSubtotal > 0 ? orderVat / orderSubtotal : 0;
-
-    const returnSubtotal = selectedProducts.reduce((sum, productId) => {
+    // Use the actual net sold-at line price. This makes 100% item-discount orders safe:
+    // unit_price can be ৳10, but total_amount is ৳0, so return/exchange credit must be ৳0.
+    const returnAmount = selectedProducts.reduce((sum, productId) => {
       const product = order.items.find(p => p.id === productId);
       if (!product) return sum;
       const qty = returnedQuantities[productId] || 0;
-      const price = parseFloatValue(soldAtPrices[productId] || 0);
+      const price = parseFloatValue(soldAtPrices[productId] ?? getEffectiveSoldUnitPrice(product));
       return sum + (price * qty);
     }, 0);
 
-    const returnVat = returnSubtotal * vatRate;
-    const returnAmount = returnSubtotal + returnVat;
     const totalPaid = parseFloatValue(order.paid_amount);
     const refundToCustomer = Math.min(returnAmount, totalPaid);
 
@@ -351,11 +357,11 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
 
     const hasMissingPrices = selectedProducts.some(id => {
       const price = soldAtPrices[id];
-      return !price || parseFloat(price) < 0;
+      return price === undefined || price === null || String(price).trim() === '' || parseFloatValue(price) < 0;
     });
 
     if (hasMissingPrices) {
-      alert('Please enter the manual "Sold At" price for all selected items as per the physical invoice or historical record.');
+      alert('Please enter the manual "Sold At" price for all selected items as per the physical invoice or historical record. Zero is allowed for 100% discount items.');
       return;
     }
 

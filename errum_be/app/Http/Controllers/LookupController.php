@@ -445,13 +445,30 @@ class LookupController extends Controller
             'shipments',
             'createdBy',
             'fulfilledBy'
-        ])->find($orderId);
+        ])->withTrashed()->find($orderId);
 
         if (!$order) {
             return response()->json([
                 'success' => false,
-                'message' => 'Order not found'
+                'message' => 'Order not found. It may have been deleted or the order number/id is incorrect.'
             ], 404);
+        }
+
+        if (method_exists($order, 'trashed') && $order->trashed()) {
+            $meta = is_array($order->metadata ?? null) ? $order->metadata : [];
+            $voided = $meta['offline_sale_voided'] ?? null;
+            return response()->json([
+                'success' => false,
+                'message' => 'This order was deleted/voided from Offline Sale History. It is kept as an audit record only and cannot be returned, exchanged, fulfilled, or edited.',
+                'data' => [
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'deleted_at' => optional($order->deleted_at)->format('Y-m-d H:i:s'),
+                    'voided_at' => is_array($voided) ? ($voided['voided_at'] ?? null) : null,
+                    'reason' => is_array($voided) ? ($voided['reason'] ?? null) : null,
+                    'status' => $order->status,
+                ],
+            ], 410);
         }
 
         // 1. Order Information
@@ -651,6 +668,40 @@ class LookupController extends Controller
                 ],
             ]
         ]);
+    }
+
+
+
+    /**
+     * Order lookup by order number, including soft-deleted offline sales for graceful messages.
+     */
+    public function orderLookupByNumber(Request $request, $orderNumber)
+    {
+        $clean = trim((string) $orderNumber);
+        $clean = ltrim($clean, '#');
+
+        if ($clean === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order number is required.',
+            ], 422);
+        }
+
+        $order = Order::withTrashed()
+            ->where('order_number', $clean)
+            ->orWhere('order_number', '#' . $clean)
+            ->orWhere('order_number', 'like', '%' . $clean . '%')
+            ->orderByDesc('created_at')
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => "Order not found: {$clean}",
+            ], 404);
+        }
+
+        return $this->orderLookup($request, $order->id);
     }
 
     /**

@@ -302,6 +302,8 @@ Route::middleware('auth:api')->group(function () {
 
 // Protected routes
 Route::middleware('auth:api')->group(function () {
+    Route::get('/inventory/reserve-check/{productId}', [InventoryController::class, 'reserveCheck']);
+
     Route::prefix('settings')->group(function () {
         Route::get('/homepage', [\App\Http\Controllers\SettingController::class, 'getAdminHomepageSettings']);
         Route::post('/homepage', [\App\Http\Controllers\SettingController::class, 'updateHomepageSettings']);
@@ -1191,6 +1193,7 @@ Route::middleware('auth:api')->group(function () {
             Route::patch('/fulfill', [OrderController::class, 'fulfill']);  // Warehouse fulfillment (scan barcodes)
             Route::patch('/complete', [OrderController::class, 'complete']);  // Reduce inventory
             Route::patch('/cancel', [OrderController::class, 'cancel']);
+            Route::delete('/void-offline-sale', [OrderController::class, 'voidOfflineSale']);
         });
         
     });
@@ -1742,6 +1745,7 @@ Route::middleware('auth:api')->group(function () {
         
         // Order Lookup - Complete order details with barcodes
         Route::get('/order/{orderId}', [\App\Http\Controllers\LookupController::class, 'orderLookup']);
+        Route::get('/order-number/{orderNumber}', [\App\Http\Controllers\LookupController::class, 'orderLookupByNumber']);
         
         // Batch Lookup - All barcodes and history for a batch
         Route::get('/batch/{batchId}', [\App\Http\Controllers\LookupController::class, 'batchLookup']);

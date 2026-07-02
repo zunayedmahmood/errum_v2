@@ -1067,6 +1067,8 @@ export default function LookupPage() {
           product_barcode_id: barcodeId ? Number(barcodeId) : undefined,
           quantity: it?.quantity ?? 0,
           unit_price: it?.unit_price ?? it?.sale_price ?? it?.price ?? null,
+          discount_amount: it?.discount_amount ?? 0,
+          tax_amount: it?.tax_amount ?? 0,
           total_amount: it?.total_amount ?? it?.total ?? null,
           barcodes: finalBarcodes,
         };
@@ -1141,22 +1143,41 @@ export default function LookupPage() {
 
     setLoading(true);
     setError('');
+    setSingleOrder(null);
+    setCustomer(null);
+    setOrders([]);
 
     try {
-      const res: any = await orderService.getAll({
-        search: clean.replace(/^#/, ''),
-        per_page: 50,
-        skipStoreScope: true
-      });
-      const list = res?.data || [];
-      const exact = list.find((o: any) => String(o.order_number).toLowerCase() === clean.toLowerCase())
-        || list.find((o: any) => String(o.order_number).toLowerCase().includes(clean.toLowerCase()))
-        || list[0];
+      const res: any = await lookupService.getOrderByNumber(clean.replace(/^#/, ''));
+      if (!res?.success) {
+        throw new Error(res?.message || `Order not found: ${clean}`);
+      }
 
-      if (!exact?.id) throw new Error(`Order not found: ${clean}`);
-      await openOrderById(exact.id);
+      const payload = res.data;
+      const orderData = normalizeLookupOrderToSingleOrder(payload);
+      setOrderNumber(payload?.order?.order_number || clean);
+      setSingleOrder(orderData);
+
+      if (payload?.customer) {
+        const customerData: Customer = {
+          id: payload.customer.id,
+          customer_code: payload.customer.customer_code,
+          name: payload.customer.name,
+          phone: payload.customer.phone,
+          email: payload.customer.email,
+          customer_type: payload.customer.customer_type || 'unknown',
+          status: 'active',
+          tags: payload.customer.tags,
+          total_orders: payload.customer.total_orders,
+          total_purchases: payload.customer.total_purchases,
+          created_at: payload.customer.created_at || new Date().toISOString(),
+          updated_at: payload.customer.updated_at || new Date().toISOString(),
+        };
+        setCustomer(customerData);
+      }
     } catch (e: any) {
-      setError(e?.message || 'Failed to open order');
+      const apiMessage = e?.response?.data?.message;
+      setError(apiMessage || e?.message || 'Failed to open order');
     } finally {
       setLoading(false);
     }
