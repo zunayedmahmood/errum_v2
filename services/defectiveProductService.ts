@@ -85,6 +85,7 @@ export interface MarkDefectiveRequest {
   severity: Severity;
   original_price: number;
   product_batch_id?: number;
+  is_used_item?: boolean;
   defect_images?: File[];
   internal_notes?: string;
 }
@@ -214,6 +215,10 @@ class DefectiveProductService {
     
     if (data.internal_notes) {
       formData.append('internal_notes', data.internal_notes);
+    }
+
+    if (typeof data.is_used_item === 'boolean') {
+      formData.append('is_used_item', data.is_used_item ? '1' : '0');
     }
     
     // Append images if present

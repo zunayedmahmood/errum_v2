@@ -16,6 +16,7 @@ import {
   Store as StoreIcon,
   Layers,
   ShoppingBag,
+  Search,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -27,7 +28,9 @@ import orderService from '@/services/orderService';
 import paymentService from '@/services/paymentService';
 import employeeService from '@/services/employeeService';
 import storeService from '@/services/storeService';
-import productService, { type StockDetail } from '@/services/productService';
+import productService from '@/services/productService';
+import catalogService, { CatalogGroupedProduct, Product as CatalogProduct } from '@/services/catalogService';
+import inventoryService, { GlobalInventoryItem } from '@/services/inventoryService';
 import batchService, { Batch } from '@/services/batchService';
 import defectIntegrationService from '@/services/defectIntegrationService';
 import paymentMethodService from '@/services/paymentMethodService';
@@ -317,8 +320,13 @@ export default function POSPage() {
   // ✅ Reports
   const [showDailyReportModal, setShowDailyReportModal] = useState(false);
 
-  // Branch-wise stock snapshot for the most recently scanned barcode
-  const [lastScannedStock, setLastScannedStock] = useState<StockDetail | null>(null);
+  // Branch-wise stock lookup for POS product availability panel
+  const [availabilitySearchQuery, setAvailabilitySearchQuery] = useState('');
+  const [availabilityResults, setAvailabilityResults] = useState<CatalogGroupedProduct[]>([]);
+  const [availabilitySearchLoading, setAvailabilitySearchLoading] = useState(false);
+  const [availabilityExpandedGroup, setAvailabilityExpandedGroup] = useState<string | null>(null);
+  const [availabilitySelectedProduct, setAvailabilitySelectedProduct] = useState<CatalogProduct | null>(null);
+  const [availabilityInventory, setAvailabilityInventory] = useState<GlobalInventoryItem | null>(null);
   const [branchStockLoading, setBranchStockLoading] = useState(false);
   const [branchStockError, setBranchStockError] = useState('');
   const branchStockRequestSeqRef = useRef(0);
@@ -417,34 +425,92 @@ export default function POSPage() {
     }
   }, [defectItem, selectedOutlet]);
 
-  const fetchBranchAvailabilityForBarcode = async (barcode: string) => {
-    const trimmed = String(barcode || '').trim();
-    if (!trimmed) return;
+  const fetchBranchAvailabilityForProduct = async (product: CatalogProduct | null | undefined) => {
+    if (!product?.id) return;
 
     const requestSeq = branchStockRequestSeqRef.current + 1;
     branchStockRequestSeqRef.current = requestSeq;
 
+    setAvailabilitySelectedProduct(product);
     setBranchStockLoading(true);
     setBranchStockError('');
 
     try {
-      const stock = await productService.findStockByBarcode(trimmed);
+      const response = await inventoryService.getGlobalInventory({
+        product_id: Number(product.id),
+        skipStoreScope: true,
+      });
 
-      // Avoid stale updates when multiple barcodes are scanned quickly
       if (branchStockRequestSeqRef.current !== requestSeq) return;
 
-      setLastScannedStock(stock);
+      const items = Array.isArray(response?.data) ? response.data : [];
+      const exact = items.find((item) => Number(item.product_id) === Number(product.id)) || items[0] || null;
+      setAvailabilityInventory(exact);
+
+      if (!exact) {
+        setBranchStockError('No branch stock data found for this variant.');
+      }
     } catch (error: any) {
       if (branchStockRequestSeqRef.current !== requestSeq) return;
 
-      console.error('Failed to fetch branch stock for POS barcode:', error);
-      setLastScannedStock(null);
-      setBranchStockError(error?.message || 'Could not load branch-wise stock for this barcode');
+      console.error('Failed to fetch POS branch availability:', error);
+      setAvailabilityInventory(null);
+      setBranchStockError(error?.response?.data?.message || error?.message || 'Could not load branch-wise stock for this variant');
     } finally {
       if (branchStockRequestSeqRef.current === requestSeq) {
         setBranchStockLoading(false);
       }
     }
+  };
+
+  useEffect(() => {
+    const query = availabilitySearchQuery.trim();
+
+    if (query.length < 2) {
+      setAvailabilityResults([]);
+      setAvailabilitySearchLoading(false);
+      return;
+    }
+
+    let active = true;
+    setAvailabilitySearchLoading(true);
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await catalogService.searchProducts({
+          q: query,
+          per_page: 30,
+          page: 1,
+          group_by_sku: true,
+        });
+
+        if (!active) return;
+        const groups = Array.isArray(response.grouped_products) ? response.grouped_products : [];
+        setAvailabilityResults(groups);
+      } catch (error) {
+        if (!active) return;
+        console.error('POS availability search failed:', error);
+        setAvailabilityResults([]);
+      } finally {
+        if (active) setAvailabilitySearchLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [availabilitySearchQuery]);
+
+  const availabilityVariantsForGroup = (group: CatalogGroupedProduct) => [
+    group.main_variant,
+    ...(Array.isArray(group.variants) ? group.variants : []),
+  ].filter(Boolean) as CatalogProduct[];
+
+  const handleAvailabilityGroupClick = (group: CatalogGroupedProduct) => {
+    const key = `${group.base_name}-${group.main_variant?.sku || group.main_variant?.id}`;
+    setAvailabilityExpandedGroup((current) => (current === key ? null : key));
+    fetchBranchAvailabilityForProduct(group.main_variant);
   };
 
   // ============ CART MANAGEMENT ============
@@ -480,9 +546,6 @@ export default function POSPage() {
 
     setCart((prev) => [...prev, newItem]);
     showToast(`✓ Added: ${scannedProduct.productName}`, 'success');
-
-    // Show branch-wise availability for the scanned product on the POS side panel.
-    fetchBranchAvailabilityForBarcode(scannedProduct.barcode);
   };
 
   /**
@@ -2301,92 +2364,157 @@ export default function POSPage() {
                         Branch Availability
                       </h2>
                       <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                        Shows stock distribution for the latest scanned barcode.
+                        Search products like Social Commerce, then select a variant to see branch-wise stock.
                       </p>
                     </div>
 
-                    <div className="p-4">
-                      {branchStockLoading ? (
-                        <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Loading branch stock...
-                        </div>
-                      ) : branchStockError ? (
-                        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-300">
-                          {branchStockError}
-                        </div>
-                      ) : lastScannedStock ? (
-                        <div className="space-y-4">
-                          <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                                  {lastScannedStock.name}
-                                </div>
-                                <div className="text-[11px] text-gray-500 dark:text-gray-400 font-mono">
-                                  {lastScannedStock.sku} • {lastScannedStock.scanned_barcode}
-                                </div>
-                              </div>
-                              <span className="shrink-0 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 text-[10px] font-bold">
-                                Latest Scan
-                              </span>
-                            </div>
+                    <div className="p-4 space-y-4">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <input
+                          value={availabilitySearchQuery}
+                          onChange={(e) => setAvailabilitySearchQuery(e.target.value)}
+                          placeholder="Search product name or SKU..."
+                          className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
 
-                            <div className="grid grid-cols-3 gap-2 mt-3">
-                              <div className="rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-2">
-                                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"><Package className="w-3 h-3" /> Physical</div>
-                                <div className="text-sm font-bold text-gray-900 dark:text-white">{lastScannedStock.inventory?.physical_stock ?? 0}</div>
-                              </div>
-                              <div className="rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-2">
-                                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"><Layers className="w-3 h-3" /> Reserved</div>
-                                <div className="text-sm font-bold text-gray-900 dark:text-white">{lastScannedStock.inventory?.reserved_stock ?? 0}</div>
-                              </div>
-                              <div className="rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-2">
-                                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"><ShoppingBag className="w-3 h-3" /> Available</div>
-                                <div className="text-sm font-bold text-green-600 dark:text-green-400">{lastScannedStock.inventory?.available_stock ?? 0}</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 max-h-80 overflow-auto pr-1">
-                            {Array.isArray(lastScannedStock.branch_stock) && lastScannedStock.branch_stock.length > 0 ? (
-                              [...lastScannedStock.branch_stock]
-                                .sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0))
-                                .map((store) => (
-                                  <div key={store.store_id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 flex items-center justify-between gap-3">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                      <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0">
-                                        <MapPin className="w-4 h-4 text-gray-600 dark:text-gray-300" />
-                                      </div>
-                                      <div className="min-w-0">
-                                        <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{store.store_name}</div>
-                                        <div className="text-[10px] text-gray-500 dark:text-gray-400 truncate">{store.store_address || 'Branch outlet'}</div>
-                                      </div>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                      <div className={`text-lg font-black ${Number(store.quantity || 0) > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
-                                        {Number(store.quantity || 0)}
-                                      </div>
-                                      <div className="text-[10px] uppercase font-bold text-gray-400">Units</div>
-                                    </div>
-                                  </div>
-                                ))
-                            ) : (
-                              <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                No branch stock data available.
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center">
-                          <StoreIcon className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-                          <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Scan a barcode to view branch-wise stock</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            The stock panel updates automatically after a successful scan.
-                          </p>
+                      {availabilitySearchLoading && (
+                        <div className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-50 py-4 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-400">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Searching products...
                         </div>
                       )}
+
+                      {!availabilitySearchLoading && availabilityResults.length > 0 && (
+                        <div className="max-h-72 space-y-2 overflow-auto pr-1">
+                          {availabilityResults.map((group) => {
+                            const key = `${group.base_name}-${group.main_variant?.sku || group.main_variant?.id}`;
+                            const variants = availabilityVariantsForGroup(group);
+                            const expanded = availabilityExpandedGroup === key;
+                            return (
+                              <div key={key} className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAvailabilityGroupClick(group)}
+                                  className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-bold text-gray-900 dark:text-white">{group.base_name}</div>
+                                    <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                      SKU {group.main_variant?.sku || '-'} • {variants.length} variant{variants.length === 1 ? '' : 's'}
+                                    </div>
+                                  </div>
+                                  <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {expanded && (
+                                  <div className="border-t border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-800/50">
+                                    <div className="grid gap-2">
+                                      {variants.map((variant) => {
+                                        const active = Number(availabilitySelectedProduct?.id) === Number(variant.id);
+                                        return (
+                                          <button
+                                            key={variant.id}
+                                            type="button"
+                                            onClick={() => fetchBranchAvailabilityForProduct(variant)}
+                                            className={`flex items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
+                                              active
+                                                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/30 dark:text-blue-200'
+                                                : 'border-gray-200 bg-white text-gray-800 hover:border-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100'
+                                            }`}
+                                          >
+                                            <span className="min-w-0">
+                                              <span className="block truncate text-xs font-bold">{variant.variation_suffix || variant.option_label || variant.display_name || variant.name}</span>
+                                              <span className="block text-[10px] text-gray-500 dark:text-gray-400">SKU {variant.sku || '-'} • ৳{Number(variant.selling_price || variant.price || 0).toFixed(2)}</span>
+                                            </span>
+                                            <span className="text-[10px] font-black uppercase text-gray-400">Select</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {!availabilitySearchLoading && availabilitySearchQuery.trim().length >= 2 && availabilityResults.length === 0 && (
+                        <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                          No matching products found.
+                        </div>
+                      )}
+
+                      <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-3 py-2 dark:border-gray-700">
+                          <div className="min-w-0">
+                            <div className="text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Selected Variant</div>
+                            <div className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                              {availabilitySelectedProduct ? `${availabilitySelectedProduct.name} (${availabilitySelectedProduct.sku || 'No SKU'})` : 'Nothing selected'}
+                            </div>
+                          </div>
+                          {branchStockLoading && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+                        </div>
+
+                        {branchStockError ? (
+                          <div className="m-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                            {branchStockError}
+                          </div>
+                        ) : availabilityInventory ? (
+                          <div className="p-3 space-y-3">
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="rounded-md bg-gray-50 p-2 dark:bg-gray-900/60">
+                                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"><Package className="h-3 w-3" /> Total</div>
+                                <div className="text-sm font-black text-gray-900 dark:text-white">{Number(availabilityInventory.total_quantity || 0)}</div>
+                              </div>
+                              <div className="rounded-md bg-gray-50 p-2 dark:bg-gray-900/60">
+                                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"><Layers className="h-3 w-3" /> Reserved</div>
+                                <div className="text-sm font-black text-gray-900 dark:text-white">{Number(availabilityInventory.reserved_quantity || 0)}</div>
+                              </div>
+                              <div className="rounded-md bg-gray-50 p-2 dark:bg-gray-900/60">
+                                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"><ShoppingBag className="h-3 w-3" /> Available</div>
+                                <div className="text-sm font-black text-green-600 dark:text-green-400">{Number(availabilityInventory.available_quantity ?? availabilityInventory.total_quantity ?? 0)}</div>
+                              </div>
+                            </div>
+
+                            <div className="max-h-80 space-y-2 overflow-auto pr-1">
+                              {(availabilityInventory.stores || []).length > 0 ? (
+                                [...(availabilityInventory.stores || [])]
+                                  .sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0))
+                                  .map((store) => (
+                                    <div key={store.store_id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                                      <div className="flex min-w-0 items-center gap-3">
+                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+                                          <MapPin className="h-4 w-4 text-gray-600 dark:text-gray-300" />
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div className="truncate text-sm font-semibold text-gray-900 dark:text-white">{store.store_name}</div>
+                                          <div className="truncate text-[10px] text-gray-500 dark:text-gray-400">{store.store_address || store.store_code || 'Branch outlet'}</div>
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0 text-right">
+                                        <div className={`text-lg font-black ${Number(store.quantity || 0) > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                                          {Number(store.quantity || 0)}
+                                        </div>
+                                        <div className="text-[10px] font-bold uppercase text-gray-400">Units</div>
+                                      </div>
+                                    </div>
+                                  ))
+                              ) : (
+                                <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">No branch stock data available.</div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-6 text-center">
+                            <StoreIcon className="mx-auto mb-2 h-8 w-8 text-gray-400" />
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Search and select a variant to view branch-wise stock</p>
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Barcode scanning will only add items to cart; it will not change this availability panel.</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

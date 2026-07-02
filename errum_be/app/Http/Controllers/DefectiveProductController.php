@@ -141,6 +141,7 @@ class DefectiveProductController extends Controller
             'severity' => 'required|in:minor,moderate,major,critical',
             'original_price' => 'required|numeric|min:0',
             'product_batch_id' => 'nullable|exists:product_batches,id',
+            'is_used_item' => 'nullable|boolean',
             'defect_images' => 'nullable|array',
             'defect_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:5120',
             'internal_notes' => 'nullable|string',
@@ -178,6 +179,10 @@ class DefectiveProductController extends Controller
                 'severity' => $request->severity,
                 'original_price' => $request->original_price,
                 'defect_images' => !empty($imagePaths) ? $imagePaths : null,
+                'metadata' => [
+                    'is_used_item' => $request->boolean('is_used_item'),
+                    'source' => 'extra_items_panel',
+                ],
                 'identified_by' => $employee->id,
                 'internal_notes' => $request->internal_notes,
             ]);

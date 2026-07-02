@@ -223,6 +223,10 @@ class DefectiveProduct extends Model
 
     public function makeAvailableForSale(): bool
     {
+        if ($this->status === 'available_for_sale') {
+            return true;
+        }
+
         if (!in_array($this->status, ['inspected'])) {
             return false;
         }

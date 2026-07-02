@@ -133,10 +133,14 @@ class DefectIntegrationService {
         throw new Error('Could not determine original price for the product');
       }
 
-      // Get batch ID if available
+      // Get batch ID if available. Used/display items must keep the original batch so POS resale can be routed correctly.
       let batchId: number | undefined = formData.product_batch_id;
       if (!batchId && scanResult.current_batch?.id) {
         batchId = scanResult.current_batch.id;
+      }
+      if (!batchId) {
+        const rawScan: any = scanResult as any;
+        batchId = rawScan.batch_id || rawScan.product_barcode?.batch_id || rawScan.barcode?.batch_id || undefined;
       }
 
       console.log('4. Sending request to mark as defective');
@@ -152,6 +156,7 @@ class DefectIntegrationService {
         severity: formData.severity,
         original_price: originalPrice,
         product_batch_id: batchId,
+        is_used_item: Boolean(formData.is_used_item),
         defect_images: formData.defect_images,
         internal_notes: formData.internal_notes,
       });

@@ -15,6 +15,7 @@ import { checkQZStatus, printReceipt } from '@/lib/qz-tray';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from "@/contexts/ThemeContext";
 import storeService from '@/services/storeService';
+import AccessControl from '@/components/AccessControl';
 
 interface PurchaseHistoryOrderItem {
   id: number;
@@ -942,10 +943,10 @@ export default function PurchaseHistoryPage() {
   };
 
   const buildReportStyles = () => `
-    *{box-sizing:border-box} body{font-family:Inter,Arial,sans-serif;margin:0;padding:24px;background:#f8fafc;color:#111827}.sheet{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:22px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
-    h1{margin:0 0 6px;font-size:24px}.muted{color:#6b7280;font-size:12px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb}.label{font-size:10px;text-transform:uppercase;color:#6b7280;font-weight:700}.value{font-size:18px;font-weight:800;margin-top:4px}
-    table{width:100%;border-collapse:collapse;font-size:10px;margin-top:8px}th{background:#111827;color:white;text-align:left;padding:8px;border:1px solid #111827}td{padding:7px;border:1px solid #e5e7eb;vertical-align:top}tr:nth-child(even){background:#f9fafb}.money{text-align:right;white-space:nowrap}.order-card{border:1px solid #d1d5db;border-radius:14px;margin:18px 0;padding:14px;background:#fff;page-break-inside:avoid}.order-title{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e5e7eb;padding-bottom:10px;margin-bottom:10px}.order-no{font-size:16px;font-weight:800}.badge{display:inline-block;border-radius:999px;background:#eef2ff;color:#3730a3;padding:3px 8px;font-size:10px;font-weight:800}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.detail-box{border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#f9fafb}.section-title{font-size:12px;font-weight:800;margin:12px 0 4px}.no-print button{padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700}
-    @media print{body{background:white;padding:0}.sheet{box-shadow:none;border:0;border-radius:0}.no-print{display:none}.order-card{break-inside:avoid}}
+    @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Inter,Arial,sans-serif;margin:0;padding:18px;background:#f3f4f6;color:#111827}.sheet{max-width:1280px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
+    h1{margin:0 0 5px;font-size:22px;line-height:1.2}.muted{color:#6b7280;font-size:11px;line-height:1.5}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f9fafb}.label{font-size:9px;text-transform:uppercase;color:#6b7280;font-weight:800;letter-spacing:.04em}.value{font-size:16px;font-weight:900;margin-top:3px}.money{text-align:right;white-space:nowrap}.badge{display:inline-block;border-radius:999px;background:#eef2ff;color:#3730a3;padding:2px 7px;font-size:9px;font-weight:900}.badge.green{background:#ecfdf5;color:#047857}
+    table{width:100%;border-collapse:collapse;font-size:9.5px;margin-top:6px}th{background:#111827;color:white;text-align:left;padding:6px;border:1px solid #111827;font-weight:800}td{padding:5px 6px;border:1px solid #e5e7eb;vertical-align:top}tr:nth-child(even){background:#f9fafb}.order-block{border:1px solid #d1d5db;border-radius:12px;margin:12px 0;background:#fff;overflow:hidden;page-break-inside:avoid}.order-row{display:grid;grid-template-columns:1.6fr 1fr .8fr .8fr;gap:8px;align-items:center;background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:10px 12px}.order-no{font-size:13px;font-weight:900}.order-meta{font-size:10px;color:#6b7280;margin-top:2px}.order-total{text-align:right;font-size:13px;font-weight:900}.expanded{padding:10px 12px}.info-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:8px}.info-box{border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;padding:7px;min-height:42px}.section-title{font-size:11px;font-weight:900;margin:9px 0 4px}.totals-table{max-width:620px;margin-left:auto}.no-print button{padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700}
+    @media print{body{background:white;padding:0}.sheet{max-width:none;box-shadow:none;border:0;border-radius:0;padding:0}.no-print{display:none}.order-block{break-inside:avoid}.summary{grid-template-columns:repeat(3,1fr)}}
   `;
 
   const buildSummaryReportHtml = (sourceOrders: any[], rows: Record<string, any>[], autoPrint = false) => {
@@ -956,7 +957,7 @@ export default function PurchaseHistoryPage() {
   const buildDetailedReportHtml = (sourceOrders: any[], autoPrint = false) => {
     const totalExportSalesAmount = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
 
-    const orderCards = sourceOrders.map((order, index) => {
+    const orderBlocks = sourceOrders.map((order, index) => {
       const items = getOrderItems(order);
       const payments = getOrderPayments(order);
       const paymentRows = payments.flatMap((payment: any) => {
@@ -970,20 +971,39 @@ export default function PurchaseHistoryPage() {
             date: payment.created_at,
           }));
         }
-
-        return [{
-          method: payment.payment_method || 'Unknown',
-          type: payment.payment_type || '',
-          amount: parseMoney(payment.amount),
-          status: payment.status || '',
-          date: payment.created_at,
-        }];
+        return [{ method: payment.payment_method || 'Unknown', type: payment.payment_type || '', amount: parseMoney(payment.amount), status: payment.status || '', date: payment.created_at }];
       });
 
-      return `<div class="order-card"><div class="order-title"><div><div class="order-no">${index + 1}. ${escapeHtml(order.order_number || '')}</div><div class="muted">${escapeHtml(formatExportDate(order.order_date || order.created_at))}</div></div><div style="text-align:right"><span class="badge">${escapeHtml(order.payment_status || 'payment')}</span><span class="badge" style="margin-left:6px;background:#ecfdf5;color:#047857">${escapeHtml(order.status || 'status')}</span></div></div><div class="grid"><div class="detail-box"><div class="label">Customer</div><div>${escapeHtml(order.customer?.name || 'N/A')}</div></div><div class="detail-box"><div class="label">Phone</div><div>${escapeHtml(order.customer?.phone || 'N/A')}</div></div><div class="detail-box"><div class="label">Sales By</div><div>${escapeHtml(order.salesman?.name || 'N/A')}</div></div><div class="detail-box"><div class="label">Store</div><div>${escapeHtml(order.store?.name || '')}</div></div></div>${order.notes ? `<div class="detail-box" style="margin-top:8px"><div class="label">Order Note</div><div>${escapeHtml(order.notes)}</div></div>` : ''}<div class="section-title">Order Items</div>${items.length ? `<table><thead><tr><th>Product</th><th>SKU</th><th>Batch</th><th>Barcode</th><th>Qty</th><th>Price</th><th>Discount</th><th>Tax/VAT</th><th>Total</th></tr></thead><tbody>${items.map((item: any) => `<tr><td>${escapeHtml(item.product_name || '')}</td><td>${escapeHtml(item.product_sku || '')}</td><td>${escapeHtml(item.batch_number || '-')}</td><td>${escapeHtml(item.barcode || '-')}</td><td class="money">${escapeHtml(item.quantity ?? '')}</td><td class="money">৳${parseMoney(item.unit_price).toFixed(2)}</td><td class="money">৳${parseMoney(item.discount_amount).toFixed(2)}</td><td class="money">৳${parseMoney(item.tax_amount).toFixed(2)}</td><td class="money">৳${getItemLineTotal(item).toFixed(2)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No items found for this order.</p>'}<div class="grid" style="margin-top:12px"><div class="detail-box"><div class="label">Subtotal</div><div>৳${parseMoney(order.subtotal ?? order.subtotal_amount).toFixed(2)}</div></div><div class="detail-box"><div class="label">Discount</div><div>৳${parseMoney(order.discount_amount).toFixed(2)}</div></div><div class="detail-box"><div class="label">Shipping</div><div>৳${parseMoney(order.shipping_amount ?? order.shipping_cost).toFixed(2)}</div></div><div class="detail-box"><div class="label">Total</div><div>৳${parseMoney(order.total_amount).toFixed(2)}</div></div><div class="detail-box"><div class="label">Paid</div><div>৳${parseMoney(order.paid_amount).toFixed(2)}</div></div><div class="detail-box"><div class="label">Due</div><div>৳${parseMoney(order.outstanding_amount).toFixed(2)}</div></div><div class="detail-box" style="grid-column:span 2"><div class="label">Payment Summary</div><div>${escapeHtml(formatPaymentBreakdown(order))}</div></div></div><div class="section-title">Payment History</div>${paymentRows.length ? `<table><thead><tr><th>Method</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${paymentRows.map((payment: any) => `<tr><td>${escapeHtml(payment.method)}</td><td>${escapeHtml(payment.type)}</td><td class="money">৳${payment.amount.toFixed(2)}</td><td>${escapeHtml(payment.status)}</td><td>${escapeHtml(formatExportDate(payment.date))}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No payment history found.</p>'}</div>`;
+      const itemsTable = items.length
+        ? `<table><thead><tr><th>Product</th><th>SKU</th><th>Batch</th><th>Barcode</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Tax/VAT</th><th>Total</th></tr></thead><tbody>${items.map((item: any) => `<tr><td>${escapeHtml(item.product_name || '')}</td><td>${escapeHtml(item.product_sku || '')}</td><td>${escapeHtml(item.batch_number || '-')}</td><td>${escapeHtml(item.barcode || '-')}</td><td class="money">${escapeHtml(item.quantity ?? '')}</td><td class="money">৳${parseMoney(item.unit_price).toFixed(2)}</td><td class="money">৳${parseMoney(item.discount_amount).toFixed(2)}</td><td class="money">৳${parseMoney(item.tax_amount).toFixed(2)}</td><td class="money">৳${getItemLineTotal(item).toFixed(2)}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="muted">No items found for this order.</p>';
+
+      const paymentsTable = paymentRows.length
+        ? `<table><thead><tr><th>Method</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${paymentRows.map((payment: any) => `<tr><td>${escapeHtml(payment.method)}</td><td>${escapeHtml(payment.type)}</td><td class="money">৳${payment.amount.toFixed(2)}</td><td>${escapeHtml(payment.status)}</td><td>${escapeHtml(formatExportDate(payment.date))}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="muted">No payment history found.</p>';
+
+      return `<div class="order-block"><div class="order-row"><div><div class="order-no">${index + 1}. ${escapeHtml(order.order_number || '')}</div><div class="order-meta">${escapeHtml(formatExportDate(order.order_date || order.created_at))}</div></div><div><span class="badge">${escapeHtml(order.payment_status || 'payment')}</span> <span class="badge green">${escapeHtml(order.status || 'status')}</span></div><div class="order-total">৳${parseMoney(order.total_amount).toFixed(2)}<div class="order-meta">Due ৳${parseMoney(order.outstanding_amount).toFixed(2)}</div></div><div class="order-meta" style="text-align:right">${escapeHtml(order.store?.name || '')}</div></div><div class="expanded"><div class="info-grid"><div class="info-box"><div class="label">Customer</div><div>${escapeHtml(order.customer?.name || 'N/A')}</div></div><div class="info-box"><div class="label">Phone</div><div>${escapeHtml(order.customer?.phone || 'N/A')}</div></div><div class="info-box"><div class="label">Sales By</div><div>${escapeHtml(order.salesman?.name || 'N/A')}</div></div><div class="info-box"><div class="label">Payment Summary</div><div>${escapeHtml(formatPaymentBreakdown(order))}</div></div>${order.notes ? `<div class="info-box" style="grid-column:1/-1"><div class="label">Order Note</div><div>${escapeHtml(order.notes)}</div></div>` : ''}</div><div class="section-title">Ordered Products</div>${itemsTable}<table class="totals-table"><tbody><tr><td>Subtotal</td><td class="money">৳${parseMoney(order.subtotal ?? order.subtotal_amount).toFixed(2)}</td></tr><tr><td>Discount</td><td class="money">৳${parseMoney(order.discount_amount).toFixed(2)}</td></tr><tr><td>Shipping</td><td class="money">৳${parseMoney(order.shipping_amount ?? order.shipping_cost).toFixed(2)}</td></tr><tr><td><strong>Total</strong></td><td class="money"><strong>৳${parseMoney(order.total_amount).toFixed(2)}</strong></td></tr><tr><td>Paid</td><td class="money">৳${parseMoney(order.paid_amount).toFixed(2)}</td></tr><tr><td>Due</td><td class="money">৳${parseMoney(order.outstanding_amount).toFixed(2)}</td></tr></tbody></table><div class="section-title">Payment History</div>${paymentsTable}</div></div>`;
     }).join('');
 
-    return `<!doctype html><html><head><meta charset="utf-8" /><title>Offline Sale History - Details</title><style>${buildReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Print / Save as PDF</button></div>' : ''}<h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Orders</div><div class="value">${sourceOrders.length}</div></div><div class="card"><div class="label">Total Sales Amount</div><div class="value">৳${totalExportSalesAmount.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">With Details</div></div></div>${orderCards}</div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>Offline Sale History - Details</title><style>${buildReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Print / Save as PDF</button></div>' : ''}<h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Orders</div><div class="value">${sourceOrders.length}</div></div><div class="card"><div class="label">Total Sales Amount</div><div class="value">৳${totalExportSalesAmount.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">With Details</div></div></div>${orderBlocks}</div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
+  };
+
+  const buildExcelReportHtml = (sourceOrders: any[], rows: Record<string, any>[]) => {
+    const moneyCols = new Set(['Subtotal', 'Order Discount', 'Shipping', 'Total', 'Paid', 'Due', 'Payment Amount', 'Line Total']);
+    const tableRows = rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${moneyCols.has(col) ? 'num' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('');
+    const totalExportSalesAmount = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
+
+    const detailTables = sourceOrders.map((order, index) => {
+      const items = getOrderItems(order);
+      const payments = getOrderPayments(order);
+      return `<tr class="section"><td colspan="9">${index + 1}. ${escapeHtml(order.order_number || '')} — ${escapeHtml(formatExportDate(order.order_date || order.created_at))}</td></tr><tr><td>Customer</td><td colspan="2">${escapeHtml(order.customer?.name || 'N/A')}</td><td>Phone</td><td>${escapeHtml(order.customer?.phone || 'N/A')}</td><td>Store</td><td>${escapeHtml(order.store?.name || '')}</td><td>Status</td><td>${escapeHtml(order.status || '')}</td></tr><tr><td>Total</td><td>${parseMoney(order.total_amount).toFixed(2)}</td><td>Paid</td><td>${parseMoney(order.paid_amount).toFixed(2)}</td><td>Due</td><td>${parseMoney(order.outstanding_amount).toFixed(2)}</td><td>Discount</td><td>${parseMoney(order.discount_amount).toFixed(2)}</td><td>${escapeHtml(order.notes || '')}</td></tr><tr class="subhead"><td>Product</td><td>SKU</td><td>Batch</td><td>Barcode</td><td>Qty</td><td>Unit Price</td><td>Discount</td><td>Tax/VAT</td><td>Line Total</td></tr>${items.length ? items.map((item: any) => `<tr><td>${escapeHtml(item.product_name || '')}</td><td>${escapeHtml(item.product_sku || '')}</td><td>${escapeHtml(item.batch_number || '-')}</td><td>${escapeHtml(item.barcode || '-')}</td><td class="num">${escapeHtml(item.quantity ?? '')}</td><td class="num">${parseMoney(item.unit_price).toFixed(2)}</td><td class="num">${parseMoney(item.discount_amount).toFixed(2)}</td><td class="num">${parseMoney(item.tax_amount).toFixed(2)}</td><td class="num">${getItemLineTotal(item).toFixed(2)}</td></tr>`).join('') : '<tr><td colspan="9">No items found</td></tr>'}<tr class="subhead"><td>Payment Method</td><td>Payment Type</td><td>Amount</td><td>Status</td><td>Date</td><td colspan="4"></td></tr>${payments.length ? payments.map((payment: any) => `<tr><td>${escapeHtml(payment.payment_method || 'Unknown')}</td><td>${escapeHtml(payment.payment_type || '')}</td><td class="num">${parseMoney(payment.amount).toFixed(2)}</td><td>${escapeHtml(payment.status || '')}</td><td>${escapeHtml(formatExportDate(payment.created_at))}</td><td colspan="4"></td></tr>`).join('') : '<tr><td colspan="9">No payment history found</td></tr>'}<tr><td colspan="9"></td></tr>`;
+    }).join('');
+
+    const body = exportDetailMode === 'detailed'
+      ? detailTables
+      : `<tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr>${tableRows}`;
+
+    return `<!doctype html><html><head><meta charset="utf-8" /><style>body{font-family:Arial,sans-serif}table{border-collapse:collapse;width:100%}th{background:#111827;color:white;font-weight:bold}td,th{border:1px solid #cbd5e1;padding:6px;font-size:11px;vertical-align:top}.title{font-size:18px;font-weight:bold;background:#e5e7eb}.meta{background:#f8fafc;color:#475569}.section{background:#dbeafe;font-weight:bold;font-size:13px}.subhead{background:#e5e7eb;font-weight:bold}.num{text-align:right;mso-number-format:"0.00"}</style></head><body><table><tr><td class="title" colspan="9">Offline Sale History</td></tr><tr><td class="meta" colspan="9">${escapeHtml(getExportFilterLabel())}</td></tr><tr><td class="meta">Orders/Rows</td><td>${exportDetailMode === 'detailed' ? sourceOrders.length : rows.length}</td><td class="meta">Total Sales</td><td>${totalExportSalesAmount.toFixed(2)}</td><td class="meta">Mode</td><td>${exportDetailMode === 'detailed' ? 'With Details' : 'Summary'}</td><td colspan="3"></td></tr>${body}</table></body></html>`;
   };
 
   const hydrateOrdersForDetailedExport = async (sourceOrders: any[]) => {
@@ -1067,7 +1087,8 @@ export default function PurchaseHistoryPage() {
         : buildSummaryReportHtml(sourceOrders, rows, exportFormat === 'pdf');
 
       if (exportFormat === 'excel') {
-        downloadBlob(html, `${filenameBase}.xls`, 'application/vnd.ms-excel;charset=utf-8;');
+        const excelHtml = buildExcelReportHtml(sourceOrders, rows);
+        downloadBlob(excelHtml, `${filenameBase}.xls`, 'application/vnd.ms-excel;charset=utf-8;');
         return;
       }
 
@@ -1437,12 +1458,15 @@ export default function PurchaseHistoryPage() {
                                 <ChevronDown className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                               )}
                             </button>
-                            <button
-                              onClick={() => handleDelete(order.id)}
-                              className="p-2 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                            >
-                              <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
-                            </button>
+                            <AccessControl roles={["super-admin", "admin", "online-moderator", "branch-manager"]}>
+                              <button
+                                onClick={() => handleDelete(order.id)}
+                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                                title="Delete offline sale"
+                              >
+                                <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
+                              </button>
+                            </AccessControl>
                           </div>
                         </div>
                       </div>

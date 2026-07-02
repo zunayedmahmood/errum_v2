@@ -276,8 +276,17 @@ export default function DefectsPage() {
     try {
       const fullDetails = await defectIntegrationService.getDefectiveById(defect.id);
       
-      if (!fullDetails.product_batch_id) {
-        throw new Error('Missing batch_id - cannot proceed with sale');
+      const resolvedBatchId = Number(
+        fullDetails.product_batch_id ||
+        (fullDetails as any).product_batch?.id ||
+        (fullDetails as any).batch?.id ||
+        (fullDetails as any).barcode?.batch_id ||
+        defect.batchId ||
+        0
+      );
+
+      if (!resolvedBatchId) {
+        throw new Error('Missing batch_id - cannot proceed with sale. Please rescan/recreate this display or faulty item from its original barcode.');
       }
       
       let currentStatus = fullDetails.status;
@@ -304,7 +313,7 @@ export default function DefectsPage() {
       
       setSelectedDefect({
         ...defect,
-        batchId: fullDetails.product_batch_id,
+        batchId: resolvedBatchId,
       });
       
       const suggestedPrice = fullDetails.suggested_selling_price?.toString() || 
@@ -513,10 +522,10 @@ export default function DefectsPage() {
               {/* Header */}
               <div className="mb-6">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                  Extra Items Management
+                  Display Unit / Faulty Unit
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Manage defective and used items
+                  Manage display/open-box and faulty items
                 </p>
               </div>
 
@@ -697,7 +706,7 @@ export default function DefectsPage() {
                     <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                       <div className="flex items-center justify-between mb-3">
                         <h3 className="font-semibold text-gray-900 dark:text-white">
-                          Extra Items ({pendingDefects.length})
+                          Display / Faulty Items ({pendingDefects.length})
                         </h3>
                         <div className="flex items-center gap-2">
                           {selectedDefectsForVendor.length > 0 && (

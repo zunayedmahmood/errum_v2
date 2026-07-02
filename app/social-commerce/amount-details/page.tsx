@@ -942,13 +942,6 @@ export default function AmountDetailsPage() {
                       <span className="text-gray-900 dark:text-white">Final Due</span>
                       <span className="text-indigo-600 dark:text-indigo-400">৳{finalDue.toFixed(2)}</span>
                     </div>
-
-                    {totalFees > 0 && (
-                      <div className="flex justify-between text-xs mt-1">
-                        <span className="text-gray-600 dark:text-gray-400">Estimated gateway fees</span>
-                        <span className="text-gray-700 dark:text-gray-300">৳{totalFees.toFixed(2)}</span>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -1235,12 +1228,6 @@ export default function AmountDetailsPage() {
                               <span className="font-medium">৳{codAmount.toFixed(2)}</span>
                             </div>
                           </>
-                        )}
-                        {totalFees > 0 && (
-                          <div className="flex justify-between">
-                            <span>Estimated Fees</span>
-                            <span className="font-medium">৳{totalFees.toFixed(2)}</span>
-                          </div>
                         )}
                       </div>
                     </div>

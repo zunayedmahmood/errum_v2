@@ -20,7 +20,7 @@ export interface CreateOrderPayload {
     tax_amount?: number;
     // Only for counter orders - barcodes scanned at POS
     barcode?: string;
-    // Temporary resale flow for products moved to Extra Panel as defective/used.
+    // Temporary resale flow for products moved to Display Unit / Faulty Unit as defective/used.
     is_defective?: boolean;
     defective_product_id?: string | number;
     source?: string;

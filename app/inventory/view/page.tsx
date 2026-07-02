@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 import {
   AlertTriangle,
@@ -14,6 +14,7 @@ import {
   Search,
   ShoppingCart,
   Truck,
+  X,
 } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
@@ -34,6 +35,9 @@ interface Category {
   slug?: string;
   parent_id?: number;
   children?: Category[];
+  all_children?: Category[];
+  subcategories?: Category[];
+  full_path?: string;
 }
 
 type SheetRow = {
@@ -102,12 +106,53 @@ function getStatusLabel(status: InventoryStockStatus) {
   }
 }
 
-function flattenCategoryOptions(categories: Category[], depth = 0): Array<{ id: number; label: string }> {
+type CategoryOption = {
+  id: number;
+  label: string;
+  title: string;
+  depth: number;
+  fullPath: string;
+};
+
+function categoryTitle(category: Category) {
+  return category.title || category.name || `Category ${category.id}`;
+}
+
+function categoryChildren(category: Category): Category[] {
+  return [
+    ...(Array.isArray(category.children) ? category.children : []),
+    ...(Array.isArray(category.all_children) ? category.all_children : []),
+    ...(Array.isArray(category.subcategories) ? category.subcategories : []),
+  ].filter(Boolean);
+}
+
+function flattenCategoryOptions(categories: Category[], depth = 0, parentPath = '', seen = new Set<number>()): CategoryOption[] {
   return (categories || []).flatMap((category) => {
-    const title = category.title || category.name || `Category ${category.id}`;
-    const row = { id: category.id, label: `${'— '.repeat(depth)}${title}` };
-    return [row, ...flattenCategoryOptions(category.children || [], depth + 1)];
+    if (!category || seen.has(category.id)) return [];
+    seen.add(category.id);
+    const title = categoryTitle(category);
+    const fullPath = category.full_path || (parentPath ? `${parentPath} / ${title}` : title);
+    const row = { id: category.id, label: `${'— '.repeat(depth)}${title}`, title, depth, fullPath };
+    return [row, ...flattenCategoryOptions(categoryChildren(category), depth + 1, fullPath, seen)];
   });
+}
+
+function collectCategoryAndDescendantIds(categories: Category[], selectedIds: number[]): number[] {
+  const selected = new Set(selectedIds.map(Number).filter(Boolean));
+  const collected = new Set<number>();
+
+  const walk = (items: Category[], parentSelected = false) => {
+    for (const category of items || []) {
+      const isSelected = selected.has(Number(category.id));
+      const shouldInclude = parentSelected || isSelected;
+      if (shouldInclude) collected.add(Number(category.id));
+      walk(categoryChildren(category), shouldInclude);
+    }
+  };
+
+  walk(categories);
+  selected.forEach((id) => collected.add(id));
+  return Array.from(collected);
 }
 
 function getStatusClasses(status: InventoryStockStatus) {
@@ -505,6 +550,7 @@ function ViewInventoryPageContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
+  const [categorySearchTerm, setCategorySearchTerm] = useState('');
   const [selectedStoreId, setSelectedStoreId] = useState<number>(0);
   const [sizeFilter, setSizeFilter] = useState('');
   const [datePreset, setDatePreset] = useState<InventoryDatePreset>('365');
@@ -528,6 +574,26 @@ function ViewInventoryPageContent() {
     }
   }, []);
 
+  const categoryOptions = useMemo(() => flattenCategoryOptions(categories), [categories]);
+  const selectedCategoryIdsForFilter = useMemo(
+    () => collectCategoryAndDescendantIds(categories, selectedCategoryIds),
+    [categories, selectedCategoryIds]
+  );
+  const selectedCategoryFilterKey = selectedCategoryIdsForFilter.join(',');
+  const filteredCategoryOptions = useMemo(() => {
+    const term = categorySearchTerm.trim().toLowerCase();
+    if (!term) return categoryOptions;
+    return categoryOptions.filter((category) =>
+      category.fullPath.toLowerCase().includes(term) ||
+      category.title.toLowerCase().includes(term) ||
+      category.label.toLowerCase().includes(term)
+    );
+  }, [categoryOptions, categorySearchTerm]);
+  const selectedCategoryOptions = useMemo(
+    () => categoryOptions.filter((category) => selectedCategoryIds.includes(category.id)),
+    [categoryOptions, selectedCategoryIds]
+  );
+
   const fetchOverview = useCallback(async () => {
     try {
       setLoading(true);
@@ -536,7 +602,7 @@ function ViewInventoryPageContent() {
         date_preset: datePreset,
         start_date: datePreset === 'custom' ? startDate || undefined : undefined,
         end_date: datePreset === 'custom' ? endDate || undefined : undefined,
-        category_ids: selectedCategoryIds.length ? selectedCategoryIds.join(',') : undefined,
+        category_ids: selectedCategoryFilterKey || undefined,
         store_id: selectedStoreId || undefined,
         size: sizeFilter.trim() || undefined,
         search: appliedSearch || undefined,
@@ -550,7 +616,7 @@ function ViewInventoryPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset, startDate, endDate, selectedCategoryIds, selectedStoreId, sizeFilter, appliedSearch, page, perPage]);
+  }, [datePreset, startDate, endDate, selectedCategoryFilterKey, selectedStoreId, sizeFilter, appliedSearch, page, perPage]);
 
   useEffect(() => {
     fetchCategories();
@@ -564,7 +630,6 @@ function ViewInventoryPageContent() {
 
   const summary = data?.summary;
   const products = data?.items || [];
-  const categoryOptions = flattenCategoryOptions(categories);
   const storeOptions = data?.stores || [];
   const selectedStoreName = selectedStoreId
     ? storeOptions.find((store) => Number(store.id) === Number(selectedStoreId))?.name || `Store ${selectedStoreId}`
@@ -576,7 +641,7 @@ function ViewInventoryPageContent() {
       date_preset: datePreset,
       start_date: datePreset === 'custom' ? startDate || undefined : undefined,
       end_date: datePreset === 'custom' ? endDate || undefined : undefined,
-      category_ids: selectedCategoryIds.length ? selectedCategoryIds.join(',') : undefined,
+      category_ids: selectedCategoryFilterKey || undefined,
       store_id: selectedStoreId || undefined,
       size: sizeFilter.trim() || undefined,
       search: appliedSearch || undefined,
@@ -601,7 +666,7 @@ function ViewInventoryPageContent() {
     }
 
     return exportProducts;
-  }, [datePreset, startDate, endDate, selectedCategoryIds, selectedStoreId, sizeFilter, appliedSearch]);
+  }, [datePreset, startDate, endDate, selectedCategoryFilterKey, selectedStoreId, sizeFilter, appliedSearch]);
 
   const handleExportCsv = async () => {
     try {
@@ -728,21 +793,89 @@ function ViewInventoryPageContent() {
 
                 <div className={datePreset === 'custom' ? 'lg:col-span-3' : 'lg:col-span-3'}>
                   <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Categories / Subcategories</label>
-                  <select
-                    multiple
-                    value={selectedCategoryIds.map(String)}
-                    onChange={(e) => {
-                      const values = Array.from(e.currentTarget.selectedOptions as any).map((option: any) => Number(option.value)).filter(Boolean);
-                      setSelectedCategoryIds(values);
-                      resetToFirstPage();
-                    }}
-                    className="min-h-[92px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                  >
-                    {categoryOptions.map((category) => (
-                      <option key={category.id} value={category.id}>{category.label}</option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-[10px] font-semibold text-gray-400">Ctrl/Cmd click to select multiple. Selected parent categories include their subcategories.</p>
+                  <div className="rounded-lg border border-gray-300 bg-white p-2 dark:border-gray-600 dark:bg-gray-700">
+                    <div className="relative mb-2">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <input
+                        value={categorySearchTerm}
+                        onChange={(e) => setCategorySearchTerm(e.target.value)}
+                        placeholder="Search parent category, subcategory, nested category..."
+                        className="w-full rounded-md border border-gray-200 bg-gray-50 py-2 pl-9 pr-8 text-xs font-semibold text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      />
+                      {categorySearchTerm && (
+                        <button
+                          type="button"
+                          onClick={() => setCategorySearchTerm('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {selectedCategoryOptions.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {selectedCategoryOptions.map((category) => (
+                          <button
+                            type="button"
+                            key={category.id}
+                            onClick={() => {
+                              setSelectedCategoryIds((prev) => prev.filter((id) => id !== category.id));
+                              resetToFirstPage();
+                            }}
+                            className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200"
+                            title={category.fullPath}
+                          >
+                            {category.title}
+                            <X className="h-3 w-3" />
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedCategoryIds([]); resetToFirstPage(); }}
+                          className="rounded-full bg-gray-100 px-2 py-1 text-[11px] font-bold text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                        >
+                          Clear all
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="max-h-48 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-600 dark:bg-gray-800">
+                      {filteredCategoryOptions.length > 0 ? (
+                        filteredCategoryOptions.map((category) => {
+                          const checked = selectedCategoryIds.includes(category.id);
+                          return (
+                            <label
+                              key={category.id}
+                              className="flex cursor-pointer items-center gap-2 border-b border-gray-100 px-2 py-2 text-xs font-semibold text-gray-800 last:border-b-0 hover:bg-white dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-700"
+                              style={{ paddingLeft: `${8 + category.depth * 18}px` }}
+                              title={category.fullPath}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const categoryId = category.id;
+                                  setSelectedCategoryIds((prev) =>
+                                    e.currentTarget.checked
+                                      ? Array.from(new Set([...prev, categoryId]))
+                                      : prev.filter((id) => id !== categoryId)
+                                  );
+                                  resetToFirstPage();
+                                }}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="min-w-0 flex-1 truncate">{category.label}</span>
+                              {category.depth > 0 && <span className="text-[10px] font-bold uppercase text-gray-400">Sub</span>}
+                            </label>
+                          );
+                        })
+                      ) : (
+                        <div className="px-3 py-4 text-center text-xs font-semibold text-gray-500 dark:text-gray-400">No matching category found.</div>
+                      )}
+                    </div>
+                  </div>
+                  <p className="mt-1 text-[10px] font-semibold text-gray-400">Selecting a parent category also includes all nested subcategories in the inventory filter.</p>
                 </div>
 
                 <div className="lg:col-span-2">
