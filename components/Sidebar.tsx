@@ -169,7 +169,7 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
     { icon: ShoppingCart, label: 'Offline Sale', href: '/pos' },
     { icon: ClipboardList, label: 'Offline Sale History', href: '/purchase-history' },
     { icon: ShoppingCart, label: 'Social Commerce', href: '/social-commerce' },
-    { icon: Package, label: 'Orders', href: '/orders' },
+    { icon: Package, label: 'Online Order History', href: '/orders' },
     { icon: CreditCard, label: 'Installments', href: '/orders?view=installments' },
     { icon: Package, label: 'Online Order Packing', href: '/social-commerce/package' },
     { icon: Package, label: 'PreOrders', href: '/preorders' },

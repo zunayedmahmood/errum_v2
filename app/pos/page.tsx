@@ -12,6 +12,10 @@ import {
   Download,
   X,
   Loader2,
+  MapPin,
+  Store as StoreIcon,
+  Layers,
+  ShoppingBag,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -23,7 +27,7 @@ import orderService from '@/services/orderService';
 import paymentService from '@/services/paymentService';
 import employeeService from '@/services/employeeService';
 import storeService from '@/services/storeService';
-import productService from '@/services/productService';
+import productService, { type StockDetail } from '@/services/productService';
 import batchService, { Batch } from '@/services/batchService';
 import defectIntegrationService from '@/services/defectIntegrationService';
 import paymentMethodService from '@/services/paymentMethodService';
@@ -313,6 +317,12 @@ export default function POSPage() {
   // ✅ Reports
   const [showDailyReportModal, setShowDailyReportModal] = useState(false);
 
+  // Branch-wise stock snapshot for the most recently scanned barcode
+  const [lastScannedStock, setLastScannedStock] = useState<StockDetail | null>(null);
+  const [branchStockLoading, setBranchStockLoading] = useState(false);
+  const [branchStockError, setBranchStockError] = useState('');
+  const branchStockRequestSeqRef = useRef(0);
+
   // ============ TOAST HELPER ============
   const showToast = (message: string, type: 'success' | 'error') => {
     const id = Date.now();
@@ -407,6 +417,36 @@ export default function POSPage() {
     }
   }, [defectItem, selectedOutlet]);
 
+  const fetchBranchAvailabilityForBarcode = async (barcode: string) => {
+    const trimmed = String(barcode || '').trim();
+    if (!trimmed) return;
+
+    const requestSeq = branchStockRequestSeqRef.current + 1;
+    branchStockRequestSeqRef.current = requestSeq;
+
+    setBranchStockLoading(true);
+    setBranchStockError('');
+
+    try {
+      const stock = await productService.findStockByBarcode(trimmed);
+
+      // Avoid stale updates when multiple barcodes are scanned quickly
+      if (branchStockRequestSeqRef.current !== requestSeq) return;
+
+      setLastScannedStock(stock);
+    } catch (error: any) {
+      if (branchStockRequestSeqRef.current !== requestSeq) return;
+
+      console.error('Failed to fetch branch stock for POS barcode:', error);
+      setLastScannedStock(null);
+      setBranchStockError(error?.message || 'Could not load branch-wise stock for this barcode');
+    } finally {
+      if (branchStockRequestSeqRef.current === requestSeq) {
+        setBranchStockLoading(false);
+      }
+    }
+  };
+
   // ============ CART MANAGEMENT ============
 
   /**
@@ -440,6 +480,9 @@ export default function POSPage() {
 
     setCart((prev) => [...prev, newItem]);
     showToast(`✓ Added: ${scannedProduct.productName}`, 'success');
+
+    // Show branch-wise availability for the scanned product on the POS side panel.
+    fetchBranchAvailabilityForBarcode(scannedProduct.barcode);
   };
 
   /**
@@ -1968,8 +2011,9 @@ export default function POSPage() {
                   />
                 </div>
 
-                {/* Right Column - Payment */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 h-fit">
+                {/* Right Column - Payment + Branch Availability */}
+                <div className="space-y-4 h-fit">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <h2 className="text-sm font-medium text-gray-900 dark:text-white">
                       Amount Details
@@ -2247,6 +2291,103 @@ export default function POSPage() {
                             ? 'Complete Sale (Installment)'
                             : 'Complete Sale'}
                     </button>
+                  </div>
+                </div>
+
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                      <h2 className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                        <StoreIcon className="w-4 h-4" />
+                        Branch Availability
+                      </h2>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                        Shows stock distribution for the latest scanned barcode.
+                      </p>
+                    </div>
+
+                    <div className="p-4">
+                      {branchStockLoading ? (
+                        <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Loading branch stock...
+                        </div>
+                      ) : branchStockError ? (
+                        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-300">
+                          {branchStockError}
+                        </div>
+                      ) : lastScannedStock ? (
+                        <div className="space-y-4">
+                          <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                                  {lastScannedStock.name}
+                                </div>
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400 font-mono">
+                                  {lastScannedStock.sku} • {lastScannedStock.scanned_barcode}
+                                </div>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 text-[10px] font-bold">
+                                Latest Scan
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 mt-3">
+                              <div className="rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-2">
+                                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"><Package className="w-3 h-3" /> Physical</div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-white">{lastScannedStock.inventory?.physical_stock ?? 0}</div>
+                              </div>
+                              <div className="rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-2">
+                                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"><Layers className="w-3 h-3" /> Reserved</div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-white">{lastScannedStock.inventory?.reserved_stock ?? 0}</div>
+                              </div>
+                              <div className="rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-2">
+                                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"><ShoppingBag className="w-3 h-3" /> Available</div>
+                                <div className="text-sm font-bold text-green-600 dark:text-green-400">{lastScannedStock.inventory?.available_stock ?? 0}</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 max-h-80 overflow-auto pr-1">
+                            {Array.isArray(lastScannedStock.branch_stock) && lastScannedStock.branch_stock.length > 0 ? (
+                              [...lastScannedStock.branch_stock]
+                                .sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0))
+                                .map((store) => (
+                                  <div key={store.store_id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0">
+                                        <MapPin className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{store.store_name}</div>
+                                        <div className="text-[10px] text-gray-500 dark:text-gray-400 truncate">{store.store_address || 'Branch outlet'}</div>
+                                      </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <div className={`text-lg font-black ${Number(store.quantity || 0) > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                                        {Number(store.quantity || 0)}
+                                      </div>
+                                      <div className="text-[10px] uppercase font-bold text-gray-400">Units</div>
+                                    </div>
+                                  </div>
+                                ))
+                            ) : (
+                              <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                No branch stock data available.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center">
+                          <StoreIcon className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+                          <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Scan a barcode to view branch-wise stock</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            The stock panel updates automatically after a successful scan.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

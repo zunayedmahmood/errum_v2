@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronUp, Trash2, MoreVertical, ArrowRightLeft, RotateCcw, Printer, Download } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Trash2, MoreVertical, Printer, Download } from 'lucide-react';
 import { computeMenuPosition } from '@/lib/menuPosition';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -117,6 +117,7 @@ export default function PurchaseHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'csv' | 'excel'>('pdf');
+  const [exportDetailMode, setExportDetailMode] = useState<'summary' | 'detailed'>('summary');
   const [exportScope, setExportScope] = useState<'shown' | 'top500' | 'top600' | 'all'>('shown');
   // Legacy state kept for minimal refactor
   const [userRole, setUserRole] = useState<string>('');
@@ -779,9 +780,63 @@ export default function PurchaseHistoryPage() {
     'Order Note',
   ];
 
+  const detailedCsvColumns = [
+    'Row Type',
+    'Order #',
+    'Date',
+    'Customer',
+    'Phone',
+    'Sales By',
+    'Store',
+    'Status',
+    'Payment Status',
+    'Subtotal',
+    'Order Discount',
+    'Shipping',
+    'Total',
+    'Paid',
+    'Due',
+    'Order Note',
+    'Product',
+    'SKU',
+    'Batch',
+    'Barcode',
+    'Qty',
+    'Unit Price',
+    'Item Discount',
+    'Tax/VAT',
+    'Line Total',
+    'Payment Method',
+    'Payment Type',
+    'Payment Amount',
+    'Payment Status Detail',
+    'Payment Date',
+  ];
+
+  const formatExportDate = (value?: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(String(value).replace(' ', 'T'));
+    if (Number.isNaN(parsed.getTime())) return String(value);
+
+    return `${parsed.toLocaleDateString('en-GB')} ${parsed.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+  };
+
+  const getOrderItems = (order: any) => Array.isArray(order?.items) ? order.items : [];
+  const getOrderPayments = (order: any) => Array.isArray(order?.payments) ? order.payments : [];
+  const getItemLineTotal = (item: any) => {
+    const explicit = item?.total_amount ?? item?.total_price;
+    if (explicit !== undefined && explicit !== null) return parseMoney(explicit);
+
+    const qty = Number(item?.quantity || 0);
+    const unit = parseMoney(item?.unit_price);
+    const discount = parseMoney(item?.discount_amount);
+    const tax = parseMoney(item?.tax_amount);
+    return Math.max(0, (unit * qty) - discount + tax);
+  };
+
   const toExportRows = (sourceOrders: any[]) => sourceOrders.map((order) => ({
     'Order #': order.order_number || '',
-    'Date': `${new Date(order.order_date || order.created_at).toLocaleDateString('en-GB')} ${new Date(order.order_date || order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}`,
+    'Date': formatExportDate(order.order_date || order.created_at),
     'Customer': order.customer?.name || 'N/A',
     'Phone': order.customer?.phone || 'N/A',
     'Sales By': order.salesman?.name || 'N/A',
@@ -797,6 +852,66 @@ export default function PurchaseHistoryPage() {
     'Due': parseMoney(order.outstanding_amount).toFixed(2),
     'Order Note': order.notes || '',
   }));
+
+  const toDetailedCsvRows = (sourceOrders: any[]) => {
+    const rows: Record<string, any>[] = [];
+
+    sourceOrders.forEach((order) => {
+      const summary = toExportRows([order])[0] as Record<string, any>;
+      rows.push({
+        'Row Type': 'ORDER',
+        ...summary,
+      });
+
+      getOrderItems(order).forEach((item: any) => {
+        rows.push({
+          'Row Type': 'ITEM',
+          'Order #': order.order_number || '',
+          'Date': formatExportDate(order.order_date || order.created_at),
+          'Product': item.product_name || '',
+          'SKU': item.product_sku || '',
+          'Batch': item.batch_number || '',
+          'Barcode': item.barcode || '',
+          'Qty': item.quantity ?? '',
+          'Unit Price': parseMoney(item.unit_price).toFixed(2),
+          'Item Discount': parseMoney(item.discount_amount).toFixed(2),
+          'Tax/VAT': parseMoney(item.tax_amount).toFixed(2),
+          'Line Total': getItemLineTotal(item).toFixed(2),
+        });
+      });
+
+      getOrderPayments(order).forEach((payment: any) => {
+        const splits = getPaymentSplits(payment);
+        if (splits.length > 0) {
+          splits.forEach((split: any) => {
+            rows.push({
+              'Row Type': 'PAYMENT SPLIT',
+              'Order #': order.order_number || '',
+              'Date': formatExportDate(order.order_date || order.created_at),
+              'Payment Method': split.payment_method || 'Unknown',
+              'Payment Type': payment.payment_type || '',
+              'Payment Amount': parseMoney(split.amount).toFixed(2),
+              'Payment Status Detail': split.status || payment.status || '',
+              'Payment Date': formatExportDate(payment.created_at),
+            });
+          });
+        } else {
+          rows.push({
+            'Row Type': 'PAYMENT',
+            'Order #': order.order_number || '',
+            'Date': formatExportDate(order.order_date || order.created_at),
+            'Payment Method': payment.payment_method || 'Unknown',
+            'Payment Type': payment.payment_type || '',
+            'Payment Amount': parseMoney(payment.amount).toFixed(2),
+            'Payment Status Detail': payment.status || '',
+            'Payment Date': formatExportDate(payment.created_at),
+          });
+        }
+      });
+    });
+
+    return rows;
+  };
 
   const downloadBlob = (content: string, filename: string, type: string) => {
     const blob = new Blob([content], { type });
@@ -818,6 +933,77 @@ export default function PurchaseHistoryPage() {
     "'": '&#39;',
     '"': '&quot;',
   }[ch] || ch));
+
+  const getExportFilterLabel = () => {
+    const range = getEffectiveDateRange();
+    const storeLabel = selectedStore ? (stores.find((s) => String(s.id) === String(selectedStore))?.name || `Store ID ${selectedStore}`) : 'All stores';
+    const dateLabel = exactDate ? exactDate : `${range.from || 'beginning'} to ${range.to || 'latest'}`;
+    return `Date: ${dateLabel} • Store: ${storeLabel} • Search: ${searchTerm.trim() || 'None'} • Rows: ${exportScope} • Details: ${exportDetailMode === 'detailed' ? 'With details' : 'Without details'}`;
+  };
+
+  const buildReportStyles = () => `
+    *{box-sizing:border-box} body{font-family:Inter,Arial,sans-serif;margin:0;padding:24px;background:#f8fafc;color:#111827}.sheet{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:22px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
+    h1{margin:0 0 6px;font-size:24px}.muted{color:#6b7280;font-size:12px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb}.label{font-size:10px;text-transform:uppercase;color:#6b7280;font-weight:700}.value{font-size:18px;font-weight:800;margin-top:4px}
+    table{width:100%;border-collapse:collapse;font-size:10px;margin-top:8px}th{background:#111827;color:white;text-align:left;padding:8px;border:1px solid #111827}td{padding:7px;border:1px solid #e5e7eb;vertical-align:top}tr:nth-child(even){background:#f9fafb}.money{text-align:right;white-space:nowrap}.order-card{border:1px solid #d1d5db;border-radius:14px;margin:18px 0;padding:14px;background:#fff;page-break-inside:avoid}.order-title{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e5e7eb;padding-bottom:10px;margin-bottom:10px}.order-no{font-size:16px;font-weight:800}.badge{display:inline-block;border-radius:999px;background:#eef2ff;color:#3730a3;padding:3px 8px;font-size:10px;font-weight:800}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.detail-box{border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#f9fafb}.section-title{font-size:12px;font-weight:800;margin:12px 0 4px}.no-print button{padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700}
+    @media print{body{background:white;padding:0}.sheet{box-shadow:none;border:0;border-radius:0}.no-print{display:none}.order-card{break-inside:avoid}}
+  `;
+
+  const buildSummaryReportHtml = (sourceOrders: any[], rows: Record<string, any>[], autoPrint = false) => {
+    const totalExportSalesAmount = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>Offline Sale History</title><style>${buildReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Print / Save as PDF</button></div>' : ''}<h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Sales Amount</div><div class="value">৳${totalExportSalesAmount.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">Summary</div></div></div><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${['Subtotal','Order Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
+  };
+
+  const buildDetailedReportHtml = (sourceOrders: any[], autoPrint = false) => {
+    const totalExportSalesAmount = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
+
+    const orderCards = sourceOrders.map((order, index) => {
+      const items = getOrderItems(order);
+      const payments = getOrderPayments(order);
+      const paymentRows = payments.flatMap((payment: any) => {
+        const splits = getPaymentSplits(payment);
+        if (splits.length > 0) {
+          return splits.map((split: any) => ({
+            method: split.payment_method || 'Unknown',
+            type: payment.payment_type || 'split',
+            amount: parseMoney(split.amount),
+            status: split.status || payment.status || '',
+            date: payment.created_at,
+          }));
+        }
+
+        return [{
+          method: payment.payment_method || 'Unknown',
+          type: payment.payment_type || '',
+          amount: parseMoney(payment.amount),
+          status: payment.status || '',
+          date: payment.created_at,
+        }];
+      });
+
+      return `<div class="order-card"><div class="order-title"><div><div class="order-no">${index + 1}. ${escapeHtml(order.order_number || '')}</div><div class="muted">${escapeHtml(formatExportDate(order.order_date || order.created_at))}</div></div><div style="text-align:right"><span class="badge">${escapeHtml(order.payment_status || 'payment')}</span><span class="badge" style="margin-left:6px;background:#ecfdf5;color:#047857">${escapeHtml(order.status || 'status')}</span></div></div><div class="grid"><div class="detail-box"><div class="label">Customer</div><div>${escapeHtml(order.customer?.name || 'N/A')}</div></div><div class="detail-box"><div class="label">Phone</div><div>${escapeHtml(order.customer?.phone || 'N/A')}</div></div><div class="detail-box"><div class="label">Sales By</div><div>${escapeHtml(order.salesman?.name || 'N/A')}</div></div><div class="detail-box"><div class="label">Store</div><div>${escapeHtml(order.store?.name || '')}</div></div></div>${order.notes ? `<div class="detail-box" style="margin-top:8px"><div class="label">Order Note</div><div>${escapeHtml(order.notes)}</div></div>` : ''}<div class="section-title">Order Items</div>${items.length ? `<table><thead><tr><th>Product</th><th>SKU</th><th>Batch</th><th>Barcode</th><th>Qty</th><th>Price</th><th>Discount</th><th>Tax/VAT</th><th>Total</th></tr></thead><tbody>${items.map((item: any) => `<tr><td>${escapeHtml(item.product_name || '')}</td><td>${escapeHtml(item.product_sku || '')}</td><td>${escapeHtml(item.batch_number || '-')}</td><td>${escapeHtml(item.barcode || '-')}</td><td class="money">${escapeHtml(item.quantity ?? '')}</td><td class="money">৳${parseMoney(item.unit_price).toFixed(2)}</td><td class="money">৳${parseMoney(item.discount_amount).toFixed(2)}</td><td class="money">৳${parseMoney(item.tax_amount).toFixed(2)}</td><td class="money">৳${getItemLineTotal(item).toFixed(2)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No items found for this order.</p>'}<div class="grid" style="margin-top:12px"><div class="detail-box"><div class="label">Subtotal</div><div>৳${parseMoney(order.subtotal ?? order.subtotal_amount).toFixed(2)}</div></div><div class="detail-box"><div class="label">Discount</div><div>৳${parseMoney(order.discount_amount).toFixed(2)}</div></div><div class="detail-box"><div class="label">Shipping</div><div>৳${parseMoney(order.shipping_amount ?? order.shipping_cost).toFixed(2)}</div></div><div class="detail-box"><div class="label">Total</div><div>৳${parseMoney(order.total_amount).toFixed(2)}</div></div><div class="detail-box"><div class="label">Paid</div><div>৳${parseMoney(order.paid_amount).toFixed(2)}</div></div><div class="detail-box"><div class="label">Due</div><div>৳${parseMoney(order.outstanding_amount).toFixed(2)}</div></div><div class="detail-box" style="grid-column:span 2"><div class="label">Payment Summary</div><div>${escapeHtml(formatPaymentBreakdown(order))}</div></div></div><div class="section-title">Payment History</div>${paymentRows.length ? `<table><thead><tr><th>Method</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${paymentRows.map((payment: any) => `<tr><td>${escapeHtml(payment.method)}</td><td>${escapeHtml(payment.type)}</td><td class="money">৳${payment.amount.toFixed(2)}</td><td>${escapeHtml(payment.status)}</td><td>${escapeHtml(formatExportDate(payment.date))}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No payment history found.</p>'}</div>`;
+    }).join('');
+
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>Offline Sale History - Details</title><style>${buildReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Print / Save as PDF</button></div>' : ''}<h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Orders</div><div class="value">${sourceOrders.length}</div></div><div class="card"><div class="label">Total Sales Amount</div><div class="value">৳${totalExportSalesAmount.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">With Details</div></div></div>${orderCards}</div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
+  };
+
+  const hydrateOrdersForDetailedExport = async (sourceOrders: any[]) => {
+    const hydrated: any[] = [];
+
+    for (let i = 0; i < sourceOrders.length; i += 10) {
+      const chunk = sourceOrders.slice(i, i + 10);
+      const chunkDetails = await Promise.all(chunk.map(async (order) => {
+        try {
+          return await orderService.getById(order.id);
+        } catch (error) {
+          console.warn(`Could not hydrate details for order ${order?.order_number || order?.id}`, error);
+          return order;
+        }
+      }));
+      hydrated.push(...chunkDetails);
+    }
+
+    return hydrated;
+  };
 
   const getExportOrders = async () => {
     if (exportScope === 'shown') return filteredOrders;
@@ -848,41 +1034,50 @@ export default function PurchaseHistoryPage() {
   const handleExport = async () => {
     try {
       setExporting(true);
-      const sourceOrders = await getExportOrders();
+      const baseOrders = await getExportOrders();
+      const sourceOrders = exportDetailMode === 'detailed'
+        ? await hydrateOrdersForDetailedExport(baseOrders)
+        : baseOrders;
       const rows = toExportRows(sourceOrders);
       const range = getEffectiveDateRange();
       const dateLabel = exactDate || [range.from || 'all', range.to || 'latest'].join('_to_');
-      const filenameBase = `offline-sale-history_${dateLabel}_${new Date().toISOString().slice(0, 10)}`;
+      const detailLabel = exportDetailMode === 'detailed' ? 'with-details' : 'without-details';
+      const filenameBase = `offline-sale-history_${detailLabel}_${dateLabel}_${new Date().toISOString().slice(0, 10)}`;
 
-      if (rows.length === 0) {
+      if (sourceOrders.length === 0) {
         alert('No offline sale history rows found for export.');
         return;
       }
 
       if (exportFormat === 'csv') {
+        if (exportDetailMode === 'detailed') {
+          const detailRows = toDetailedCsvRows(sourceOrders);
+          const csv = [detailedCsvColumns.join(','), ...detailRows.map((row) => detailedCsvColumns.map((col) => escapeCsv((row as any)[col])).join(','))].join('\n');
+          downloadBlob(csv, `${filenameBase}.csv`, 'text/csv;charset=utf-8;');
+          return;
+        }
+
         const csv = [exportColumns.join(','), ...rows.map((row) => exportColumns.map((col) => escapeCsv((row as any)[col])).join(','))].join('\n');
         downloadBlob(csv, `${filenameBase}.csv`, 'text/csv;charset=utf-8;');
         return;
       }
 
+      const html = exportDetailMode === 'detailed'
+        ? buildDetailedReportHtml(sourceOrders, exportFormat === 'pdf')
+        : buildSummaryReportHtml(sourceOrders, rows, exportFormat === 'pdf');
+
       if (exportFormat === 'excel') {
-        const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td>${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
         downloadBlob(html, `${filenameBase}.xls`, 'application/vnd.ms-excel;charset=utf-8;');
         return;
       }
 
-      const totalExportSalesAmount = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
-      const pdfHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Offline Sale History</title><style>
-        *{box-sizing:border-box} body{font-family:Inter,Arial,sans-serif;margin:0;padding:24px;background:#f8fafc;color:#111827}.sheet{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:22px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
-        h1{margin:0 0 6px;font-size:24px}.muted{color:#6b7280;font-size:12px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb}.label{font-size:10px;text-transform:uppercase;color:#6b7280;font-weight:700}.value{font-size:18px;font-weight:800;margin-top:4px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#111827;color:white;text-align:left;padding:8px;border:1px solid #111827}td{padding:7px;border:1px solid #e5e7eb;vertical-align:top}tr:nth-child(even){background:#f9fafb}.money{text-align:right;white-space:nowrap}@media print{body{background:white;padding:0}.sheet{box-shadow:none;border:0;border-radius:0}.no-print{display:none}}
-      </style></head><body><div class="sheet"><div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()" style="padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700">Print / Save as PDF</button></div><h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. Defaults to today when no custom filter is selected. Filters: ${escapeHtml(range.from || 'beginning')} to ${escapeHtml(range.to || 'latest')}${selectedStore ? `, Store ID ${escapeHtml(selectedStore)}` : ''}${searchTerm ? `, Search ${escapeHtml(searchTerm)}` : ''}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Sales Amount</div><div class="value">৳${totalExportSalesAmount.toFixed(2)}</div></div><div class="card"><div class="label">Scope</div><div class="value">${escapeHtml(exportScope)}</div></div></div><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${['Subtotal','Order Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div><script>setTimeout(() => window.print(), 250);</script></body></html>`;
       const w = window.open('', '_blank', 'width=1200,height=800');
       if (!w) {
         alert('Popup blocked. Please allow popups to export PDF.');
         return;
       }
       w.document.open();
-      w.document.write(pdfHtml);
+      w.document.write(html);
       w.document.close();
     } catch (error: any) {
       console.error('Export failed:', error);
@@ -1049,7 +1244,7 @@ export default function PurchaseHistoryPage() {
                       Export uses the same search, store, and date filters currently applied above.
                     </p>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 w-full lg:w-auto">
                     <div>
                       <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Format</label>
                       <select
@@ -1060,6 +1255,17 @@ export default function PurchaseHistoryPage() {
                         <option value="pdf">PDF</option>
                         <option value="csv">CSV</option>
                         <option value="excel">Excel</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Details</label>
+                      <select
+                        value={exportDetailMode}
+                        onChange={(e) => setExportDetailMode(e.target.value as any)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      >
+                        <option value="summary">Without details</option>
+                        <option value="detailed">With details</option>
                       </select>
                     </div>
                     <div>
@@ -1195,7 +1401,7 @@ export default function PurchaseHistoryPage() {
                                   const next = activeMenu === order.id ? null : order.id;
                                   if (next !== null) {
                                     const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                    setMenuPosition(computeMenuPosition(rect, 192, 220, 8, 8));
+                                    setMenuPosition(computeMenuPosition(rect, 192, 80, 8, 8));
                                   }
                                   setActiveMenu(next);
                                 }}
@@ -1212,34 +1418,10 @@ export default function PurchaseHistoryPage() {
                                       e.stopPropagation();
                                       handlePrint(order);
                                     }}
-                                    className="w-full px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 rounded-t-lg transition-colors"
+                                    className="w-full px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 rounded-lg transition-colors"
                                   >
                                     <Printer className="w-4 h-4 text-gray-700 dark:text-gray-300" />
                                     <span>Print Receipt</span>
-                                  </button>
-                                  <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleExchange(order);
-                                    }}
-                                    className="w-full px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-3 transition-colors"
-                                  >
-                                    <ArrowRightLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                                    <span>Exchange Products</span>
-                                  </button>
-                                  <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleReturn(order);
-                                    }}
-                                    className="w-full px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3 rounded-b-lg transition-colors"
-                                  >
-                                    <RotateCcw className="w-4 h-4 text-red-600 dark:text-red-400" />
-                                    <span>Return Products</span>
                                   </button>
                                 </div>
                               )}

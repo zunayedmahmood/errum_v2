@@ -368,6 +368,10 @@ export default function OrdersDashboard() {
   const pathaoInFlightRef = useRef<Set<string>>(new Set());
 
   const [isExportingBulk, setIsExportingBulk] = useState(false);
+  const [isExportingOnlineHistory, setIsExportingOnlineHistory] = useState(false);
+  const [onlineExportFormat, setOnlineExportFormat] = useState<'pdf' | 'csv' | 'excel'>('pdf');
+  const [onlineExportDetailMode, setOnlineExportDetailMode] = useState<'summary' | 'detailed'>('summary');
+  const [onlineExportScope, setOnlineExportScope] = useState<'shown' | 'top500' | 'top600' | 'all'>('shown');
   const [stores, setStores] = useState<Store[]>([]);
   const [storeFilter, setStoreFilter] = useState<number | 'All Stores'>('All Stores');
 
@@ -656,6 +660,26 @@ export default function OrdersDashboard() {
 
   const parseMoney = (val: any) => Number(String(val ?? '0').replace(/[^0-9.-]/g, ''));
   const cleanText = (val: any) => (val == null ? '' : String(val)).trim();
+  const moneyText = (val: any) => `৳${parseMoney(val).toFixed(2)}`;
+  const escapeCsv = (value: any) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const escapeHtml = (value: any) => String(value ?? '').replace(/[&<>'"]/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;',
+  }[ch] || ch));
+  const downloadBlob = (content: string, filename: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const normalizeShippingObject = (shipping: any): any => {
     if (!shipping || typeof shipping !== 'object') return shipping;
@@ -1376,6 +1400,317 @@ export default function OrdersDashboard() {
 
     setFilteredOrders(filtered);
   }, [search, dateFilter, startDate, endDate, orderTypeFilter, sourceTagFilter, orderStatusFilter, paymentStatusFilter, courierFilter, orders]);
+
+  const onlineSummaryColumns = [
+    'Order #',
+    'Date',
+    'Type',
+    'Source',
+    'Customer',
+    'Phone',
+    'Store',
+    'Marker',
+    'Status',
+    'Payment Status',
+    'Shipping Address',
+    'Subtotal',
+    'Discount',
+    'Shipping',
+    'Total',
+    'Paid',
+    'Due',
+    'Note',
+  ];
+
+  const onlineDetailedCsvColumns = [
+    'Row Type',
+    'Order #',
+    'Date',
+    'Type',
+    'Source',
+    'Customer',
+    'Phone',
+    'Store',
+    'Marker',
+    'Status',
+    'Payment Status',
+    'Shipping Address',
+    'Subtotal',
+    'Discount',
+    'Shipping',
+    'Total',
+    'Paid',
+    'Due',
+    'Note',
+    'Product/Service',
+    'SKU/Category',
+    'Batch',
+    'Qty',
+    'Unit Price',
+    'Line Discount',
+    'Line Total',
+    'Payment Method',
+    'Payment Type',
+    'Payment Amount',
+    'Payment Status Detail',
+    'Payment Date',
+  ];
+
+  const formatOnlineDateTime = (value?: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(String(value).replace(' ', 'T'));
+    if (Number.isNaN(parsed.getTime())) return String(value);
+
+    return `${parsed.toLocaleDateString('en-GB')} ${parsed.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+  };
+
+  const getOnlineItemLineTotal = (item: any) => {
+    const explicit = item?.total_amount ?? item?.total_price;
+    if (explicit !== undefined && explicit !== null) return parseMoney(explicit);
+    const qty = Number(item?.quantity || 0);
+    const unit = parseMoney(item?.unit_price ?? item?.price);
+    const discount = parseMoney(item?.discount_amount ?? item?.discount);
+    return Math.max(0, (unit * qty) - discount);
+  };
+
+  const getOnlineServices = (order: any) => {
+    const direct = order?.services ?? order?.service_items ?? order?.order_services ?? order?.orderServices ?? order?.serviceItems ?? [];
+    if (Array.isArray(direct) && direct.length > 0) return direct;
+
+    const items = Array.isArray(order?.items) ? order.items : [];
+    return items.filter((it: any) => Boolean(it?.service_id || it?.serviceId || it?.is_service || it?.isService || normalize(it?.item_type) === 'service' || normalize(it?.type) === 'service'));
+  };
+
+  const getOnlineProductItems = (order: any) => {
+    const items = Array.isArray(order?.items) ? order.items : [];
+    return items.filter((it: any) => !Boolean(it?.service_id || it?.serviceId || it?.is_service || it?.isService || normalize(it?.item_type) === 'service' || normalize(it?.type) === 'service'));
+  };
+
+  const getOnlinePaymentRows = (order: any) => {
+    const payments = Array.isArray(order?.payments) ? order.payments : [];
+    return payments.flatMap((payment: any) => {
+      const splits = Array.isArray(payment?.splits) ? payment.splits : [];
+      if (splits.length > 0) {
+        return splits.map((split: any) => ({
+          method: split.payment_method || 'Unknown',
+          type: payment.payment_type || 'split',
+          amount: parseMoney(split.amount),
+          status: split.status || payment.status || '',
+          date: payment.created_at,
+        }));
+      }
+
+      return [{
+        method: payment.payment_method || 'Unknown',
+        type: payment.payment_type || '',
+        amount: parseMoney(payment.amount),
+        status: payment.status || '',
+        date: payment.created_at,
+      }];
+    });
+  };
+
+  const getOnlinePaymentBreakdown = (order: any) => {
+    if (order?.payment_method_summary) return order.payment_method_summary;
+    const rows = getOnlinePaymentRows(order);
+    return rows.length > 0 ? rows.map((p: any) => `${p.method} ${moneyText(p.amount)}`).join(' + ') : 'N/A';
+  };
+
+  const toOnlineSummaryRows = (sourceOrders: any[]) => sourceOrders.map((order) => {
+    const isTransformed = 'orderNumber' in order || order?.amounts;
+    const orderType = isTransformed ? order.orderType : order.order_type;
+    const sourceTag = isTransformed ? order.sourceTag : extractOrderSourceTag(order);
+    const customer = order.customer || {};
+    const shippingAddress = isTransformed
+      ? (order.customer?.address || formatShippingAddress(order.shipping_address))
+      : (formatShippingAddress(order.shipping_address) || order.customer_address || customer.address || '');
+
+    return {
+      'Order #': isTransformed ? order.orderNumber : order.order_number,
+      'Date': isTransformed ? (order.date || formatOnlineDateTime(order.orderDateRaw || order.createdAt)) : formatOnlineDateTime(order.order_date || order.created_at),
+      'Type': isTransformed ? order.orderTypeLabel : (order.order_type_label || titleCase(orderType || '')),
+      'Source': sourceTag ? orderSourceLabel(sourceTag) : '',
+      'Customer': customer.name || order.customer_name || '',
+      'Phone': customer.phone || order.customer_phone || '',
+      'Store': isTransformed ? order.store : (order.store?.name || ''),
+      'Marker': isTransformed ? courierLabel(order.intendedCourier) : courierLabel(order.intended_courier),
+      'Status': isTransformed ? order.statusLabel : statusLabel(order.status || ''),
+      'Payment Status': isTransformed ? order.paymentStatusLabel : statusLabel(order.payment_status || ''),
+      'Shipping Address': shippingAddress,
+      'Subtotal': (isTransformed ? Number(order.subtotal || 0) : parseMoney(order.subtotal ?? order.subtotal_amount)).toFixed(2),
+      'Discount': (isTransformed ? Number(order.discount || 0) : parseMoney(order.discount_amount)).toFixed(2),
+      'Shipping': (isTransformed ? Number(order.shipping || 0) : parseMoney(order.shipping_amount ?? order.shipping_cost)).toFixed(2),
+      'Total': (isTransformed ? Number(order.amounts?.total || 0) : parseMoney(order.total_amount)).toFixed(2),
+      'Paid': (isTransformed ? Number(order.amounts?.paid || 0) : parseMoney(order.paid_amount)).toFixed(2),
+      'Due': (isTransformed ? Number(order.amounts?.due || 0) : parseMoney(order.outstanding_amount)).toFixed(2),
+      'Note': order.notes || '',
+    };
+  });
+
+  const toOnlineDetailedCsvRows = (sourceOrders: any[]) => {
+    const rows: Record<string, any>[] = [];
+
+    sourceOrders.forEach((order) => {
+      const summary = toOnlineSummaryRows([order])[0] as Record<string, any>;
+      rows.push({ 'Row Type': 'ORDER', ...summary });
+
+      getOnlineProductItems(order).forEach((item: any) => {
+        rows.push({
+          'Row Type': 'ITEM',
+          'Order #': summary['Order #'] || order.order_number || order.orderNumber || '',
+          'Date': summary.Date || formatOnlineDateTime(order.order_date || order.created_at),
+          'Product/Service': item.product_name || item.name || '',
+          'SKU/Category': item.product_sku || item.sku || '',
+          'Batch': item.batch_number || '',
+          'Qty': item.quantity ?? '',
+          'Unit Price': parseMoney(item.unit_price ?? item.price).toFixed(2),
+          'Line Discount': parseMoney(item.discount_amount ?? item.discount).toFixed(2),
+          'Line Total': getOnlineItemLineTotal(item).toFixed(2),
+        });
+      });
+
+      getOnlineServices(order).forEach((svc: any) => {
+        rows.push({
+          'Row Type': 'SERVICE',
+          'Order #': summary['Order #'] || order.order_number || order.orderNumber || '',
+          'Date': summary.Date || formatOnlineDateTime(order.order_date || order.created_at),
+          'Product/Service': svc.service_name || svc.name || svc.product_name || '',
+          'SKU/Category': svc.category || svc.service_category || svc.service?.category || '',
+          'Qty': svc.quantity ?? 1,
+          'Unit Price': parseMoney(svc.unit_price ?? svc.price ?? svc.base_price).toFixed(2),
+          'Line Discount': parseMoney(svc.discount_amount ?? svc.discount).toFixed(2),
+          'Line Total': getOnlineItemLineTotal(svc).toFixed(2),
+        });
+      });
+
+      getOnlinePaymentRows(order).forEach((payment: any) => {
+        rows.push({
+          'Row Type': 'PAYMENT',
+          'Order #': summary['Order #'] || order.order_number || order.orderNumber || '',
+          'Date': summary.Date || formatOnlineDateTime(order.order_date || order.created_at),
+          'Payment Method': payment.method,
+          'Payment Type': payment.type,
+          'Payment Amount': payment.amount.toFixed(2),
+          'Payment Status Detail': payment.status,
+          'Payment Date': formatOnlineDateTime(payment.date),
+        });
+      });
+    });
+
+    return rows;
+  };
+
+  const getOnlineExportFilterLabel = () => {
+    const dateLabel = dateFilter || `${startDate || 'beginning'} to ${endDate || 'latest'}`;
+    const storeLabel = storeFilter === 'All Stores' ? 'All stores' : (stores.find((store) => Number(store.id) === Number(storeFilter))?.name || `Store ID ${storeFilter}`);
+    return `Date: ${dateLabel} • Store: ${storeLabel} • Type: ${orderTypeFilter} • Source: ${sourceTagFilter} • Status: ${orderStatusFilter} • Payment: ${paymentStatusFilter} • Marker: ${courierFilter} • Search: ${search.trim() || 'None'} • Rows: ${onlineExportScope} • Details: ${onlineExportDetailMode === 'detailed' ? 'With details' : 'Without details'}`;
+  };
+
+  const buildOnlineReportStyles = () => `
+    *{box-sizing:border-box} body{font-family:Inter,Arial,sans-serif;margin:0;padding:24px;background:#f8fafc;color:#111827}.sheet{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:22px;box-shadow:0 8px 24px rgba(15,23,42,.08)}
+    h1{margin:0 0 6px;font-size:24px}.muted{color:#6b7280;font-size:12px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb}.label{font-size:10px;text-transform:uppercase;color:#6b7280;font-weight:700}.value{font-size:18px;font-weight:800;margin-top:4px}
+    table{width:100%;border-collapse:collapse;font-size:10px;margin-top:8px}th{background:#111827;color:white;text-align:left;padding:8px;border:1px solid #111827}td{padding:7px;border:1px solid #e5e7eb;vertical-align:top}tr:nth-child(even){background:#f9fafb}.money{text-align:right;white-space:nowrap}.order-card{border:1px solid #d1d5db;border-radius:14px;margin:18px 0;padding:14px;background:#fff;page-break-inside:avoid}.order-title{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e5e7eb;padding-bottom:10px;margin-bottom:10px}.order-no{font-size:16px;font-weight:800}.badge{display:inline-block;border-radius:999px;background:#eef2ff;color:#3730a3;padding:3px 8px;font-size:10px;font-weight:800}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.detail-box{border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#f9fafb}.section-title{font-size:12px;font-weight:800;margin:12px 0 4px}.no-print button{padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#111827;color:white;font-weight:700}
+    @media print{body{background:white;padding:0}.sheet{box-shadow:none;border:0;border-radius:0}.no-print{display:none}.order-card{break-inside:avoid}}
+  `;
+
+  const buildOnlineSummaryHtml = (sourceOrders: any[], rows: Record<string, any>[], autoPrint = false) => {
+    const total = rows.reduce((sum, row) => sum + parseMoney((row as any).Total), 0);
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>Online Order History</title><style>${buildOnlineReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Print / Save as PDF</button></div>' : ''}<h1>Online Order History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getOnlineExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Amount</div><div class="value">৳${total.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">Summary</div></div></div><table><thead><tr>${onlineSummaryColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${onlineSummaryColumns.map((col) => `<td class="${['Subtotal','Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
+  };
+
+  const buildOnlineDetailedHtml = (sourceOrders: any[], autoPrint = false) => {
+    const rows = toOnlineSummaryRows(sourceOrders);
+    const total = rows.reduce((sum, row) => sum + parseMoney((row as any).Total), 0);
+    const cards = sourceOrders.map((order, index) => {
+      const summary = toOnlineSummaryRows([order])[0] as Record<string, any>;
+      const items = getOnlineProductItems(order);
+      const services = getOnlineServices(order);
+      const payments = getOnlinePaymentRows(order);
+
+      return `<div class="order-card"><div class="order-title"><div><div class="order-no">${index + 1}. ${escapeHtml(summary['Order #'])}</div><div class="muted">${escapeHtml(summary.Date)}</div></div><div style="text-align:right"><span class="badge">${escapeHtml(summary.Type)}</span><span class="badge" style="margin-left:6px;background:#ecfdf5;color:#047857">${escapeHtml(summary['Payment Status'])}</span></div></div><div class="grid"><div class="detail-box"><div class="label">Customer</div><div>${escapeHtml(summary.Customer)}</div></div><div class="detail-box"><div class="label">Phone</div><div>${escapeHtml(summary.Phone)}</div></div><div class="detail-box"><div class="label">Store</div><div>${escapeHtml(summary.Store)}</div></div><div class="detail-box"><div class="label">Marker</div><div>${escapeHtml(summary.Marker)}</div></div><div class="detail-box" style="grid-column:span 4"><div class="label">Shipping Address</div><div>${escapeHtml(summary['Shipping Address'] || 'N/A')}</div></div>${summary.Note ? `<div class="detail-box" style="grid-column:span 4"><div class="label">Note</div><div>${escapeHtml(summary.Note)}</div></div>` : ''}</div><div class="section-title">Ordered Products</div>${items.length ? `<table><thead><tr><th>Product</th><th>SKU</th><th>Batch</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Total</th></tr></thead><tbody>${items.map((item: any) => `<tr><td>${escapeHtml(item.product_name || item.name || '')}</td><td>${escapeHtml(item.product_sku || item.sku || '')}</td><td>${escapeHtml(item.batch_number || '-')}</td><td class="money">${escapeHtml(item.quantity ?? '')}</td><td class="money">${moneyText(item.unit_price ?? item.price)}</td><td class="money">${moneyText(item.discount_amount ?? item.discount)}</td><td class="money">৳${getOnlineItemLineTotal(item).toFixed(2)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No product lines found.</p>'}${services.length ? `<div class="section-title">Services</div><table><thead><tr><th>Service</th><th>Category</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Total</th></tr></thead><tbody>${services.map((svc: any) => `<tr><td>${escapeHtml(svc.service_name || svc.name || svc.product_name || '')}</td><td>${escapeHtml(svc.category || svc.service_category || svc.service?.category || '')}</td><td class="money">${escapeHtml(svc.quantity ?? 1)}</td><td class="money">${moneyText(svc.unit_price ?? svc.price ?? svc.base_price)}</td><td class="money">${moneyText(svc.discount_amount ?? svc.discount)}</td><td class="money">৳${getOnlineItemLineTotal(svc).toFixed(2)}</td></tr>`).join('')}</tbody></table>` : ''}<div class="grid" style="margin-top:12px"><div class="detail-box"><div class="label">Subtotal</div><div>৳${escapeHtml(summary.Subtotal)}</div></div><div class="detail-box"><div class="label">Discount</div><div>৳${escapeHtml(summary.Discount)}</div></div><div class="detail-box"><div class="label">Shipping</div><div>৳${escapeHtml(summary.Shipping)}</div></div><div class="detail-box"><div class="label">Total</div><div>৳${escapeHtml(summary.Total)}</div></div><div class="detail-box"><div class="label">Paid</div><div>৳${escapeHtml(summary.Paid)}</div></div><div class="detail-box"><div class="label">Due</div><div>৳${escapeHtml(summary.Due)}</div></div><div class="detail-box" style="grid-column:span 2"><div class="label">Payment Summary</div><div>${escapeHtml(getOnlinePaymentBreakdown(order))}</div></div></div><div class="section-title">Payment History</div>${payments.length ? `<table><thead><tr><th>Method</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${payments.map((payment: any) => `<tr><td>${escapeHtml(payment.method)}</td><td>${escapeHtml(payment.type)}</td><td class="money">৳${payment.amount.toFixed(2)}</td><td>${escapeHtml(payment.status)}</td><td>${escapeHtml(formatOnlineDateTime(payment.date))}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No payment history found.</p>'}</div>`;
+    }).join('');
+
+    return `<!doctype html><html><head><meta charset="utf-8" /><title>Online Order History - Details</title><style>${buildOnlineReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Print / Save as PDF</button></div>' : ''}<h1>Online Order History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getOnlineExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Orders</div><div class="value">${sourceOrders.length}</div></div><div class="card"><div class="label">Total Amount</div><div class="value">৳${total.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">With Details</div></div></div>${cards}</div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
+  };
+
+  const getOnlineExportOrders = () => {
+    const list = [...filteredOrders];
+    if (onlineExportScope === 'top500') return list.slice(0, 500);
+    if (onlineExportScope === 'top600') return list.slice(0, 600);
+    return list;
+  };
+
+  const hydrateOnlineOrdersForDetailedExport = async (sourceOrders: Order[]) => {
+    const hydrated: any[] = [];
+    for (let i = 0; i < sourceOrders.length; i += 10) {
+      const chunk = sourceOrders.slice(i, i + 10);
+      const details = await Promise.all(chunk.map(async (order) => {
+        try {
+          const full = await orderService.getById(order.id);
+          return full;
+        } catch (error) {
+          console.warn(`Could not hydrate details for online order ${order?.orderNumber || order?.id}`, error);
+          return order;
+        }
+      }));
+      hydrated.push(...details);
+    }
+    return hydrated;
+  };
+
+  const handleOnlineHistoryExport = async () => {
+    try {
+      setIsExportingOnlineHistory(true);
+      const baseOrders = getOnlineExportOrders();
+      if (baseOrders.length === 0) {
+        alert('No online order history rows found for export.');
+        return;
+      }
+
+      const detailLabel = onlineExportDetailMode === 'detailed' ? 'with-details' : 'without-details';
+      const filenameBase = `online-order-history_${detailLabel}_${new Date().toISOString().slice(0, 10)}`;
+      const sourceOrders = onlineExportDetailMode === 'detailed'
+        ? await hydrateOnlineOrdersForDetailedExport(baseOrders)
+        : baseOrders;
+      const rows = toOnlineSummaryRows(sourceOrders);
+
+      if (onlineExportFormat === 'csv') {
+        if (onlineExportDetailMode === 'detailed') {
+          const detailRows = toOnlineDetailedCsvRows(sourceOrders);
+          const csv = [onlineDetailedCsvColumns.join(','), ...detailRows.map((row) => onlineDetailedCsvColumns.map((col) => escapeCsv((row as any)[col])).join(','))].join('\n');
+          downloadBlob(csv, `${filenameBase}.csv`, 'text/csv;charset=utf-8;');
+          return;
+        }
+
+        const csv = [onlineSummaryColumns.join(','), ...rows.map((row) => onlineSummaryColumns.map((col) => escapeCsv((row as any)[col])).join(','))].join('\n');
+        downloadBlob(csv, `${filenameBase}.csv`, 'text/csv;charset=utf-8;');
+        return;
+      }
+
+      const html = onlineExportDetailMode === 'detailed'
+        ? buildOnlineDetailedHtml(sourceOrders, onlineExportFormat === 'pdf')
+        : buildOnlineSummaryHtml(sourceOrders, rows, onlineExportFormat === 'pdf');
+
+      if (onlineExportFormat === 'excel') {
+        downloadBlob(html, `${filenameBase}.xls`, 'application/vnd.ms-excel;charset=utf-8;');
+        return;
+      }
+
+      const w = window.open('', '_blank', 'width=1200,height=800');
+      if (!w) {
+        alert('Popup blocked. Please allow popups to export PDF.');
+        return;
+      }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    } catch (error: any) {
+      console.error('Online order export failed:', error);
+      alert(error?.message || 'Failed to export online order history');
+    } finally {
+      setIsExportingOnlineHistory(false);
+    }
+  };
 
   // 🧾 Bulk lookup Pathao status for displayed orders
   const filteredOrderNumbers = useMemo(() => {
@@ -3228,7 +3563,7 @@ export default function OrdersDashboard() {
                       <ShoppingBag className="w-4 h-4 text-white dark:text-black" />
                     </div>
                     <div>
-                      <h1 className="text-lg font-bold text-black dark:text-white leading-none">Orders</h1>
+                      <h1 className="text-lg font-bold text-black dark:text-white leading-none">{viewMode === 'installments' ? 'Installment Orders' : 'Online Order History'}</h1>
                       <p className="text-[10px] text-gray-600 dark:text-gray-400 leading-none mt-0.5">
                         {filteredOrders.length} of {orders.length} orders
                       </p>
@@ -3585,6 +3920,75 @@ export default function OrdersDashboard() {
                 </div>
               )}
             </div>
+
+            {/* Online History Export */}
+            {viewMode === 'online' && (
+              <div className="max-w-7xl mx-auto px-4 mb-3">
+                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-3">
+                  <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-3">
+                    <div>
+                      <h2 className="text-xs font-bold text-black dark:text-white flex items-center gap-2 uppercase tracking-wide">
+                        <FileSpreadsheet className="w-4 h-4" /> Export Online Order History
+                      </h2>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                        Export respects the current search, date, store, type, source, order status, payment status, and marker filters.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 w-full xl:w-auto">
+                      <div>
+                        <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Format</label>
+                        <select
+                          value={onlineExportFormat}
+                          onChange={(e) => setOnlineExportFormat(e.target.value as any)}
+                          className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-black text-black dark:text-white text-xs"
+                        >
+                          <option value="pdf">PDF</option>
+                          <option value="csv">CSV</option>
+                          <option value="excel">Excel</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Details</label>
+                        <select
+                          value={onlineExportDetailMode}
+                          onChange={(e) => setOnlineExportDetailMode(e.target.value as any)}
+                          className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-black text-black dark:text-white text-xs"
+                        >
+                          <option value="summary">Without details</option>
+                          <option value="detailed">With details</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Rows</label>
+                        <select
+                          value={onlineExportScope}
+                          onChange={(e) => setOnlineExportScope(e.target.value as any)}
+                          className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-black text-black dark:text-white text-xs"
+                        >
+                          <option value="shown">Current shown rows</option>
+                          <option value="top500">Top 500 filtered rows</option>
+                          <option value="top600">Top 600 filtered rows</option>
+                          <option value="all">All filtered rows</option>
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleOnlineHistoryExport}
+                        disabled={isExportingOnlineHistory || isLoading}
+                        className="px-3 py-1.5 rounded bg-black dark:bg-white text-white dark:text-black text-xs font-bold hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                      >
+                        <FileSpreadsheet className="w-3 h-3" />
+                        {isExportingOnlineHistory ? 'Exporting...' : 'Export'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Bulk Actions */}
             {viewMode === 'online' && (
