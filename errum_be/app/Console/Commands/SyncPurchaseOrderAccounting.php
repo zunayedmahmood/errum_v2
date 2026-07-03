@@ -6,19 +6,22 @@ use App\Models\PurchaseOrder;
 use App\Models\Transaction;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class SyncPurchaseOrderAccounting extends Command
 {
     protected $signature = 'accounting:sync-purchase-orders
                             {--dry-run : Show what would be created without writing ledger entries}
-                            {--force : Cancel existing PO receipt entries and recreate them from current received quantities}';
+                            {--force : Cancel existing PO receipt entries and recreate them from current received quantities}
+                            {--repair-partial : Repair missing Inventory/AP side even when some PO receipt ledger already exists}';
 
-    protected $description = 'Backfill missing Inventory / Accounts Payable ledger entries for received purchase orders.';
+    protected $description = 'Backfill/repair missing Inventory and Accounts Payable ledger entries for received purchase orders.';
 
     public function handle(): int
     {
         $dryRun = (bool) $this->option('dry-run');
         $force = (bool) $this->option('force');
+        $repairPartial = (bool) $this->option('repair-partial') || $force;
 
         $query = PurchaseOrder::with(['items', 'vendor', 'store'])
             ->whereIn('status', ['received', 'partially_received'])
@@ -33,72 +36,195 @@ class SyncPurchaseOrderAccounting extends Command
             return Command::SUCCESS;
         }
 
-        $this->info("Scanning {$total} received purchase order(s)...");
+        $inventoryAccountId = Transaction::getInventoryAccountId();
+        $accountsPayableAccountId = Transaction::getAccountsPayableAccountId();
 
-        $created = 0;
+        $this->info("Scanning {$total} received purchase order(s)...");
+        $this->line("Inventory account ID: {$inventoryAccountId}");
+        $this->line("Accounts Payable account ID: {$accountsPayableAccountId}");
+
+        $createdGroups = 0;
+        $repairedRows = 0;
         $skipped = 0;
         $cancelled = 0;
         $errors = 0;
 
-        $query->chunkById(50, function ($purchaseOrders) use ($dryRun, $force, &$created, &$skipped, &$cancelled, &$errors) {
+        $query->chunkById(50, function ($purchaseOrders) use (
+            $dryRun,
+            $force,
+            $repairPartial,
+            $inventoryAccountId,
+            $accountsPayableAccountId,
+            &$createdGroups,
+            &$repairedRows,
+            &$skipped,
+            &$cancelled,
+            &$errors
+        ) {
             foreach ($purchaseOrders as $po) {
                 try {
+                    $receiptLedgerLines = $this->buildReceiptLedgerLines($po);
+                    $targetAmount = round($po->calculateReceiptLedgerAmount($receiptLedgerLines), 2);
+
+                    if ($targetAmount <= 0) {
+                        $skipped++;
+                        $this->line("SKIP {$po->po_number}: received value is zero.");
+                        continue;
+                    }
+
                     $existingQuery = Transaction::where('reference_type', PurchaseOrder::class)
                         ->where('reference_id', $po->id)
                         ->where('metadata->source', 'purchase_order_receipt')
                         ->where('status', 'completed');
 
-                    $existingCount = (clone $existingQuery)->count();
-                    if ($existingCount > 0 && !$force) {
-                        $skipped++;
-                        $this->line("SKIP {$po->po_number}: receipt ledger already exists ({$existingCount} transaction row(s)).");
+                    $existingRows = (clone $existingQuery)->get();
+                    $inventoryDebit = round((float) $existingRows
+                        ->where('account_id', $inventoryAccountId)
+                        ->where('type', 'debit')
+                        ->sum('amount'), 2);
+                    $apCredit = round((float) $existingRows
+                        ->where('account_id', $accountsPayableAccountId)
+                        ->where('type', 'credit')
+                        ->sum('amount'), 2);
+
+                    if ($force && $existingRows->count() > 0) {
+                        if ($dryRun) {
+                            $this->line("DRY {$po->po_number}: would cancel {$existingRows->count()} old PO receipt row(s) and recreate Dr Inventory / Cr AP BDT " . number_format($targetAmount, 2));
+                        } else {
+                            DB::transaction(function () use ($existingQuery, $existingRows, $po, $targetAmount, $receiptLedgerLines, &$cancelled, &$createdGroups) {
+                                $existingQuery->update(['status' => 'cancelled']);
+                                $cancelled += $existingRows->count();
+                                Transaction::createFromPurchaseOrderReceipt(
+                                    $po,
+                                    $targetAmount,
+                                    [
+                                        'receipt_type' => 'po_accounting_force_rebuild',
+                                        'received_lines' => $receiptLedgerLines,
+                                        'received_gross_amount' => round(array_sum(array_column($receiptLedgerLines, 'gross_amount')), 2),
+                                        'backfilled_by_command' => 'accounting:sync-purchase-orders --force',
+                                    ]
+                                );
+                                $createdGroups++;
+                            });
+                            $this->info("REBUILT {$po->po_number}: Dr Inventory / Cr Accounts Payable BDT " . number_format($targetAmount, 2));
+                        }
                         continue;
                     }
 
-                    $receiptLedgerLines = $this->buildReceiptLedgerLines($po);
-                    $receivedAccountingValue = $po->calculateReceiptLedgerAmount($receiptLedgerLines);
+                    $missingInventory = round(max(0, $targetAmount - $inventoryDebit), 2);
+                    $missingAp = round(max(0, $targetAmount - $apCredit), 2);
 
-                    // Legacy safety: older code booked paid vendor bills as Dr Inventory / Cr Cash.
-                    // Backfill only the unpaid portion, otherwise paid historical POs would double-count inventory.
-                    $legacyPaidAmount = round(abs((float) $po->paid_amount), 2);
-                    $amount = round(max(0, $receivedAccountingValue - $legacyPaidAmount), 2);
+                    if ($existingRows->count() === 0) {
+                        if ($dryRun) {
+                            $this->line("DRY {$po->po_number}: would create Dr Inventory / Cr Accounts Payable BDT " . number_format($targetAmount, 2));
+                        } else {
+                            Transaction::createFromPurchaseOrderReceipt(
+                                $po,
+                                $targetAmount,
+                                [
+                                    'receipt_type' => 'po_accounting_backfill',
+                                    'received_lines' => $receiptLedgerLines,
+                                    'received_gross_amount' => round(array_sum(array_column($receiptLedgerLines, 'gross_amount')), 2),
+                                    'backfilled_by_command' => 'accounting:sync-purchase-orders',
+                                ]
+                            );
+                            $createdGroups++;
+                            $this->info("CREATED {$po->po_number}: Dr Inventory / Cr Accounts Payable BDT " . number_format($targetAmount, 2));
+                        }
+                        continue;
+                    }
 
-                    if ($amount <= 0) {
+                    if ($missingInventory <= 0 && $missingAp <= 0) {
                         $skipped++;
-                        $this->line("SKIP {$po->po_number}: no unpaid received value to backfill. Received value BDT " . number_format($receivedAccountingValue, 2) . ", already paid BDT " . number_format($legacyPaidAmount, 2) . ".");
+                        $this->line("OK {$po->po_number}: Inventory debit and AP credit already exist for BDT " . number_format($targetAmount, 2));
+                        continue;
+                    }
+
+                    if (!$repairPartial) {
+                        $skipped++;
+                        $this->warn(
+                            "PARTIAL {$po->po_number}: target BDT " . number_format($targetAmount, 2) .
+                            ", Inventory debit BDT " . number_format($inventoryDebit, 2) .
+                            ", AP credit BDT " . number_format($apCredit, 2) .
+                            ". Run with --repair-partial or --force."
+                        );
                         continue;
                     }
 
                     if ($dryRun) {
-                        $this->line("DRY {$po->po_number}: would create Dr Inventory / Cr Accounts Payable for unpaid received value BDT " . number_format($amount, 2));
+                        if ($missingInventory > 0) {
+                            $this->line("DRY {$po->po_number}: would add missing Dr Inventory BDT " . number_format($missingInventory, 2));
+                        }
+                        if ($missingAp > 0) {
+                            $this->line("DRY {$po->po_number}: would add missing Cr Accounts Payable BDT " . number_format($missingAp, 2));
+                        }
                         continue;
                     }
 
-                    DB::transaction(function () use ($po, $force, $existingQuery, $receiptLedgerLines, $amount, $receivedAccountingValue, $legacyPaidAmount, &$cancelled) {
-                        if ($force) {
-                            $rows = (clone $existingQuery)->count();
-                            if ($rows > 0) {
-                                $existingQuery->update(['status' => 'cancelled']);
-                                $cancelled += $rows;
-                            }
+                    DB::transaction(function () use (
+                        $po,
+                        $existingRows,
+                        $inventoryAccountId,
+                        $accountsPayableAccountId,
+                        $missingInventory,
+                        $missingAp,
+                        $targetAmount,
+                        $receiptLedgerLines,
+                        &$repairedRows
+                    ) {
+                        $groupId = $this->existingGroupId($existingRows) ?: (string) Str::uuid();
+                        $metadata = [
+                            'source' => 'purchase_order_receipt',
+                            'po_number' => $po->po_number,
+                            'vendor_id' => $po->vendor_id,
+                            'vendor_name' => $po->vendor->name ?? null,
+                            'group_id' => $groupId,
+                            'receipt_type' => 'po_accounting_partial_repair',
+                            'received_lines' => $receiptLedgerLines,
+                            'received_gross_amount' => round(array_sum(array_column($receiptLedgerLines, 'gross_amount')), 2),
+                            'target_receipt_amount' => $targetAmount,
+                            'repaired_by_command' => 'accounting:sync-purchase-orders --repair-partial',
+                        ];
+
+                        if ($missingInventory > 0) {
+                            Transaction::create([
+                                'transaction_date' => $po->received_at ?? $po->actual_delivery_date ?? now(),
+                                'amount' => $missingInventory,
+                                'type' => 'debit',
+                                'account_id' => $inventoryAccountId,
+                                'reference_type' => PurchaseOrder::class,
+                                'reference_id' => $po->id,
+                                'description' => "PO Received - Inventory Repair - {$po->po_number}",
+                                'store_id' => $po->store_id,
+                                'created_by' => auth()->id() ?: $po->received_by ?: $po->created_by,
+                                'metadata' => $metadata,
+                                'status' => 'completed',
+                            ]);
+                            $repairedRows++;
                         }
 
-                        Transaction::createFromPurchaseOrderReceipt(
-                            $po,
-                            $amount,
-                            [
-                                'receipt_type' => 'po_accounting_backfill',
-                                'received_lines' => $receiptLedgerLines,
-                                'received_gross_amount' => round(array_sum(array_column($receiptLedgerLines, 'gross_amount')), 2),
-                                'received_accounting_value_before_legacy_paid_offset' => $receivedAccountingValue,
-                                'legacy_paid_amount_offset' => $legacyPaidAmount,
-                                'backfilled_by_command' => 'accounting:sync-purchase-orders',
-                            ]
-                        );
+                        if ($missingAp > 0) {
+                            Transaction::create([
+                                'transaction_date' => $po->received_at ?? $po->actual_delivery_date ?? now(),
+                                'amount' => $missingAp,
+                                'type' => 'credit',
+                                'account_id' => $accountsPayableAccountId,
+                                'reference_type' => PurchaseOrder::class,
+                                'reference_id' => $po->id,
+                                'description' => "PO Received - Accounts Payable Repair - {$po->po_number}",
+                                'store_id' => $po->store_id,
+                                'created_by' => auth()->id() ?: $po->received_by ?: $po->created_by,
+                                'metadata' => $metadata,
+                                'status' => 'completed',
+                            ]);
+                            $repairedRows++;
+                        }
                     });
 
-                    $created++;
-                    $this->info("CREATED {$po->po_number}: Dr Inventory / Cr Accounts Payable BDT " . number_format($amount, 2));
+                    $this->info(
+                        "REPAIRED {$po->po_number}: added Inventory BDT " . number_format($missingInventory, 2) .
+                        " / AP BDT " . number_format($missingAp, 2)
+                    );
                 } catch (\Throwable $e) {
                     $errors++;
                     $this->error("ERROR {$po->po_number}: {$e->getMessage()}");
@@ -109,8 +235,8 @@ class SyncPurchaseOrderAccounting extends Command
         $this->newLine();
         $this->info('Purchase order accounting sync finished.');
         $this->table(
-            ['Created', 'Skipped', 'Cancelled Existing Rows', 'Errors'],
-            [[$created, $skipped, $cancelled, $errors]]
+            ['Created Groups', 'Repaired Rows', 'Skipped', 'Cancelled Existing Rows', 'Errors'],
+            [[$createdGroups, $repairedRows, $skipped, $cancelled, $errors]]
         );
 
         return $errors > 0 ? Command::FAILURE : Command::SUCCESS;
@@ -144,5 +270,17 @@ class SyncPurchaseOrderAccounting extends Command
         }
 
         return $lines;
+    }
+
+    private function existingGroupId($existingRows): ?string
+    {
+        foreach ($existingRows as $row) {
+            $metadata = is_array($row->metadata) ? $row->metadata : [];
+            if (!empty($metadata['group_id'])) {
+                return (string) $metadata['group_id'];
+            }
+        }
+
+        return null;
     }
 }

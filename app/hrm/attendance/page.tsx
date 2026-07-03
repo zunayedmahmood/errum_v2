@@ -664,7 +664,7 @@ export default function AttendanceManagerPage() {
                     <td className="px-5 py-4">
                       <div className="flex flex-wrap items-center justify-end gap-2">
                         <button
-                          disabled={!dutyActive || clockedIn}
+                          disabled={clockedIn}
                           onClick={() => void markEmployee(Number(employee.id), 'clock_in')}
                           className="rounded-xl px-3 py-2 text-xs font-700 disabled:cursor-not-allowed disabled:opacity-40"
                           style={{ background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399' }}
@@ -672,7 +672,7 @@ export default function AttendanceManagerPage() {
                           <span className="inline-flex items-center gap-1.5"><LogIn className="h-3.5 w-3.5" />Clock in</span>
                         </button>
                         <button
-                          disabled={!dutyActive || !clockedIn || clockedOut}
+                          disabled={!clockedIn || clockedOut}
                           onClick={() => void markEmployee(Number(employee.id), 'clock_out')}
                           className="rounded-xl px-3 py-2 text-xs font-700 disabled:cursor-not-allowed disabled:opacity-40"
                           style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}

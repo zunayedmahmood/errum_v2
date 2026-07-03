@@ -22,6 +22,7 @@ use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use App\Services\AccountingPostingService;
 use Throwable;
 
 class AccountingIntegrityCheck extends Command
@@ -32,7 +33,8 @@ class AccountingIntegrityCheck extends Command
                             {--store_id= : Optional store id. Use global for NULL store ledgers}
                             {--fix-status : Safely sync ledger statuses when the source document is completed/cancelled/failed}
                             {--json= : Optional file path to save the full JSON report}
-                            {--fail-on-warning : Return failure code when warnings exist, not only critical errors}';
+                            {--fail-on-warning : Return failure code when warnings exist, not only critical errors}
+                            {--create-missing-accounts : Create/activate missing standard workbook accounts before checking; no ledger transactions are posted}';
 
     protected $description = 'Run a full operational integrity check of the accounting ledger, source documents, AP/PO, expenses, returns, and cash-sheet links.';
 
@@ -41,7 +43,6 @@ class AccountingIntegrityCheck extends Command
         'exchange_balance',
         'store_credit',
         'balance_carryover',
-        'exchange_surplus',
     ];
 
     private array $issues = [];
@@ -69,6 +70,11 @@ class AccountingIntegrityCheck extends Command
             'source_documents_scanned' => 0,
             'fixed_rows' => 0,
         ];
+
+        if ((bool) $this->option('create-missing-accounts')) {
+            app(AccountingPostingService::class)->ensureWorkbookAccounts();
+            $this->info('Standard workbook accounts checked/created before integrity scan.');
+        }
 
         $this->info('Running accounting integrity check...');
         $this->line('Scope: ' . ($from || $to ? (($from ?: 'beginning') . ' → ' . ($to ?: 'today')) : 'all dates') . '; store: ' . ($storeId ?: 'all'));
@@ -120,12 +126,31 @@ class AccountingIntegrityCheck extends Command
             '1003' => ['name' => 'Inventory', 'type' => 'asset'],
             '1004' => ['name' => 'Bank Account', 'type' => 'asset'],
             '1006' => ['name' => 'Vendor Advances / Supplier Deposits', 'type' => 'asset'],
+            '1007' => ['name' => 'Inventory to Receive / PO Commitment Asset', 'type' => 'asset'],
+            '1008' => ['name' => 'Pathao Receivable', 'type' => 'asset'],
+            '1009' => ['name' => 'SSLCommerz Receivable', 'type' => 'asset'],
+            '1010' => ['name' => 'Customer Receivable', 'type' => 'asset'],
             '2001' => ['name' => 'Accounts Payable', 'type' => 'liability'],
             '2002' => ['name' => 'Tax Payable', 'type' => 'liability'],
+            '2003' => ['name' => 'PO Payable Commitment', 'type' => 'liability'],
+            '2004' => ['name' => 'Customer Advance / Unearned Revenue', 'type' => 'liability'],
+            '2005' => ['name' => 'Customer Refund Payable', 'type' => 'liability'],
+            '2006' => ['name' => 'Customer Store Credit', 'type' => 'liability'],
+            '2007' => ['name' => 'Pathao Payable', 'type' => 'liability'],
+            '2999' => ['name' => 'Exchange Clearing', 'type' => 'liability'],
             '3002' => ['name' => 'Owner Capital', 'type' => 'equity'],
+            '3003' => ['name' => 'Owner Drawings', 'type' => 'equity'],
             '4001' => ['name' => 'Sales Revenue', 'type' => 'income'],
+            '4002' => ['name' => 'Service Revenue', 'type' => 'income'],
+            '4003' => ['name' => 'Delivery Charge Income', 'type' => 'income'],
+            '4101' => ['name' => 'Sales Discount / Contra Revenue', 'type' => 'expense'],
+            '4102' => ['name' => 'Sales Return / Refund / Contra Revenue', 'type' => 'expense'],
             '5001' => ['name' => 'Operating Expenses', 'type' => 'expense'],
             '5002' => ['name' => 'Cost of Goods Sold', 'type' => 'expense'],
+            '5010' => ['name' => 'Delivery Expense - Pathao', 'type' => 'expense'],
+            '5011' => ['name' => 'SSLCommerz Commission Expense', 'type' => 'expense'],
+            '5012' => ['name' => 'Branch Daily Expense', 'type' => 'expense'],
+            '5013' => ['name' => 'Inventory Loss / Damage', 'type' => 'expense'],
         ];
 
         foreach ($standardAccounts as $code => $expected) {
@@ -440,9 +465,11 @@ class AccountingIntegrityCheck extends Command
         $this->sourceStoreScope($query, $storeId);
 
         $inventoryAccount = Account::where('account_code', '1003')->where('is_active', true)->first();
+        $inventoryToReceiveAccount = Account::where('account_code', '1007')->where('is_active', true)->first();
         $apAccount = Account::where('account_code', '2001')->where('is_active', true)->first();
+        $poCommitmentAccount = Account::where('account_code', '2003')->where('is_active', true)->first();
 
-        $query->chunkById(50, function ($purchaseOrders) use ($inventoryAccount, $apAccount) {
+        $query->chunkById(50, function ($purchaseOrders) use ($inventoryAccount, $inventoryToReceiveAccount, $apAccount, $poCommitmentAccount) {
             foreach ($purchaseOrders as $po) {
                 $this->summary['source_documents_scanned']++;
 
@@ -480,21 +507,44 @@ class AccountingIntegrityCheck extends Command
                     ]);
                 }
 
-                if ($inventoryAccount && $ledgerRows->where('type', 'debit')->where('account_id', $inventoryAccount->id)->sum('amount') <= 0) {
+                $inventoryDebit = $inventoryAccount ? round((float) $ledgerRows->where('type', 'debit')->where('account_id', $inventoryAccount->id)->sum('amount'), 2) : 0.0;
+                $apCredit = $apAccount ? round((float) $ledgerRows->where('type', 'credit')->where('account_id', $apAccount->id)->sum('amount'), 2) : 0.0;
+                $inventoryToReceiveCredit = $inventoryToReceiveAccount ? round((float) $ledgerRows->where('type', 'credit')->where('account_id', $inventoryToReceiveAccount->id)->sum('amount'), 2) : 0.0;
+                $poCommitmentDebit = $poCommitmentAccount ? round((float) $ledgerRows->where('type', 'debit')->where('account_id', $poCommitmentAccount->id)->sum('amount'), 2) : 0.0;
+
+                if ($inventoryAccount && $inventoryDebit <= 0) {
                     $this->addIssue('critical', 'PO_RECEIPT_NO_INVENTORY_DEBIT', 'PO receipt ledger is missing Inventory debit.', [
                         'purchase_order_id' => $po->id,
                         'po_number' => $po->po_number,
                     ]);
                 }
 
-                if ($apAccount && $ledgerRows->where('type', 'credit')->where('account_id', $apAccount->id)->sum('amount') <= 0) {
+                if ($apAccount && $apCredit <= 0) {
                     $this->addIssue('critical', 'PO_RECEIPT_NO_AP_CREDIT', 'PO receipt ledger is missing Accounts Payable credit.', [
                         'purchase_order_id' => $po->id,
                         'po_number' => $po->po_number,
                     ]);
                 }
 
-                $bookedReceipt = round((float) $ledgerRows->where('type', 'debit')->sum('amount'), 2);
+                if ($inventoryToReceiveAccount && $inventoryToReceiveCredit > 0 && abs($inventoryToReceiveCredit - $inventoryDebit) > 1.00) {
+                    $this->addIssue('warning', 'PO_RECEIPT_TEMP_INVENTORY_SETTLEMENT_MISMATCH', 'PO receipt temporary Inventory-to-Receive settlement does not match actual Inventory debit.', [
+                        'purchase_order_id' => $po->id,
+                        'po_number' => $po->po_number,
+                        'inventory_debit' => $inventoryDebit,
+                        'inventory_to_receive_credit' => $inventoryToReceiveCredit,
+                    ]);
+                }
+
+                if ($poCommitmentAccount && $poCommitmentDebit > 0 && abs($poCommitmentDebit - $apCredit) > 1.00) {
+                    $this->addIssue('warning', 'PO_RECEIPT_TEMP_PAYABLE_SETTLEMENT_MISMATCH', 'PO receipt temporary PO payable settlement does not match actual Accounts Payable credit.', [
+                        'purchase_order_id' => $po->id,
+                        'po_number' => $po->po_number,
+                        'ap_credit' => $apCredit,
+                        'po_payable_commitment_debit' => $poCommitmentDebit,
+                    ]);
+                }
+
+                $bookedReceipt = $inventoryDebit;
                 if (abs($bookedReceipt - $receivedValue) > 1.00) {
                     $this->addIssue('warning', 'PO_RECEIPT_VALUE_MISMATCH', 'PO received value and booked inventory receipt value do not match. This may indicate historical pre-fix PO data or duplicate/missing receipt entries.', [
                         'purchase_order_id' => $po->id,
@@ -602,7 +652,7 @@ class AccountingIntegrityCheck extends Command
     private function checkCOGSLedgers(?string $from, ?string $to, $storeId): void
     {
         $query = Order::with('items')
-            ->where('status', 'completed');
+            ->whereIn('status', ['confirmed', 'delivered', 'completed']);
         $this->sourceDateScope($query, $from, $to, 'created_at');
         $this->sourceStoreScope($query, $storeId);
 

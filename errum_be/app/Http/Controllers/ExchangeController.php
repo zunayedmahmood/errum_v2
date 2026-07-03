@@ -168,6 +168,8 @@ class ExchangeController extends Controller
                 ];
             }
 
+            $effectiveExchangeDate = $originalOrder->order_date ?: now();
+
             $productReturn = ProductReturn::create([
                 'return_number' => $returnNumber,
                 'order_id' => $originalOrder->id,
@@ -177,9 +179,9 @@ class ExchangeController extends Controller
                 'return_reason' => 'other',
                 'return_type' => 'customer_return',
                 'status' => 'processing',
-                'return_date' => now(),
-                'received_date' => now(),
-                'processed_date' => now(),
+                'return_date' => $effectiveExchangeDate,
+                'received_date' => $effectiveExchangeDate,
+                'processed_date' => $effectiveExchangeDate,
                 'total_return_value' => $totalReturnValue,
                 'total_refund_amount' => $totalReturnValue,
                 'processing_fee' => 0,
@@ -192,6 +194,13 @@ class ExchangeController extends Controller
             $this->restoreInventoryForReturn($productReturn, $employee);
             $productReturn->status = 'completed';
             $productReturn->save();
+            $productReturn->forceFill([
+                'return_date' => $effectiveExchangeDate,
+                'received_date' => $effectiveExchangeDate,
+                'processed_date' => $effectiveExchangeDate,
+                'created_at' => $effectiveExchangeDate,
+                'updated_at' => $effectiveExchangeDate,
+            ])->saveQuietly();
 
             // --- 2. CREATE REPLACEMENT ORDER ---
             $orderNumber = $this->generateOrderNumber();
@@ -209,7 +218,7 @@ class ExchangeController extends Controller
                 'paid_amount' => 0,
                 'payment_status' => 'pending',
                 'created_by' => $employee->id,
-                'order_date' => now(),
+                'order_date' => $effectiveExchangeDate,
                 'notes' => "Exchange replacement for order #{$originalOrder->order_number}",
                 'metadata' => [
                     'is_exchange_replacement' => true,
@@ -220,6 +229,11 @@ class ExchangeController extends Controller
                     'reporting_note' => 'Use net exchange difference for cash reporting; replacement value is settled by exchange balance.',
                 ],
             ]);
+            $replacementOrder->forceFill([
+                'order_date' => $effectiveExchangeDate,
+                'created_at' => $effectiveExchangeDate,
+                'updated_at' => $effectiveExchangeDate,
+            ])->saveQuietly();
 
             $subtotal = 0;
             $taxTotal = 0;
@@ -328,7 +342,7 @@ class ExchangeController extends Controller
                 'total_amount' => $totalAmount,
                 'outstanding_amount' => $totalAmount,
                 'status' => 'confirmed',
-                'confirmed_at' => now(),
+                'confirmed_at' => $effectiveExchangeDate,
             ]);
 
             // --- 3. FINANCIAL SETTLEMENT ---
@@ -359,8 +373,13 @@ class ExchangeController extends Controller
                 $payment->payment_type = 'exchange_balance';
                 $payment->notes = "Exchange credit from return #{$returnNumber}";
                 $payment->save();
-                $payment->process($employee);
-                $payment->complete('EXC-' . $returnNumber, 'INTERNAL');
+                $payment->process($employee, $effectiveExchangeDate);
+                $payment->complete('EXC-' . $returnNumber, 'INTERNAL', $effectiveExchangeDate);
+                $payment->forceFill([
+                    'payment_received_date' => $effectiveExchangeDate->toDateString(),
+                    'created_at' => $effectiveExchangeDate,
+                    'updated_at' => $effectiveExchangeDate,
+                ])->saveQuietly();
             }
 
             $surplusPaid = 0;
@@ -396,8 +415,13 @@ class ExchangeController extends Controller
                     $payment->payment_type = 'exchange_surplus';
                     $payment->notes = 'Extra payment collected for exchange upgrade';
                     $payment->save();
-                    $payment->process($employee);
-                    $payment->complete('EXC-SUR-' . $returnNumber, 'EXTERNAL');
+                    $payment->process($employee, $effectiveExchangeDate);
+                    $payment->complete('EXC-SUR-' . $returnNumber, 'EXTERNAL', $effectiveExchangeDate);
+                    $payment->forceFill([
+                        'payment_received_date' => $effectiveExchangeDate->toDateString(),
+                        'created_at' => $effectiveExchangeDate,
+                        'updated_at' => $effectiveExchangeDate,
+                    ])->saveQuietly();
                 }
             } elseif ($difference < 0) {
                 $refundDue = abs($difference);
@@ -416,8 +440,8 @@ class ExchangeController extends Controller
                         'status' => 'completed',
                         'processed_by' => $employee?->id,
                         'approved_by' => $employee?->id,
-                        'processed_at' => now(),
-                        'completed_at' => now(),
+                        'processed_at' => $effectiveExchangeDate,
+                        'completed_at' => $effectiveExchangeDate,
                         'transaction_reference' => 'EXC-REF-' . $returnNumber,
                         'internal_notes' => "Automatic exchange refund difference. Original Order: {$originalOrder->order_number}",
                         'refund_method_details' => $request->paymentRefund['details'] ?? null,
@@ -427,6 +451,11 @@ class ExchangeController extends Controller
 
             $replacementOrder->refresh();
             $replacementOrder->updatePaymentStatus();
+            $replacementOrder->forceFill([
+                'order_date' => $effectiveExchangeDate,
+                'created_at' => $effectiveExchangeDate,
+                'updated_at' => $effectiveExchangeDate,
+            ])->saveQuietly();
 
             // --- 4. LINK EXCHANGE & ACCOUNTING ---
             $refundDue = max(0, $totalReturnValue - $totalAmount);

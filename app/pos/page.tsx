@@ -1175,6 +1175,12 @@ export default function POSPage() {
 
             const printableOrder = {
               ...(fullOrder as any),
+              // Use the POS-selected sale date for the memo even if an older backend endpoint
+              // returns server timestamps. The backend is also patched to persist this date.
+              order_date: selectedSaleDateTime,
+              created_at: selectedSaleDateTime,
+              updated_at: selectedSaleDateTime,
+              sale_date: selectedSaleDateTime,
               paid_amount: totalPaid, // Actual total handed by customer
               payment_breakdown: receiptPaymentBreakdown,
               change_amount: change,

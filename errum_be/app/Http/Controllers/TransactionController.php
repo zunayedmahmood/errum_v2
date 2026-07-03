@@ -446,20 +446,44 @@ class TransactionController extends Controller
 
         $trialBalance = Transaction::getTrialBalance($storeId, $startDate, $endDate);
 
-        // Get account-wise balance
+        // Trial balance must use raw ledger direction, not Account::getBalance().
+        // Account::getBalance() returns a normal positive balance for liabilities/income,
+        // which makes AP/equity/income appear under Debit in the UI. Here we calculate
+        // per-account debit minus credit directly, so Inventory appears as Debit and
+        // Accounts Payable appears as Credit.
         $accounts = Account::with('parent')
             ->active()
             ->orderBy('account_code')
             ->get()
-            ->map(function($account) use ($storeId, $endDate) {
-                $balance = $account->getBalance($storeId, $endDate);
+            ->map(function ($account) use ($storeId, $startDate, $endDate) {
+                $query = $account->transactions()->completed();
+
+                if ($storeId) {
+                    $query->byStore($storeId);
+                }
+
+                if ($startDate && $endDate) {
+                    $query->whereBetween('transaction_date', [$startDate, $endDate]);
+                } elseif ($endDate) {
+                    $query->where('transaction_date', '<=', $endDate);
+                }
+
+                $debits = (float) (clone $query)->debit()->sum('amount');
+                $credits = (float) (clone $query)->credit()->sum('amount');
+                $rawBalance = round($debits - $credits, 2);
+
                 return [
+                    'id' => $account->id,
                     'account_code' => $account->account_code,
                     'account_name' => $account->name,
+                    'name' => $account->name,
                     'type' => $account->type,
-                    'balance' => $balance,
-                    'debit' => $balance > 0 ? $balance : 0,
-                    'credit' => $balance < 0 ? abs($balance) : 0,
+                    'sub_type' => $account->sub_type,
+                    'balance' => $rawBalance,
+                    'debit' => $rawBalance > 0 ? $rawBalance : 0,
+                    'credit' => $rawBalance < 0 ? abs($rawBalance) : 0,
+                    'raw_debits' => round($debits, 2),
+                    'raw_credits' => round($credits, 2),
                 ];
             });
 

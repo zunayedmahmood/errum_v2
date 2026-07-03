@@ -214,6 +214,8 @@ class ProductReturnController extends Controller
                 throw new \Exception('Cannot determine store for this return. The order has no store assigned and no receiving store was specified.');
             }
 
+            $effectiveReturnDate = $order->order_date ?: now();
+
             $return = ProductReturn::create([
                 'return_number' => $this->generateReturnNumber(),
                 'order_id' => $order->id,
@@ -223,7 +225,7 @@ class ProductReturnController extends Controller
                 'return_reason' => $request->return_reason,
                 'return_type' => $request->return_type,
                 'status' => 'pending',
-                'return_date' => now(),
+                'return_date' => $effectiveReturnDate,
                 'total_return_value' => $totalReturnValue,
                 'total_refund_amount' => $totalReturnValue,
                 'customer_notes' => $request->customer_notes,
@@ -234,7 +236,7 @@ class ProductReturnController extends Controller
 
             // 2. Quality Check (logic from update())
             $return->update([
-                'received_date' => now(),
+                'received_date' => $effectiveReturnDate,
                 'quality_check_passed' => true,
                 'quality_check_notes' => 'Quick-complete auto-check',
                 'internal_notes' => "Quick-completed by {$employee->name}",
@@ -252,6 +254,13 @@ class ProductReturnController extends Controller
             // 6. Complete (logic from complete())
             $return->complete();
 
+            $return->forceFill([
+                'return_date' => $effectiveReturnDate,
+                'received_date' => $effectiveReturnDate,
+                'processed_date' => $effectiveReturnDate,
+                'created_at' => $effectiveReturnDate,
+                'updated_at' => $effectiveReturnDate,
+            ])->saveQuietly();
             $return->save();
             DB::commit();
 
@@ -369,6 +378,8 @@ class ProductReturnController extends Controller
                 throw new \Exception('Cannot determine store for this return. The order has no store assigned and no receiving store was specified.');
             }
 
+            $effectiveReturnDate = $order->order_date ?: now();
+
             // Create return
             $return = ProductReturn::create([
                 'return_number' => $this->generateReturnNumber(),
@@ -379,7 +390,7 @@ class ProductReturnController extends Controller
                 'return_reason' => $request->return_reason,
                 'return_type' => $request->return_type,
                 'status' => 'pending',
-                'return_date' => now(),
+                'return_date' => $effectiveReturnDate,
                 'total_return_value' => $totalReturnValue,
                 'total_refund_amount' => $totalRefundAmount,
                 'processing_fee' => $processingFee,
@@ -387,6 +398,11 @@ class ProductReturnController extends Controller
                 'return_items' => $returnItems,
                 'attachments' => $request->attachments ?? [],
             ]);
+            $return->forceFill([
+                'return_date' => $effectiveReturnDate,
+                'created_at' => $effectiveReturnDate,
+                'updated_at' => $effectiveReturnDate,
+            ])->saveQuietly();
 
             DB::commit();
 

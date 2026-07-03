@@ -509,17 +509,29 @@ class CashSheetController extends Controller
                 $createdBy,
                 ['cash_sheet_type' => $entry->type, 'details' => $entry->details]
             ),
-            'sslzc', 'pathao' => $this->createLedgerPair(
+            'sslzc' => $this->createLedgerPair(
                 $date,
                 $amount,
                 Transaction::getBankAccountId(),
-                Transaction::getAccountsReceivableAccountId(),
+                Transaction::getSSLCommerzReceivableAccountId(),
                 AdminEntry::class,
                 $entry->id,
-                'Cash Sheet - ' . strtoupper($entry->type) . ' Disbursement Received',
+                'Cash Sheet - SSLCommerz Disbursement Received',
                 null,
                 $createdBy,
-                ['cash_sheet_type' => $entry->type, 'details' => $entry->details]
+                ['cash_sheet_type' => $entry->type, 'details' => $entry->details, 'source' => 'sslcommerz_settlement']
+            ),
+            'pathao' => $this->createLedgerPair(
+                $date,
+                $amount,
+                Transaction::getBankAccountId(),
+                Transaction::getPathaoReceivableAccountId(),
+                AdminEntry::class,
+                $entry->id,
+                'Cash Sheet - Pathao Disbursement Received',
+                null,
+                $createdBy,
+                ['cash_sheet_type' => $entry->type, 'details' => $entry->details, 'source' => 'pathao_disbursement']
             ),
             default => null,
         };

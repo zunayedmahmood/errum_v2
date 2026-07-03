@@ -328,14 +328,7 @@ class AttendanceController extends Controller
 
         $date = Carbon::parse($validated['attendance_date']);
 
-        if ($this->isHoliday($storeId, $date)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Attendance cannot be marked on declared holiday',
-            ], 422);
-        }
-
-        // Fixed day off is the default roster, not a hard block.
+        // Declared holiday and fixed day off are default roster states, not hard blocks.
         // Employees may still clock in/be marked present for special work and receive compensatory leave later.
 
         $saved = [];
@@ -350,11 +343,15 @@ class AttendanceController extends Controller
 
                 $schedule = $this->scheduleForDate($employee->id, $date);
                 $policy = $this->policyForDate($storeId, $date);
-                if ($policy && $policy->mode === 'always_on_duty' && !$this->isEmployeeScheduledForDate($employee->id, $date)) {
+                $status = strtolower($entry['status']);
+                $isWorkOverride = in_array($status, ['present', 'late'], true);
+
+                // Roster/holiday rules are defaults, not hard blocks: a branch may need
+                // someone to work on a holiday/off day and compensate them later.
+                if ($policy && $policy->mode === 'always_on_duty' && !$isWorkOverride && !$this->isEmployeeScheduledForDate($employee->id, $date)) {
                     throw new \RuntimeException('Employee #' . $employee->id . ' is not scheduled for duty on ' . $date->toDateString());
                 }
 
-                $status = strtolower($entry['status']);
                 $inTime = $entry['in_time'] ?? null;
                 $outTime = $entry['out_time'] ?? null;
 

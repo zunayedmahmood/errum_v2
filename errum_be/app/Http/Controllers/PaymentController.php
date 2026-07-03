@@ -15,6 +15,45 @@ use Carbon\Carbon;
 class PaymentController extends Controller
 {
     /**
+     * Payment date from POS/front-end is trusted for historical/future offline sales.
+     * This keeps order payments, ledgers and cash sheet on the selected business day.
+     */
+    private function resolvePaymentTimestamp(Request $request, Order $order): Carbon
+    {
+        $timezone = config('app.timezone', 'Asia/Dhaka');
+        $raw = $request->input('payment_date')
+            ?: $request->input('payment_received_date')
+            ?: data_get($request->input('payment_data', []), 'payment_date')
+            ?: $order->order_date;
+
+        if (!$raw) {
+            return now($timezone);
+        }
+
+        $raw = trim((string) $raw);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+            $now = now($timezone);
+            return Carbon::parse($raw, $timezone)->setTime($now->hour, $now->minute, $now->second);
+        }
+
+        return Carbon::parse($raw, $timezone);
+    }
+
+
+    private function preserveCounterOrderTimestamp(Order $order, Carbon $timestamp, Request $request): void
+    {
+        if ($order->order_type !== 'counter' && !$request->filled('payment_date') && !$request->filled('payment_received_date')) {
+            return;
+        }
+
+        $order->forceFill([
+            'order_date' => $order->order_date ?: $timestamp,
+            'created_at' => $order->created_at ?: $timestamp,
+            'updated_at' => $timestamp,
+        ])->saveQuietly();
+    }
+
+    /**
      * Get available payment methods for an order
      */
     public function getAvailableMethods(Request $request, Order $order): JsonResponse
@@ -156,6 +195,7 @@ class PaymentController extends Controller
 
             // Get payment method
             $paymentMethod = PaymentMethod::findOrFail($request->payment_method_id);
+            $paymentAt = $this->resolvePaymentTimestamp($request, $order);
 
             // Validate payment method is allowed for customer type
             if (!$paymentMethod->isAllowedForCustomerType($order->customer->customer_type)) {
@@ -169,15 +209,29 @@ class PaymentController extends Controller
             $payment = $order->addPayment(
                 $paymentMethod,
                 $request->amount,
-                $request->payment_data ?? [],
+                array_merge($request->payment_data ?? [], [
+                    'payment_date' => $paymentAt->toDateTimeString(),
+                ]),
                 auth()->user() // Assuming employee is authenticated
             );
+            $payment->forceFill([
+                'payment_received_date' => $paymentAt->toDateString(),
+                'created_at' => $paymentAt,
+                'updated_at' => $paymentAt,
+            ])->saveQuietly();
 
             // Process the payment
             $transactionReference = $request->payment_data['transaction_reference'] ?? null;
             $externalReference = $request->payment_data['external_reference'] ?? null;
 
             if ($payment->process(auth()->user(), $paymentAt) && $payment->complete($transactionReference, $externalReference, $paymentAt)) {
+                $payment->forceFill([
+                    'payment_received_date' => $paymentAt->toDateString(),
+                    'created_at' => $paymentAt,
+                    'updated_at' => $paymentAt,
+                ])->saveQuietly();
+                $this->preserveCounterOrderTimestamp($order, $paymentAt, $request);
+
                 DB::commit();
 
                 return response()->json([
@@ -240,6 +294,8 @@ class PaymentController extends Controller
                 ], 400);
             }
 
+            $paymentAt = $this->resolvePaymentTimestamp($request, $order);
+
             $totalPaymentAmount = collect($request->payments)->sum('amount');
             $remainingAmount = $order->getRemainingAmount();
 
@@ -271,15 +327,28 @@ class PaymentController extends Controller
                     $payment = $order->addPayment(
                         $paymentMethod,
                         $paymentData['amount'],
-                        $paymentData['payment_data'] ?? [],
+                        array_merge($paymentData['payment_data'] ?? [], [
+                            'payment_date' => $paymentAt->toDateTimeString(),
+                        ]),
                         auth()->user()
                     );
+                    $payment->forceFill([
+                        'payment_received_date' => $paymentAt->toDateString(),
+                        'created_at' => $paymentAt,
+                        'updated_at' => $paymentAt,
+                    ])->saveQuietly();
 
                     // Process the payment
                     $transactionReference = $paymentData['payment_data']['transaction_reference'] ?? null;
                     $externalReference = $paymentData['payment_data']['external_reference'] ?? null;
 
                     if ($payment->process(auth()->user(), $paymentAt) && $payment->complete($transactionReference, $externalReference, $paymentAt)) {
+                        $payment->forceFill([
+                            'payment_received_date' => $paymentAt->toDateString(),
+                            'created_at' => $paymentAt,
+                            'updated_at' => $paymentAt,
+                        ])->saveQuietly();
+                        $this->preserveCounterOrderTimestamp($order, $paymentAt, $request);
                         $processedPayments[] = $payment->load('paymentMethod');
                     } else {
                         $failedPayments[] = [
@@ -553,6 +622,13 @@ class PaymentController extends Controller
                 $externalReference = $request->payment_data['external_reference'] ?? null;
 
                 if ($payment->process(auth()->user(), $paymentAt) && $payment->complete($transactionReference, $externalReference, $paymentAt)) {
+                    $payment->forceFill([
+                        'payment_received_date' => $paymentAt->toDateString(),
+                        'created_at' => $paymentAt,
+                        'updated_at' => $paymentAt,
+                    ])->saveQuietly();
+                    $this->preserveCounterOrderTimestamp($order, $paymentAt, $request);
+
                     DB::commit();
 
                     return response()->json([
@@ -625,6 +701,8 @@ class PaymentController extends Controller
                 ], 400);
             }
 
+            $paymentAt = $this->resolvePaymentTimestamp($request, $order);
+
             // Check minimum payment amount
             if ($order->minimum_payment_amount && $request->amount < $order->minimum_payment_amount) {
                 return response()->json([
@@ -644,16 +722,30 @@ class PaymentController extends Controller
 
             $payment = $order->addPartialPayment($request->amount, [
                 'payment_method_id' => $request->payment_method_id,
-                'payment_data' => $request->payment_data ?? [],
+                'payment_data' => array_merge($request->payment_data ?? [], [
+                    'payment_date' => $paymentAt->toDateTimeString(),
+                ]),
                 'notes' => $request->notes,
             ]);
 
             if ($payment) {
+                $payment->forceFill([
+                    'payment_received_date' => $paymentAt->toDateString(),
+                    'created_at' => $paymentAt,
+                    'updated_at' => $paymentAt,
+                ])->saveQuietly();
                 // Process the payment
                 $transactionReference = $request->payment_data['transaction_reference'] ?? null;
                 $externalReference = $request->payment_data['external_reference'] ?? null;
 
                 if ($payment->process(auth()->user(), $paymentAt) && $payment->complete($transactionReference, $externalReference, $paymentAt)) {
+                    $payment->forceFill([
+                        'payment_received_date' => $paymentAt->toDateString(),
+                        'created_at' => $paymentAt,
+                        'updated_at' => $paymentAt,
+                    ])->saveQuietly();
+                    $this->preserveCounterOrderTimestamp($order, $paymentAt, $request);
+
                     DB::commit();
 
                     return response()->json([

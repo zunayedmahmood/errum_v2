@@ -39,6 +39,20 @@ class OrderPaymentController extends Controller
         return Carbon::parse($raw, $timezone);
     }
 
+
+    private function preserveCounterOrderTimestamp(Order $order, Carbon $timestamp, Request $request): void
+    {
+        if ($order->order_type !== 'counter' && !$request->filled('payment_date') && !$request->filled('payment_received_date')) {
+            return;
+        }
+
+        $order->forceFill([
+            'order_date' => $order->order_date ?: $timestamp,
+            'created_at' => $order->created_at ?: $timestamp,
+            'updated_at' => $timestamp,
+        ])->saveQuietly();
+    }
+
     private function resolveSplitTimestamp(array $splitData, Carbon $fallback): Carbon
     {
         $timezone = config('app.timezone', 'Asia/Dhaka');
@@ -205,6 +219,15 @@ class OrderPaymentController extends Controller
                 );
             }
 
+            // Eloquent status updates inside process()/complete() touch updated_at.
+            // Restore trusted POS payment timestamp so history/cash sheet do not drift to today.
+            $payment->forceFill([
+                'payment_received_date' => $paymentAt->toDateString(),
+                'created_at' => $paymentAt,
+                'updated_at' => $paymentAt,
+            ])->saveQuietly();
+            $this->preserveCounterOrderTimestamp($order, $paymentAt, $request);
+
             DB::commit();
 
             return response()->json([
@@ -368,6 +391,12 @@ class OrderPaymentController extends Controller
                         $splitAt
                     );
                 }
+
+                // Keep each split on its selected sale/payment date after completion updates.
+                $split->forceFill([
+                    'created_at' => $splitAt,
+                    'updated_at' => $splitAt,
+                ])->saveQuietly();
             }
 
             // Update parent payment with calculated fees
@@ -381,6 +410,14 @@ class OrderPaymentController extends Controller
                 $payment->process($employee, $paymentAt);
                 $payment->updateSplitStatus($paymentAt);
             }
+
+            // Keep parent split payment on trusted POS payment timestamp after fee/status updates.
+            $payment->forceFill([
+                'payment_received_date' => $paymentAt->toDateString(),
+                'created_at' => $paymentAt,
+                'updated_at' => $paymentAt,
+            ])->saveQuietly();
+            $this->preserveCounterOrderTimestamp($order, $paymentAt, $request);
 
             DB::commit();
 
@@ -551,6 +588,12 @@ class OrderPaymentController extends Controller
                 $request->external_reference,
                 $paymentAt
             );
+
+            $payment->forceFill([
+                'payment_received_date' => $paymentAt->toDateString(),
+                'updated_at' => $paymentAt,
+            ])->saveQuietly();
+            $this->preserveCounterOrderTimestamp($payment->order, $paymentAt, $request);
 
             DB::commit();
 

@@ -14,8 +14,8 @@ class OrderPaymentObserver
     public function created(OrderPayment $orderPayment): void
     {
         // Skip exchange balance carryover and store credit payments — these are not
-        // real cash inflows. The cash/revenue side is already handled by createFromExchange().
-        $nonCashTypes = ['exchange_balance', 'store_credit', 'balance_carryover', 'exchange_surplus'];
+        // real cash inflows. Exchange surplus is intentionally NOT skipped because customer actually pays extra cash.
+        $nonCashTypes = ['exchange_balance', 'store_credit', 'balance_carryover'];
         if (in_array($orderPayment->payment_type, $nonCashTypes)) {
             return;
         }
@@ -68,39 +68,47 @@ class OrderPaymentObserver
             }
             $revenueAmount = $refundAmount - $taxAmount;
 
+            $eventKey = "order_payment:{$orderPayment->id}:payment_level_refund";
+            AccountingTransaction::where('metadata->event_key', $eventKey)
+                ->whereIn('status', ['pending', 'completed'])
+                ->update(['status' => 'cancelled']);
+
             $metadata = [
+                'source'          => 'order_payment_refund',
+                'event_key'       => $eventKey,
                 'payment_method'  => $orderPayment->paymentMethod->name ?? 'Unknown',
                 'order_number'    => $order->order_number ?? null,
                 'refund_reason'   => 'Payment refund',
                 'includes_tax_reversal' => $taxAmount > 0,
                 'tax_amount_reversed'   => $taxAmount,
                 'group_id'        => $groupId,
+                'posting_engine'  => 'OrderPaymentObserver',
             ];
 
-            // 1. Credit Cash (asset decreases — money returned to customer)
+            // 1. Credit Cash/Bank/MFS or settlement account (asset decreases — money returned to customer)
             AccountingTransaction::create([
-                'transaction_date' => $order->order_date ?? $orderPayment->completed_at ?? now(),
+                'transaction_date' => now(),
                 'amount'           => $refundAmount,
                 'type'             => 'credit',
-                'account_id'       => AccountingTransaction::getCashAccountId($orderPayment->store_id),
+                'account_id'       => AccountingTransaction::getSettlementAccountIdForPaymentMethod($orderPayment->paymentMethod, $orderPayment->store_id),
                 'reference_type'   => OrderPayment::class,
                 'reference_id'     => $orderPayment->id,
-                'description'      => "Refund (Cash Out) - {$orderPayment->payment_number}",
+                'description'      => "Refund (Cash/Bank Out) - {$orderPayment->payment_number}",
                 'store_id'         => $orderPayment->store_id,
                 'created_by'       => auth()->id(),
                 'metadata'         => $metadata,
                 'status'           => 'completed',
             ]);
 
-            // 2. Debit Sales Revenue (revenue reversal — net of tax)
+            // 2. Debit Sales Return / Refund contra-revenue instead of directly debiting Sales Revenue
             AccountingTransaction::create([
-                'transaction_date' => $order->order_date ?? $orderPayment->completed_at ?? now(),
+                'transaction_date' => now(),
                 'amount'           => $revenueAmount,
                 'type'             => 'debit',
-                'account_id'       => AccountingTransaction::getSalesRevenueAccountId(),
+                'account_id'       => AccountingTransaction::getSalesReturnAccountId(),
                 'reference_type'   => OrderPayment::class,
                 'reference_id'     => $orderPayment->id,
-                'description'      => "Refund - Revenue Reversal (excl. tax) - {$orderPayment->payment_number}",
+                'description'      => "Refund - Sales Return (excl. tax) - {$orderPayment->payment_number}",
                 'store_id'         => $orderPayment->store_id,
                 'created_by'       => auth()->id(),
                 'metadata'         => $metadata,
@@ -110,7 +118,7 @@ class OrderPaymentObserver
             // 3. Debit Tax Liability (tax reversal — reduce collected tax)
             if ($taxAmount > 0) {
                 AccountingTransaction::create([
-                    'transaction_date' => $order->order_date ?? $orderPayment->completed_at ?? now(),
+                    'transaction_date' => now(),
                     'amount'           => $taxAmount,
                     'type'             => 'debit',
                     'account_id'       => AccountingTransaction::getTaxLiabilityAccountId(),

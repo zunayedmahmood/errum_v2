@@ -763,10 +763,23 @@ class OrderController extends Controller
                 $payment->update([
                     'payment_type' => $request->payment['payment_type'] ?? 'partial',
                 ]);
+                $payment->forceFill([
+                    'payment_received_date' => $orderDate->toDateString(),
+                    'created_at' => $orderDate,
+                    'updated_at' => $orderDate,
+                ])->saveQuietly();
 
                 // Update order payment status
                 $order->updatePaymentStatus();
             }
+
+            // Some downstream status/payment helpers touch updated_at. The POS-selected
+            // date is the business timestamp for offline sales and must remain trusted.
+            $order->forceFill([
+                'order_date' => $orderDate,
+                'created_at' => $orderDate,
+                'updated_at' => $orderDate,
+            ])->saveQuietly();
 
             DB::commit();
 
@@ -1653,12 +1666,15 @@ class OrderController extends Controller
                 }
             }
 
-            // Update order status to confirmed (delivered will be set when shipment is delivered)
-            $order->update([
+            // Update order status to confirmed (delivered will be set when shipment is delivered).
+            // Preserve the trusted POS/order date in both business and audit timestamps.
+            $order->forceFill([
                 'status' => 'confirmed',
                 'confirmed_at' => $orderDate,
-            ]);
-            $order->forceFill(['updated_at' => $orderDate])->saveQuietly();
+                'order_date' => $orderDate,
+                'created_at' => $order->created_at ?: $orderDate,
+                'updated_at' => $orderDate,
+            ])->save();
 
             // Update customer purchase stats
             $order->customer->recordPurchase($order->total_amount, $order->id);

@@ -14,6 +14,10 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         \App\Console\Commands\RouteMethodCount::class,
+        \App\Console\Commands\SyncPurchaseOrderAccounting::class,
+        \App\Console\Commands\AccountingIntegrityCheck::class,
+        \App\Console\Commands\SyncOperationalAccounting::class,
+        \App\Console\Commands\EnsureStandardAccountingAccounts::class,
     ];
 
     /**
