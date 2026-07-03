@@ -402,6 +402,7 @@ export default function AmountDetailsPage() {
           is_defective: Boolean(item.is_defective || item.isDefective),
           defective_product_id: item.defective_product_id || item.defectId || null,
           source: item.source || (item.is_defective || item.isDefective ? 'defective_resale' : undefined),
+          ...(item.barcode ? { barcode: item.barcode } : {}),
         };
       });
 

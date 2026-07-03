@@ -421,10 +421,11 @@ class StockIntelligenceController extends Controller
             $perPage = min(100, max(10, (int) $request->query('per_page', 50)));
             $page    = max(1, (int) $request->query('page', 1));
             $selectedStoreId = (int) $request->query('store_id', 0);
-            $storeRowsForFilter = DB::table('stores')
-                ->select('id', 'name', 'store_code', 'address')
-                ->orderBy('name')
-                ->get();
+            // Inventory View should show the real active selling branches only.
+            // The stores table can contain inactive/import duplicates such as
+            // "Jamuna Future Park" twice or "Main Store (Mirpur)" and "Mirpur".
+            // Canonicalising here prevents duplicate sheet columns and filter options.
+            $storeRowsForFilter = $this->overviewStoreRows();
             if ($selectedStoreId > 0 && !$storeRowsForFilter->contains('id', $selectedStoreId)) {
                 $selectedStoreId = 0;
             }
@@ -625,17 +626,7 @@ class StockIntelligenceController extends Controller
 
             $allStoreIds = $selectedStoreId > 0
                 ? collect([$selectedStoreId])
-                : collect()
-                    ->merge($stores->keys())
-                    ->merge($this->nestedMetricStoreIds($currentStock))
-                    ->merge($this->nestedMetricStoreIds($purchases))
-                    ->merge($this->nestedMetricStoreIds($sales))
-                    ->merge($this->nestedMetricStoreIds($dispatchOut))
-                    ->merge($this->nestedMetricStoreIds($dispatchReceived))
-                    ->merge($this->nestedMetricStoreIds($defects))
-                    ->unique()
-                    ->filter()
-                    ->values();
+                : $stores->keys()->unique()->filter()->values();
 
             $items = [];
             $summary = $this->emptyOverviewSummary();
@@ -988,6 +979,52 @@ class StockIntelligenceController extends Controller
             'recommendation_count' => 0,
             'generated_at' => null,
         ];
+    }
+
+
+    private function overviewStoreRows(): Collection
+    {
+        $rows = DB::table('stores')
+            ->select('id', 'name', 'store_code', 'address', 'is_active', 'is_warehouse')
+            ->where(function ($q) {
+                $q->where('is_active', true)->orWhereNull('is_active');
+            })
+            ->where(function ($q) {
+                $q->where('is_warehouse', false)->orWhereNull('is_warehouse');
+            })
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get();
+
+        $seen = [];
+        $unique = [];
+
+        foreach ($rows as $row) {
+            $key = $this->normalizeOverviewStoreName($row->name ?? '');
+            if ($key === '') {
+                $key = 'id:' . (int) $row->id;
+            }
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $unique[] = $row;
+        }
+
+        return collect($unique)->values();
+    }
+
+    private function normalizeOverviewStoreName(?string $name): string
+    {
+        $value = strtolower(trim((string) $name));
+        $value = preg_replace('/^store\s*/i', '', $value);
+        $value = str_replace(['(', ')'], ' ', $value);
+        $value = preg_replace('/\bmain\s+store\b/i', '', $value);
+        $value = preg_replace('/\bstore\b/i', '', $value);
+        $value = preg_replace('/[^a-z0-9]+/i', '', $value);
+        return (string) $value;
     }
 
     private function nestedMetricStoreIds(array $map): array

@@ -29,6 +29,7 @@ interface DefectItem {
   costPrice?: number;
   returnReason?: string;
   store?: string;
+  storeId?: number;
   image?: string;
   batchId?: number;
 }
@@ -169,6 +170,7 @@ export default function DefectsPage() {
           costPrice: parsePrice(d.product?.cost_price),
           returnReason: d.defect_description,
           store: d.store?.name,
+          storeId: Number(d.store_id || d.store?.id || (d as any).barcode?.current_store_id || 0) || undefined,
           image: imageUrl,
           sellingPrice: parsePrice(d.suggested_selling_price),
           batchId: Number((d as any).metadata?.resale_batch_id || (d as any).barcode?.batch_id || d.product_batch_id || 0),
@@ -356,6 +358,8 @@ export default function DefectsPage() {
         productName: selectedDefect.productName,
         sellingPrice: parseFloat(sellPrice),
         store: selectedDefect.store,
+        store_id: selectedDefect.storeId,
+        storeId: selectedDefect.storeId,
         batchId: selectedDefect.batchId,
       };
 

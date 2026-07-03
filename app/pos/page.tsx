@@ -314,6 +314,8 @@ export default function POSPage() {
     sellingPrice: number;
     batchId: number;
     store?: string;
+    store_id?: number;
+    storeId?: number;
     costPrice?: number;
     originalPrice?: number;
   } | null>(null);
@@ -395,6 +397,14 @@ export default function POSPage() {
    * ✅ Auto-add defect item to cart when outlet is selected
    */
   useEffect(() => {
+    if (defectItem) {
+      const defectStoreId = Number(defectItem.store_id || defectItem.storeId || 0);
+      if (defectStoreId && String(selectedOutlet) !== String(defectStoreId)) {
+        setSelectedOutlet(String(defectStoreId));
+        return;
+      }
+    }
+
     if (defectItem && selectedOutlet) {
       console.log('🎯 Auto-adding defect item to cart');
       console.log('Defect:', defectItem);

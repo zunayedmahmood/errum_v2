@@ -896,6 +896,17 @@ Route::middleware('auth:api')->group(function () {
         Route::delete('/owner/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyOwner']);
     });
 
+    Route::prefix('cash-sheet-new')->group(function () {
+        Route::get('/', [\App\Http\Controllers\CashSheetController::class, 'index']);
+        Route::get('/entries', [\App\Http\Controllers\CashSheetController::class, 'entries']);
+        Route::post('/branch-cost', [\App\Http\Controllers\CashSheetController::class, 'storeBranchCost']);
+        Route::delete('/branch-cost/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyBranchCost']);
+        Route::post('/admin', [\App\Http\Controllers\CashSheetController::class, 'storeAdmin']);
+        Route::delete('/admin/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyAdmin']);
+        Route::post('/owner', [\App\Http\Controllers\CashSheetController::class, 'storeOwner']);
+        Route::delete('/owner/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyOwner']);
+    });
+
     // ============================================
     // REPORTING & ANALYTICS ROUTES
     // Business intelligence and dashboard metrics
@@ -1750,6 +1761,17 @@ Route::middleware('auth:api')->group(function () {
         
         // Batch Lookup - All barcodes and history for a batch
         Route::get('/batch/{batchId}', [\App\Http\Controllers\LookupController::class, 'batchLookup']);
+    });
+
+    Route::prefix('cash-sheet-new')->group(function () {
+        Route::get('/', [\App\Http\Controllers\CashSheetController::class, 'index']);
+        Route::get('/entries', [\App\Http\Controllers\CashSheetController::class, 'entries']);
+        Route::post('/branch-cost', [\App\Http\Controllers\CashSheetController::class, 'storeBranchCost']);
+        Route::delete('/branch-cost/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyBranchCost']);
+        Route::post('/admin', [\App\Http\Controllers\CashSheetController::class, 'storeAdmin']);
+        Route::delete('/admin/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyAdmin']);
+        Route::post('/owner', [\App\Http\Controllers\CashSheetController::class, 'storeOwner']);
+        Route::delete('/owner/{id}', [\App\Http\Controllers\CashSheetController::class, 'destroyOwner']);
     });
 
     // ============================================

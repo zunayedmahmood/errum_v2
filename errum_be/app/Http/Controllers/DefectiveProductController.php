@@ -193,8 +193,7 @@ class DefectiveProductController extends Controller
             if ($request->boolean('is_used_item')) {
                 $defectiveProduct->markAsInspected($employee, [
                     'severity' => $request->severity,
-                    'internal_notes' => trim(($request->internal_notes ? $request->internal_notes . "
-" : '') . 'Auto-inspected because item was marked as used/display sellable.'),
+                    'internal_notes' => trim(($request->internal_notes ? $request->internal_notes . PHP_EOL : '') . 'Auto-inspected because item was marked as used/display sellable.'),
                 ]);
                 $defectiveProduct->makeAvailableForSale();
             }

@@ -15,6 +15,7 @@ use App\Models\ReservedProduct;
 use App\Models\ProductBarcode;
 use App\Models\ProductMovement;
 use App\Models\ProductReturn;
+use App\Models\DefectiveProduct;
 use App\Traits\DatabaseAgnosticSearch;
 use App\Services\InventoryReservationService;
 use Illuminate\Http\Request;
@@ -542,13 +543,66 @@ class OrderController extends Controller
                     || !empty($itemData['defective_product_id'])
                     || strtolower((string) ($itemData['source'] ?? '')) === 'defective_resale';
                 
-                // Batch is optional for pre-orders
-                $batch = !empty($itemData['batch_id']) 
-                    ? ProductBatch::findOrFail($itemData['batch_id']) 
+                // Batch is optional for pre-orders. Display/faulty/used resale orders
+                // are different: they must resolve to the dedicated resale batch created
+                // when the barcode was marked available_for_sale.
+                $batch = !empty($itemData['batch_id'])
+                    ? ProductBatch::findOrFail($itemData['batch_id'])
                     : null;
 
-                // Mark as pre-order if any item has no batch
-                if (!$batch) {
+                $defectiveProduct = null;
+                if ($isDefectiveResale) {
+                    $defectiveProductId = (int) ($itemData['defective_product_id'] ?? 0);
+                    if ($defectiveProductId <= 0) {
+                        throw new \Exception("Missing defective/used product reference for {$product->name}");
+                    }
+
+                    $defectiveProduct = DefectiveProduct::with(['barcode', 'batch'])
+                        ->whereKey($defectiveProductId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$defectiveProduct) {
+                        throw new \Exception("Defective/used resale item not found for {$product->name}");
+                    }
+
+                    if ((int) $defectiveProduct->product_id !== (int) $product->id) {
+                        throw new \Exception("Defective/used resale item does not match {$product->name}");
+                    }
+
+                    if (!in_array($defectiveProduct->status, ['available_for_sale', 'inspected'], true)) {
+                        throw new \Exception("Defective/used item {$product->name} is not available for sale");
+                    }
+
+                    $resaleBatchId = data_get($defectiveProduct->metadata ?? [], 'resale_batch_id')
+                        ?: optional($defectiveProduct->barcode)->batch_id
+                        ?: $defectiveProduct->product_batch_id;
+
+                    if (!$batch && $resaleBatchId) {
+                        $batch = ProductBatch::findOrFail($resaleBatchId);
+                    }
+
+                    if (!$batch) {
+                        throw new \Exception("Missing resale batch for defective/used item {$product->name}");
+                    }
+
+                    if ($resaleBatchId && (int) $batch->id !== (int) $resaleBatchId) {
+                        throw new \Exception("Selected batch is not the resale batch for defective/used item {$product->name}");
+                    }
+
+                    if ($batch->quantity < (int) ($itemData['quantity'] ?? 1)) {
+                        throw new \Exception("Insufficient resale stock for {$product->name}. Available: {$batch->quantity}");
+                    }
+
+                    // Social-commerce resale used to omit barcode. Recover it from the
+                    // defective record so completion can move the exact unit to with_customer.
+                    if (empty($itemData['barcode']) && $defectiveProduct->barcode) {
+                        $itemData['barcode'] = $defectiveProduct->barcode->barcode;
+                    }
+                }
+
+                // Mark as pre-order if any normal item has no batch
+                if (!$batch && !$isDefectiveResale) {
                     $hasPreOrderItems = true;
                 }
 
@@ -593,16 +647,26 @@ class OrderController extends Controller
                     throw new \Exception("Product batch not available at this store");
                 }
 
-                // Handle barcode if provided (optional for backward compatibility)
+                // Handle barcode if provided (optional for backward compatibility).
+                // For display/faulty/used resale, the barcode is mandatory and can be
+                // recovered from the defective_product_id when the frontend does not send it.
                 $barcodeId = null;
                 if (!empty($itemData['barcode']) && $batch) {
-                    $barcode = \App\Models\ProductBarcode::where('barcode', $itemData['barcode'])
+                    $barcode = ProductBarcode::where('barcode', $itemData['barcode'])
                         ->where('product_id', $product->id)
                         ->where('batch_id', $batch->id)
                         ->first();
+
+                    if (!$barcode && $isDefectiveResale && $defectiveProduct && $defectiveProduct->barcode) {
+                        $barcode = $defectiveProduct->barcode;
+                    }
                     
                     if (!$barcode) {
                         throw new \Exception("Barcode {$itemData['barcode']} not found for product {$product->name}");
+                    }
+
+                    if ((int) $barcode->batch_id !== (int) $batch->id) {
+                        throw new \Exception("Barcode {$itemData['barcode']} is not attached to the selected resale batch");
                     }
                     
                     // Check if barcode is already sold
@@ -615,6 +679,8 @@ class OrderController extends Controller
                     }
                     
                     $barcodeId = $barcode->id;
+                } elseif ($isDefectiveResale) {
+                    throw new \Exception("Missing barcode for defective/used resale item {$product->name}");
                 }
                 
                 // Debug: Log barcode capture

@@ -112,44 +112,63 @@ class EcommerceCatalogController extends Controller
 
         if ($search) {
             $normalized = $this->normalizeString($search);
-            $terms = explode(' ', $normalized);
-            $brandStopWords = [
-                'the', 'a', 'an', 'by', 'x', 'de', 'la', 'le', 'and', 'with', 'for', 'of', 'in', 'low', 'high', 'mid', '1'
-            ];
-            // Filter out stop words unless all are stop words
-            $nonStopTerms = array_filter($terms, function ($term) use ($brandStopWords) {
-                return !in_array($term, $brandStopWords);
-            });
-            $termsToUse = !empty($nonStopTerms) ? $nonStopTerms : $terms;
 
-            $q->where(function ($sq) use ($termsToUse) {
-                foreach ($termsToUse as $term) {
-                    $term = trim($term);
-                    if (empty($term)) continue;
-                    $like = '%' . addslashes($term) . '%';
-                    
-                    $sq->orWhere(function ($wordQ) use ($like) {
-                        $wordQ->where('products.name',              'like', $like)
-                           ->orWhere('products.base_name',       'like', $like)
-                           ->orWhere('products.sku',             'like', $like)
-                           ->orWhere('products.variation_suffix','like', $like)
-                           ->orWhereExists(function ($sub) use ($like) {
-                               $sub->select(DB::raw(1))
-                                   ->from('categories')
-                                   ->whereColumn('categories.id', 'products.category_id')
-                                   ->where('categories.title', 'like', $like);
-                           })
-                           ->orWhereExists(function ($sub) use ($like) {
-                               $sub->select(DB::raw(1))
-                                   ->from('product_fields')
-                                   ->join('fields', 'fields.id', '=', 'product_fields.field_id')
-                                   ->whereColumn('product_fields.product_id', 'products.id')
-                                   ->where('product_fields.value', 'like', $like)
-                                   ->whereIn('fields.title', ['Color', 'Size', 'Colour']);
-                           });
+            // Size-only searches such as "L", "M", "XL" or "40" must be exact
+            // variation/size filters. A broad LIKE search makes "L" match unrelated
+            // product names, colours, categories, XL, 40/42 groups, etc.
+            if ($this->isStrictSizeSearch($search)) {
+                $sizeToken = $this->normalizeSizeToken($search);
+                $q->where(function ($sizeQ) use ($sizeToken) {
+                    $this->whereExactSizeToken($sizeQ, 'products.variation_suffix', $sizeToken);
+                    $sizeQ->orWhereExists(function ($sub) use ($sizeToken) {
+                        $sub->select(DB::raw(1))
+                            ->from('product_fields')
+                            ->join('fields', 'fields.id', '=', 'product_fields.field_id')
+                            ->whereColumn('product_fields.product_id', 'products.id')
+                            ->whereIn('fields.title', ['Size', 'size']);
+                        $this->whereExactSizeToken($sub, 'product_fields.value', $sizeToken);
                     });
-                }
-            });
+                });
+            } else {
+                $terms = explode(' ', $normalized);
+                $brandStopWords = [
+                    'the', 'a', 'an', 'by', 'x', 'de', 'la', 'le', 'and', 'with', 'for', 'of', 'in', 'low', 'high', 'mid', '1'
+                ];
+                // Filter out stop words unless all are stop words
+                $nonStopTerms = array_filter($terms, function ($term) use ($brandStopWords) {
+                    return !in_array($term, $brandStopWords);
+                });
+                $termsToUse = !empty($nonStopTerms) ? $nonStopTerms : $terms;
+
+                $q->where(function ($sq) use ($termsToUse) {
+                    foreach ($termsToUse as $term) {
+                        $term = trim($term);
+                        if (empty($term)) continue;
+                        $like = '%' . addslashes($term) . '%';
+                        
+                        $sq->orWhere(function ($wordQ) use ($like) {
+                            $wordQ->where('products.name',              'like', $like)
+                               ->orWhere('products.base_name',       'like', $like)
+                               ->orWhere('products.sku',             'like', $like)
+                               ->orWhere('products.variation_suffix','like', $like)
+                               ->orWhereExists(function ($sub) use ($like) {
+                                   $sub->select(DB::raw(1))
+                                       ->from('categories')
+                                       ->whereColumn('categories.id', 'products.category_id')
+                                       ->where('categories.title', 'like', $like);
+                               })
+                               ->orWhereExists(function ($sub) use ($like) {
+                                   $sub->select(DB::raw(1))
+                                       ->from('product_fields')
+                                       ->join('fields', 'fields.id', '=', 'product_fields.field_id')
+                                       ->whereColumn('product_fields.product_id', 'products.id')
+                                       ->where('product_fields.value', 'like', $like)
+                                       ->whereIn('fields.title', ['Color', 'Size', 'Colour']);
+                               });
+                        });
+                    }
+                });
+            }
         }
 
         // Apply price and stock filters first (in HAVING)
@@ -241,11 +260,28 @@ class EcommerceCatalogController extends Controller
         }
 
         // Step 2: Load Eloquent models only for the filtered and paginated results.
-        $allVariants = Product::with(['images', 'category', 'batches.store'])
+        $allVariantsQuery = Product::with(['images', 'category', 'batches.store'])
             ->whereIn('base_name', $baseNames)
             ->where('is_archived', false)
-            ->whereNull('deleted_at')
-            ->get();
+            ->whereNull('deleted_at');
+
+        // When the sidebar search is a pure size filter, do not send unrelated
+        // variants back inside the matching product group. Example: searching "L"
+        // should not show M, XL, 40 or 42 variants under the same base product.
+        if ($search && $this->isStrictSizeSearch($search)) {
+            $sizeToken = $this->normalizeSizeToken($search);
+            $allVariantsQuery->where(function ($variantQ) use ($sizeToken) {
+                $this->whereExactSizeToken($variantQ, 'variation_suffix', $sizeToken);
+                $variantQ->orWhereHas('productFields', function ($fieldQ) use ($sizeToken) {
+                    $fieldQ->whereHas('field', function ($fieldNameQ) {
+                        $fieldNameQ->whereIn('title', ['Size', 'size']);
+                    });
+                    $this->whereExactSizeToken($fieldQ, 'value', $sizeToken);
+                });
+            });
+        }
+
+        $allVariants = $allVariantsQuery->get();
         $variantsByBaseName = $allVariants->groupBy('base_name');
 
         $orderedResult = [];
@@ -1105,8 +1141,7 @@ class EcommerceCatalogController extends Controller
                   $fieldQ->where('value', 'like', "%{$search}%") // 'value' is the column, 'parsed_value' is the accessor
                          ->whereIn('field_id', function($subQ) {
                             $subQ->select('id')->from('fields')
-                                 ->whereIn('title', ['Color', 'Size', 'Colour'])
-                                 ->orWhereIn('slug', ['color', 'size', 'colour']);
+                                 ->whereIn('title', ['Color', 'Size', 'Colour']);
                          });
               });
         });
@@ -1307,6 +1342,46 @@ class EcommerceCatalogController extends Controller
         return $ids->merge($descendantIds)->unique()->values()->all();
     }
 
+    private function normalizeSizeToken(?string $value): string
+    {
+        $token = mb_strtolower(trim((string) $value), 'UTF-8');
+        $token = preg_replace('/^(size|sz)[:\s-]*/i', '', $token);
+        $token = str_replace(['/', '-', '_', ',', '.', ':', '(', ')'], ' ', $token);
+        $token = preg_replace('/\s+/', ' ', $token);
+        return trim($token);
+    }
+
+    private function isStrictSizeSearch(?string $search): bool
+    {
+        $token = $this->normalizeSizeToken($search);
+        if ($token === '' || str_contains($token, ' ')) {
+            return false;
+        }
+
+        $knownSizes = [
+            'xxs', 'xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl',
+            '2xl', '3xl', '4xl', '5xl', '6xl',
+            'free', 'freesize', 'one', 'onesize', 'os',
+        ];
+
+        if (in_array($token, $knownSizes, true)) {
+            return true;
+        }
+
+        // Numeric apparel/shoe sizes should also be exact. This prevents searching
+        // 40 from returning unrelated SKUs/names through broad LIKE matching.
+        return (bool) preg_match('/^\d{1,3}(\.5)?$/', $token);
+    }
+
+    private function whereExactSizeToken($query, string $column, string $sizeToken): void
+    {
+        $normalizedSql = "LOWER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE({$column}, ''), '/', ' '), '-', ' '), '_', ' '), ',', ' '), '.', ' '), '(', ' '), ')', ' ')))";
+        $query->where(function ($tokenQ) use ($normalizedSql, $sizeToken) {
+            $tokenQ->whereRaw("{$normalizedSql} = ?", [$sizeToken])
+                ->orWhereRaw("CONCAT(' ', {$normalizedSql}, ' ') LIKE ?", ['% ' . $sizeToken . ' %']);
+        });
+    }
+
     private function normalizeString(string $string): string
     {
         $str = mb_strtolower($string, 'UTF-8');
@@ -1352,6 +1427,21 @@ class EcommerceCatalogController extends Controller
         if ($normalizedQuery === '') {
             return $candidates;
         }
+
+        // For exact size searches, buildFilterQuery already filtered the matching
+        // variants. Do not re-score against base_name, otherwise size "L" would
+        // either disappear or rank unrelated base names.
+        if ($this->isStrictSizeSearch($search)) {
+            usort($candidates, function ($a, $b) {
+                return strcasecmp(((array) $a)['base_name'] ?? '', ((array) $b)['base_name'] ?? '');
+            });
+            return array_map(function ($cand) {
+                $arr = (array) $cand;
+                $arr['total_score'] = $arr['total_score'] ?? 100;
+                return $arr;
+            }, $candidates);
+        }
+
         $normalizedQueryTokens = explode(' ', $normalizedQuery);
         
         // Step 5 edge case: check minimum query length

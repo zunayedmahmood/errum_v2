@@ -727,39 +727,30 @@ class CashSheetController extends Controller
     {
         $out = [];
 
+        // Sales are counted on the order business date, not on payment dates.
+        // The old payment join could count the same order multiple times when
+        // payments were added/updated on different dates. Payments are handled
+        // separately by loadBranchPayments().
+        $dateExpr = DB::raw('COALESCE(o.order_date, o.confirmed_at, o.created_at)');
         $query = DB::table('orders as o')
-            ->join('order_payments as op', 'op.order_id', '=', 'o.id')
             ->select(
-                'op.store_id',
-                DB::raw('DATE(COALESCE(op.completed_at, o.created_at)) as day'),
-                'o.id as order_id',
-                'o.total_amount'
+                'o.store_id',
+                DB::raw('DATE(COALESCE(o.order_date, o.confirmed_at, o.created_at)) as day'),
+                DB::raw('SUM(o.total_amount) as total')
             )
-            ->whereIn('op.store_id', $ids)
-            ->where('o.order_type', 'counter')
-            ->where('op.status', 'completed')
-            ->whereNotNull('op.completed_at')
-            ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '>=', $from)
-            ->whereDate(DB::raw('COALESCE(op.completed_at, o.created_at)'), '<=', $to);
+            ->whereIn('o.store_id', $ids)
+            ->whereIn('o.order_type', ['counter', 'pos', 'offline'])
+            ->whereDate($dateExpr, '>=', $from)
+            ->whereDate($dateExpr, '<=', $to);
 
         $this->applyCashSheetOrderScope($query, 'o', false);
 
-        $rows = $query
-            ->groupBy('op.store_id', 'day', 'o.id', 'o.total_amount')
-            ->get();
-
-        $grouped = [];
-        foreach ($rows as $r) {
-            $storeKey = (string) $r->store_id;
-            $day = $r->day;
-            $grouped[$storeKey][$day] = ($grouped[$storeKey][$day] ?? 0) + (float) $r->total_amount;
-        }
-
-        foreach ($grouped as $storeId => $days) {
-            foreach ($days as $day => $total) {
-                $out[$storeId][$day] = round($total, 2);
-            }
-        }
+        $query
+            ->groupBy('o.store_id', 'day')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $out[(string) $r->store_id][$r->day] = round((float) $r->total, 2);
+            });
 
         return $out;
     }
@@ -795,7 +786,9 @@ class CashSheetController extends Controller
             ->whereDate('op.completed_at', '>=', $from)
             ->whereDate('op.completed_at', '<=', $to)
             ->where('op.status', 'completed')
-            ->whereNotIn('op.payment_type', $excludedPaymentTypes)
+            ->where(function ($q) use ($excludedPaymentTypes) {
+                $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
+            })
             ->whereNotNull('op.completed_at');
 
         $this->applyCashSheetOrderScope($normalPayments, 'o', true, 'op');
@@ -822,7 +815,9 @@ class CashSheetController extends Controller
             ->where('o.order_type', 'counter')
             ->where('op.status', 'completed')
             ->where('ps.status', 'completed')
-            ->whereNotIn('op.payment_type', $excludedPaymentTypes)
+            ->where(function ($q) use ($excludedPaymentTypes) {
+                $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
+            })
             ->whereNotNull('op.completed_at')
             ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '>=', $from)
             ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '<=', $to);
@@ -990,44 +985,100 @@ class CashSheetController extends Controller
     private function loadOnlineData(string $from, string $to): array
     {
         $out = [];
+        $orderDateExpr = DB::raw('COALESCE(order_date, confirmed_at, created_at)');
 
+        // 1) Order value / COD is counted on the order business date and updates
+        // live when the order is edited, cancelled, soft-deleted, delivered, etc.
         DB::table('orders')
             ->select(
-                DB::raw('DATE(created_at) as day'),
+                DB::raw('DATE(COALESCE(order_date, confirmed_at, created_at)) as day'),
                 DB::raw('SUM(total_amount) as ts'),
-                DB::raw('SUM(paid_amount) as adv'),
                 DB::raw('SUM(outstanding_amount) as cod')
             )
             ->where('order_type', 'social_commerce')
             ->whereNull('deleted_at')
-            ->whereDate('created_at', '>=', $from)
-            ->whereDate('created_at', '<=', $to)
+            ->whereDate($orderDateExpr, '>=', $from)
+            ->whereDate($orderDateExpr, '<=', $to)
             ->whereNotIn(DB::raw('LOWER(status)'), self::EXCLUDED_ORDER_STATUSES)
             ->groupBy('day')
             ->get()
             ->each(function ($r) use (&$out) {
                 $out[$r->day]['daily_sales'] = ($out[$r->day]['daily_sales'] ?? 0) + (float) $r->ts;
-                $out[$r->day]['advance']     = ($out[$r->day]['advance'] ?? 0) + (float) $r->adv;
                 $out[$r->day]['cod']         = ($out[$r->day]['cod'] ?? 0) + (float) $r->cod;
             });
 
         DB::table('orders')
             ->select(
-                DB::raw('DATE(created_at) as day'),
-                DB::raw('SUM(total_amount) as ts'),
-                DB::raw('SUM(paid_amount) as op')
+                DB::raw('DATE(COALESCE(order_date, confirmed_at, created_at)) as day'),
+                DB::raw('SUM(total_amount) as ts')
             )
             ->where('order_type', 'ecommerce')
             ->whereNull('deleted_at')
-            ->whereDate('created_at', '>=', $from)
-            ->whereDate('created_at', '<=', $to)
+            ->whereDate($orderDateExpr, '>=', $from)
+            ->whereDate($orderDateExpr, '<=', $to)
             ->whereNotIn(DB::raw('LOWER(status)'), self::EXCLUDED_ORDER_STATUSES)
             ->groupBy('day')
             ->get()
             ->each(function ($r) use (&$out) {
-                $out[$r->day]['daily_sales']    = ($out[$r->day]['daily_sales'] ?? 0) + (float) $r->ts;
-                $out[$r->day]['online_payment'] = ($out[$r->day]['online_payment'] ?? 0) + (float) $r->op;
+                $out[$r->day]['daily_sales'] = ($out[$r->day]['daily_sales'] ?? 0) + (float) $r->ts;
             });
+
+        $excludedPaymentTypes = self::INTERNAL_SETTLEMENT_PAYMENT_TYPES;
+        $addOnlinePayment = function ($r) use (&$out) {
+            if ($r->order_type === 'social_commerce') {
+                $out[$r->day]['advance'] = ($out[$r->day]['advance'] ?? 0) + (float) $r->total;
+            } elseif ($r->order_type === 'ecommerce') {
+                $out[$r->day]['online_payment'] = ($out[$r->day]['online_payment'] ?? 0) + (float) $r->total;
+            }
+        };
+
+        // 2) Money received is counted on the completed payment date, so payment
+        // creation/update/delivery auto-settlement land on the correct cash-sheet day.
+        DB::table('order_payments as op')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->leftJoin('payment_splits as ps_probe', 'ps_probe.order_payment_id', '=', 'op.id')
+            ->select(
+                DB::raw('DATE(op.completed_at) as day'),
+                'o.order_type',
+                DB::raw('SUM(op.amount) as total')
+            )
+            ->whereIn('o.order_type', ['social_commerce', 'ecommerce'])
+            ->whereNull('o.deleted_at')
+            ->where('op.status', 'completed')
+            ->whereNull('ps_probe.id')
+            ->whereNotNull('op.completed_at')
+            ->whereDate('op.completed_at', '>=', $from)
+            ->whereDate('op.completed_at', '<=', $to)
+            ->where(function ($q) use ($excludedPaymentTypes) {
+                $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
+            })
+            ->whereNotIn(DB::raw('LOWER(o.status)'), self::EXCLUDED_ORDER_STATUSES)
+            ->groupBy('day', 'o.order_type')
+            ->get()
+            ->each($addOnlinePayment);
+
+        DB::table('payment_splits as ps')
+            ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->select(
+                DB::raw('DATE(COALESCE(ps.completed_at, op.completed_at)) as day'),
+                'o.order_type',
+                DB::raw('SUM(ps.amount) as total')
+            )
+            ->whereIn('o.order_type', ['social_commerce', 'ecommerce'])
+            ->whereNull('o.deleted_at')
+            ->where('op.status', 'completed')
+            ->where('ps.status', 'completed')
+            ->whereNotNull('op.completed_at')
+            ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '>=', $from)
+            ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '<=', $to)
+            ->where(function ($q) use ($excludedPaymentTypes) {
+                $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
+            })
+            ->whereNotIn(DB::raw('LOWER(o.status)'), self::EXCLUDED_ORDER_STATUSES)
+            ->groupBy('day', 'o.order_type')
+            ->get()
+            ->each($addOnlinePayment);
 
         return $out;
     }

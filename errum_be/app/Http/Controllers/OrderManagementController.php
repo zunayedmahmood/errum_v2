@@ -177,8 +177,19 @@ class OrderManagementController extends Controller
                 ], 400);
             }
 
-            // Get all active online stores (warehouses can also fulfill if marked is_online = true)
-            $stores = Store::where('is_online', true)->get();
+            // Show every active selling store even when it has zero stock.
+            // Online warehouses are also included if explicitly marked is_online.
+            $stores = Store::where(function ($q) {
+                    $q->where('is_active', true)->orWhereNull('is_active');
+                })
+                ->where(function ($q) {
+                    $q->where('is_warehouse', false)
+                        ->orWhereNull('is_warehouse')
+                        ->orWhere('is_online', true);
+                })
+                ->orderBy('is_warehouse')
+                ->orderBy('name')
+                ->get();
 
             $productIds = $order->items->pluck('product_id')->unique()->toArray();
 

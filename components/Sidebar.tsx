@@ -189,6 +189,7 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
       href: '/cash-sheet',
       subMenu: [
         { label: 'Monthly Sheet',  href: '/cash-sheet' },
+        { label: 'Monthly Sheet New', href: '/cash-sheet-new' },
         { label: 'Branch Costs',   href: '/cash-sheet/branch-cost' },
         { label: 'Admin Panel',    href: '/cash-sheet/admin' },
         { label: 'Owner Panel',    href: '/cash-sheet/owner' },

@@ -22,6 +22,8 @@ interface DefectItem {
   productName: string;
   sellingPrice?: number;
   store?: string;
+  store_id?: number;
+  storeId?: number;
   batchId: number;
 }
 
@@ -39,6 +41,7 @@ interface CartProduct {
   store_id?: number | null;
   store_name?: string | null;
   sku?: string;
+  barcode?: string;
 }
 
 interface PaymentMethod {
@@ -132,6 +135,7 @@ const normalizePrefillCartItem = (item: any): CartProduct | null => {
     amount: apiLineTotal > 0 ? apiLineTotal : Math.max(0, unitPrice * quantity - discountAmount),
     isDefective: Boolean(item.isDefective),
     defectId: item.defectId,
+    barcode: item.barcode ?? item.product_barcode ?? undefined,
     store_id: item.store_id ?? null,
     store_name: item.store_name ?? item.store?.name ?? null,
   };
@@ -687,7 +691,8 @@ export default function SocialCommercePage() {
             amount: defect.sellingPrice || 0,
             isDefective: true,
             defectId: defect.id,
-            store_id: defect.store_id || 0,
+            barcode: defect.barcode,
+            store_id: defect.store_id || defect.storeId || 0,
             store_name: defect.store || 'Unknown',
           };
 
@@ -1030,6 +1035,7 @@ export default function SocialCommercePage() {
               is_defective: true,
               defective_product_id: item.defectId,
               source: 'defective_resale',
+              ...(item.barcode ? { barcode: item.barcode } : {}),
             } : {}),
           };
         }),
