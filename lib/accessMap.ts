@@ -41,6 +41,7 @@ export const PAGE_ACCESS: Record<string, RoleSlug[]> = {
   '/inventory/view': ['super-admin', 'admin', 'branch-manager', 'online-moderator', 'pos-salesman'],
   '/inventory/view-new': ['super-admin', 'admin', 'branch-manager', 'online-moderator', 'pos-salesman', 'employee'],
   '/inventory/stock-audit': ['super-admin', 'admin', 'branch-manager', 'online-moderator', 'pos-salesman', 'employee'],
+  '/inventory/monthly-rebalance': ['super-admin', 'admin', 'branch-manager', 'online-moderator', 'pos-salesman', 'employee'],
   '/inventory/batch-price-update': ['super-admin', 'admin'],
   '/inventory/outlet-stock': ['super-admin', 'admin', 'branch-manager', 'online-moderator', 'pos-salesman', 'employee'],
   '/inventory/reports': ['super-admin', 'admin'],
