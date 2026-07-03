@@ -14,7 +14,7 @@ class OrderItemObserver
     public function created(OrderItem $orderItem): void
     {
         $order = $orderItem->order;
-        $reservationStatuses = ['pending_assignment', 'pending', 'assigned_to_store', 'picking', 'processing', 'ready_for_pickup'];
+        $reservationStatuses = ['pending_assignment', 'pending', 'assigned_to_store', 'picking', 'processing', 'ready_for_pickup', 'ready_for_shipment'];
         if ($order && in_array($order->status, $reservationStatuses)) {
             if ($order->order_type === 'preorder' || $this->isDefectiveResale($orderItem)) { // Preorders/defect resales don't reserve normal stock
                 return;
@@ -29,7 +29,7 @@ class OrderItemObserver
     public function updated(OrderItem $orderItem): void
     {
         $order = $orderItem->order;
-        $reservationStatuses = ['pending_assignment', 'pending', 'assigned_to_store', 'picking', 'processing', 'ready_for_pickup'];
+        $reservationStatuses = ['pending_assignment', 'pending', 'assigned_to_store', 'picking', 'processing', 'ready_for_pickup', 'ready_for_shipment'];
         if ($order && in_array($order->status, $reservationStatuses)) {
             if ($order->order_type === 'preorder' || $this->isDefectiveResale($orderItem)) {
                 return;
@@ -56,7 +56,7 @@ class OrderItemObserver
     public function deleted(OrderItem $orderItem): void
     {
         $order = $orderItem->order;
-        $reservationStatuses = ['pending_assignment', 'pending', 'assigned_to_store', 'picking', 'processing', 'ready_for_pickup'];
+        $reservationStatuses = ['pending_assignment', 'pending', 'assigned_to_store', 'picking', 'processing', 'ready_for_pickup', 'ready_for_shipment'];
         // Check if the order still exists (it might have been deleted too)
         if ($order && in_array($order->status, $reservationStatuses)) {
             if ($order->order_type === 'preorder' || $this->isDefectiveResale($orderItem)) {

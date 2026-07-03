@@ -419,6 +419,7 @@ export default function AmountDetailsPage() {
           customer_email: orderData.customer?.email || undefined,
           customer_address: orderData.customer?.address || undefined,
           shipping_address: shippingPayload,
+          ...(hasStoreId ? { store_id: parsedStoreId, store_assignment_mode: 'assign_now' } : { store_id: null }),
           ...(orderSource ? { order_source: orderSource, source_tag: orderSource, tags: [orderSource] } : {}),
           discount_amount: orderDiscount,
           shipping_amount: transport,

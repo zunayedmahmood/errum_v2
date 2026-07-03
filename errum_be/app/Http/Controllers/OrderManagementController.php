@@ -168,12 +168,12 @@ class OrderManagementController extends Controller
     public function getAvailableStores($orderId): JsonResponse
     {
         try {
-            $order = Order::with('items.product')->findOrFail($orderId);
+            $order = Order::with(['items.product', 'items.barcode'])->findOrFail($orderId);
 
-            if ($order->status !== 'pending_assignment') {
+            if (!in_array($order->status, ['pending_assignment', 'assigned_to_store', 'picking', 'ready_for_shipment'], true)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Order is not pending assignment',
+                    'message' => 'Order cannot be reassigned in current status: ' . $order->status,
                 ], 400);
             }
 
@@ -332,12 +332,12 @@ class OrderManagementController extends Controller
                 ], 422);
             }
 
-            $order = Order::with('items.product')->findOrFail($orderId);
+            $order = Order::with(['items.product', 'items.barcode'])->findOrFail($orderId);
 
-            if ($order->status !== 'pending_assignment') {
+            if (!in_array($order->status, ['pending_assignment', 'assigned_to_store', 'picking', 'ready_for_shipment'], true)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Order is not pending assignment',
+                    'message' => 'Order cannot be reassigned in current status: ' . $order->status,
                 ], 400);
             }
 
@@ -401,8 +401,33 @@ class OrderManagementController extends Controller
 
             try {
                 // Note: Stock batches will be determined dynamically during the barcode scanning phase at the branch.
-                // Reserved inventory remains untouched; it will be released during barcode scanning.
-
+                // Reserved inventory remains untouched; it will be released when the order is completed/delivered.
+                // If this order had previously scanned barcodes from another branch, release those exact units
+                // and make the order scan again from the newly selected store.
+                $releasedScans = [];
+                if ($order->store_id && (int) $order->store_id !== (int) $storeId) {
+                    foreach ($order->items()->with('barcode')->whereNotNull('product_barcode_id')->get() as $item) {
+                        if ($item->barcode) {
+                            $item->barcode->update([
+                                'is_active' => true,
+                                'current_status' => 'in_shop',
+                                'location_updated_at' => now(),
+                                'location_metadata' => array_merge($item->barcode->location_metadata ?? [], [
+                                    'released_from_order_id' => $order->id,
+                                    'released_order_item_id' => $item->id,
+                                    'released_reason' => 'store_reassignment',
+                                    'released_at' => now()->toDateTimeString(),
+                                    'released_by' => auth('api')->id(),
+                                ]),
+                            ]);
+                            $releasedScans[] = $item->barcode->barcode;
+                        }
+                        $item->forceFill([
+                            'product_barcode_id' => null,
+                            'product_batch_id' => null,
+                        ])->saveQuietly();
+                    }
+                }
 
                 // Update order status to assigned_to_store
                 $order->update([
@@ -414,6 +439,8 @@ class OrderManagementController extends Controller
                         'assigned_at' => now()->toISOString(),
                         'assigned_by' => auth('api')->id(),
                         'assignment_notes' => $request->notes,
+                        'released_barcodes_on_reassignment' => $releasedScans ?? [],
+                        'barcode_action' => !empty($releasedScans ?? []) ? 'released_previous_store_scans_for_rescan' : null,
                     ]),
                 ]);
 

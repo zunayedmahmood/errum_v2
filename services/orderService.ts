@@ -349,6 +349,40 @@ const orderService = {
     }
   },
 
+
+  /** Edit offline/POS sale customer, order date, and payment breakdown only. */
+  async editOfflineSale(
+    orderId: number,
+    payload: {
+      customer_name?: string;
+      customer_phone?: string;
+      customer_email?: string;
+      customer_address?: string;
+      order_date?: string;
+      payment_breakdown?: Array<{
+        payment_method_id: number;
+        amount: number;
+        wallet?: string;
+        transaction_reference?: string;
+        notes?: string;
+      }>;
+    }
+  ): Promise<any> {
+    try {
+      const response = await axiosInstance.patch(`/orders/${orderId}/edit-offline-sale`, payload);
+      const result = response.data;
+
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to edit offline sale');
+      }
+
+      return result.data;
+    } catch (error: any) {
+      console.error('Edit offline sale error:', error);
+      throw new Error(error.response?.data?.message || 'Failed to edit offline sale');
+    }
+  },
+
   /** Add item to order using barcode (for counter orders at POS) */
   async addItem(
     orderId: number,

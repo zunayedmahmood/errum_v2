@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronUp, Trash2, MoreVertical, Printer, Download } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Trash2, MoreVertical, Printer, Download, Pencil, Plus, X } from 'lucide-react';
 import { computeMenuPosition } from '@/lib/menuPosition';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from "@/contexts/ThemeContext";
 import storeService from '@/services/storeService';
 import AccessControl from '@/components/AccessControl';
+import paymentMethodService, { type PaymentMethod } from '@/services/paymentMethodService';
 
 interface PurchaseHistoryOrderItem {
   id: number;
@@ -75,12 +76,15 @@ interface PurchaseHistoryOrder {
     amount: string;
     payment_method: string;
     payment_type: string;
+    payment_method_id?: number | null;
     status: string;
     processed_by?: string;
     created_at: string;
     is_split_payment?: boolean;
     splits?: Array<{
+      payment_method_id?: number | null;
       payment_method: string;
+      wallet?: string;
       amount: string;
       status?: string;
     }>;
@@ -133,6 +137,17 @@ export default function PurchaseHistoryPage() {
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showExchangeModal, setShowExchangeModal] = useState(false);
   const [selectedOrderForAction, setSelectedOrderForAction] = useState<any | null>(null);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [editingOfflineOrder, setEditingOfflineOrder] = useState<any | null>(null);
+  const [offlineEditForm, setOfflineEditForm] = useState<any>({
+    customer_name: '',
+    customer_phone: '',
+    customer_email: '',
+    customer_address: '',
+    order_date: '',
+    payment_breakdown: [],
+  });
+  const [savingOfflineEdit, setSavingOfflineEdit] = useState(false);
 
   // Initialize roles and initial store selection
   useEffect(() => {
@@ -151,6 +166,16 @@ export default function PurchaseHistoryPage() {
 
     fetchStores();
   }, [user?.id, scopedStoreId]);
+
+  useEffect(() => {
+    paymentMethodService
+      .getMethodsByCustomerType('counter')
+      .then(setPaymentMethods)
+      .catch((err) => {
+        console.warn('Failed to load payment methods for offline edit', err);
+        setPaymentMethods([]);
+      });
+  }, []);
 
   // Fetch orders when relevant filters change
   useEffect(() => {
@@ -268,7 +293,7 @@ export default function PurchaseHistoryPage() {
     const order = orders.find(o => o.id === orderId);
     const label = order?.order_number ? ` ${order.order_number}` : '';
     const ok = confirm(
-      `Delete offline sale${label}?\n\nThis will remove the POS sale from Offline Sale History only. It will NOT restock the barcode or change inventory. Lookup will keep a clear deleted-sale audit notice.`
+      `Delete offline sale${label}?\n\nThis keeps a deleted-sale record, restocks sold barcodes into a new deleted-sale batch, cancels the sale finance for the original order date, and blocks return/exchange from Lookup.`
     );
     if (!ok) return;
 
@@ -280,6 +305,136 @@ export default function PurchaseHistoryPage() {
     } catch (error: any) {
       console.error('Error deleting offline sale:', error);
       alert(error?.response?.data?.message || error?.message || 'Failed to delete offline sale. Please try again.');
+    }
+  };
+
+  const toDateInputValue = (value: any) => {
+    if (!value) return '';
+    const text = String(value);
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const d = new Date(text);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const findPaymentMethodId = (label: any, wallet?: string) => {
+    const clean = String(label || '').toLowerCase();
+    const cleanWallet = String(wallet || '').toLowerCase();
+    const exact = paymentMethods.find((m) =>
+      String(m.name || '').toLowerCase() === clean || String((m as any).code || '').toLowerCase() === clean
+    );
+    if (exact) return exact.id;
+
+    if (cleanWallet.includes('bkash') || cleanWallet.includes('nagad') || clean.includes('bkash') || clean.includes('nagad') || clean.includes('mobile')) {
+      const mobile = paymentMethods.find((m) => String(m.type).toLowerCase() === 'mobile_banking' || /mobile|bkash|nagad/i.test(m.name));
+      if (mobile) return mobile.id;
+    }
+
+    if (clean.includes('card')) return paymentMethods.find((m) => String(m.type).toLowerCase() === 'card' || /card/i.test(m.name))?.id || paymentMethods[0]?.id || 0;
+    if (clean.includes('cash')) return paymentMethods.find((m) => String(m.type).toLowerCase() === 'cash' || /cash/i.test(m.name))?.id || paymentMethods[0]?.id || 0;
+    return paymentMethods[0]?.id || 0;
+  };
+
+  const buildPaymentRowsForEdit = (order: any) => {
+    const rows: any[] = [];
+    (order?.payments || []).forEach((payment: any) => {
+      const splits = Array.isArray(payment.splits) ? payment.splits : [];
+      if (splits.length > 0) {
+        splits.forEach((split: any) => {
+          const methodLabel = split.payment_method || '';
+          const wallet = split.wallet || (/bkash/i.test(methodLabel) ? 'bkash' : /nagad/i.test(methodLabel) ? 'nagad' : '');
+          rows.push({
+            payment_method_id: Number(split.payment_method_id || findPaymentMethodId(methodLabel, wallet)),
+            amount: parseMoney(split.amount),
+            wallet,
+            transaction_reference: '',
+            notes: '',
+          });
+        });
+      } else if (payment.amount !== undefined) {
+        const methodLabel = payment.payment_method || '';
+        const wallet = /bkash/i.test(methodLabel) ? 'bkash' : /nagad/i.test(methodLabel) ? 'nagad' : '';
+        rows.push({
+          payment_method_id: Number(payment.payment_method_id || findPaymentMethodId(methodLabel, wallet)),
+          amount: parseMoney(payment.amount),
+          wallet,
+          transaction_reference: '',
+          notes: '',
+        });
+      }
+    });
+
+    if (rows.length === 0) {
+      rows.push({ payment_method_id: paymentMethods[0]?.id || 0, amount: parseMoney(order?.paid_amount), wallet: '', transaction_reference: '', notes: '' });
+    }
+
+    return rows.filter((r) => Number(r.amount) > 0 || parseMoney(order?.paid_amount) <= 0);
+  };
+
+  const openOfflineEdit = async (order: PurchaseHistoryOrder) => {
+    setActiveMenu(null);
+    try {
+      const fullOrder: any = order.items && order.payments ? order : await orderService.getById(order.id);
+      setEditingOfflineOrder(fullOrder);
+      setOfflineEditForm({
+        customer_name: fullOrder.customer?.name || '',
+        customer_phone: fullOrder.customer?.phone || '',
+        customer_email: fullOrder.customer?.email || '',
+        customer_address: fullOrder.customer?.address || fullOrder.shipping_address?.address_line1 || fullOrder.shipping_address?.street || '',
+        order_date: toDateInputValue(fullOrder.order_date || fullOrder.created_at),
+        payment_breakdown: buildPaymentRowsForEdit(fullOrder),
+      });
+    } catch (error: any) {
+      alert(error?.message || 'Failed to open offline sale editor.');
+    }
+  };
+
+  const updateEditPaymentRow = (index: number, patch: any) => {
+    setOfflineEditForm((prev: any) => {
+      const rows = [...(prev.payment_breakdown || [])];
+      rows[index] = { ...rows[index], ...patch };
+      return { ...prev, payment_breakdown: rows };
+    });
+  };
+
+  const saveOfflineEdit = async () => {
+    if (!editingOfflineOrder) return;
+    const paidTotal = parseMoney(editingOfflineOrder.paid_amount);
+    const breakdownTotal = (offlineEditForm.payment_breakdown || []).reduce((sum: number, row: any) => sum + parseMoney(row.amount), 0);
+    if (Math.abs(breakdownTotal - paidTotal) > 0.01) {
+      alert(`Payment breakdown total must stay ৳${paidTotal.toFixed(2)}. Current total is ৳${breakdownTotal.toFixed(2)}.`);
+      return;
+    }
+
+    try {
+      setSavingOfflineEdit(true);
+      const updated = await orderService.editOfflineSale(editingOfflineOrder.id, {
+        customer_name: offlineEditForm.customer_name,
+        customer_phone: offlineEditForm.customer_phone,
+        customer_email: offlineEditForm.customer_email || undefined,
+        customer_address: offlineEditForm.customer_address || undefined,
+        order_date: offlineEditForm.order_date,
+        payment_breakdown: (offlineEditForm.payment_breakdown || [])
+          .filter((row: any) => Number(row.payment_method_id) > 0 && parseMoney(row.amount) > 0)
+          .map((row: any) => ({
+            payment_method_id: Number(row.payment_method_id),
+            amount: parseMoney(row.amount),
+            wallet: row.wallet || undefined,
+            transaction_reference: row.transaction_reference || undefined,
+            notes: row.notes || undefined,
+          })),
+      });
+      setOrders((prev) => prev.map((o) => (o.id === editingOfflineOrder.id ? { ...o, ...updated } : o)));
+      setEditingOfflineOrder(null);
+      await fetchOrders();
+      alert('Offline sale updated successfully.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to update offline sale.');
+    } finally {
+      setSavingOfflineEdit(false);
     }
   };
 
@@ -1463,6 +1618,19 @@ export default function PurchaseHistoryPage() {
 
                               {activeMenu === order.id && menuPosition && (
                                 <div className="fixed w-48 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border-2 border-gray-300 dark:border-gray-600 z-50" style={{ top: menuPosition.top, left: menuPosition.left }}>
+                                  {!order.is_deleted_offline_sale && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openOfflineEdit(order);
+                                      }}
+                                      className="w-full px-4 py-3 text-left text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 rounded-lg transition-colors"
+                                    >
+                                      <Pencil className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+                                      <span>Edit Sale</span>
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -1686,6 +1854,115 @@ export default function PurchaseHistoryPage() {
           className="fixed inset-0 z-40"
           onClick={() => setActiveMenu(null)}
         />
+      )}
+
+      {editingOfflineOrder && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-5 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Edit Offline Sale</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{editingOfflineOrder.order_number} · item totals cannot be changed here</p>
+              </div>
+              <button onClick={() => setEditingOfflineOrder(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400">Customer Name</label>
+                  <input value={offlineEditForm.customer_name} onChange={(e) => setOfflineEditForm((p: any) => ({ ...p, customer_name: e.target.value }))} className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400">Phone</label>
+                  <input value={offlineEditForm.customer_phone} onChange={(e) => setOfflineEditForm((p: any) => ({ ...p, customer_phone: e.target.value }))} className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400">Email</label>
+                  <input value={offlineEditForm.customer_email} onChange={(e) => setOfflineEditForm((p: any) => ({ ...p, customer_email: e.target.value }))} className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400">Order Date</label>
+                  <input type="date" value={offlineEditForm.order_date} onChange={(e) => setOfflineEditForm((p: any) => ({ ...p, order_date: e.target.value }))} className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400">Address / Note</label>
+                  <textarea rows={2} value={offlineEditForm.customer_address} onChange={(e) => setOfflineEditForm((p: any) => ({ ...p, customer_address: e.target.value }))} className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white" />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-gray-900 dark:text-white">Payment Breakdown</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Total must remain {money(editingOfflineOrder.paid_amount)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOfflineEditForm((p: any) => ({ ...p, payment_breakdown: [...(p.payment_breakdown || []), { payment_method_id: paymentMethods[0]?.id || 0, amount: 0, wallet: '', transaction_reference: '', notes: '' }] }))}
+                    className="px-3 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-xs font-semibold flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" /> Add
+                  </button>
+                </div>
+                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {(offlineEditForm.payment_breakdown || []).map((row: any, index: number) => {
+                    const method = paymentMethods.find((m) => Number(m.id) === Number(row.payment_method_id));
+                    const isMobile = method?.type === 'mobile_banking' || /mobile|bkash|nagad/i.test(method?.name || '');
+                    return (
+                      <div key={index} className="p-3 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                        <div className="md:col-span-4">
+                          <label className="text-[10px] uppercase font-semibold text-gray-500">Method</label>
+                          <select value={row.payment_method_id} onChange={(e) => updateEditPaymentRow(index, { payment_method_id: Number(e.target.value), wallet: '' })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-sm">
+                            {paymentMethods.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                          </select>
+                        </div>
+                        {isMobile && (
+                          <div className="md:col-span-2">
+                            <label className="text-[10px] uppercase font-semibold text-gray-500">Wallet</label>
+                            <select value={row.wallet || ''} onChange={(e) => updateEditPaymentRow(index, { wallet: e.target.value })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-sm">
+                              <option value="">Mobile</option>
+                              <option value="bkash">bKash</option>
+                              <option value="nagad">Nagad</option>
+                            </select>
+                          </div>
+                        )}
+                        <div className={isMobile ? 'md:col-span-2' : 'md:col-span-3'}>
+                          <label className="text-[10px] uppercase font-semibold text-gray-500">Amount</label>
+                          <input type="number" min="0" step="0.01" value={row.amount} onChange={(e) => updateEditPaymentRow(index, { amount: e.target.value })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-sm" />
+                        </div>
+                        <div className={isMobile ? 'md:col-span-3' : 'md:col-span-4'}>
+                          <label className="text-[10px] uppercase font-semibold text-gray-500">Reference</label>
+                          <input value={row.transaction_reference || ''} onChange={(e) => updateEditPaymentRow(index, { transaction_reference: e.target.value })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-sm" />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setOfflineEditForm((p: any) => ({ ...p, payment_breakdown: (p.payment_breakdown || []).filter((_: any, i: number) => i !== index) }))}
+                          className="md:col-span-1 px-2 py-2 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4 mx-auto" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 flex justify-between text-sm">
+                  <span className="text-gray-600 dark:text-gray-400">Breakdown total</span>
+                  <span className="font-bold text-gray-900 dark:text-white">{money((offlineEditForm.payment_breakdown || []).reduce((sum: number, row: any) => sum + parseMoney(row.amount), 0))}</span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setEditingOfflineOrder(null)} className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200">Cancel</button>
+                <button type="button" disabled={savingOfflineEdit} onClick={saveOfflineEdit} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50">
+                  {savingOfflineEdit ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showReturnModal && selectedOrderForAction && (

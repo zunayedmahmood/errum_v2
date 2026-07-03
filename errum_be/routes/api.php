@@ -1193,6 +1193,7 @@ Route::middleware('auth:api')->group(function () {
             Route::patch('/fulfill', [OrderController::class, 'fulfill']);  // Warehouse fulfillment (scan barcodes)
             Route::patch('/complete', [OrderController::class, 'complete']);  // Reduce inventory
             Route::patch('/cancel', [OrderController::class, 'cancel']);
+            Route::patch('/edit-offline-sale', [OrderController::class, 'editOfflineSale']);
             Route::delete('/void-offline-sale', [OrderController::class, 'voidOfflineSale']);
         });
         

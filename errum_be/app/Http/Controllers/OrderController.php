@@ -307,6 +307,8 @@ class OrderController extends Controller
             'installment_plan.total_installments' => 'required_with:installment_plan|integer|min:2',
             'installment_plan.installment_amount' => 'required_with:installment_plan|numeric|min:0.01',
             'installment_plan.start_date' => 'nullable|date',
+            'store_id' => 'nullable|exists:stores,id',
+            'store_assignment_mode' => 'nullable|string|max:50',
             'order_source' => 'nullable|string|max:50',
             'source_tag' => 'nullable|string|max:50',
             'tags' => 'nullable|array',
@@ -820,7 +822,7 @@ class OrderController extends Controller
         }
 
         // Only allow updates for pending/confirmed orders
-        if (!in_array($order->status, ['pending', 'pending_assignment', 'confirmed', 'assigned_to_store', 'picking'])) {
+        if (!in_array($order->status, ['pending', 'pending_assignment', 'confirmed', 'assigned_to_store', 'picking', 'ready_for_shipment'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot update order in current status: ' . $order->status
@@ -842,6 +844,8 @@ class OrderController extends Controller
             'discount_amount' => 'nullable|numeric|min:0',
             'shipping_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
+            'store_id' => 'nullable|exists:stores,id',
+            'store_assignment_mode' => 'nullable|string|max:50',
             'order_source' => 'nullable|string|max:50',
             'source_tag' => 'nullable|string|max:50',
             'tags' => 'nullable|array',
@@ -895,6 +899,24 @@ class OrderController extends Controller
                 $order->shipping_address = $request->shipping_address;
             }
 
+            if ($request->has('store_id') && $order->needsFulfillment()) {
+                $newStoreId = $request->filled('store_id') ? (int) $request->store_id : null;
+                $oldStoreId = $order->store_id ? (int) $order->store_id : null;
+                if ($newStoreId !== $oldStoreId) {
+                    $this->clearOnlineOrderScans($order, 'store_changed_during_order_edit', true);
+                    $order->store_id = $newStoreId;
+                    $order->fulfillment_status = $newStoreId ? 'pending_fulfillment' : null;
+                    $order->status = $newStoreId ? 'assigned_to_store' : 'pending_assignment';
+                    $order->metadata = array_merge($order->metadata ?? [], [
+                        'store_changed_during_edit_at' => now()->toISOString(),
+                        'store_changed_during_edit_by' => auth()->id(),
+                        'previous_store_id' => $oldStoreId,
+                        'new_store_id' => $newStoreId,
+                        'barcode_action' => 'cleared_scanned_barcodes_for_rescan_from_new_store',
+                    ]);
+                }
+            }
+
             if ($hasOrderSourceInput && $orderSourceTag) {
                 $order->metadata = array_merge($order->metadata ?? [], $this->buildOrderSourceMetadata($orderSourceTag));
             }
@@ -939,6 +961,8 @@ class OrderController extends Controller
             }
             
             $order->save();
+            $order->updatePaymentStatus();
+            $this->refreshOnlineOrderFulfillmentState($order);
 
             DB::commit();
 
@@ -992,7 +1016,7 @@ class OrderController extends Controller
         }
 
         // Can only add items to pending orders
-        if (!in_array($order->status, ['pending', 'pending_assignment', 'confirmed', 'assigned_to_store', 'picking'])) {
+        if (!in_array($order->status, ['pending', 'pending_assignment', 'confirmed', 'assigned_to_store', 'picking', 'ready_for_shipment'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot add items to ' . $order->status . ' orders'
@@ -1182,6 +1206,7 @@ class OrderController extends Controller
                 $existingItem = OrderItem::where('order_id', $order->id)
                     ->where('product_id', $product->id)
                     ->where('product_batch_id', $batch ? $batch->id : null)
+                    ->whereNull('product_barcode_id')
                     ->first();
                 
                 if ($existingItem) {
@@ -1214,11 +1239,11 @@ class OrderController extends Controller
                 $addedItems[] = $orderItem;
             }
 
-            // Reset status to pending_assignment on edit
-            $order->status = 'pending_assignment';
-
-            // Recalculate order totals
+            // Recalculate order totals. New online items remain unscanned while already scanned items stay attached.
             $order->calculateTotals();
+            $order->save();
+            $order->updatePaymentStatus();
+            $this->refreshOnlineOrderFulfillmentState($order);
 
             DB::commit();
 
@@ -1266,7 +1291,7 @@ class OrderController extends Controller
             ], 404);
         }
 
-        if (!in_array($order->status, ['pending', 'pending_assignment', 'confirmed', 'assigned_to_store', 'picking'])) {
+        if (!in_array($order->status, ['pending', 'pending_assignment', 'confirmed', 'assigned_to_store', 'picking', 'ready_for_shipment'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot update items in ' . $order->status . ' orders'
@@ -1299,26 +1324,59 @@ class OrderController extends Controller
         DB::beginTransaction();
         try {
             if ($request->filled('quantity')) {
-                $newQuantity = $request->quantity;
-                $diff = $newQuantity - $item->quantity;
+                $newQuantity = (int) $request->quantity;
+                $oldQuantity = (int) $item->quantity;
+                $diff = $newQuantity - $oldQuantity;
 
-                // For increases, validate global available inventory
-                if ($diff > 0) {
-                    $reserved = \App\Models\ReservedProduct::where('product_id', $item->product_id)->lockForUpdate()->first();
-                    $available = $reserved ? $reserved->available_inventory : 0;
-                    
-                    if ($available < $diff) {
-                        throw new \Exception("Insufficient global stock to increase quantity for '{$item->product_name}'. Available: {$available}, needed: {$diff}");
+                // Already-scanned online rows represent physical barcode units. Keep those barcodes.
+                // If quantity increases, create a separate unscanned row for only the added quantity.
+                if ($order->needsFulfillment() && $item->product_barcode_id) {
+                    if ($newQuantity > $oldQuantity) {
+                        $extraQty = $newQuantity - $oldQuantity;
+                        $reserved = \App\Models\ReservedProduct::where('product_id', $item->product_id)->lockForUpdate()->first();
+                        $available = $reserved ? $reserved->available_inventory : 0;
+                        if ($available < $extraQty) {
+                            throw new \Exception("Insufficient global stock to increase quantity for '{$item->product_name}'. Available: {$available}, needed: {$extraQty}");
+                        }
+
+                        OrderItem::create([
+                            'order_id' => $order->id,
+                            'product_id' => $item->product_id,
+                            'product_batch_id' => null,
+                            'product_barcode_id' => null,
+                            'store_id' => $order->store_id,
+                            'product_name' => $item->product_name,
+                            'product_sku' => $item->product_sku,
+                            'quantity' => $extraQty,
+                            'unit_price' => $request->unit_price ?? $item->unit_price,
+                            'discount_amount' => 0,
+                            'tax_amount' => 0,
+                            'cogs' => 0,
+                            'total_amount' => ((float) ($request->unit_price ?? $item->unit_price)) * $extraQty,
+                        ]);
+                        $newQuantity = $oldQuantity;
+                    } elseif ($newQuantity < $oldQuantity) {
+                        throw new \Exception('Cannot reduce quantity on a scanned barcode row. Remove the scanned row to release that barcode.');
                     }
-                }
+                } else {
+                    // For increases, validate global available inventory
+                    if ($diff > 0) {
+                        $reserved = \App\Models\ReservedProduct::where('product_id', $item->product_id)->lockForUpdate()->first();
+                        $available = $reserved ? $reserved->available_inventory : 0;
+                        
+                        if ($available < $diff) {
+                            throw new \Exception("Insufficient global stock to increase quantity for '{$item->product_name}'. Available: {$available}, needed: {$diff}");
+                        }
+                    }
 
-                // Recalculate tax for the new quantity
-                $batch = $item->batch;
-                $taxPercentage = $batch ? ($batch->tax_percentage ?? 0) : 0;
-                $unitPrice = $request->unit_price ?? $item->unit_price;
-                $item->tax_amount = $this->calculateTax($unitPrice, $newQuantity, $taxPercentage)['total_tax'];
-                
-                $item->updateQuantity($newQuantity);
+                    // Recalculate tax for the new quantity
+                    $batch = $item->batch;
+                    $taxPercentage = $batch ? ($batch->tax_percentage ?? 0) : 0;
+                    $unitPrice = $request->unit_price ?? $item->unit_price;
+                    $item->tax_amount = $this->calculateTax($unitPrice, $newQuantity, $taxPercentage)['total_tax'];
+                    
+                    $item->updateQuantity($newQuantity);
+                }
             }
 
             if ($request->filled('unit_price')) {
@@ -1331,10 +1389,10 @@ class OrderController extends Controller
 
             $item->save();
 
-            // Reset status to pending_assignment on edit
-            $order->status = 'pending_assignment';
-
             $order->calculateTotals();
+            $order->save();
+            $order->updatePaymentStatus();
+            $this->refreshOnlineOrderFulfillmentState($order);
 
             DB::commit();
 
@@ -1379,7 +1437,7 @@ class OrderController extends Controller
             ], 404);
         }
 
-        if (!in_array($order->status, ['pending', 'pending_assignment', 'confirmed', 'assigned_to_store', 'picking'])) {
+        if (!in_array($order->status, ['pending', 'pending_assignment', 'confirmed', 'assigned_to_store', 'picking', 'ready_for_shipment'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot remove items from ' . $order->status . ' orders'
@@ -1397,12 +1455,20 @@ class OrderController extends Controller
 
         DB::beginTransaction();
         try {
+            if ($order->items()->count() <= 1) {
+                throw new \Exception('Cannot remove the last item from an order.');
+            }
+
+            if ($order->needsFulfillment() && $item->product_barcode_id) {
+                $this->releaseScannedBarcodeFromItem($item, 'item_removed_during_order_edit', true);
+            }
+
             $item->delete();
             
-            // Reset status to pending_assignment on edit
-            $order->status = 'pending_assignment';
-            
             $order->calculateTotals();
+            $order->save();
+            $order->updatePaymentStatus();
+            $this->refreshOnlineOrderFulfillmentState($order);
 
             DB::commit();
 
@@ -1449,10 +1515,10 @@ class OrderController extends Controller
             ], 404);
         }
 
-        if (!in_array($order->status, ['pending', 'pending_assignment', 'assigned_to_store', 'confirmed'])) {
+        if (!in_array($order->status, ['pending', 'pending_assignment', 'assigned_to_store', 'confirmed', 'ready_for_shipment'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only pending, pending_assignment, confirmed or store-assigned orders can be completed'
+                'message' => 'Only pending, pending_assignment, confirmed, ready_for_shipment or store-assigned orders can be completed'
             ], 422);
         }
 
@@ -1725,6 +1791,395 @@ class OrderController extends Controller
     }
 
 
+
+
+
+    private function releaseScannedBarcodeFromItem(OrderItem $item, string $reason = 'order_edit', bool $clearBatch = false): void
+    {
+        $barcode = $item->product_barcode_id
+            ? ProductBarcode::whereKey($item->product_barcode_id)->lockForUpdate()->first()
+            : null;
+
+        if ($barcode) {
+            $barcode->update([
+                'is_active' => true,
+                'current_status' => 'in_shop',
+                'current_store_id' => $barcode->current_store_id ?: ($barcode->batch?->store_id),
+                'location_updated_at' => now(),
+                'location_metadata' => array_merge($barcode->location_metadata ?? [], [
+                    'released_from_order_id' => $item->order_id,
+                    'released_order_item_id' => $item->id,
+                    'released_reason' => $reason,
+                    'released_at' => now()->toDateTimeString(),
+                    'released_by' => auth()->id(),
+                ]),
+            ]);
+        }
+
+        $payload = ['product_barcode_id' => null];
+        if ($clearBatch) {
+            $payload['product_batch_id'] = null;
+        }
+        $item->forceFill($payload)->saveQuietly();
+    }
+
+    private function clearOnlineOrderScans(Order $order, string $reason = 'order_edit', bool $clearBatch = true): array
+    {
+        $released = [];
+        $items = $order->items()->with('barcode')->whereNotNull('product_barcode_id')->get();
+        foreach ($items as $item) {
+            $released[] = [
+                'order_item_id' => (int) $item->id,
+                'barcode' => $item->barcode?->barcode,
+                'product_id' => (int) $item->product_id,
+            ];
+            $this->releaseScannedBarcodeFromItem($item, $reason, $clearBatch);
+        }
+        return $released;
+    }
+
+    private function refreshOnlineOrderFulfillmentState(Order $order): void
+    {
+        if (!$order->needsFulfillment() || in_array($order->status, ['cancelled', 'delivered'], true)) {
+            return;
+        }
+
+        $order->refresh();
+        $items = $order->items()->get();
+        $totalQty = (int) $items->sum('quantity');
+        $scannedQty = (int) $items->filter(fn ($item) => !empty($item->product_barcode_id))->sum('quantity');
+
+        if (!$order->store_id) {
+            $order->status = 'pending_assignment';
+            $order->fulfillment_status = null;
+            $order->fulfilled_at = null;
+            $order->fulfilled_by = null;
+        } elseif ($totalQty > 0 && $scannedQty >= $totalQty) {
+            $order->status = 'ready_for_shipment';
+            $order->fulfillment_status = 'fulfilled';
+            $order->fulfilled_at = $order->fulfilled_at ?: now();
+            $order->fulfilled_by = $order->fulfilled_by ?: auth()->id();
+        } elseif ($scannedQty > 0) {
+            $order->status = 'picking';
+            $order->fulfillment_status = 'pending_fulfillment';
+            $order->fulfilled_at = null;
+            $order->fulfilled_by = null;
+        } else {
+            $order->status = 'assigned_to_store';
+            $order->fulfillment_status = 'pending_fulfillment';
+            $order->fulfilled_at = null;
+            $order->fulfilled_by = null;
+        }
+
+        $order->metadata = array_merge($order->metadata ?? [], [
+            'fulfillment_reconciled_at' => now()->toISOString(),
+            'fulfillment_reconciled_by' => auth()->id(),
+            'scanned_units' => $scannedQty,
+            'total_units' => $totalQty,
+        ]);
+        $order->save();
+    }
+
+    /**
+     * Edit safe offline/POS sale fields without changing sold item totals.
+     * Editable: customer details, order date, and payment breakdown only.
+     * The new payment breakdown must equal the amount already paid by the sale.
+     */
+    public function editOfflineSale(Request $request, $id)
+    {
+        $validator = Validator::make($request->all(), [
+            'customer_name' => 'nullable|string|max:255',
+            'customer_phone' => 'nullable|string|max:30',
+            'customer_email' => 'nullable|email|max:255',
+            'customer_address' => 'nullable|string|max:1000',
+            'order_date' => 'nullable|string|max:50',
+            'payment_breakdown' => 'nullable|array',
+            'payment_breakdown.*.payment_method_id' => 'required_with:payment_breakdown|exists:payment_methods,id',
+            'payment_breakdown.*.amount' => 'required_with:payment_breakdown|numeric|min:0',
+            'payment_breakdown.*.wallet' => 'nullable|string|max:50',
+            'payment_breakdown.*.transaction_reference' => 'nullable|string|max:255',
+            'payment_breakdown.*.notes' => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            /** @var Order|null $order */
+            $order = Order::with(['customer', 'items', 'payments.paymentSplits.paymentMethod', 'payments.paymentMethod'])
+                ->where('id', $id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$order) {
+                throw new \Exception('Offline sale not found.');
+            }
+
+            if (!in_array($order->order_type, ['counter', 'offline', 'pos'], true)) {
+                throw new \Exception('Only offline/POS sales can be edited from Offline Sale History.');
+            }
+
+            $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
+            if (!empty($metadata['offline_sale_deleted']) || !empty($metadata['offline_sale_voided'])) {
+                throw new \Exception('Deleted offline sales cannot be edited.');
+            }
+
+            $orderDate = $request->filled('order_date')
+                ? $this->resolveTrustedOrderDate($request)
+                : ($order->order_date ?: $order->created_at ?: now());
+
+            if ($request->has('customer_name') || $request->has('customer_phone') || $request->has('customer_email') || $request->has('customer_address')) {
+                $customer = $order->customer;
+                if ($customer) {
+                    if ($request->filled('customer_name')) $customer->name = $request->customer_name;
+                    if ($request->filled('customer_phone')) $customer->phone = $request->customer_phone;
+                    if ($request->has('customer_email')) $customer->email = $request->customer_email;
+                    if ($request->has('customer_address')) $customer->address = $request->customer_address;
+                    $customer->save();
+                }
+            }
+
+            $oldDate = optional($order->order_date)->format('Y-m-d H:i:s');
+            $order->order_date = $orderDate;
+            $order->forceFill([
+                'created_at' => $orderDate,
+                'updated_at' => $orderDate,
+            ]);
+            $order->metadata = array_merge($metadata, [
+                'offline_sale_last_edited_at' => now()->toISOString(),
+                'offline_sale_last_edited_by' => auth()->id(),
+                'offline_sale_previous_order_date' => $oldDate,
+                'offline_sale_edit_scope' => 'customer_date_payment_breakdown_only',
+            ]);
+            $order->save();
+
+            if ($request->has('payment_breakdown')) {
+                $this->replaceOfflineSalePaymentBreakdown($order->fresh(['payments.paymentSplits']), $request->input('payment_breakdown') ?: [], $orderDate);
+            } else {
+                // Even date-only edits must move payment timestamps so the cash sheet follows the selected order day.
+                $this->moveOfflineSalePaymentDates($order->fresh(['payments.paymentSplits']), $orderDate);
+            }
+
+            $order->refresh();
+            $order->updatePaymentStatus();
+            $order->forceFill(['updated_at' => $orderDate])->saveQuietly();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Offline sale updated. Item totals were not changed and cash sheet dates/payment breakdown were refreshed.',
+                'data' => $this->formatOrderResponse($order->fresh([
+                    'customer',
+                    'store',
+                    'items.product',
+                    'items.batch',
+                    'items.barcode',
+                    'payments.paymentMethod',
+                    'payments.paymentSplits.paymentMethod',
+                    'createdBy',
+                    'salesman',
+                ]), true),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    private function replaceOfflineSalePaymentBreakdown(Order $order, array $breakdown, Carbon $paymentAt): void
+    {
+        $targetPaid = round((float) $order->paid_amount, 2);
+        if ($targetPaid <= 0 && (float) $order->total_amount <= 0) {
+            $targetPaid = 0.0;
+        }
+
+        $cleanBreakdown = collect($breakdown)
+            ->map(function ($row) {
+                return [
+                    'payment_method_id' => (int) ($row['payment_method_id'] ?? 0),
+                    'amount' => round((float) ($row['amount'] ?? 0), 2),
+                    'wallet' => trim((string) ($row['wallet'] ?? '')),
+                    'transaction_reference' => trim((string) ($row['transaction_reference'] ?? '')),
+                    'notes' => trim((string) ($row['notes'] ?? '')),
+                ];
+            })
+            ->filter(fn ($row) => $row['payment_method_id'] > 0 && $row['amount'] > 0)
+            ->values();
+
+        $newTotal = round((float) $cleanBreakdown->sum('amount'), 2);
+        if (abs($newTotal - $targetPaid) > 0.01) {
+            throw new \Exception("Payment breakdown total must remain ৳" . number_format($targetPaid, 2) . ". Current breakdown total is ৳" . number_format($newTotal, 2) . ".");
+        }
+
+        foreach ($order->payments as $payment) {
+            \App\Models\Transaction::where('reference_type', \App\Models\OrderPayment::class)
+                ->where('reference_id', $payment->id)
+                ->update(['status' => 'cancelled']);
+
+            foreach ($payment->paymentSplits as $split) {
+                $split->status = 'cancelled';
+                $split->save();
+            }
+
+            $payment->status = 'cancelled';
+            $payment->metadata = array_merge($payment->metadata ?? [], [
+                'replaced_by_offline_sale_edit_at' => now()->toISOString(),
+                'replacement_order_date' => $paymentAt->toDateTimeString(),
+            ]);
+            $payment->save();
+        }
+
+        if ($targetPaid <= 0) {
+            $order->forceFill([
+                'paid_amount' => 0,
+                'outstanding_amount' => max(0, (float) $order->total_amount),
+                'payment_status' => (float) $order->total_amount <= 0 ? 'paid' : 'pending',
+            ])->saveQuietly();
+            return;
+        }
+
+        if ($cleanBreakdown->count() === 1) {
+            $row = $cleanBreakdown->first();
+            $method = PaymentMethod::findOrFail($row['payment_method_id']);
+            $paymentData = $this->buildEditedPaymentData($row, $paymentAt);
+            $payment = \App\Models\OrderPayment::create([
+                'order_id' => $order->id,
+                'payment_method_id' => $method->id,
+                'customer_id' => $order->customer_id,
+                'store_id' => $order->store_id,
+                'processed_by' => auth()->id() ?: $order->created_by,
+                'amount' => $targetPaid,
+                'fee_amount' => $method->calculateFee($targetPaid),
+                'net_amount' => $targetPaid - $method->calculateFee($targetPaid),
+                'payment_type' => 'full',
+                'payment_data' => $paymentData,
+                'metadata' => ['offline_sale_payment_breakdown_edited' => true] + $paymentData,
+                'notes' => $row['notes'] ?: 'Payment breakdown edited from Offline Sale History',
+                'order_balance_before' => $targetPaid,
+                'order_balance_after' => 0,
+                'status' => 'pending',
+            ]);
+            $payment->forceFill([
+                'payment_received_date' => $paymentAt->toDateString(),
+                'processed_at' => $paymentAt,
+                'created_at' => $paymentAt,
+                'updated_at' => $paymentAt,
+            ])->saveQuietly();
+            $payment->process(auth()->user() instanceof Employee ? auth()->user() : null, $paymentAt);
+            $payment->complete($row['transaction_reference'] ?: null, null, $paymentAt);
+        } else {
+            $payment = \App\Models\OrderPayment::create([
+                'order_id' => $order->id,
+                'payment_method_id' => null,
+                'customer_id' => $order->customer_id,
+                'store_id' => $order->store_id,
+                'processed_by' => auth()->id() ?: $order->created_by,
+                'amount' => $targetPaid,
+                'fee_amount' => 0,
+                'net_amount' => $targetPaid,
+                'payment_type' => 'full',
+                'payment_data' => ['payment_date' => $paymentAt->toDateTimeString()],
+                'metadata' => ['offline_sale_payment_breakdown_edited' => true],
+                'notes' => 'Split payment breakdown edited from Offline Sale History',
+                'order_balance_before' => $targetPaid,
+                'order_balance_after' => 0,
+                'status' => 'pending',
+            ]);
+            $payment->forceFill([
+                'payment_received_date' => $paymentAt->toDateString(),
+                'processed_at' => $paymentAt,
+                'created_at' => $paymentAt,
+                'updated_at' => $paymentAt,
+            ])->saveQuietly();
+
+            $fees = 0;
+            $seq = 1;
+            foreach ($cleanBreakdown as $row) {
+                $method = PaymentMethod::findOrFail($row['payment_method_id']);
+                $split = \App\Models\PaymentSplit::createSplit($payment, $method, (float) $row['amount'], $seq++, $this->buildEditedPaymentData($row, $paymentAt));
+                $split->forceFill([
+                    'transaction_reference' => $row['transaction_reference'] ?: null,
+                    'status' => 'completed',
+                    'processed_at' => $paymentAt,
+                    'completed_at' => $paymentAt,
+                    'created_at' => $paymentAt,
+                    'updated_at' => $paymentAt,
+                    'metadata' => ['offline_sale_payment_breakdown_edited' => true] + $this->buildEditedPaymentData($row, $paymentAt),
+                ])->saveQuietly();
+                $fees += (float) $split->fee_amount;
+            }
+
+            $payment->fee_amount = $fees;
+            $payment->net_amount = $targetPaid - $fees;
+            $payment->save();
+            $payment->process(auth()->user() instanceof Employee ? auth()->user() : null, $paymentAt);
+            $payment->complete(null, null, $paymentAt);
+        }
+
+        $order->forceFill([
+            'paid_amount' => $targetPaid,
+            'outstanding_amount' => max(0, (float) $order->total_amount - $targetPaid),
+            'payment_status' => $targetPaid + 0.01 >= (float) $order->total_amount ? 'paid' : ($targetPaid > 0 ? 'partial' : 'pending'),
+        ])->saveQuietly();
+    }
+
+    private function buildEditedPaymentData(array $row, Carbon $paymentAt): array
+    {
+        $data = [
+            'payment_date' => $paymentAt->toDateTimeString(),
+            'edited_from_offline_sale_history' => true,
+        ];
+
+        if (!empty($row['wallet'])) {
+            $wallet = strtolower($row['wallet']);
+            $data['wallet'] = $wallet;
+            $data['channel'] = $wallet;
+            $data['provider'] = $wallet;
+            $data['display_method'] = $wallet === 'bkash' ? 'bKash' : ($wallet === 'nagad' ? 'Nagad' : $row['wallet']);
+        }
+
+        if (!empty($row['transaction_reference'])) {
+            $data['transaction_reference'] = $row['transaction_reference'];
+        }
+
+        return $data;
+    }
+
+    private function moveOfflineSalePaymentDates(Order $order, Carbon $paymentAt): void
+    {
+        foreach ($order->payments as $payment) {
+            $payment->forceFill([
+                'payment_received_date' => $paymentAt->toDateString(),
+                'processed_at' => $payment->processed_at ? $paymentAt : null,
+                'completed_at' => $payment->completed_at ? $paymentAt : null,
+                'created_at' => $paymentAt,
+                'updated_at' => $paymentAt,
+            ])->saveQuietly();
+
+            \App\Models\Transaction::where('reference_type', \App\Models\OrderPayment::class)
+                ->where('reference_id', $payment->id)
+                ->update(['transaction_date' => $paymentAt]);
+
+            foreach ($payment->paymentSplits as $split) {
+                $split->forceFill([
+                    'processed_at' => $split->processed_at ? $paymentAt : null,
+                    'completed_at' => $split->completed_at ? $paymentAt : null,
+                    'created_at' => $paymentAt,
+                    'updated_at' => $paymentAt,
+                ])->saveQuietly();
+            }
+        }
+    }
 
     /**
      * Safely void/delete an offline POS sale.
@@ -2179,6 +2634,7 @@ class OrderController extends Controller
         $paymentData = [
             'id' => $payment->id,
             'amount' => number_format((float)$payment->amount, 2),
+            'payment_method_id' => $payment->payment_method_id,
             'payment_method' => $this->formatPaymentMethodLabel($payment->paymentMethod ?? null, $payment->payment_data ?? [], $payment->metadata ?? []),
             'payment_type' => $payment->payment_type,
             'status' => $payment->status,
@@ -2209,7 +2665,9 @@ class OrderController extends Controller
                     }
 
                     return [
+                        'payment_method_id' => $split->payment_method_id,
                         'payment_method' => $label,
+                        'wallet' => strtolower((string) (($paymentData['wallet'] ?? $metadata['wallet'] ?? $paymentData['channel'] ?? $metadata['channel'] ?? ''))),
                         'amount' => number_format((float)$split->amount, 2),
                         'status' => $split->status,
                     ];
