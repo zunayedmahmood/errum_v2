@@ -403,7 +403,7 @@ class Transaction extends Model
     public static function createFromRefund(Refund $refund): self
     {
         $status = $refund->status === 'completed' ? 'completed' : 'pending';
-        $transactionDate = $refund->completed_at ?? now();
+        $transactionDate = $refund->order->order_date ?? $refund->completed_at ?? now();
         $cashAccountId = static::getSettlementAccountIdForMethodType($refund->refund_method ?? 'cash', $refund->order->store_id ?? null);
         $salesRevenueAccountId = static::getSalesRevenueAccountId();
         $taxLiabilityAccountId = static::getTaxLiabilityAccountId();
@@ -489,7 +489,7 @@ class Transaction extends Model
     public static function createFromRefundCOGS(\App\Models\ProductReturn $productReturn): void
     {
         $status = 'completed';
-        $transactionDate = $productReturn->updated_at ?? now();
+        $transactionDate = $productReturn->order->order_date ?? $productReturn->updated_at ?? now();
         $inventoryAccountId = static::getInventoryAccountId();
         $cogsAccountId = static::getCOGSAccountId();
         $storeId = $productReturn->order->store_id ?? null;
@@ -552,7 +552,7 @@ class Transaction extends Model
     public static function createFromExchange(\App\Models\ProductReturn $productReturn, Order $newOrder): void
     {
         $status = 'completed';
-        $transactionDate = now();
+        $transactionDate = $productReturn->order->order_date ?? $newOrder->order_date ?? now();
         $inventoryAccountId = static::getInventoryAccountId();
         $cogsAccountId = static::getCOGSAccountId();
         $cashAccountId = static::getCashAccountId($newOrder->store_id);
@@ -1079,7 +1079,7 @@ class Transaction extends Model
         }
 
         $status = $order->status === 'completed' ? 'completed' : 'pending';
-        $transactionDate = $order->completed_at ?? now();
+        $transactionDate = $order->order_date ?? $order->confirmed_at ?? $order->created_at ?? now();
         $inventoryAccountId = static::getInventoryAccountId();
         $groupId = (string) Str::uuid();
         

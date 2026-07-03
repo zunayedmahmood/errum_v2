@@ -22,10 +22,37 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class OrderController extends Controller
 {
     use DatabaseAgnosticSearch;
+
+    /**
+     * POS/offline sale date selected in the frontend is the source of truth.
+     * Date-only inputs keep the selected day but use the current clock time.
+     */
+    private function resolveTrustedOrderDate(Request $request): Carbon
+    {
+        $timezone = config('app.timezone', 'Asia/Dhaka');
+        $rawDate = $request->input('order_date') ?: $request->input('sale_date');
+
+        if (!$rawDate) {
+            return now($timezone);
+        }
+
+        try {
+            $rawDate = trim((string) $rawDate);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $rawDate)) {
+                $now = now($timezone);
+                return Carbon::parse($rawDate, $timezone)->setTime($now->hour, $now->minute, $now->second);
+            }
+
+            return Carbon::parse($rawDate, $timezone);
+        } catch (\Throwable $e) {
+            throw new \InvalidArgumentException('Invalid order_date. Use YYYY-MM-DD or a valid date/time.');
+        }
+    }
     /**
      * List all orders with filters
      * 
@@ -259,6 +286,8 @@ class OrderController extends Controller
             'customer.address' => 'nullable|string',
             'store_id' => 'nullable|exists:stores,id',  // Required for counter, optional for social_commerce/ecommerce
             'salesman_id' => 'nullable|exists:employees,id',  // Manual salesman entry for POS
+            'order_date' => 'nullable|date',
+            'sale_date' => 'nullable|date',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.batch_id' => 'nullable|exists:product_batches,id',  // Optional for pre-orders
@@ -412,6 +441,7 @@ class OrderController extends Controller
             }
 
             $actorId = (int) Auth::id();
+            $orderDate = $this->resolveTrustedOrderDate($request);
 
             // Determine fulfillment status based on order type
             // Counter orders: immediate fulfillment (barcode scanned at POS)
@@ -437,8 +467,9 @@ class OrderController extends Controller
                 $this->buildOrderSourceMetadata($orderSourceTag)
             );
 
-            // Create order
-            $order = Order::create([
+            // Create order. The selected POS sale date must be trusted for order date,
+            // timestamps, receipts, and same-day cash sheet reporting.
+            $order = new Order([
                 'customer_id' => $customer->id,
                 'store_id' => $storeId,  // Use calculated store_id (null for social_commerce/ecommerce)
                 'order_type' => $request->order_type,
@@ -452,8 +483,11 @@ class OrderController extends Controller
                 'metadata' => $orderMetadata,
                 'created_by' => $actorId,
                 'salesman_id' => $salesmanId,
-                'order_date' => now(),
+                'order_date' => $orderDate,
             ]);
+            $order->created_at = $orderDate;
+            $order->updated_at = $orderDate;
+            $order->save();
 
             // Save shipping address to customer_addresses table if provided
             // This ensures Pathao integration data is stored for later use
@@ -630,6 +664,10 @@ class OrderController extends Controller
                     'cogs' => $cogs,
                     'total_amount' => $itemTotal,
                 ]);
+                $orderItem->forceFill([
+                    'created_at' => $orderDate,
+                    'updated_at' => $orderDate,
+                ])->saveQuietly();
 
                 if ($isDefectiveResale) {
                     $defectiveOrderItemIds[] = $orderItem->id;
@@ -687,6 +725,10 @@ class OrderController extends Controller
                 'is_preorder' => $hasPreOrderItems,  // Mark order as pre-order if any items lack batches
                 'metadata' => $orderMetadata,
             ]);
+            $order->forceFill([
+                'created_at' => $orderDate,
+                'updated_at' => $orderDate,
+            ])->saveQuietly();
 
             // Setup installment plan if requested
             if ($request->filled('installment_plan')) {
@@ -704,9 +746,17 @@ class OrderController extends Controller
                 $payment = $order->addPayment(
                     $paymentMethod,
                     $request->payment['amount'],
-                    [],
+                    array_merge($request->payment['payment_data'] ?? [], [
+                        'payment_date' => $orderDate->toDateTimeString(),
+                    ]),
                     $salesman
                 );
+
+                $payment->forceFill([
+                    'payment_received_date' => $orderDate->toDateString(),
+                    'created_at' => $orderDate,
+                    'updated_at' => $orderDate,
+                ])->saveQuietly();
 
                 $payment->update([
                     'payment_type' => $request->payment['payment_type'] ?? 'partial',
@@ -1417,6 +1467,7 @@ class OrderController extends Controller
 
         DB::beginTransaction();
         try {
+            $orderDate = $order->order_date ?: now();
             $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
             $defectiveOrderItemIds = array_map('intval', (array) ($metadata['defective_order_item_ids'] ?? []));
 
@@ -1449,12 +1500,12 @@ class OrderController extends Controller
                     $barcode->update([
                         'is_active' => true, // Keep active for history tracking
                         'current_status' => 'with_customer', // Tracks lifecycle state
-                        'location_updated_at' => now(),
+                        'location_updated_at' => $orderDate,
                         'location_metadata' => [
                             'sold_via' => 'order',
                             'order_number' => $order->order_number,
                             'order_id' => $order->id,
-                            'sale_date' => now()->toISOString(),
+                            'sale_date' => $orderDate->toISOString(),
                             'sold_by' => auth()->id(),
                         ]
                     ]);
@@ -1539,8 +1590,9 @@ class OrderController extends Controller
             // Update order status to confirmed (delivered will be set when shipment is delivered)
             $order->update([
                 'status' => 'confirmed',
-                'confirmed_at' => now(),
+                'confirmed_at' => $orderDate,
             ]);
+            $order->forceFill(['updated_at' => $orderDate])->saveQuietly();
 
             // Update customer purchase stats
             $order->customer->recordPurchase($order->total_amount, $order->id);

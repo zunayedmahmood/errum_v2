@@ -11,6 +11,7 @@ export interface CreateOrderPayload {
   };
   store_id: number;
   salesman_id?: number;
+  order_date?: string;
   items: Array<{
     product_id: number;
     batch_id: number;

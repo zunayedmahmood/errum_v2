@@ -196,7 +196,7 @@ class OrderPayment extends Model
     }
 
     // Business logic methods
-    public function process(Employee $processedBy = null): bool
+    public function process(Employee $processedBy = null, $processedAt = null): bool
     {
         if ($this->status !== 'pending') {
             return false;
@@ -205,14 +205,14 @@ class OrderPayment extends Model
         $this->update([
             'status' => 'processing',
             'processed_by' => $processedBy?->id,
-            'processed_at' => now(),
+            'processed_at' => $processedAt ?: now(),
             'status_history' => $this->addStatusToHistory('processing', $processedBy?->id),
         ]);
 
         return true;
     }
 
-    public function complete(string $transactionReference = null, string $externalReference = null): bool
+    public function complete(string $transactionReference = null, string $externalReference = null, $completedAt = null): bool
     {
         if ($this->status !== 'processing') {
             return false;
@@ -222,7 +222,7 @@ class OrderPayment extends Model
             'status' => 'completed',
             'transaction_reference' => $transactionReference,
             'external_reference' => $externalReference,
-            'completed_at' => now(),
+            'completed_at' => $completedAt ?: now(),
             'status_history' => $this->addStatusToHistory('completed'),
         ]);
 
@@ -346,7 +346,7 @@ class OrderPayment extends Model
         return $this->payment_method_id !== null && !$this->hasSplits();
     }
 
-    public function updateSplitStatus(): void
+    public function updateSplitStatus($completedAt = null): void
     {
         if (!$this->hasSplits()) {
             return;
@@ -357,7 +357,7 @@ class OrderPayment extends Model
         $anyFailed = $splits->contains(fn($split) => $split->status === 'failed');
 
         if ($allCompleted) {
-            $this->complete();
+            $this->complete(null, null, $completedAt);
         } elseif ($anyFailed) {
             $this->fail('One or more payment splits failed');
         }

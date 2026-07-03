@@ -79,7 +79,7 @@ class OrderPaymentObserver
 
             // 1. Credit Cash (asset decreases — money returned to customer)
             AccountingTransaction::create([
-                'transaction_date' => now(),
+                'transaction_date' => $order->order_date ?? $orderPayment->completed_at ?? now(),
                 'amount'           => $refundAmount,
                 'type'             => 'credit',
                 'account_id'       => AccountingTransaction::getCashAccountId($orderPayment->store_id),
@@ -94,7 +94,7 @@ class OrderPaymentObserver
 
             // 2. Debit Sales Revenue (revenue reversal — net of tax)
             AccountingTransaction::create([
-                'transaction_date' => now(),
+                'transaction_date' => $order->order_date ?? $orderPayment->completed_at ?? now(),
                 'amount'           => $revenueAmount,
                 'type'             => 'debit',
                 'account_id'       => AccountingTransaction::getSalesRevenueAccountId(),
@@ -110,7 +110,7 @@ class OrderPaymentObserver
             // 3. Debit Tax Liability (tax reversal — reduce collected tax)
             if ($taxAmount > 0) {
                 AccountingTransaction::create([
-                    'transaction_date' => now(),
+                    'transaction_date' => $order->order_date ?? $orderPayment->completed_at ?? now(),
                     'amount'           => $taxAmount,
                     'type'             => 'debit',
                     'account_id'       => AccountingTransaction::getTaxLiabilityAccountId(),

@@ -34,6 +34,8 @@ export interface SimplePaymentRequest {
   auto_complete?: boolean;
   notes?: string;
   payment_data?: PaymentData;
+  payment_date?: string;
+  payment_received_date?: string;
   cash_received?: CashDenomination[];
   cash_change?: CashDenomination[];
 }
@@ -46,6 +48,8 @@ export interface PaymentSplit {
   external_reference?: string;
   notes?: string;
   payment_data?: PaymentData;
+  payment_date?: string;
+  payment_received_date?: string;
   cash_received?: CashDenomination[];
   cash_change?: CashDenomination[];
 }
@@ -55,6 +59,8 @@ export interface SplitPaymentRequest {
   payment_type: 'full' | 'partial' | 'advance' | 'installment' | 'final';
   auto_complete?: boolean;
   notes?: string;
+  payment_date?: string;
+  payment_received_date?: string;
   splits: PaymentSplit[];
 }
 
@@ -75,6 +81,8 @@ export interface InstallmentPaymentRequest {
   auto_complete?: boolean;
   notes?: string;
   payment_data?: PaymentData;
+  payment_date?: string;
+  payment_received_date?: string;
 }
 
 

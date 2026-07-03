@@ -11,6 +11,8 @@ interface DispatchItem {
   product_name: string;
   quantity: string;
   available_quantity: number;
+  unit_price?: number;
+  line_value?: number;
 }
 
 interface CreateDispatchModalProps {
@@ -76,6 +78,12 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
   const scanQueueSetRef = useRef<Set<string>>(new Set());
   const scanQueueProcessingRef = useRef(false);
   const [queuedScanCount, setQueuedScanCount] = useState(0);
+
+  const money = (value: any) => `৳${(Number(value) || 0).toLocaleString('en-BD', { maximumFractionDigits: 2 })}`;
+  const dispatchSubtotal = useMemo(
+    () => items.reduce((sum, item) => sum + (Number(item.line_value) || (Number(item.unit_price) || 0) * (Number(item.quantity) || 0)), 0),
+    [items]
+  );
 
   const scannedSet = useMemo(() => {
     const s = new Set<string>();
@@ -230,6 +238,7 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
       updatedItems[existingItemIndex] = {
         ...existingItem,
         quantity: newQuantity.toString(),
+        line_value: (Number(existingItem.unit_price) || Number(batchData.sell_price) || 0) * newQuantity,
       };
       setItems(updatedItems);
     } else {
@@ -245,6 +254,8 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
         product_name: batchData.product.name,
         quantity: currentItem.quantity,
         available_quantity: batchData.quantity,
+        unit_price: Number(batchData.sell_price || batchData.unit_price || 0),
+        line_value: (Number(batchData.sell_price || batchData.unit_price || 0) * quantityToAdd),
       };
 
       setItems([...items, newItem]);
@@ -300,6 +311,7 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
       const batchId = String(data.current_batch.id);
       const batchNumber = data.current_batch.batch_number;
       const productName = data.product?.name || 'Unknown Product';
+      const unitPrice = Number(data.current_batch?.sell_price || data.current_batch?.unit_price || data.current_batch?.price || 0);
 
       const availableQty = Number(
         typeof data.quantity_available === 'number'
@@ -319,6 +331,8 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
               product_name: productName,
               quantity: '1',
               available_quantity: availableQty,
+              unit_price: unitPrice,
+              line_value: unitPrice,
             },
           ];
         }
@@ -338,6 +352,8 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
           ...existing,
           quantity: String(nextQty),
           available_quantity: maxAllowed,
+          unit_price: Number(existing.unit_price || unitPrice || 0),
+          line_value: Number(existing.unit_price || unitPrice || 0) * nextQty,
         };
         return next;
       });
@@ -867,6 +883,12 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
                       <th className="px-3 py-2 text-left text-gray-700 dark:text-gray-300">
                         Quantity
                       </th>
+                      <th className="px-3 py-2 text-right text-gray-700 dark:text-gray-300">
+                        Unit Value
+                      </th>
+                      <th className="px-3 py-2 text-right text-gray-700 dark:text-gray-300">
+                        Line Value
+                      </th>
                       <th className="px-3 py-2 text-left text-gray-700 dark:text-gray-300">
                         Action
                       </th>
@@ -884,6 +906,12 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
                         <td className="px-3 py-2 text-gray-900 dark:text-white">
                           {item.quantity}
                         </td>
+                        <td className="px-3 py-2 text-right text-gray-900 dark:text-white">
+                          {money(item.unit_price || 0)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold text-gray-900 dark:text-white">
+                          {money(item.line_value || (Number(item.unit_price) || 0) * (Number(item.quantity) || 0))}
+                        </td>
                         <td className="px-3 py-2">
                           <button
                             onClick={() => removeItem(index)}
@@ -895,6 +923,13 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot className="bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+                    <tr>
+                      <td colSpan={4} className="px-3 py-3 text-right font-bold text-gray-900 dark:text-white">Dispatch subtotal</td>
+                      <td className="px-3 py-3 text-right font-extrabold text-gray-900 dark:text-white">{money(dispatchSubtotal)}</td>
+                      <td className="px-3 py-3" />
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}

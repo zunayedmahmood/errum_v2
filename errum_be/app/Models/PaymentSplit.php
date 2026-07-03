@@ -115,7 +115,7 @@ class PaymentSplit extends Model
     }
 
     // Business logic
-    public function complete(string $transactionReference = null, string $externalReference = null): bool
+    public function complete(string $transactionReference = null, string $externalReference = null, $completedAt = null): bool
     {
         if ($this->status !== 'pending') {
             return false;
@@ -125,11 +125,11 @@ class PaymentSplit extends Model
             'status' => 'completed',
             'transaction_reference' => $transactionReference,
             'external_reference' => $externalReference,
-            'completed_at' => now(),
+            'completed_at' => $completedAt ?: now(),
         ]);
 
         // Check if all splits are completed
-        $this->orderPayment->updateSplitStatus();
+        $this->orderPayment->updateSplitStatus($completedAt);
 
         return true;
     }

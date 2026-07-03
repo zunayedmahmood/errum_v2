@@ -11,9 +11,53 @@ use App\Models\Employee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class OrderPaymentController extends Controller
 {
+    /**
+     * Payments should follow the selected offline sale date when the POS sends it,
+     * so cash sheet and ledgers land on the correct business day.
+     */
+    private function resolvePaymentTimestamp(Request $request, Order $order): Carbon
+    {
+        $timezone = config('app.timezone', 'Asia/Dhaka');
+        $raw = $request->input('payment_date')
+            ?: $request->input('payment_received_date')
+            ?: data_get($request->input('payment_data', []), 'payment_date')
+            ?: $order->order_date;
+
+        if (!$raw) {
+            return now($timezone);
+        }
+
+        $raw = trim((string) $raw);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+            return Carbon::parse($raw, $timezone)->startOfDay();
+        }
+
+        return Carbon::parse($raw, $timezone);
+    }
+
+    private function resolveSplitTimestamp(array $splitData, Carbon $fallback): Carbon
+    {
+        $timezone = config('app.timezone', 'Asia/Dhaka');
+        $raw = $splitData['payment_date']
+            ?? $splitData['payment_received_date']
+            ?? data_get($splitData, 'payment_data.payment_date')
+            ?? null;
+
+        if (!$raw) {
+            return $fallback;
+        }
+
+        $raw = trim((string) $raw);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+            return Carbon::parse($raw, $timezone)->setTime($fallback->hour, $fallback->minute, $fallback->second);
+        }
+
+        return Carbon::parse($raw, $timezone);
+    }
     /**
      * Get all payments for an order
      */
@@ -65,6 +109,8 @@ class OrderPaymentController extends Controller
             'external_reference' => 'nullable|string|max:255',
             'notes' => 'nullable|string',
             'payment_data' => 'nullable|array',
+            'payment_date' => 'nullable|date',
+            'payment_received_date' => 'nullable|date',
             'auto_complete' => 'nullable|boolean',
             'store_credit_code' => 'nullable|string|max:50', // For store credit payments
             
@@ -92,6 +138,7 @@ class OrderPaymentController extends Controller
             $order = Order::findOrFail($orderId);
             $paymentMethod = PaymentMethod::findOrFail($request->payment_method_id);
             $employee = auth()->user();
+            $paymentAt = $this->resolvePaymentTimestamp($request, $order);
             
             // Validate store credit if payment method is store credit
             if ($paymentMethod->code === 'store_credit' && $request->has('store_credit_code')) {
@@ -108,7 +155,7 @@ class OrderPaymentController extends Controller
                 $order,
                 $paymentMethod,
                 $request->amount,
-                $request->payment_data ?? [],
+                array_merge($request->payment_data ?? [], ['payment_date' => $paymentAt->toDateTimeString()]),
                 $employee
             );
 
@@ -121,6 +168,11 @@ class OrderPaymentController extends Controller
                 'order_balance_before' => $order->outstanding_amount,
                 'order_balance_after' => max(0, $order->outstanding_amount - $request->amount),
             ]);
+            $payment->forceFill([
+                'payment_received_date' => $paymentAt->toDateString(),
+                'created_at' => $paymentAt,
+                'updated_at' => $paymentAt,
+            ])->saveQuietly();
 
             // Record cash denominations if provided
             if ($request->has('cash_received') && $paymentMethod->type === 'cash') {
@@ -145,10 +197,11 @@ class OrderPaymentController extends Controller
 
             // Auto-complete if requested (for in-person payments)
             if ($request->input('auto_complete', false)) {
-                $payment->process($employee);
+                $payment->process($employee, $paymentAt);
                 $payment->complete(
                     $request->transaction_reference,
-                    $request->external_reference
+                    $request->external_reference,
+                    $paymentAt
                 );
             }
 
@@ -190,6 +243,8 @@ class OrderPaymentController extends Controller
             'payment_type' => 'nullable|in:full,installment,partial,final,advance',
             'notes' => 'nullable|string',
             'auto_complete' => 'nullable|boolean',
+            'payment_date' => 'nullable|date',
+            'payment_received_date' => 'nullable|date',
             
             'splits' => 'required|array|min:2',
             'splits.*.payment_method_id' => 'required|exists:payment_methods,id',
@@ -197,6 +252,8 @@ class OrderPaymentController extends Controller
             'splits.*.transaction_reference' => 'nullable|string|max:255',
             'splits.*.external_reference' => 'nullable|string|max:255',
             'splits.*.payment_data' => 'nullable|array',
+            'splits.*.payment_date' => 'nullable|date',
+            'splits.*.payment_received_date' => 'nullable|date',
             
             // Cash denominations for each split
             'splits.*.cash_received' => 'nullable|array',
@@ -230,6 +287,7 @@ class OrderPaymentController extends Controller
         try {
             $order = Order::findOrFail($orderId);
             $employee = auth()->user();
+            $paymentAt = $this->resolvePaymentTimestamp($request, $order);
 
             // Create parent payment record (without specific payment method)
             $payment = OrderPayment::create([
@@ -247,6 +305,11 @@ class OrderPaymentController extends Controller
                 'order_balance_after' => max(0, $order->outstanding_amount - $request->total_amount),
                 'status' => 'pending',
             ]);
+            $payment->forceFill([
+                'payment_received_date' => $paymentAt->toDateString(),
+                'created_at' => $paymentAt,
+                'updated_at' => $paymentAt,
+            ])->saveQuietly();
 
             // Create payment splits
             $totalFees = 0;
@@ -254,6 +317,7 @@ class OrderPaymentController extends Controller
 
             foreach ($request->splits as $splitData) {
                 $method = PaymentMethod::find($splitData['payment_method_id']);
+                $splitAt = $this->resolveSplitTimestamp($splitData, $paymentAt);
                 
                 $split = PaymentSplit::createSplit(
                     $payment,
@@ -268,6 +332,10 @@ class OrderPaymentController extends Controller
                     'transaction_reference' => $splitData['transaction_reference'] ?? null,
                     'external_reference' => $splitData['external_reference'] ?? null,
                 ]);
+                $split->forceFill([
+                    'created_at' => $splitAt,
+                    'updated_at' => $splitAt,
+                ])->saveQuietly();
 
                 $totalFees += $split->fee_amount;
 
@@ -296,7 +364,8 @@ class OrderPaymentController extends Controller
                 if ($request->input('auto_complete', false)) {
                     $split->complete(
                         $splitData['transaction_reference'] ?? null,
-                        $splitData['external_reference'] ?? null
+                        $splitData['external_reference'] ?? null,
+                        $splitAt
                     );
                 }
             }
@@ -309,8 +378,8 @@ class OrderPaymentController extends Controller
 
             // Auto-complete parent payment if all splits completed
             if ($request->input('auto_complete', false)) {
-                $payment->process($employee);
-                $payment->updateSplitStatus();
+                $payment->process($employee, $paymentAt);
+                $payment->updateSplitStatus($paymentAt);
             }
 
             DB::commit();
@@ -446,6 +515,8 @@ class OrderPaymentController extends Controller
         $validator = Validator::make($request->all(), [
             'transaction_reference' => 'nullable|string|max:255',
             'external_reference' => 'nullable|string|max:255',
+            'payment_date' => 'nullable|date',
+            'payment_received_date' => 'nullable|date',
         ]);
 
         if ($validator->fails()) {
@@ -473,9 +544,12 @@ class OrderPaymentController extends Controller
                 ], 422);
             }
 
+            $paymentAt = $this->resolvePaymentTimestamp($request, $payment->order);
+
             $payment->complete(
                 $request->transaction_reference,
-                $request->external_reference
+                $request->external_reference,
+                $paymentAt
             );
 
             DB::commit();

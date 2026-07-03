@@ -826,11 +826,20 @@ export default function POSPage() {
       // VAT is inclusive in product prices; do not add extra tax in POS
       const itemsWithTax = totaledCart.map((item) => ({ item, taxAmount: 0 }));
 
+      const selectedSaleDateTime = (() => {
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        return `${date} ${hh}:${mm}:${ss}`;
+      })();
+
       // Create order payload
       const orderPayload = {
         order_type: 'counter' as const,
         store_id: parseInt(selectedOutlet),
         salesman_id: parseInt(selectedEmployee),
+        order_date: selectedSaleDateTime,
 
         // ✅ Only add customer if data is provided
         ...(customerName || mobileNo
@@ -954,7 +963,7 @@ export default function POSPage() {
               order_id: order.id,
               selling_price: item.price,
               sale_notes: `Sold via POS - Order #${order.order_number}`,
-              sold_at: new Date().toISOString(),
+              sold_at: selectedSaleDateTime,
             });
 
             console.log(`✅ Defective ${item.defectId} marked as sold`);
@@ -992,10 +1001,15 @@ export default function POSPage() {
             payment_method_id: installmentPaymentMethodId,
             amount: installmentAmount,
             auto_complete: true,
+            payment_date: selectedSaleDateTime,
+            payment_received_date: selectedSaleDateTime,
             notes: `POS installment/EMI - 1st installment of ${Math.max(2, Math.min(24, Number(installmentCount) || 2))}`,
-            payment_data: installmentTransactionReference
-              ? { transaction_reference: installmentTransactionReference }
-              : {},
+            payment_data: {
+              ...(installmentTransactionReference
+                ? { transaction_reference: installmentTransactionReference }
+                : {}),
+              payment_date: selectedSaleDateTime,
+            },
           });
           console.log('✅ Installment payment processed');
 
@@ -1047,6 +1061,8 @@ export default function POSPage() {
             paymentSplits.push({
               payment_method_id: paymentMethods.cash || 1,
               amount: adjustedCashPaid,
+              payment_date: selectedSaleDateTime,
+              payment_data: { payment_date: selectedSaleDateTime },
             });
           }
 
@@ -1054,6 +1070,8 @@ export default function POSPage() {
             paymentSplits.push({
               payment_method_id: paymentMethods.card || 2,
               amount: adjustedCardPaid,
+              payment_date: selectedSaleDateTime,
+              payment_data: { payment_date: selectedSaleDateTime },
             });
           }
 
@@ -1061,7 +1079,8 @@ export default function POSPage() {
             paymentSplits.push({
               payment_method_id: paymentMethods.mobileWallet || 6,
               amount: adjustedBkashPaid,
-              payment_data: { wallet: 'bkash', channel: 'bkash', display_method: 'bKash' },
+              payment_date: selectedSaleDateTime,
+              payment_data: { wallet: 'bkash', channel: 'bkash', display_method: 'bKash', payment_date: selectedSaleDateTime },
             });
           }
 
@@ -1069,7 +1088,8 @@ export default function POSPage() {
             paymentSplits.push({
               payment_method_id: paymentMethods.mobileWallet || 6,
               amount: adjustedNagadPaid,
-              payment_data: { wallet: 'nagad', channel: 'nagad', display_method: 'Nagad' },
+              payment_date: selectedSaleDateTime,
+              payment_data: { wallet: 'nagad', channel: 'nagad', display_method: 'Nagad', payment_date: selectedSaleDateTime },
             });
           }
 
@@ -1085,12 +1105,20 @@ export default function POSPage() {
               amount: paymentSplits[0].amount,
               payment_type: 'full' as 'full' | 'partial',
               auto_complete: true,
+              payment_date: selectedSaleDateTime,
+              payment_received_date: selectedSaleDateTime,
+              payment_data: {
+                ...(paymentSplits[0].payment_data || {}),
+                payment_date: selectedSaleDateTime,
+              },
             });
           } else if (paymentSplits.length > 1) {
             await paymentService.processSplit(order.id, {
               total_amount: splitsTotal, // ✅ FIXED: Use actual splits total
               payment_type: 'full',
               auto_complete: true,
+              payment_date: selectedSaleDateTime,
+              payment_received_date: selectedSaleDateTime,
               splits: paymentSplits,
             });
           }

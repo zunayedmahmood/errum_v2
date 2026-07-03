@@ -335,12 +335,8 @@ class AttendanceController extends Controller
             ], 422);
         }
 
-        if ($this->isFixedDayOff($storeId, $date)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Attendance cannot be marked on fixed day off',
-            ], 422);
-        }
+        // Fixed day off is the default roster, not a hard block.
+        // Employees may still clock in/be marked present for special work and receive compensatory leave later.
 
         $saved = [];
 

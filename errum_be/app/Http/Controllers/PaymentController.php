@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Carbon\Carbon;
 
 class PaymentController extends Controller
 {
@@ -120,6 +121,8 @@ class PaymentController extends Controller
             'payment_method_id' => 'required|exists:payment_methods,id',
             'amount' => 'required|numeric|min:0.01',
             'payment_data' => 'nullable|array',
+            'payment_date' => 'nullable|date',
+            'payment_received_date' => 'nullable|date',
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -174,7 +177,7 @@ class PaymentController extends Controller
             $transactionReference = $request->payment_data['transaction_reference'] ?? null;
             $externalReference = $request->payment_data['external_reference'] ?? null;
 
-            if ($order->processPayment($payment, $transactionReference, $externalReference)) {
+            if ($payment->process(auth()->user(), $paymentAt) && $payment->complete($transactionReference, $externalReference, $paymentAt)) {
                 DB::commit();
 
                 return response()->json([
@@ -276,7 +279,7 @@ class PaymentController extends Controller
                     $transactionReference = $paymentData['payment_data']['transaction_reference'] ?? null;
                     $externalReference = $paymentData['payment_data']['external_reference'] ?? null;
 
-                    if ($order->processPayment($payment, $transactionReference, $externalReference)) {
+                    if ($payment->process(auth()->user(), $paymentAt) && $payment->complete($transactionReference, $externalReference, $paymentAt)) {
                         $processedPayments[] = $payment->load('paymentMethod');
                     } else {
                         $failedPayments[] = [
@@ -488,6 +491,8 @@ class PaymentController extends Controller
             'amount' => 'required|numeric|min:0.01',
             'payment_method_id' => 'required|exists:payment_methods,id',
             'payment_data' => 'nullable|array',
+            'payment_date' => 'nullable|date',
+            'payment_received_date' => 'nullable|date',
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -519,18 +524,35 @@ class PaymentController extends Controller
                 ], 400);
             }
 
+            $paymentAtRaw = $request->input('payment_date')
+                ?: $request->input('payment_received_date')
+                ?: data_get($request->input('payment_data', []), 'payment_date')
+                ?: $order->order_date
+                ?: now();
+            $paymentAt = Carbon::parse($paymentAtRaw);
+
             $payment = $order->addInstallmentPayment($request->amount, [
                 'payment_method_id' => $request->payment_method_id,
-                'payment_data' => $request->payment_data ?? [],
+                'payment_data' => array_merge($request->payment_data ?? [], [
+                    'payment_date' => $paymentAt->toDateTimeString(),
+                ]),
                 'notes' => $request->notes,
             ]);
+
+            if ($payment) {
+                $payment->forceFill([
+                    'payment_received_date' => $paymentAt->toDateString(),
+                    'created_at' => $paymentAt,
+                    'updated_at' => $paymentAt,
+                ])->saveQuietly();
+            }
 
             if ($payment) {
                 // Process the payment
                 $transactionReference = $request->payment_data['transaction_reference'] ?? null;
                 $externalReference = $request->payment_data['external_reference'] ?? null;
 
-                if ($order->processPayment($payment, $transactionReference, $externalReference)) {
+                if ($payment->process(auth()->user(), $paymentAt) && $payment->complete($transactionReference, $externalReference, $paymentAt)) {
                     DB::commit();
 
                     return response()->json([
@@ -579,6 +601,8 @@ class PaymentController extends Controller
             'amount' => 'required|numeric|min:0.01',
             'payment_method_id' => 'required|exists:payment_methods,id',
             'payment_data' => 'nullable|array',
+            'payment_date' => 'nullable|date',
+            'payment_received_date' => 'nullable|date',
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -629,7 +653,7 @@ class PaymentController extends Controller
                 $transactionReference = $request->payment_data['transaction_reference'] ?? null;
                 $externalReference = $request->payment_data['external_reference'] ?? null;
 
-                if ($order->processPayment($payment, $transactionReference, $externalReference)) {
+                if ($payment->process(auth()->user(), $paymentAt) && $payment->complete($transactionReference, $externalReference, $paymentAt)) {
                     DB::commit();
 
                     return response()->json([

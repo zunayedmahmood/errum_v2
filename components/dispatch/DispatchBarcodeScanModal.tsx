@@ -92,6 +92,15 @@ export default function DispatchBarcodeScanModal({
   const [checkingOverall, setCheckingOverall] = useState(false);
 
   const items = dispatch?.items || [];
+  const money = (value: any) => `৳${(Number(value) || 0).toLocaleString('en-BD', { maximumFractionDigits: 2 })}`;
+  const plannedSubtotal = useMemo(
+    () => items.reduce((sum, item) => sum + (Number(item.total_value) || (Number(item.unit_price) || 0) * (Number(item.quantity) || 0)), 0),
+    [items]
+  );
+  const receivedSubtotal = useMemo(
+    () => items.reduce((sum, item) => sum + (Number(item.unit_price) || 0) * (Number(item.received_quantity ?? 0) || 0), 0),
+    [items]
+  );
 
   const selectedItem = useMemo(
     () => items.find((i) => i.id === selectedItemId) || null,
@@ -434,6 +443,9 @@ export default function DispatchBarcodeScanModal({
                             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                               SKU: {it.product.sku} • Qty: {it.quantity}
                             </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                              Value: {money(Number(it.total_value) || (Number(it.unit_price) || 0) * (Number(it.quantity) || 0))}
+                            </div>
                           </div>
                           <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap mt-0.5">
                             {hint}
@@ -442,6 +454,21 @@ export default function DispatchBarcodeScanModal({
                       </button>
                     );
                   })}
+                </div>
+              )}
+
+              {items.length > 0 && (
+                <div className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 text-sm">
+                  <div className="flex items-center justify-between font-semibold text-gray-900 dark:text-white">
+                    <span>Dispatch subtotal</span>
+                    <span>{money(plannedSubtotal)}</span>
+                  </div>
+                  {mode === 'receive' && (
+                    <div className="mt-1 flex items-center justify-between text-gray-600 dark:text-gray-400">
+                      <span>Received value</span>
+                      <span>{money(receivedSubtotal)}</span>
+                    </div>
+                  )}
                 </div>
               )}
 

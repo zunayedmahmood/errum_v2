@@ -7,6 +7,8 @@ use App\Models\ProductBatch;
 use App\Models\ReservedProduct;
 use App\Models\ProductBarcode;
 use App\Models\Store;
+use App\Models\OrderPayment;
+use App\Models\PaymentMethod;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +19,93 @@ class OrderManagementController extends Controller
     public function __construct()
     {
         $this->middleware('auth:api'); // Employee authentication
+    }
+
+    /**
+     * Marking online orders delivered means cash/settlement is finalized.
+     * Create the missing completed payment so cash sheet and due amount become correct.
+     */
+    private function settleDeliveredOrderPayment(Order $order, $deliveredAt): void
+    {
+        $order->loadMissing(['customer', 'payments']);
+
+        $remainingAmount = max(0, round((float) $order->total_amount - (float) $order->payments()->completed()->sum('amount'), 2));
+
+        if ($remainingAmount <= 0) {
+            $order->forceFill([
+                'paid_amount' => (float) $order->total_amount,
+                'outstanding_amount' => 0,
+                'payment_status' => 'paid',
+            ])->save();
+            return;
+        }
+
+        $methodCode = strtolower((string) ($order->payment_method ?: 'cod'));
+        $paymentMethod = PaymentMethod::where('code', $methodCode)->first()
+            ?: PaymentMethod::where('code', 'cod')->first()
+            ?: PaymentMethod::where('code', 'cash')->first()
+            ?: PaymentMethod::where('type', 'cash')->where('is_active', true)->first();
+
+        if (!$paymentMethod) {
+            $paymentMethod = PaymentMethod::firstOrCreate(
+                ['code' => 'cod'],
+                [
+                    'name' => 'Cash on Delivery',
+                    'description' => 'Auto settlement when delivered',
+                    'type' => 'cash',
+                    'allowed_customer_types' => ['counter', 'social_commerce', 'ecommerce'],
+                    'is_active' => true,
+                    'requires_reference' => false,
+                    'supports_partial' => true,
+                    'min_amount' => 0,
+                    'max_amount' => null,
+                    'fixed_fee' => 0,
+                    'percentage_fee' => 0,
+                    'sort_order' => 99,
+                ]
+            );
+        }
+
+        $employee = auth('api')->user();
+        $fee = $paymentMethod->calculateFee($remainingAmount);
+        $payment = OrderPayment::create([
+            'order_id' => $order->id,
+            'payment_method_id' => $paymentMethod->id,
+            'customer_id' => $order->customer_id,
+            'store_id' => $order->store_id,
+            'processed_by' => $employee?->id,
+            'amount' => $remainingAmount,
+            'fee_amount' => $fee,
+            'net_amount' => $remainingAmount - $fee,
+            'payment_type' => 'full',
+            'payment_received_date' => $deliveredAt->toDateString(),
+            'payment_data' => [
+                'payment_date' => $deliveredAt->toDateTimeString(),
+            ],
+            'metadata' => [
+                'auto_settled_on_delivery' => true,
+                'source' => 'online_order_history_delivery',
+            ],
+            'notes' => 'Auto-settled when online order was marked delivered.',
+            'status' => 'pending',
+        ]);
+
+        $payment->forceFill([
+            'created_at' => $deliveredAt,
+            'updated_at' => $deliveredAt,
+        ])->saveQuietly();
+
+        $payment->process($employee, $deliveredAt);
+        $payment->complete(null, null, $deliveredAt);
+
+        $order->refresh();
+        $order->updatePaymentStatus();
+        $order->forceFill([
+            'payment_status' => 'paid',
+            'outstanding_amount' => 0,
+            'paid_amount' => (float) $order->total_amount,
+            'payment_method' => $order->payment_method ?: $paymentMethod->code,
+        ])->save();
     }
 
     /**
@@ -538,16 +627,18 @@ class OrderManagementController extends Controller
                 ], 422);
             }
 
+            $deliveredAt = now();
             $order->status = 'delivered';
-            $order->delivered_at = now();
+            $order->delivered_at = $deliveredAt;
             
             $order->metadata = array_merge($order->metadata ?? [], [
-                'delivered_at' => now()->toISOString(),
+                'delivered_at' => $deliveredAt->toISOString(),
                 'delivered_by' => auth('api')->id(),
                 'delivery_manual_mark' => true,
             ]);
 
             $order->save();
+            $this->settleDeliveredOrderPayment($order, $deliveredAt);
 
             // Record purchase for customer history
             if ($order->customer) {
@@ -616,17 +707,19 @@ class OrderManagementController extends Controller
                         throw new \Exception('Order is already marked as delivered.');
                     }
 
+                    $deliveredAt = now();
                     $order->status = 'delivered';
-                    $order->delivered_at = now();
+                    $order->delivered_at = $deliveredAt;
                     
                     $order->metadata = array_merge($order->metadata ?? [], [
-                        'delivered_at' => now()->toISOString(),
+                        'delivered_at' => $deliveredAt->toISOString(),
                         'delivered_by' => auth('api')->id(),
                         'delivery_manual_mark' => true,
                         'bulk_process' => true,
                     ]);
 
                     $order->save();
+                    $this->settleDeliveredOrderPayment($order, $deliveredAt);
 
                     // Record purchase for customer history
                     if ($order->customer) {
