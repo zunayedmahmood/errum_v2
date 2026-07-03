@@ -1695,8 +1695,14 @@ class OrderController extends Controller
         DB::beginTransaction();
         try {
             /** @var Order|null $order */
-            $order = Order::withTrashed()
-                ->with(['items', 'returns'])
+            $order = Order::with([
+                    'items.product',
+                    'items.batch',
+                    'items.barcode',
+                    'returns',
+                    'payments.paymentSplits',
+                    'payments.paymentMethod',
+                ])
                 ->where('id', $id)
                 ->lockForUpdate()
                 ->first();
@@ -1705,21 +1711,22 @@ class OrderController extends Controller
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
-                    'message' => 'Offline sale not found. It may already have been permanently removed.',
+                    'message' => 'Offline sale not found.',
                 ], 404);
-            }
-
-            if ($order->trashed()) {
-                DB::commit();
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Offline sale was already deleted earlier.',
-                    'data' => $this->formatOrderResponse($order, true),
-                ]);
             }
 
             if (!in_array($order->order_type, ['counter', 'offline', 'pos'], true)) {
                 throw new \Exception('Only offline/POS sales can be deleted from Offline Sale History. Use normal cancellation for online/social orders.');
+            }
+
+            $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
+            if (!empty($metadata['offline_sale_deleted'])) {
+                DB::commit();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Offline sale was already marked deleted earlier.',
+                    'data' => $this->formatOrderResponse($order->fresh(['items.product', 'items.batch', 'items.barcode', 'payments.paymentSplits.paymentMethod']), true),
+                ]);
             }
 
             $hasReturn = ProductReturn::where('order_id', $order->id)
@@ -1730,62 +1737,59 @@ class OrderController extends Controller
                 throw new \Exception('This sale already has a return/exchange record. Delete is blocked to protect stock history. Use Lookup → Return/Exchange instead.');
             }
 
-            $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
+            $restoredItems = $this->restockDeletedOfflineSaleItems($order);
+            $this->cancelOfflineSaleFinance($order);
 
-            // Client decision: deleting an offline sale from history must only remove
-            // the wrong/duplicate order record from active history. It must NOT restock
-            // the batch, reactivate the barcode, release reservation rows, or create
-            // product movements. If the product really needs stock correction, users
-            // should use inventory adjustment/return/exchange instead.
-            $deletedItems = $order->items->map(fn ($item) => [
-                'order_item_id' => (int) $item->id,
-                'product_id' => (int) $item->product_id,
-                'product_batch_id' => $item->product_batch_id ? (int) $item->product_batch_id : null,
-                'product_barcode_id' => $item->product_barcode_id ? (int) $item->product_barcode_id : null,
-                'quantity' => (int) $item->quantity,
-            ])->values()->toArray();
+            $originalFinancials = [
+                'subtotal' => (float) $order->subtotal,
+                'tax_amount' => (float) $order->tax_amount,
+                'discount_amount' => (float) $order->discount_amount,
+                'shipping_amount' => (float) $order->shipping_amount,
+                'total_amount' => (float) $order->total_amount,
+                'paid_amount' => (float) $order->paid_amount,
+                'outstanding_amount' => (float) $order->outstanding_amount,
+                'payment_status' => $order->payment_status,
+                'status' => $order->status,
+            ];
 
             $metadata['offline_sale_deleted'] = [
                 'deleted_at' => now()->toISOString(),
                 'deleted_by' => auth()->id(),
                 'reason' => $request->reason ?: 'Deleted from Offline Sale History',
-                'inventory_action' => 'none',
-                'barcode_action' => 'none',
-                'note' => 'History delete only. Stock and barcode states were intentionally left unchanged.',
-                'items' => $deletedItems,
+                'inventory_action' => 'restocked_to_new_batch',
+                'finance_action' => 'cancelled_original_sale_ledger_and_payments',
+                'cash_sheet_effective_date' => optional($order->order_date)->format('Y-m-d'),
+                'original_financials' => $originalFinancials,
+                'items' => $restoredItems,
+                'return_exchange_blocked' => true,
             ];
 
-            // Keep the old metadata key too, because /lookup already checks it to show
-            // the graceful deleted-sale notice for trashed offline orders.
+            // Keep older key for lookup/front-end compatibility.
             $metadata['offline_sale_voided'] = [
                 'voided_at' => $metadata['offline_sale_deleted']['deleted_at'],
                 'voided_by' => auth()->id(),
                 'reason' => $metadata['offline_sale_deleted']['reason'],
-                'stock_restored_at' => null,
-                'restored_items' => [],
-                'inventory_action' => 'none',
-                'barcode_action' => 'none',
+                'stock_restored_at' => now()->toISOString(),
+                'restored_items' => $restoredItems,
+                'inventory_action' => 'restocked_to_new_batch',
+                'barcode_action' => 'reactivated_on_deleted_sale_batch',
             ];
 
             $order->status = 'cancelled';
+            $order->payment_status = 'refunded';
+            $order->paid_amount = 0;
+            $order->outstanding_amount = 0;
             $order->cancelled_at = $order->cancelled_at ?: now();
-            $order->notes = trim(($order->notes ? $order->notes . "\n" : '') . 'Deleted offline sale from history without inventory/barcode restock: ' . ($request->reason ?: 'No reason provided'));
+            $order->notes = trim(($order->notes ? $order->notes . "\n" : '') . 'Deleted offline sale: ' . ($request->reason ?: 'No reason provided'));
             $order->metadata = $metadata;
             $order->save();
-            $order->delete();
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Offline sale deleted from history. Stock and barcode states were left unchanged.',
-                'data' => [
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'inventory_action' => 'none',
-                    'barcode_action' => 'none',
-                    'deleted_items' => $deletedItems,
-                ],
+                'message' => 'Offline sale marked deleted. A history record remains, stock was restored to a new batch, and original sale finance was cancelled for the original sale date.',
+                'data' => $this->formatOrderResponse($order->fresh(['items.product', 'items.batch', 'items.barcode', 'payments.paymentSplits.paymentMethod']), true),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1794,6 +1798,137 @@ class OrderController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+    private function restockDeletedOfflineSaleItems(Order $order): array
+    {
+        $restoredItems = [];
+
+        foreach ($order->items as $item) {
+            $originalBatch = $item->product_batch_id ? ProductBatch::whereKey($item->product_batch_id)->lockForUpdate()->first() : null;
+            if (!$originalBatch) {
+                $restoredItems[] = [
+                    'order_item_id' => (int) $item->id,
+                    'product_id' => (int) $item->product_id,
+                    'quantity' => (int) $item->quantity,
+                    'status' => 'skipped_no_original_batch',
+                ];
+                continue;
+            }
+
+            $restoreBatch = $this->resolveDeletedSaleRestoreBatch($originalBatch, $order);
+            $quantity = max(1, (int) $item->quantity);
+            $restoreBatch->increment('quantity', $quantity);
+
+            $barcode = $item->barcode ?: ($item->product_barcode_id ? ProductBarcode::whereKey($item->product_barcode_id)->lockForUpdate()->first() : null);
+            if ($barcode) {
+                $barcode->update([
+                    'batch_id' => $restoreBatch->id,
+                    'current_store_id' => $restoreBatch->store_id,
+                    'current_status' => 'in_shop',
+                    'is_active' => true,
+                    'is_defective' => false,
+                    'location_updated_at' => now(),
+                    'location_metadata' => array_merge($barcode->location_metadata ?? [], [
+                        'restocked_from_deleted_offline_sale_at' => now()->toDateTimeString(),
+                        'deleted_order_id' => $order->id,
+                        'deleted_order_number' => $order->order_number,
+                        'original_batch_id' => $originalBatch->id,
+                        'restock_batch_id' => $restoreBatch->id,
+                    ]),
+                ]);
+
+                ProductMovement::create([
+                    'product_batch_id' => $restoreBatch->id,
+                    'product_barcode_id' => $barcode->id,
+                    'from_store_id' => null,
+                    'to_store_id' => $restoreBatch->store_id,
+                    'movement_type' => 'return',
+                    'quantity' => 1,
+                    'unit_cost' => $originalBatch->cost_price ?? 0,
+                    'unit_price' => $item->unit_price ?? $originalBatch->sell_price ?? 0,
+                    'total_cost' => $originalBatch->cost_price ?? 0,
+                    'total_value' => $item->unit_price ?? $originalBatch->sell_price ?? 0,
+                    'reference_number' => 'DEL-' . $order->order_number,
+                    'reference_type' => 'offline_sale_delete',
+                    'reference_id' => $order->id,
+                    'status_before' => 'with_customer',
+                    'status_after' => 'in_shop',
+                    'notes' => 'Offline sale deleted; barcode restocked into new batch instead of original sale batch.',
+                    'performed_by' => auth()->id(),
+                ]);
+            }
+
+            $restoredItems[] = [
+                'order_item_id' => (int) $item->id,
+                'product_id' => (int) $item->product_id,
+                'product_name' => $item->product_name,
+                'quantity' => $quantity,
+                'original_batch_id' => (int) $originalBatch->id,
+                'restore_batch_id' => (int) $restoreBatch->id,
+                'restore_batch_number' => $restoreBatch->batch_number,
+                'barcode_id' => $barcode?->id,
+                'barcode' => $barcode?->barcode,
+                'status' => 'restocked_to_new_batch',
+            ];
+        }
+
+        return $restoredItems;
+    }
+
+    private function resolveDeletedSaleRestoreBatch(ProductBatch $originalBatch, Order $order): ProductBatch
+    {
+        $base = 'DEL-' . $order->id . '-' . $originalBatch->id;
+        $existing = ProductBatch::where('batch_number', $base)->lockForUpdate()->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        return ProductBatch::create([
+            'product_id' => $originalBatch->product_id,
+            'store_id' => $originalBatch->store_id,
+            'batch_number' => $base,
+            'quantity' => 0,
+            'cost_price' => $originalBatch->cost_price ?? 0,
+            'sell_price' => $originalBatch->sell_price ?? 0,
+            'tax_percentage' => $originalBatch->tax_percentage ?? 0,
+            'manufactured_date' => $originalBatch->manufactured_date,
+            'expiry_date' => $originalBatch->expiry_date,
+            'availability' => true,
+            'is_active' => true,
+            'notes' => 'Auto-created batch for deleted offline sale ' . $order->order_number . ' from original batch ' . $originalBatch->batch_number,
+        ]);
+    }
+
+    private function cancelOfflineSaleFinance(Order $order): void
+    {
+        foreach ($order->payments as $payment) {
+            $metadata = is_array($payment->metadata ?? null) ? $payment->metadata : [];
+            $metadata['offline_sale_deleted_cancelled_at'] = now()->toISOString();
+            $metadata['offline_sale_deleted_order_id'] = $order->id;
+            $payment->status = 'cancelled';
+            $payment->metadata = $metadata;
+            $payment->notes = trim(($payment->notes ? $payment->notes . "\n" : '') . 'Cancelled because offline sale was deleted.');
+            $payment->save();
+
+            if ($payment->relationLoaded('paymentSplits')) {
+                foreach ($payment->paymentSplits as $split) {
+                    $splitMetadata = is_array($split->metadata ?? null) ? $split->metadata : [];
+                    $splitMetadata['offline_sale_deleted_cancelled_at'] = now()->toISOString();
+                    $split->status = 'cancelled';
+                    $split->metadata = $splitMetadata;
+                    $split->save();
+                }
+            }
+
+            Transaction::where('reference_type', \App\Models\OrderPayment::class)
+                ->where('reference_id', $payment->id)
+                ->update(['status' => 'cancelled']);
+        }
+
+        Transaction::where('reference_type', Order::class)
+            ->where('reference_id', $order->id)
+            ->update(['status' => 'cancelled']);
     }
 
     /**
@@ -1992,7 +2127,7 @@ class OrderController extends Controller
         $paymentData = [
             'id' => $payment->id,
             'amount' => number_format((float)$payment->amount, 2),
-            'payment_method' => $payment->payment_method_name,
+            'payment_method' => $this->formatPaymentMethodLabel($payment->paymentMethod ?? null, $payment->payment_data ?? [], $payment->metadata ?? []),
             'payment_type' => $payment->payment_type,
             'status' => $payment->status,
             'processed_by' => $payment->processedBy?->name,
@@ -2002,11 +2137,27 @@ class OrderController extends Controller
         ];
 
         if ($splits->isNotEmpty()) {
-            $paymentData['splits'] = $splits
-                ->sortBy('split_sequence')
-                ->map(function ($split) {
+            $sortedSplits = $splits->sortBy('split_sequence')->values();
+            $mobileWithoutWallet = 0;
+            $mobileTotal = $sortedSplits->filter(fn ($split) => $this->isMobileBankingMethod($split->paymentMethod ?? null))->count();
+
+            $paymentData['splits'] = $sortedSplits
+                ->map(function ($split) use (&$mobileWithoutWallet, $mobileTotal) {
+                    $method = $split->paymentMethod ?? null;
+                    $paymentData = is_array($split->payment_data ?? null) ? $split->payment_data : [];
+                    $metadata = is_array($split->metadata ?? null) ? $split->metadata : [];
+                    $label = $this->formatPaymentMethodLabel($method, $paymentData, $metadata);
+
+                    // Old POS split payments stored both bKash and Nagad as generic
+                    // Mobile Banking without metadata. The POS sends bKash first, Nagad second;
+                    // keep that legacy data readable in history breakdowns.
+                    if ($label === 'Mobile Banking' && $this->isMobileBankingMethod($method) && $mobileTotal > 1) {
+                        $mobileWithoutWallet++;
+                        $label = $mobileWithoutWallet === 1 ? 'bKash' : ($mobileWithoutWallet === 2 ? 'Nagad' : 'Mobile Banking');
+                    }
+
                     return [
-                        'payment_method' => $split->paymentMethod?->name ?? 'Unknown',
+                        'payment_method' => $label,
                         'amount' => number_format((float)$split->amount, 2),
                         'status' => $split->status,
                     ];
@@ -2015,6 +2166,53 @@ class OrderController extends Controller
         }
 
         return $paymentData;
+    }
+
+    private function formatPaymentMethodLabel($method, array $paymentData = [], array $metadata = []): string
+    {
+        $methodName = $method?->name ?? 'Unknown';
+        $wallet = strtolower((string) (
+            $paymentData['wallet']
+            ?? $paymentData['channel']
+            ?? $paymentData['provider']
+            ?? $metadata['wallet']
+            ?? $metadata['channel']
+            ?? $metadata['provider']
+            ?? ''
+        ));
+
+        if ($this->isMobileBankingMethod($method)) {
+            if (str_contains($wallet, 'bkash') || str_contains($wallet, 'b-kash')) {
+                return 'bKash';
+            }
+            if (str_contains($wallet, 'nagad')) {
+                return 'Nagad';
+            }
+            if (preg_match('/bkash/i', json_encode($paymentData + $metadata))) {
+                return 'bKash';
+            }
+            if (preg_match('/nagad/i', json_encode($paymentData + $metadata))) {
+                return 'Nagad';
+            }
+            return 'Mobile Banking';
+        }
+
+        return $methodName;
+    }
+
+    private function isMobileBankingMethod($method): bool
+    {
+        $name = strtolower((string) ($method?->name ?? ''));
+        $code = strtolower((string) ($method?->code ?? ''));
+        $type = strtolower((string) ($method?->type ?? ''));
+
+        return str_contains($name, 'mobile')
+            || str_contains($code, 'mobile')
+            || str_contains($type, 'mobile')
+            || in_array($code, ['bkash', 'nagad'], true)
+            || in_array($type, ['bkash', 'nagad'], true)
+            || str_contains($name, 'bkash')
+            || str_contains($name, 'nagad');
     }
 
     private function formatOrderResponse(Order $order, $detailed = false)
@@ -2029,6 +2227,8 @@ class OrderController extends Controller
         $sourceTag = $this->extractOrderSourceTagFromMetadata($metadata);
         $salesman = $order->salesman ?: $order->createdBy;
 
+        $isDeletedOfflineSale = !empty($metadata['offline_sale_deleted']) || !empty($metadata['offline_sale_voided']);
+
         $response = [
             'id' => $order->id,
             'order_number' => $order->order_number,
@@ -2041,6 +2241,10 @@ class OrderController extends Controller
             },
             'status' => $order->status,
             'payment_status' => $order->payment_status,
+            'is_deleted_offline_sale' => $isDeletedOfflineSale,
+            'offline_sale_deleted' => $metadata['offline_sale_deleted'] ?? ($metadata['offline_sale_voided'] ?? null),
+            'return_exchange_blocked' => $isDeletedOfflineSale || in_array(strtolower((string) $order->status), ['cancelled', 'canceled', 'deleted', 'void'], true),
+            'return_exchange_block_reason' => $isDeletedOfflineSale ? 'This offline sale was deleted and cannot be returned or exchanged.' : null,
             'notes' => $order->notes,
             'customer' => [
                 'id' => $order->customer->id,

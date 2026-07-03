@@ -17,6 +17,7 @@ import {
   Layers,
   ShoppingBag,
   Search,
+  Plus,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
@@ -479,7 +480,7 @@ export default function POSPage() {
       try {
         const response = await catalogService.searchProducts({
           q: query,
-          per_page: 30,
+          per_page: 50,
           page: 1,
           group_by_sku: true,
         });
@@ -508,7 +509,7 @@ export default function POSPage() {
   ].filter(Boolean) as CatalogProduct[];
 
   const handleAvailabilityGroupClick = (group: CatalogGroupedProduct) => {
-    const key = `${group.base_name}-${group.main_variant?.sku || group.main_variant?.id}`;
+    const key = group.base_name;
     setAvailabilityExpandedGroup((current) => (current === key ? null : key));
     fetchBranchAvailabilityForProduct(group.main_variant);
   };
@@ -1060,6 +1061,7 @@ export default function POSPage() {
             paymentSplits.push({
               payment_method_id: paymentMethods.mobileWallet || 6,
               amount: adjustedBkashPaid,
+              payment_data: { wallet: 'bkash', channel: 'bkash', display_method: 'bKash' },
             });
           }
 
@@ -1067,6 +1069,7 @@ export default function POSPage() {
             paymentSplits.push({
               payment_method_id: paymentMethods.mobileWallet || 6,
               amount: adjustedNagadPaid,
+              payment_data: { wallet: 'nagad', channel: 'nagad', display_method: 'Nagad' },
             });
           }
 
@@ -2389,50 +2392,56 @@ export default function POSPage() {
                       {!availabilitySearchLoading && availabilityResults.length > 0 && (
                         <div className="max-h-72 space-y-2 overflow-auto pr-1">
                           {availabilityResults.map((group) => {
-                            const key = `${group.base_name}-${group.main_variant?.sku || group.main_variant?.id}`;
+                            const key = group.base_name;
                             const variants = availabilityVariantsForGroup(group);
                             const expanded = availabilityExpandedGroup === key;
                             return (
-                              <div key={key} className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                              <div key={key} className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
                                 <button
                                   type="button"
                                   onClick={() => handleAvailabilityGroupClick(group)}
-                                  className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                                  className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-900/50"
                                 >
-                                  <div className="min-w-0">
-                                    <div className="truncate text-sm font-bold text-gray-900 dark:text-white">{group.base_name}</div>
-                                    <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                                      SKU {group.main_variant?.sku || '-'} • {variants.length} variant{variants.length === 1 ? '' : 's'}
+                                  <div className="flex min-w-0 items-center gap-3">
+                                    <img
+                                      src={group.main_variant?.images?.[0]?.url || '/placeholder-image.jpg'}
+                                      alt={group.base_name}
+                                      className="h-12 w-12 shrink-0 rounded-lg border object-cover"
+                                    />
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-bold text-gray-900 dark:text-white">{group.base_name}</div>
+                                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                                        <span className="text-xs font-bold text-teal-600">৳{Number(group.min_price || group.main_variant?.selling_price || group.main_variant?.price || 0).toFixed(2)}</span>
+                                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium dark:bg-gray-700">Available: {group.total_available ?? group.total_stock ?? 0}</span>
+                                        {group.total_reserved ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">Reserved: {group.total_reserved}</span> : null}
+                                      </div>
                                     </div>
                                   </div>
                                   <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
                                 </button>
 
                                 {expanded && (
-                                  <div className="border-t border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-800/50">
-                                    <div className="grid gap-2">
-                                      {variants.map((variant) => {
-                                        const active = Number(availabilitySelectedProduct?.id) === Number(variant.id);
-                                        return (
-                                          <button
-                                            key={variant.id}
-                                            type="button"
-                                            onClick={() => fetchBranchAvailabilityForProduct(variant)}
-                                            className={`flex items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
-                                              active
-                                                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/30 dark:text-blue-200'
-                                                : 'border-gray-200 bg-white text-gray-800 hover:border-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100'
-                                            }`}
-                                          >
-                                            <span className="min-w-0">
-                                              <span className="block truncate text-xs font-bold">{variant.variation_suffix || variant.option_label || variant.display_name || variant.name}</span>
-                                              <span className="block text-[10px] text-gray-500 dark:text-gray-400">SKU {variant.sku || '-'} • ৳{Number(variant.selling_price || variant.price || 0).toFixed(2)}</span>
-                                            </span>
-                                            <span className="text-[10px] font-black uppercase text-gray-400">Select</span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
+                                  <div className="border-t border-gray-100 bg-gray-50/30 dark:border-gray-700 dark:bg-gray-900/20">
+                                    {variants.map((variant) => {
+                                      const active = Number(availabilitySelectedProduct?.id) === Number(variant.id);
+                                      return (
+                                        <button
+                                          key={variant.id}
+                                          type="button"
+                                          onClick={() => fetchBranchAvailabilityForProduct(variant)}
+                                          className={`flex w-full items-center justify-between border-b border-gray-100 p-3 text-left last:border-0 hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800 ${active ? 'bg-teal-50 dark:bg-teal-900/20' : ''}`}
+                                        >
+                                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{variant.variation_suffix || 'Standard'}</span>
+                                          <span className="flex items-center gap-3 text-xs">
+                                            <span className="font-bold">৳{Number(variant.selling_price || variant.price || 0).toFixed(2)}</span>
+                                            <span className="text-gray-400">|</span>
+                                            <span className={(Number(variant.available_inventory ?? variant.stock_quantity ?? 0) > 0) ? 'text-green-600' : 'text-red-500'}>Avail: {variant.available_inventory ?? variant.stock_quantity ?? 0}</span>
+                                            {variant.reserved_inventory ? <span className="font-medium text-blue-500">({variant.reserved_inventory} Res)</span> : null}
+                                            <Plus size={14} className="text-teal-600" />
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>

@@ -26,8 +26,13 @@ class StockAuditController extends Controller
             ])
             ->latest('created_at');
 
-        if ($request->filled('store_id')) {
-            $query->where('store_id', $request->integer('store_id'));
+        $scopedStoreId = $this->resolveAllowedStoreId(
+            $request->filled('store_id') ? $request->integer('store_id') : null,
+            true
+        );
+
+        if ($scopedStoreId) {
+            $query->where('store_id', $scopedStoreId);
         }
 
         if ($request->filled('status')) {
@@ -49,9 +54,11 @@ class StockAuditController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
+        $storeId = $this->resolveAllowedStoreId((int) $validated['store_id']);
+
         $session = StockAuditSession::create([
             'session_number' => $this->generateSessionNumber(),
-            'store_id' => $validated['store_id'],
+            'store_id' => $storeId,
             'status' => 'active',
             'started_by' => auth()->id(),
             'started_at' => now(),
@@ -68,6 +75,7 @@ class StockAuditController extends Controller
     public function show($id)
     {
         $session = StockAuditSession::findOrFail($id);
+        $this->authorizeSessionAccess($session);
 
         return response()->json([
             'success' => true,
@@ -78,6 +86,7 @@ class StockAuditController extends Controller
     public function scan(Request $request, $id)
     {
         $session = StockAuditSession::findOrFail($id);
+        $this->authorizeSessionAccess($session);
 
         if ($session->status === 'completed') {
             return response()->json([
@@ -144,6 +153,7 @@ class StockAuditController extends Controller
     public function updateStatus(Request $request, $id)
     {
         $session = StockAuditSession::findOrFail($id);
+        $this->authorizeSessionAccess($session);
         $validated = $request->validate([
             'status' => ['required', 'in:active,paused,completed'],
         ]);
@@ -173,6 +183,58 @@ class StockAuditController extends Controller
             'message' => "Stock audit marked as {$status}.",
             'data' => $this->buildSessionPayload($session->fresh()),
         ]);
+    }
+
+    private function isAdminUser(): bool
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+        if (method_exists($user, 'loadMissing')) {
+            $user->loadMissing('role');
+        }
+
+        return in_array(optional($user->role)->slug, ['super-admin', 'admin'], true);
+    }
+
+    private function currentUserStoreId(): ?int
+    {
+        $storeId = auth()->user()?->store_id;
+        return $storeId ? (int) $storeId : null;
+    }
+
+    private function resolveAllowedStoreId(?int $requestedStoreId = null, bool $silent = false): ?int
+    {
+        if ($this->isAdminUser()) {
+            return $requestedStoreId;
+        }
+
+        $accountStoreId = $this->currentUserStoreId();
+        if (!$accountStoreId) {
+            abort(403, 'Your account is not assigned to a store, so monthly rebalance cannot be started.');
+        }
+
+        if ($requestedStoreId && $requestedStoreId !== $accountStoreId) {
+            if ($silent) {
+                return $accountStoreId;
+            }
+            abort(403, 'You can only run monthly rebalance for your assigned store.');
+        }
+
+        return $accountStoreId;
+    }
+
+    private function authorizeSessionAccess(StockAuditSession $session): void
+    {
+        if ($this->isAdminUser()) {
+            return;
+        }
+
+        $accountStoreId = $this->currentUserStoreId();
+        if (!$accountStoreId || (int) $session->store_id !== $accountStoreId) {
+            abort(403, 'You can only access monthly rebalance sessions for your assigned store.');
+        }
     }
 
     private function generateSessionNumber(): string

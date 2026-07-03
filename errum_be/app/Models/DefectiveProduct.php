@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 class DefectiveProduct extends Model
 {
@@ -223,17 +224,104 @@ class DefectiveProduct extends Model
 
     public function makeAvailableForSale(): bool
     {
-        if ($this->status === 'available_for_sale') {
-            return true;
-        }
-
-        if (!in_array($this->status, ['inspected'])) {
+        if (!in_array($this->status, ['inspected', 'available_for_sale'], true)) {
             return false;
         }
 
-        $this->update(['status' => 'available_for_sale']);
+        return DB::transaction(function () {
+            $defectiveProduct = static::whereKey($this->id)->lockForUpdate()->firstOrFail();
+            $alreadyAvailable = $defectiveProduct->status === 'available_for_sale';
 
-        return true;
+            $barcode = $defectiveProduct->barcode()->lockForUpdate()->first();
+            $originalBatch = $defectiveProduct->batch()->lockForUpdate()->first();
+
+            if ($barcode && $originalBatch) {
+                $resaleBatch = $this->resolveExtraItemResaleBatch($defectiveProduct, $originalBatch);
+
+                if (!$alreadyAvailable) {
+                    $resaleBatch->increment('quantity', 1);
+                }
+
+                $locationMetadata = is_array($barcode->location_metadata ?? null) ? $barcode->location_metadata : [];
+                $barcode->update([
+                    'batch_id' => $resaleBatch->id,
+                    'current_store_id' => $defectiveProduct->store_id ?: $originalBatch->store_id,
+                    'current_status' => 'in_shop',
+                    'is_active' => true,
+                    'is_defective' => false,
+                    'location_updated_at' => now(),
+                    'location_metadata' => array_merge($locationMetadata, [
+                        'extra_item_resale_available_at' => now()->toDateTimeString(),
+                        'defective_product_id' => $defectiveProduct->id,
+                        'original_batch_id' => $originalBatch->id,
+                        'resale_batch_id' => $resaleBatch->id,
+                        'is_used_item' => (bool) data_get($defectiveProduct->metadata, 'is_used_item', false),
+                    ]),
+                ]);
+
+                if (!$alreadyAvailable) {
+                    ProductMovement::create([
+                        'product_batch_id' => $resaleBatch->id,
+                        'product_barcode_id' => $barcode->id,
+                        'from_store_id' => null,
+                        'to_store_id' => $defectiveProduct->store_id ?: $originalBatch->store_id,
+                        'movement_type' => 'adjustment',
+                        'quantity' => 1,
+                        'unit_cost' => $originalBatch->cost_price ?? 0,
+                        'unit_price' => $defectiveProduct->suggested_selling_price ?: ($originalBatch->sell_price ?? 0),
+                        'total_cost' => $originalBatch->cost_price ?? 0,
+                        'total_value' => $defectiveProduct->suggested_selling_price ?: ($originalBatch->sell_price ?? 0),
+                        'reference_number' => 'EXTRA-' . $defectiveProduct->id,
+                        'reference_type' => 'defective_product',
+                        'reference_id' => $defectiveProduct->id,
+                        'status_before' => 'defective',
+                        'status_after' => 'in_shop',
+                        'notes' => 'Display/Faulty/Used item made sellable from Extra Items Management.',
+                        'performed_by' => auth()->id(),
+                    ]);
+                }
+
+                $metadata = is_array($defectiveProduct->metadata ?? null) ? $defectiveProduct->metadata : [];
+                $metadata['resale_batch_id'] = $resaleBatch->id;
+                $metadata['made_sellable_at'] = $metadata['made_sellable_at'] ?? now()->toISOString();
+                $metadata['barcode_reactivated_for_pos_and_packing'] = true;
+                $defectiveProduct->metadata = $metadata;
+            }
+
+            if (!$alreadyAvailable) {
+                $defectiveProduct->status = 'available_for_sale';
+            }
+            $defectiveProduct->save();
+
+            $this->forceFill($defectiveProduct->fresh()->getAttributes());
+            return true;
+        });
+    }
+
+    private function resolveExtraItemResaleBatch(self $defectiveProduct, ProductBatch $originalBatch): ProductBatch
+    {
+        $storeId = $defectiveProduct->store_id ?: $originalBatch->store_id;
+        $batchNumber = 'EXTRA-' . $defectiveProduct->id . '-' . $originalBatch->id;
+
+        $existing = ProductBatch::where('batch_number', $batchNumber)->lockForUpdate()->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        return ProductBatch::create([
+            'product_id' => $defectiveProduct->product_id,
+            'store_id' => $storeId,
+            'batch_number' => $batchNumber,
+            'quantity' => 0,
+            'cost_price' => $originalBatch->cost_price ?? 0,
+            'sell_price' => $defectiveProduct->suggested_selling_price ?: ($originalBatch->sell_price ?? 0),
+            'tax_percentage' => $originalBatch->tax_percentage ?? 0,
+            'manufactured_date' => $originalBatch->manufactured_date,
+            'expiry_date' => $originalBatch->expiry_date,
+            'availability' => true,
+            'is_active' => true,
+            'notes' => 'Auto-created resale batch for Display/Faulty/Used item from batch ' . $originalBatch->batch_number,
+        ]);
     }
 
     public function markAsSold(Employee $seller, Order $order, float $sellingPrice, ?string $notes = null): bool

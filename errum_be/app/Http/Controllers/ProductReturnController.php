@@ -25,6 +25,10 @@ class ProductReturnController extends Controller
         'pending',
         'assigned_to_store',
         'pending_assignment',
+        'cancelled',
+        'canceled',
+        'deleted',
+        'void',
     ];
     /**
      * Get all product returns
@@ -826,8 +830,13 @@ class ProductReturnController extends Controller
     {
         $status = str_replace([' ', '-'], '_', strtolower(trim((string) $order->status)));
 
+        $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
+        if (!empty($metadata['offline_sale_deleted']) || !empty($metadata['offline_sale_voided'])) {
+            throw new \Exception("{$action} is not available because this offline sale was deleted from history.");
+        }
+
         if (!$status || in_array($status, self::BLOCKED_RETURN_EXCHANGE_STATUSES, true)) {
-            throw new \Exception("{$action} is not available while order status is '{$order->status}'. Eligible statuses are any status except pending, assigned_to_store and pending_assignment.");
+            throw new \Exception("{$action} is not available while order status is '{$order->status}'.");
         }
     }
 
@@ -1026,11 +1035,7 @@ class ProductReturnController extends Controller
 
     private function resolveReturnTargetBatch(ProductBatch $originalBatch, int $productId, int $returnStore, ProductReturn $return): ProductBatch
     {
-        if ((int) $originalBatch->store_id === $returnStore) {
-            return $originalBatch;
-        }
-
-        $baseBatchNumber = $originalBatch->batch_number . '-RTN-S' . $returnStore;
+        $baseBatchNumber = 'RTN-' . $return->id . '-' . $originalBatch->id . '-S' . $returnStore;
         $batchNumber = $baseBatchNumber;
         $counter = 1;
 
@@ -1054,7 +1059,7 @@ class ProductReturnController extends Controller
             'expiry_date' => $originalBatch->expiry_date,
             'availability' => true,
             'is_active' => true,
-            'notes' => "Cross-store return batch created from original batch {$originalBatch->batch_number} for return {$return->return_number}",
+            'notes' => "Return batch created from original batch {$originalBatch->batch_number} for return {$return->return_number}",
         ]);
     }
 

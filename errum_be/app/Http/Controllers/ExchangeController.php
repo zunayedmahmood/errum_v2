@@ -28,6 +28,10 @@ class ExchangeController extends Controller
         'pending',
         'assigned_to_store',
         'pending_assignment',
+        'cancelled',
+        'canceled',
+        'deleted',
+        'void',
     ];
 
     /**
@@ -488,8 +492,13 @@ class ExchangeController extends Controller
     private function assertOrderCanReturnOrExchange(Order $order, string $action): void
     {
         $status = $this->normalizeStatus($order->status);
+        $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
+        if (!empty($metadata['offline_sale_deleted']) || !empty($metadata['offline_sale_voided'])) {
+            throw new \Exception("{$action} is not available because this offline sale was deleted from history.");
+        }
+
         if (!$status || in_array($status, self::BLOCKED_RETURN_EXCHANGE_STATUSES, true)) {
-            throw new \Exception("{$action} is not available while order status is '{$order->status}'. Eligible statuses are any status except pending, assigned_to_store and pending_assignment.");
+            throw new \Exception("{$action} is not available while order status is '{$order->status}'.");
         }
     }
 
@@ -728,11 +737,7 @@ class ExchangeController extends Controller
 
     private function resolveReturnTargetBatch(ProductBatch $originalBatch, int $productId, int $returnStore, ProductReturn $return): ProductBatch
     {
-        if ((int) $originalBatch->store_id === $returnStore) {
-            return $originalBatch;
-        }
-
-        $baseBatchNumber = $originalBatch->batch_number . '-RTN-S' . $returnStore;
+        $baseBatchNumber = 'RTN-' . $return->id . '-' . $originalBatch->id . '-S' . $returnStore;
         $batchNumber = $baseBatchNumber;
         $counter = 1;
 

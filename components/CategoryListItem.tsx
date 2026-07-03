@@ -43,6 +43,15 @@ export default function CategoryListItem({
     }, 0);
   const directSubcategoryCount = subcategories.length;
   const nestedSubcategoryCount = countNestedSubcategories(subcategories);
+  const countNestedProducts = (cats: Category[] = []): number =>
+    cats.reduce((sum, child) => {
+      const childSubcategories = child.children || child.all_children || [];
+      const childCount = Number(child.active_products_count ?? child.products_count ?? 0);
+      return sum + childCount + countNestedProducts(childSubcategories);
+    }, 0);
+  const directProductCount = Number(category.active_products_count ?? category.products_count ?? 0);
+  const nestedProductCount = countNestedProducts(subcategories);
+  const totalProductCount = directProductCount + nestedProductCount;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -95,6 +104,14 @@ export default function CategoryListItem({
         </div>
 
         <div className="flex flex-col items-end gap-1">
+          <span className="text-xs bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 px-2 py-1 rounded">
+            {directProductCount} products
+          </span>
+          {totalProductCount !== directProductCount && (
+            <span className="text-[10px] text-emerald-700 dark:text-emerald-300">
+              {totalProductCount} incl. subcategories
+            </span>
+          )}
           <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
             {directSubcategoryCount} direct subcategories
           </span>

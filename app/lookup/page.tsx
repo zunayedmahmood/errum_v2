@@ -1847,11 +1847,19 @@ export default function LookupPage() {
   };
 
   const handleReturnInitiate = (order: any) => {
+    if (order?.return_exchange_blocked || order?.is_deleted_offline_sale) {
+      alert(order?.return_exchange_block_reason || 'This order cannot be returned because it was deleted/voided.');
+      return;
+    }
     setSelectedOrderForAction(order);
     setShowReturnModal(true);
   };
 
   const handleExchangeInitiate = (order: any) => {
+    if (order?.return_exchange_blocked || order?.is_deleted_offline_sale) {
+      alert(order?.return_exchange_block_reason || 'This order cannot be exchanged because it was deleted/voided.');
+      return;
+    }
     setSelectedOrderForAction(order);
     setShowExchangeModal(true);
   };
@@ -2729,6 +2737,12 @@ export default function LookupPage() {
                             </tbody>
                           </table>
                         </div>
+                        {(singleOrder.return_exchange_blocked || singleOrder.is_deleted_offline_sale) && (
+                          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                            {singleOrder.return_exchange_block_reason || 'This order was deleted/voided. Return and exchange are disabled for safety.'}
+                          </div>
+                        )}
+
                         {singleOrder.notes && (
                           <div className="mt-3">
                             <p className="text-[9px] font-semibold text-black dark:text-white uppercase mb-1">Notes</p>

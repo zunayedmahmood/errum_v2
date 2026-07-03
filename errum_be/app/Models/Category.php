@@ -87,7 +87,9 @@ class Category extends Model
 
     public function allChildren()
     {
-        return $this->children()->with('allChildren');
+        return $this->children()
+            ->withCount(['products', 'activeProducts'])
+            ->with('allChildren');
     }
 
     public function ancestors()

@@ -187,6 +187,18 @@ class DefectiveProductController extends Controller
                 'internal_notes' => $request->internal_notes,
             ]);
 
+            // Used/display items are intended for resale immediately from the Extra Items panel.
+            // Auto-inspect and move them to a dedicated resale batch so POS barcode scan and
+            // online packing scan can use the barcode normally.
+            if ($request->boolean('is_used_item')) {
+                $defectiveProduct->markAsInspected($employee, [
+                    'severity' => $request->severity,
+                    'internal_notes' => trim(($request->internal_notes ? $request->internal_notes . "
+" : '') . 'Auto-inspected because item was marked as used/display sellable.'),
+                ]);
+                $defectiveProduct->makeAvailableForSale();
+            }
+
             DB::commit();
 
             return response()->json([

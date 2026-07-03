@@ -506,7 +506,18 @@ class StockIntelligenceController extends Controller
 
             if ($search !== '') {
                 $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
-                $productQuery->where(function ($q) use ($like) {
+                $exactSizeToken = $this->isStrictVariationSearch($search);
+
+                $productQuery->where(function ($q) use ($search, $like, $exactSizeToken) {
+                    if ($exactSizeToken) {
+                        $normalized = strtolower(trim($search));
+                        $tokenLike = '% ' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $normalized) . ' %';
+                        $q->whereRaw('LOWER(TRIM(COALESCE(p.variation_suffix, ""))) = ?', [$normalized])
+                            ->orWhereRaw("LOWER(CONCAT(' ', REPLACE(REPLACE(REPLACE(COALESCE(p.variation_suffix, ''), '/', ' '), '-', ' '), ',', ' '), ' ')) LIKE ?", [$tokenLike])
+                            ->orWhere('p.sku', 'like', $like);
+                        return;
+                    }
+
                     $q->where('p.name', 'like', $like)
                         ->orWhere('p.base_name', 'like', $like)
                         ->orWhere('p.variation_suffix', 'like', $like)
@@ -871,6 +882,27 @@ class StockIntelligenceController extends Controller
      * stock cell. SKU-only grouping is not enough when imported variations have
      * separate SKUs, so we prefer the shared base_name/category/brand family.
      */
+    /**
+     * Inventory View search is used for exact variant/size lookups. A short token
+     * like "L" should not match product names such as "40" or random text via
+     * broad LIKE search. Treat common size tokens as strict variation searches.
+     */
+    private function isStrictVariationSearch(string $search): bool
+    {
+        $token = strtolower(trim($search));
+        if ($token === '') {
+            return false;
+        }
+
+        $token = preg_replace('/\s+/', '', $token);
+        $knownSizes = [
+            'xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl',
+            '2xl', '3xl', '4xl', '5xl', 'free', 'freesize', 'onesize',
+        ];
+
+        return in_array($token, $knownSizes, true);
+    }
+
     private function overviewProductFamilyKey($product): string
     {
         $categoryId = (int) ($product->category_id ?? 0);

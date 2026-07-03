@@ -86,6 +86,9 @@ interface PurchaseHistoryOrder {
     }>;
   }>;
   payment_method_summary?: string;
+  is_deleted_offline_sale?: boolean;
+  offline_sale_deleted?: any;
+  return_exchange_blocked?: boolean;
 }
 
 interface Store {
@@ -270,9 +273,10 @@ export default function PurchaseHistoryPage() {
     if (!ok) return;
 
     try {
-      await orderService.voidOfflineSale(orderId, 'Deleted from Offline Sale History');
-      setOrders(orders.filter(o => o.id !== orderId));
-      alert('Offline sale deleted from history. Stock and barcode states were left unchanged.');
+      const response = await orderService.voidOfflineSale(orderId, 'Deleted from Offline Sale History');
+      const updated = response?.data || response;
+      setOrders(orders.map(o => o.id === orderId ? { ...o, ...(updated || {}), is_deleted_offline_sale: true } : o));
+      alert('Offline sale marked deleted. The record remains, stock was restored to a new batch, and sale finance was cancelled.');
     } catch (error: any) {
       console.error('Error deleting offline sale:', error);
       alert(error?.response?.data?.message || error?.message || 'Failed to delete offline sale. Please try again.');
@@ -741,6 +745,21 @@ export default function PurchaseHistoryPage() {
 
   const parseMoney = (value: any) => Number(String(value ?? '0').replace(/[^0-9.-]/g, '')) || 0;
   const money = (value: any) => `৳${parseMoney(value).toFixed(2)}`;
+  const normalizePaymentLabel = (label: any, splitIndex = 0, allSplits: any[] = []) => {
+    const raw = String(label || 'Unknown');
+    if (/mobile\s*banking/i.test(raw) && allSplits.filter((s) => /mobile\s*banking/i.test(String(s?.payment_method || ''))).length > 1) {
+      return splitIndex === 0 ? 'bKash' : splitIndex === 1 ? 'Nagad' : raw;
+    }
+    return raw.replace(/^bkash$/i, 'bKash').replace(/^nagad$/i, 'Nagad');
+  };
+
+  const normalizeLegacyPaymentSummary = (summary: string) => {
+    let mobileIndex = 0;
+    return String(summary || '').replace(/Mobile Banking/gi, () => {
+      mobileIndex += 1;
+      return mobileIndex === 1 ? 'bKash' : mobileIndex === 2 ? 'Nagad' : 'Mobile Banking';
+    });
+  };
 
   const getPaymentSplits = (payment: any) => {
     if (!payment) return [];
@@ -748,14 +767,14 @@ export default function PurchaseHistoryPage() {
   };
 
   const formatPaymentBreakdown = (order: any) => {
-    if (order?.payment_method_summary) return order.payment_method_summary;
+    if (order?.payment_method_summary) return normalizeLegacyPaymentSummary(order.payment_method_summary);
 
     const payments = Array.isArray(order?.payments) ? order.payments : [];
     const parts = payments.flatMap((payment: any) => {
       const splits = getPaymentSplits(payment);
 
       if (splits.length > 0) {
-        return splits.map((split: any) => `${split.payment_method || 'Unknown'} ${money(split.amount)}`);
+        return splits.map((split: any, index: number) => `${normalizePaymentLabel(split.payment_method, index, splits)} ${money(split.amount)}`);
       }
 
       if (payment?.payment_method) {
@@ -1343,14 +1362,19 @@ export default function PurchaseHistoryPage() {
                               <span className="text-xs font-mono bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded text-blue-700 dark:text-blue-400">
                                 {order.order_number}
                               </span>
+                              {order.is_deleted_offline_sale && (
+                                <span className="text-xs px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 font-bold">
+                                  Deleted sale · stock restored to new batch
+                                </span>
+                              )}
                               <span className={`text-xs px-2 py-1 rounded ${order.payment_status === 'paid'
                                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                                   : order.payment_status === 'partial'
                                     ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
                                     : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                                 }`}>
-                                {order.payment_status === 'paid' ? 'Paid' :
-                                  order.payment_status === 'partial' ? 'Partial' : 'Pending'}
+                                {order.is_deleted_offline_sale ? 'Deleted' : order.payment_status === 'paid' ? 'Paid' :
+                                  order.payment_status === 'partial' ? 'Partial' : order.payment_status === 'refunded' ? 'Cancelled' : 'Pending'}
                               </span>
                               <span className={`text-xs px-2 py-1 rounded ${order.status === 'confirmed'
                                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
@@ -1467,8 +1491,9 @@ export default function PurchaseHistoryPage() {
                             <AccessControl roles={["super-admin", "admin", "online-moderator", "branch-manager"]}>
                               <button
                                 onClick={() => handleDelete(order.id)}
-                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                                title="Delete offline sale"
+                                disabled={order.is_deleted_offline_sale}
+                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={order.is_deleted_offline_sale ? 'Already deleted' : 'Delete offline sale'}
                               >
                                 <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
                               </button>
@@ -1616,7 +1641,7 @@ export default function PurchaseHistoryPage() {
                                                 {splits.map((split: any, splitIndex: number) => (
                                                   <div key={`${payment.id}-split-${splitIndex}`} className="flex justify-between text-xs">
                                                     <span className="text-gray-600 dark:text-gray-400">
-                                                      {split.payment_method || 'Unknown method'}
+                                                      {normalizePaymentLabel(split.payment_method || 'Unknown method', splitIndex, splits)}
                                                     </span>
                                                     <span className="text-gray-900 dark:text-white font-medium">
                                                       {money(split.amount)}

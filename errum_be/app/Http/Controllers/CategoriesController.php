@@ -69,6 +69,7 @@ class CategoriesController extends Controller
 
         // Load relationships
         $category->load('parent', 'children');
+        $category->loadCount(['products', 'activeProducts']);
 
         return response()->json([
             'success' => true,
@@ -171,6 +172,7 @@ class CategoriesController extends Controller
 
         // Load relationships
         $category->load('parent', 'children');
+        $category->loadCount(['products', 'activeProducts']);
 
         return response()->json([
             'success' => true,
@@ -243,7 +245,7 @@ class CategoriesController extends Controller
 
     public function getCategories(Request $request)
     {
-        $query = Category::query();
+        $query = Category::query()->withCount(['products', 'activeProducts']);
 
         // Filters
         if ($request->has('is_active')) {
@@ -301,7 +303,7 @@ class CategoriesController extends Controller
 
     public function getCategory($id)
     {
-        $category = Category::with([
+        $category = Category::withCount(['products', 'activeProducts'])->with([
             'parent',
             'children.children',
             'activeProducts' => function($query) {
@@ -400,7 +402,7 @@ class CategoriesController extends Controller
 
     public function getCategoryTree(Request $request)
     {
-        $query = Category::query();
+        $query = Category::query()->withCount(['products', 'activeProducts']);
 
         // Filter by active status
         if ($request->has('is_active')) {
@@ -418,7 +420,7 @@ class CategoriesController extends Controller
 
     public function getRootCategories(Request $request)
     {
-        $query = Category::rootCategories();
+        $query = Category::rootCategories()->withCount(['products', 'activeProducts']);
 
         if ($request->has('is_active')) {
             $query->where('is_active', $request->boolean('is_active'));
@@ -438,8 +440,13 @@ class CategoriesController extends Controller
     {
         $parent = Category::findOrFail($parentId);
 
+        $parent->loadCount(['products', 'activeProducts']);
+
         $subcategories = $parent->children()
-            ->with('children')
+            ->withCount(['products', 'activeProducts'])
+            ->with(['children' => function ($q) {
+                $q->withCount(['products', 'activeProducts']);
+            }])
             ->orderBy('order')
             ->get();
 
