@@ -3585,7 +3585,7 @@ export default function OrdersDashboard() {
 
   return (
     <div className={darkMode ? 'dark' : ''}>
-      <div className="flex h-screen bg-white dark:bg-black">
+      <div className="flex h-screen bg-white dark:bg-black text-black dark:text-white">
         <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
         <div className="flex-1 flex flex-col overflow-hidden">

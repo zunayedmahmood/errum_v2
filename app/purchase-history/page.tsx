@@ -377,13 +377,13 @@ export default function PurchaseHistoryPage() {
   const openOfflineEdit = async (order: PurchaseHistoryOrder) => {
     setActiveMenu(null);
     try {
-      const fullOrder: any = order.items && order.payments ? order : await orderService.getById(order.id);
+      const fullOrder: any = await orderService.getById(order.id);
       setEditingOfflineOrder(fullOrder);
       setOfflineEditForm({
         customer_name: fullOrder.customer?.name || '',
         customer_phone: fullOrder.customer?.phone || '',
         customer_email: fullOrder.customer?.email || '',
-        customer_address: fullOrder.customer?.address || fullOrder.shipping_address?.address_line1 || fullOrder.shipping_address?.street || '',
+        customer_address: fullOrder.customer?.address || fullOrder.customer_address || fullOrder.shipping_address?.address_line_1 || fullOrder.shipping_address?.address_line1 || fullOrder.shipping_address?.street || fullOrder.notes || '',
         order_date: toDateInputValue(fullOrder.order_date || fullOrder.created_at),
         payment_breakdown: buildPaymentRowsForEdit(fullOrder),
       });
@@ -1858,13 +1858,13 @@ export default function PurchaseHistoryPage() {
 
       {editingOfflineOrder && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-5 py-4 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white">Edit Offline Sale</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">{editingOfflineOrder.order_number} · item totals cannot be changed here</p>
               </div>
-              <button onClick={() => setEditingOfflineOrder(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
+              <button onClick={() => setEditingOfflineOrder(null)} className="p-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1915,14 +1915,14 @@ export default function PurchaseHistoryPage() {
                       <div key={index} className="p-3 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
                         <div className="md:col-span-4">
                           <label className="text-[10px] uppercase font-semibold text-gray-500">Method</label>
-                          <select value={row.payment_method_id} onChange={(e) => updateEditPaymentRow(index, { payment_method_id: Number(e.target.value), wallet: '' })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-sm">
+                          <select value={row.payment_method_id} onChange={(e) => updateEditPaymentRow(index, { payment_method_id: Number(e.target.value), wallet: '' })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white text-sm">
                             {paymentMethods.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                           </select>
                         </div>
                         {isMobile && (
                           <div className="md:col-span-2">
                             <label className="text-[10px] uppercase font-semibold text-gray-500">Wallet</label>
-                            <select value={row.wallet || ''} onChange={(e) => updateEditPaymentRow(index, { wallet: e.target.value })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-sm">
+                            <select value={row.wallet || ''} onChange={(e) => updateEditPaymentRow(index, { wallet: e.target.value })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white text-sm">
                               <option value="">Mobile</option>
                               <option value="bkash">bKash</option>
                               <option value="nagad">Nagad</option>
@@ -1931,16 +1931,16 @@ export default function PurchaseHistoryPage() {
                         )}
                         <div className={isMobile ? 'md:col-span-2' : 'md:col-span-3'}>
                           <label className="text-[10px] uppercase font-semibold text-gray-500">Amount</label>
-                          <input type="number" min="0" step="0.01" value={row.amount} onChange={(e) => updateEditPaymentRow(index, { amount: e.target.value })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-sm" />
+                          <input type="number" min="0" step="0.01" value={row.amount} onChange={(e) => updateEditPaymentRow(index, { amount: e.target.value })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white text-sm" />
                         </div>
                         <div className={isMobile ? 'md:col-span-3' : 'md:col-span-4'}>
                           <label className="text-[10px] uppercase font-semibold text-gray-500">Reference</label>
-                          <input value={row.transaction_reference || ''} onChange={(e) => updateEditPaymentRow(index, { transaction_reference: e.target.value })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-sm" />
+                          <input value={row.transaction_reference || ''} onChange={(e) => updateEditPaymentRow(index, { transaction_reference: e.target.value })} className="mt-1 w-full px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white text-sm" />
                         </div>
                         <button
                           type="button"
                           onClick={() => setOfflineEditForm((p: any) => ({ ...p, payment_breakdown: (p.payment_breakdown || []).filter((_: any, i: number) => i !== index) }))}
-                          className="md:col-span-1 px-2 py-2 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                          className="md:col-span-1 px-2 py-2 rounded border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                         >
                           <Trash2 className="w-4 h-4 mx-auto" />
                         </button>

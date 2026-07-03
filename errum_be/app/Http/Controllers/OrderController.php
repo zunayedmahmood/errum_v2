@@ -1549,6 +1549,7 @@ class OrderController extends Controller
             $orderDate = $order->order_date ?: now();
             $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
             $defectiveOrderItemIds = array_map('intval', (array) ($metadata['defective_order_item_ids'] ?? []));
+            $defectiveProductIdsByOrderItem = (array) ($metadata['defective_product_ids_by_order_item'] ?? []);
 
             // Reduce inventory for each item
             foreach ($order->items as $item) {
@@ -1622,12 +1623,47 @@ class OrderController extends Controller
                 
                 $item->update(['cogs' => round($calculatedCogs, 2)]);
 
-                // Stock deduction is now centralizing here in OrderController@complete.
-                // Defective/used resale items were already removed from inventory when they were marked defective,
-                // so completion must not deduct stock or release normal reservations a second time.
-                $alreadyDeducted = $isDefectiveResale;
-                
-                if (!$alreadyDeducted && $batch) {
+                // Stock deduction is now centralized here in OrderController@complete.
+                // Used/display/faulty resale items are moved into a dedicated resale batch,
+                // so that resale batch must be reduced when the item is actually sold.
+                if ($isDefectiveResale && $batch) {
+                    if ($batch->quantity < $item->quantity) {
+                        throw new \Exception("Insufficient resale stock for {$item->product_name}. Available: {$batch->quantity}");
+                    }
+
+                    $batch->removeStock($item->quantity);
+
+                    $note = sprintf(
+                        "[%s] Sold %d display/faulty/used resale unit(s) via Order #%s from resale batch",
+                        now()->format('Y-m-d H:i:s'),
+                        $item->quantity,
+                        $order->order_number
+                    );
+
+                    $defectiveProductId = $defectiveProductIdsByOrderItem[$item->id] ?? $defectiveProductIdsByOrderItem[(string) $item->id] ?? null;
+                    if ($defectiveProductId) {
+                        $defectiveProduct = \App\Models\DefectiveProduct::whereKey($defectiveProductId)->lockForUpdate()->first();
+                        if ($defectiveProduct && $defectiveProduct->status !== 'sold') {
+                            $lineNet = max(0, (float) $item->total_amount);
+                            $unitNet = $item->quantity > 0 ? round($lineNet / $item->quantity, 2) : (float) $item->unit_price;
+                            $defectiveProduct->forceFill([
+                                'status' => 'sold',
+                                'sold_by' => auth()->id(),
+                                'sold_at' => $orderDate,
+                                'order_id' => $order->id,
+                                'actual_selling_price' => $unitNet,
+                                'sale_notes' => 'Sold via order #' . $order->order_number,
+                            ])->save();
+                        }
+                    }
+
+                    Log::info('Deducted resale batch stock for display/faulty/used item', [
+                        'order_id' => $order->id,
+                        'order_item_id' => $item->id,
+                        'product_id' => $item->product_id,
+                        'batch_id' => $batch->id,
+                    ]);
+                } elseif ($batch) {
                     $batch->removeStock($item->quantity);
 
                     // RELEASE RESERVATION concurrently to keep available_stock (Total - Reserved) consistent
@@ -1643,20 +1679,6 @@ class OrderController extends Controller
                             'quantity' => $item->quantity,
                         ]);
                     }
-                }
-
-                if ($isDefectiveResale) {
-                    $note = sprintf(
-                        "[%s] Sold %d defective/used resale unit(s) via Order #%s (stock was already removed when marked defective)",
-                        now()->format('Y-m-d H:i:s'),
-                        $item->quantity,
-                        $order->order_number
-                    );
-                    Log::info('Skipped normal stock deduction for defective/used resale item', [
-                        'order_id' => $order->id,
-                        'order_item_id' => $item->id,
-                        'product_id' => $item->product_id,
-                    ]);
                 }
                 
                 if ($batch) {
@@ -2777,6 +2799,7 @@ class OrderController extends Controller
                 'name' => $order->customer->name,
                 'phone' => $order->customer->phone,
                 'email' => $order->customer->email,
+                'address' => $order->customer->address,
                 'customer_code' => $order->customer->customer_code,
             ],
             'store' => $order->store ? [

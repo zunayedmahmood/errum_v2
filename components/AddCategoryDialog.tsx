@@ -251,12 +251,12 @@ export default function AddCategoryDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={() => onOpenChange(false)} />
 
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
+      <div className="relative bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl w-full max-w-md mx-4 border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             {editCategory ? "Edit Category" : initialParentId ? "Add Subcategory" : "Add New Category"}
           </h2>
-          <button onClick={() => onOpenChange(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">
+          <button onClick={() => onOpenChange(false)} className="p-1 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>

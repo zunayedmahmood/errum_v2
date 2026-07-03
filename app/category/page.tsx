@@ -205,7 +205,7 @@ export default function CategoryPageWrapper() {
 
   return (
     <div className={darkMode ? "dark" : ""}>
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
         <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
         <div className="flex-1 flex flex-col">
           <Header darkMode={darkMode} setDarkMode={setDarkMode} toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />

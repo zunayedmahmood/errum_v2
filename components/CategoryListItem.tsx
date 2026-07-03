@@ -72,7 +72,7 @@ export default function CategoryListItem({
         {hasSubcategories ? (
           <button
             onClick={() => setShowSubcategories(!showSubcategories)}
-            className="h-6 w-6 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+            className="h-6 w-6 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
           >
             {showSubcategories ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
@@ -131,14 +131,14 @@ export default function CategoryListItem({
                 setDropdownPos(computeMenuPosition(rect, 192, 200, 4, 8));
                 setShowDropdown(!showDropdown);
               }}
-              className="h-8 w-8 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+              className="h-8 w-8 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
             >
               <MoreVertical className="w-4 h-4" />
             </button>
 
             {showDropdown && dropdownPos && (
               <div
-                className="fixed w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50"
+                className="fixed w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 text-gray-900 dark:text-gray-100"
                 style={{ top: dropdownPos.top, left: dropdownPos.left }}
               >
                 {canEdit && (
@@ -147,7 +147,7 @@ export default function CategoryListItem({
                       onEdit?.(category);
                       setShowDropdown(false);
                     }}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                   >
                     <Edit className="w-4 h-4" />
                     Edit
@@ -160,7 +160,7 @@ export default function CategoryListItem({
                       onAddSubcategory?.(category.id);
                       setShowDropdown(false);
                     }}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                     Add Subcategory
@@ -173,7 +173,7 @@ export default function CategoryListItem({
                       onDelete?.(category.id);
                       setShowDropdown(false);
                     }}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete

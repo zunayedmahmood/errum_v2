@@ -235,7 +235,14 @@ class DefectiveProduct extends Model
             $barcode = $defectiveProduct->barcode()->lockForUpdate()->first();
             $originalBatch = $defectiveProduct->batch()->lockForUpdate()->first();
 
+            if (!$originalBatch && $barcode && $barcode->batch_id) {
+                $originalBatch = ProductBatch::whereKey($barcode->batch_id)->lockForUpdate()->first();
+            }
+
             if ($barcode && $originalBatch) {
+                if (!$defectiveProduct->product_batch_id) {
+                    $defectiveProduct->product_batch_id = $originalBatch->id;
+                }
                 $resaleBatch = $this->resolveExtraItemResaleBatch($defectiveProduct, $originalBatch);
 
                 if (!$alreadyAvailable) {
@@ -326,19 +333,18 @@ class DefectiveProduct extends Model
 
     public function markAsSold(Employee $seller, Order $order, float $sellingPrice, ?string $notes = null): bool
     {
-        if (!in_array($this->status, ['available_for_sale', 'inspected'])) {
-            return false;
+        if ($this->status === 'sold') {
+            return (int) $this->order_id === (int) $order->id;
         }
 
-        // Validate selling price
-        if ($sellingPrice < $this->minimum_selling_price) {
-            throw new \Exception("Selling price cannot be less than minimum price of {$this->minimum_selling_price}");
+        if (!in_array($this->status, ['available_for_sale', 'inspected'])) {
+            return false;
         }
 
         $this->update([
             'status' => 'sold',
             'sold_by' => $seller->id,
-            'sold_at' => now(),
+            'sold_at' => $order->order_date ?: now(),
             'order_id' => $order->id,
             'actual_selling_price' => $sellingPrice,
             'sale_notes' => $notes,

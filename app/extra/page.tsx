@@ -171,7 +171,7 @@ export default function DefectsPage() {
           store: d.store?.name,
           image: imageUrl,
           sellingPrice: parsePrice(d.suggested_selling_price),
-          batchId: d.product_batch_id,
+          batchId: Number((d as any).metadata?.resale_batch_id || (d as any).barcode?.batch_id || d.product_batch_id || 0),
         };
       });
       
@@ -274,20 +274,18 @@ export default function DefectsPage() {
     setLoading(true);
     
     try {
-      const fullDetails = await defectIntegrationService.getDefectiveById(defect.id);
+      let fullDetails = await defectIntegrationService.getDefectiveById(defect.id);
       
-      const resolvedBatchId = Number(
-        fullDetails.product_batch_id ||
-        (fullDetails as any).product_batch?.id ||
-        (fullDetails as any).batch?.id ||
-        (fullDetails as any).barcode?.batch_id ||
-        defect.batchId ||
+      const resolveSellableBatchId = (details: any, fallback?: number) => Number(
+        details?.metadata?.resale_batch_id ||
+        details?.barcode?.batch_id ||
+        details?.product_barcode?.batch_id ||
+        details?.product_batch?.id ||
+        details?.batch?.id ||
+        details?.product_batch_id ||
+        fallback ||
         0
       );
-
-      if (!resolvedBatchId) {
-        throw new Error('Missing batch_id - cannot proceed with sale. Please rescan/recreate this display or faulty item from its original barcode.');
-      }
       
       let currentStatus = fullDetails.status;
       
@@ -303,12 +301,19 @@ export default function DefectsPage() {
       
       if (currentStatus === 'inspected') {
         await defectIntegrationService.makeAvailableForSale(defect.id);
+        fullDetails = await defectIntegrationService.getDefectiveById(defect.id);
         setSuccessMessage('Product ready for sale');
-        currentStatus = 'available_for_sale';
+        currentStatus = fullDetails.status || 'available_for_sale';
       } else if (currentStatus === 'sold') {
         throw new Error('This product has already been sold');
       } else if (currentStatus !== 'available_for_sale') {
         throw new Error(`Cannot sell product with status: ${currentStatus}`);
+      }
+      
+      const resolvedBatchId = resolveSellableBatchId(fullDetails, defect.batchId);
+
+      if (!resolvedBatchId) {
+        throw new Error('Missing sellable batch_id - cannot proceed with sale. Please click Make Available/Sell again after the item has been moved to its resale batch.');
       }
       
       setSelectedDefect({

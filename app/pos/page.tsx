@@ -885,8 +885,9 @@ export default function POSPage() {
               tax_amount: taxAmount, // VAT inclusive — no extra tax
             };
 
-            // ✅ CRITICAL: Only include barcode for NON-defective items
-            if (!item.isDefective && item.barcode) {
+            // Include barcode whenever available. Used/display/faulty resale items are
+            // reactivated into a dedicated resale batch, so their barcode must be sent too.
+            if (item.barcode) {
               itemPayload.barcode = item.barcode;
             }
 

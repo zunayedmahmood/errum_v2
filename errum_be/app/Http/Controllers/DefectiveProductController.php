@@ -305,9 +305,15 @@ class DefectiveProductController extends Controller
         try {
             $defectiveProduct = DefectiveProduct::findOrFail($id);
 
-            // Validate selling price is not below minimum
+            // POS may intentionally sell display/used items at a manager-approved lower price.
+            // Keep the minimum price as guidance only; do not block the sale after the order exists.
             if ($request->selling_price < $defectiveProduct->minimum_selling_price) {
-                throw new \Exception("Selling price cannot be less than minimum price of ৳{$defectiveProduct->minimum_selling_price}");
+                $metadata = is_array($defectiveProduct->metadata ?? null) ? $defectiveProduct->metadata : [];
+                $metadata['sold_below_minimum_price'] = true;
+                $metadata['minimum_price_at_sale'] = $defectiveProduct->minimum_selling_price;
+                $metadata['approved_sale_price'] = $request->selling_price;
+                $defectiveProduct->metadata = $metadata;
+                $defectiveProduct->save();
             }
 
             $employee = auth()->user();

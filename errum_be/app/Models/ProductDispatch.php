@@ -287,9 +287,97 @@ class ProductDispatch extends Model
             throw new \Exception('Cannot cancel a delivered or already cancelled dispatch.');
         }
 
-        $this->update(['status' => 'cancelled']);
+        return \Illuminate\Support\Facades\DB::transaction(function () {
+            $dispatch = static::whereKey($this->id)->lockForUpdate()->firstOrFail();
+            $releasedBarcodes = 0;
 
-        return $this;
+            foreach ($dispatch->items()->with(['batch', 'scannedBarcodes'])->get() as $item) {
+                $sourceBatch = $item->batch;
+
+                foreach ($item->scannedBarcodes as $scannedBarcode) {
+                    $barcode = ProductBarcode::whereKey($scannedBarcode->id)->lockForUpdate()->first();
+                    if (!$barcode) {
+                        continue;
+                    }
+
+                    $beforeStatus = $barcode->current_status;
+                    $beforeStoreId = $barcode->current_store_id;
+                    $beforeBatchId = $barcode->batch_id;
+                    $metadata = is_array($barcode->location_metadata ?? null) ? $barcode->location_metadata : [];
+
+                    $barcode->update([
+                        'batch_id' => $sourceBatch?->id ?: $barcode->batch_id,
+                        'current_store_id' => $dispatch->source_store_id,
+                        'current_status' => 'in_shop',
+                        'is_active' => true,
+                        'location_updated_at' => now(),
+                        'location_metadata' => array_merge($metadata, [
+                            'dispatch_cancelled_at' => now()->toISOString(),
+                            'dispatch_cancelled_by' => auth()->id(),
+                            'cancelled_dispatch_id' => $dispatch->id,
+                            'cancelled_dispatch_number' => $dispatch->dispatch_number,
+                            'restored_to_source_store_id' => $dispatch->source_store_id,
+                            'restored_to_source_batch_id' => $sourceBatch?->id,
+                            'restored_from_store_id' => $beforeStoreId,
+                            'restored_from_batch_id' => $beforeBatchId,
+                            'restored_from_status' => $beforeStatus,
+                            'reference_type' => 'dispatch_cancel',
+                            'reference_id' => $dispatch->id,
+                        ]),
+                    ]);
+
+                    if ($sourceBatch) {
+                        ProductMovement::recordMovement([
+                            'product_batch_id' => $sourceBatch->id,
+                            'product_barcode_id' => $barcode->id,
+                            'from_store_id' => $beforeStoreId,
+                            'to_store_id' => $dispatch->source_store_id,
+                            'product_dispatch_id' => $dispatch->id,
+                            'movement_type' => 'adjustment',
+                            'quantity' => 1,
+                            'unit_cost' => $sourceBatch->cost_price ?? 0,
+                            'unit_price' => $sourceBatch->sell_price ?? 0,
+                            'reference_number' => $dispatch->dispatch_number,
+                            'reference_type' => 'dispatch_cancel',
+                            'reference_id' => $dispatch->id,
+                            'status_before' => $beforeStatus,
+                            'status_after' => 'in_shop',
+                            'notes' => 'Dispatch cancelled; scanned barcode restored to source store: ' . $barcode->barcode,
+                            'performed_by' => auth()->id() ?: ($dispatch->approved_by ?? $dispatch->created_by),
+                            'movement_date' => now(),
+                        ]);
+                    }
+
+                    $releasedBarcodes++;
+                }
+
+                $item->update([
+                    'status' => 'cancelled',
+                    'received_quantity' => 0,
+                    'damaged_quantity' => 0,
+                    'missing_quantity' => 0,
+                    'notes' => trim(($item->notes ? $item->notes . "\n" : '') . 'Dispatch cancelled before delivery; scanned barcodes restored to source store.'),
+                ]);
+            }
+
+            $metadata = is_array($dispatch->metadata ?? null) ? $dispatch->metadata : [];
+            $metadata['cancel_restore'] = [
+                'cancelled_at' => now()->toISOString(),
+                'cancelled_by' => auth()->id(),
+                'released_barcodes' => $releasedBarcodes,
+                'source_store_id' => $dispatch->source_store_id,
+                'note' => 'In-transit/scanned dispatch cancellation restored barcodes to the source store without changing batch quantity.',
+            ];
+
+            $dispatch->update([
+                'status' => 'cancelled',
+                'metadata' => $metadata,
+            ]);
+
+            $this->forceFill($dispatch->fresh()->getAttributes());
+
+            return $this;
+        });
     }
 
     public function addItem(ProductBatch $batch, int $quantity)
