@@ -551,6 +551,7 @@ class OrderController extends Controller
                     : null;
 
                 $defectiveProduct = null;
+                $usedOnlyResale = false;
                 if ($isDefectiveResale) {
                     $defectiveProductId = (int) ($itemData['defective_product_id'] ?? 0);
                     if ($defectiveProductId <= 0) {
@@ -570,60 +571,79 @@ class OrderController extends Controller
                         throw new \Exception("Defective/used resale item does not match {$product->name}");
                     }
 
-                    if (!in_array($defectiveProduct->status, ['available_for_sale', 'inspected'], true)) {
-                        throw new \Exception("Defective/used item {$product->name} is not available for sale");
-                    }
+                    $defectiveMetadata = is_array($defectiveProduct->metadata ?? null) ? $defectiveProduct->metadata : [];
+                    $description = strtolower((string) $defectiveProduct->defect_description);
+                    $usedOnlyResale = !empty($defectiveMetadata['is_used_item'])
+                        && strtolower((string) $defectiveProduct->defect_type) === 'other'
+                        && !str_contains($description, 'defect');
 
-                    // The Extra/Defect panel keeps product_batch_id as the ORIGINAL batch for audit.
-                    // Once made sellable, the barcode is moved into a dedicated EXTRA resale batch.
-                    // Older frontend builds still submit the original batch_id, so never trust the
-                    // incoming batch for defective/used resale: resolve and override to the real resale batch.
-                    $resaleBatchId = data_get($defectiveProduct->metadata ?? [], 'resale_batch_id')
-                        ?: optional($defectiveProduct->barcode)->batch_id;
+                    if ($usedOnlyResale) {
+                        // Used-only items are regular stock with a metadata tag. Older
+                        // frontend builds may still send source=defective_resale; undo that
+                        // here and continue through the normal stock/barcode path.
+                        $isDefectiveResale = false;
 
-                    if (!$resaleBatchId || !ProductBatch::whereKey($resaleBatchId)->exists()) {
-                        if (!$defectiveProduct->makeAvailableForSale()) {
-                            throw new \Exception("Defective/used item {$product->name} could not be prepared for resale");
+                        if (empty($itemData['barcode']) && $defectiveProduct->barcode) {
+                            $itemData['barcode'] = $defectiveProduct->barcode->barcode;
                         }
 
-                        $defectiveProduct = DefectiveProduct::with(['barcode', 'batch'])
-                            ->whereKey($defectiveProductId)
-                            ->lockForUpdate()
-                            ->firstOrFail();
+                        if (!$batch && $defectiveProduct->barcode && $defectiveProduct->barcode->batch) {
+                            $batch = $defectiveProduct->barcode->batch;
+                            $itemData['batch_id'] = $batch->id;
+                        }
+                    } else {
+                        if (!in_array($defectiveProduct->status, ['available_for_sale', 'inspected'], true)) {
+                            throw new \Exception("Defective item {$product->name} is not available for sale");
+                        }
 
+                        // Real defective/faulty resale still uses the dedicated EXTRA batch.
                         $resaleBatchId = data_get($defectiveProduct->metadata ?? [], 'resale_batch_id')
                             ?: optional($defectiveProduct->barcode)->batch_id;
-                    }
 
-                    if (!$resaleBatchId) {
-                        throw new \Exception("Missing resale batch for defective/used item {$product->name}");
-                    }
+                        if (!$resaleBatchId || !ProductBatch::whereKey($resaleBatchId)->exists()) {
+                            if (!$defectiveProduct->makeAvailableForSale()) {
+                                throw new \Exception("Defective item {$product->name} could not be prepared for resale");
+                            }
 
-                    $resaleBatch = ProductBatch::whereKey($resaleBatchId)->lockForUpdate()->first();
-                    if (!$resaleBatch) {
-                        throw new \Exception("Resale batch not found for defective/used item {$product->name}");
-                    }
+                            $defectiveProduct = DefectiveProduct::with(['barcode', 'batch'])
+                                ->whereKey($defectiveProductId)
+                                ->lockForUpdate()
+                                ->firstOrFail();
 
-                    if ($batch && (int) $batch->id !== (int) $resaleBatch->id) {
-                        Log::info('Overriding stale defective resale batch_id with actual EXTRA resale batch', [
-                            'product_id' => $product->id,
-                            'defective_product_id' => $defectiveProduct->id,
-                            'submitted_batch_id' => $batch->id,
-                            'resale_batch_id' => $resaleBatch->id,
-                        ]);
-                    }
+                            $resaleBatchId = data_get($defectiveProduct->metadata ?? [], 'resale_batch_id')
+                                ?: optional($defectiveProduct->barcode)->batch_id;
+                        }
 
-                    $batch = $resaleBatch;
-                    $itemData['batch_id'] = $batch->id;
+                        if (!$resaleBatchId) {
+                            throw new \Exception("Missing resale batch for defective item {$product->name}");
+                        }
 
-                    if ($batch->quantity < (int) ($itemData['quantity'] ?? 1)) {
-                        throw new \Exception("Insufficient resale stock for {$product->name}. Available: {$batch->quantity}");
-                    }
+                        $resaleBatch = ProductBatch::whereKey($resaleBatchId)->lockForUpdate()->first();
+                        if (!$resaleBatch) {
+                            throw new \Exception("Resale batch not found for defective item {$product->name}");
+                        }
 
-                    // Social-commerce resale used to omit barcode. Recover it from the
-                    // defective record so completion can move the exact unit to with_customer.
-                    if (empty($itemData['barcode']) && $defectiveProduct->barcode) {
-                        $itemData['barcode'] = $defectiveProduct->barcode->barcode;
+                        if ($batch && (int) $batch->id !== (int) $resaleBatch->id) {
+                            Log::info('Overriding stale defective resale batch_id with actual EXTRA resale batch', [
+                                'product_id' => $product->id,
+                                'defective_product_id' => $defectiveProduct->id,
+                                'submitted_batch_id' => $batch->id,
+                                'resale_batch_id' => $resaleBatch->id,
+                            ]);
+                        }
+
+                        $batch = $resaleBatch;
+                        $itemData['batch_id'] = $batch->id;
+
+                        if ($batch->quantity < (int) ($itemData['quantity'] ?? 1)) {
+                            throw new \Exception("Insufficient resale stock for {$product->name}. Available: {$batch->quantity}");
+                        }
+
+                        // Social-commerce resale used to omit barcode. Recover it from the
+                        // defective record so completion can move the exact unit to with_customer.
+                        if (empty($itemData['barcode']) && $defectiveProduct->barcode) {
+                            $itemData['barcode'] = $defectiveProduct->barcode->barcode;
+                        }
                     }
                 }
 

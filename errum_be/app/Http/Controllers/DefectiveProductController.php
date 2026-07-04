@@ -161,6 +161,35 @@ class DefectiveProductController extends Controller
                 throw new \Exception('Employee authentication required');
             }
 
+            $isUsedOnly = $request->boolean('is_used_item')
+                && strtolower((string) $request->defect_type) === 'other'
+                && !str_contains(strtolower((string) $request->defect_description), 'defect');
+
+            // Used-only is metadata, not a stock event. The barcode keeps the same
+            // batch_id, stock, is_active, is_defective and current_status so POS
+            // sales and online packing treat it like a regular barcode.
+            if ($isUsedOnly) {
+                if (!$barcode->isAvailableForSale()) {
+                    throw new \Exception('This barcode is not currently available for normal sale/packing.');
+                }
+
+                $barcode->markAsUsed([
+                    'store_id' => $request->store_id,
+                    'defect_description' => $request->defect_description,
+                    'original_price' => $request->original_price,
+                    'identified_by' => $employee->id,
+                    'source' => 'extra_items_panel',
+                ]);
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Barcode marked as used successfully. Stock and batch were not changed.',
+                    'data' => $barcode->fresh(['product', 'batch', 'currentStore']),
+                ], 201);
+            }
+
             // Handle image uploads
             $imagePaths = [];
             if ($request->hasFile('defect_images')) {
@@ -187,16 +216,9 @@ class DefectiveProductController extends Controller
                 'internal_notes' => $request->internal_notes,
             ]);
 
-            // Used/display items are intended for resale immediately from the Extra Items panel.
-            // Auto-inspect and move them to a dedicated resale batch so POS barcode scan and
-            // online packing scan can use the barcode normally.
-            if ($request->boolean('is_used_item')) {
-                $defectiveProduct->markAsInspected($employee, [
-                    'severity' => $request->severity,
-                    'internal_notes' => trim(($request->internal_notes ? $request->internal_notes . PHP_EOL : '') . 'Auto-inspected because item was marked as used/display sellable.'),
-                ]);
-                $defectiveProduct->makeAvailableForSale();
-            }
+            // Real defective items are no longer auto-moved to an EXTRA resale batch merely
+            // because the used checkbox was also ticked. If they should be resold later,
+            // inspect/make-available explicitly from the Extra/Defect workflow.
 
             DB::commit();
 

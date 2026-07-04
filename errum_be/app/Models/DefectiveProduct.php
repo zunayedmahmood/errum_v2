@@ -234,6 +234,38 @@ class DefectiveProduct extends Model
 
             $barcode = $defectiveProduct->barcode()->lockForUpdate()->first();
             $originalBatch = $defectiveProduct->batch()->lockForUpdate()->first();
+            $metadata = is_array($defectiveProduct->metadata ?? null) ? $defectiveProduct->metadata : [];
+            $description = strtolower((string) $defectiveProduct->defect_description);
+            $isUsedOnly = !empty($metadata['is_used_item'])
+                && strtolower((string) $defectiveProduct->defect_type) === 'other'
+                && !str_contains($description, 'defect');
+
+            if ($isUsedOnly) {
+                // Used-only items are not moved into an EXTRA resale batch anymore.
+                // Keep the barcode attached to its current batch and only ensure the
+                // used metadata exists. This prevents duplicate stock mutations when
+                // older records are manually made available.
+                if ($barcode) {
+                    $barcode->markAsUsed([
+                        'store_id' => $defectiveProduct->store_id ?: $barcode->current_store_id,
+                        'defect_description' => $defectiveProduct->defect_description ?: 'USED_ITEM',
+                        'original_price' => $defectiveProduct->original_price,
+                        'identified_by' => $defectiveProduct->identified_by,
+                        'source' => 'defective_product_make_available',
+                    ]);
+                }
+
+                $metadata['used_item_metadata_only'] = true;
+                $metadata['barcode_reactivated_for_pos_and_packing'] = true;
+                $metadata['made_sellable_at'] = $metadata['made_sellable_at'] ?? now()->toISOString();
+                $defectiveProduct->metadata = $metadata;
+                if (!$alreadyAvailable) {
+                    $defectiveProduct->status = 'available_for_sale';
+                }
+                $defectiveProduct->save();
+                $this->forceFill($defectiveProduct->fresh()->getAttributes());
+                return true;
+            }
 
             if (!$originalBatch && $barcode && $barcode->batch_id) {
                 $originalBatch = ProductBatch::whereKey($barcode->batch_id)->lockForUpdate()->first();

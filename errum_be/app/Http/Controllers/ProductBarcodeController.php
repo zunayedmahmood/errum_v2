@@ -51,20 +51,45 @@ class ProductBarcodeController extends Controller
             : [];
         $defectiveProductId = $barcodeMetadata['defective_product_id'] ?? null;
         $defectiveResale = null;
+        $usedItem = !empty($barcodeMetadata['is_used_item']) ? [
+            'is_used_item' => true,
+            'marked_at' => $barcodeMetadata['used_item_marked_at'] ?? null,
+            'reason' => $barcodeMetadata['used_item_reason'] ?? null,
+            'store_id' => $barcodeMetadata['used_item_store_id'] ?? null,
+        ] : null;
 
         if ($defectiveProductId) {
             $defectiveProduct = DefectiveProduct::whereKey($defectiveProductId)->first();
             if ($defectiveProduct) {
-                $defectiveResale = [
-                    'is_resale' => true,
-                    'defective_product_id' => $defectiveProduct->id,
-                    'status' => $defectiveProduct->status,
-                    'suggested_selling_price' => $defectiveProduct->suggested_selling_price,
-                    'minimum_selling_price' => $defectiveProduct->minimum_selling_price,
-                    'resale_batch_id' => $barcodeMetadata['resale_batch_id'] ?? $scanResult['barcode']->batch_id,
-                    'original_batch_id' => $barcodeMetadata['original_batch_id'] ?? $defectiveProduct->product_batch_id,
-                    'is_used_item' => (bool) data_get($defectiveProduct->metadata ?? [], 'is_used_item', false),
-                ];
+                $defectiveMetadata = is_array($defectiveProduct->metadata ?? null) ? $defectiveProduct->metadata : [];
+                $description = strtolower((string) $defectiveProduct->defect_description);
+                $isUsedOnlyDefectiveRecord = !empty($defectiveMetadata['is_used_item'])
+                    && strtolower((string) $defectiveProduct->defect_type) === 'other'
+                    && !str_contains($description, 'defect');
+
+                if ($isUsedOnlyDefectiveRecord) {
+                    // Old data may have a defective_product_id on a used-only barcode.
+                    // Do not expose it as defective_resale anymore; POS/packing should
+                    // sell/scan the current barcode + batch just like normal stock.
+                    $usedItem = array_merge($usedItem ?? [], [
+                        'is_used_item' => true,
+                        'defective_product_id' => $defectiveProduct->id,
+                        'marked_at' => $barcodeMetadata['used_item_marked_at'] ?? $defectiveProduct->identified_at,
+                        'reason' => $defectiveProduct->defect_description,
+                        'store_id' => $defectiveProduct->store_id,
+                    ]);
+                } else {
+                    $defectiveResale = [
+                        'is_resale' => true,
+                        'defective_product_id' => $defectiveProduct->id,
+                        'status' => $defectiveProduct->status,
+                        'suggested_selling_price' => $defectiveProduct->suggested_selling_price,
+                        'minimum_selling_price' => $defectiveProduct->minimum_selling_price,
+                        'resale_batch_id' => $barcodeMetadata['resale_batch_id'] ?? $scanResult['barcode']->batch_id,
+                        'original_batch_id' => $barcodeMetadata['original_batch_id'] ?? $defectiveProduct->product_batch_id,
+                        'is_used_item' => (bool) data_get($defectiveProduct->metadata ?? [], 'is_used_item', false),
+                    ];
+                }
             }
         }
 
@@ -75,6 +100,8 @@ class ProductBarcodeController extends Controller
                 'barcode' => $scanResult['barcode']->barcode,
                 'barcode_type' => $scanResult['barcode']->type,
                 'is_defective' => $scanResult['barcode']->is_defective,
+                'is_used_item' => (bool) ($usedItem['is_used_item'] ?? false),
+                'used_item' => $usedItem,
                 'defective_resale' => $defectiveResale,
                 'product' => [
                     'id' => $scanResult['product']->id,

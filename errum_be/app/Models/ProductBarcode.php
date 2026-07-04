@@ -633,10 +633,46 @@ class ProductBarcode extends Model
         return $shipment ? ($shipment->pathao_tracking_number ?? $shipment->shipment_number) : null;
     }
 
-    // Defective product methods
+    // Defective / used product methods
+    public function markAsUsed(array $usedData): self
+    {
+        // Used/display is now metadata only. Do not change batch_id, stock,
+        // current_status, is_active or is_defective; the barcode must remain
+        // sellable/packable exactly like a regular barcode.
+        $metadata = is_array($this->location_metadata ?? null) ? $this->location_metadata : [];
+        $usedHistory = is_array($metadata['used_item_history'] ?? null) ? $metadata['used_item_history'] : [];
+
+        $usedHistory[] = [
+            'marked_at' => now()->toDateTimeString(),
+            'store_id' => $usedData['store_id'] ?? $this->current_store_id,
+            'reason' => $usedData['defect_description'] ?? 'USED_ITEM',
+            'original_price' => $usedData['original_price'] ?? null,
+            'performed_by' => $usedData['identified_by'] ?? auth()->id(),
+        ];
+
+        $metadata = array_merge($metadata, [
+            'is_used_item' => true,
+            'used_item_marked_at' => now()->toDateTimeString(),
+            'used_item_store_id' => $usedData['store_id'] ?? $this->current_store_id,
+            'used_item_reason' => $usedData['defect_description'] ?? 'USED_ITEM',
+            'used_item_original_price' => $usedData['original_price'] ?? null,
+            'used_item_performed_by' => $usedData['identified_by'] ?? auth()->id(),
+            'used_item_source' => $usedData['source'] ?? 'extra_items_panel',
+            'used_item_history' => $usedHistory,
+        ]);
+
+        $this->update([
+            'location_metadata' => $metadata,
+            'location_updated_at' => now(),
+        ]);
+
+        return $this;
+    }
+
     public function markAsDefective(array $defectData): DefectiveProduct
     {
-        // Mark barcode as defective
+        // Mark barcode as defective only for real defect flows. Used-only items
+        // must call markAsUsed() instead so stock and batch relation remain intact.
         $this->update(['is_defective' => true, 'is_active' => false]);
 
         // Create defective product record
@@ -656,7 +692,8 @@ class ProductBarcode extends Model
             'metadata' => $defectData['metadata'] ?? null,
         ]);
 
-        // Remove from regular inventory if batch is provided
+        // Remove from regular inventory only for real defective/non-sellable flows.
+        // This intentionally never runs for used-only items.
         if (isset($defectData['product_batch_id'])) {
             $batch = ProductBatch::find($defectData['product_batch_id']);
             if ($batch && $batch->quantity > 0) {
