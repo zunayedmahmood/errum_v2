@@ -18,7 +18,7 @@ export interface BranchDay {
 export interface CashSheetRow {
   date: string;
   branches: BranchDay[];
-  online: { daily_sales: number; advance: number; online_payment: number; cod: number };
+  online: { daily_sales: number; advance: number; online_payment: number; cod: number; cod_due?: number; cod_collected?: number; refunds?: number };
   disbursements: { sslzc_received: number; pathao_received: number };
   totals: { total_sale: number; cash: number; bank: number; final_bank: number };
   owner: {
@@ -31,7 +31,7 @@ export interface CashSheetRow {
 
 export interface CashSheetSummary {
   branches: BranchDay[];
-  online: { daily_sales: number; advance: number; online_payment: number; cod: number };
+  online: { daily_sales: number; advance: number; online_payment: number; cod: number; cod_due?: number; cod_collected?: number; refunds?: number };
   disbursements: { sslzc_received: number; pathao_received: number };
   totals: { total_sale: number; cash: number; bank: number; final_bank: number };
   owner: {

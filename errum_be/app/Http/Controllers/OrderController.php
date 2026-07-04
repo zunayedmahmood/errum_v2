@@ -574,21 +574,47 @@ class OrderController extends Controller
                         throw new \Exception("Defective/used item {$product->name} is not available for sale");
                     }
 
+                    // The Extra/Defect panel keeps product_batch_id as the ORIGINAL batch for audit.
+                    // Once made sellable, the barcode is moved into a dedicated EXTRA resale batch.
+                    // Older frontend builds still submit the original batch_id, so never trust the
+                    // incoming batch for defective/used resale: resolve and override to the real resale batch.
                     $resaleBatchId = data_get($defectiveProduct->metadata ?? [], 'resale_batch_id')
-                        ?: optional($defectiveProduct->barcode)->batch_id
-                        ?: $defectiveProduct->product_batch_id;
+                        ?: optional($defectiveProduct->barcode)->batch_id;
 
-                    if (!$batch && $resaleBatchId) {
-                        $batch = ProductBatch::findOrFail($resaleBatchId);
+                    if (!$resaleBatchId || !ProductBatch::whereKey($resaleBatchId)->exists()) {
+                        if (!$defectiveProduct->makeAvailableForSale()) {
+                            throw new \Exception("Defective/used item {$product->name} could not be prepared for resale");
+                        }
+
+                        $defectiveProduct = DefectiveProduct::with(['barcode', 'batch'])
+                            ->whereKey($defectiveProductId)
+                            ->lockForUpdate()
+                            ->firstOrFail();
+
+                        $resaleBatchId = data_get($defectiveProduct->metadata ?? [], 'resale_batch_id')
+                            ?: optional($defectiveProduct->barcode)->batch_id;
                     }
 
-                    if (!$batch) {
+                    if (!$resaleBatchId) {
                         throw new \Exception("Missing resale batch for defective/used item {$product->name}");
                     }
 
-                    if ($resaleBatchId && (int) $batch->id !== (int) $resaleBatchId) {
-                        throw new \Exception("Selected batch is not the resale batch for defective/used item {$product->name}");
+                    $resaleBatch = ProductBatch::whereKey($resaleBatchId)->lockForUpdate()->first();
+                    if (!$resaleBatch) {
+                        throw new \Exception("Resale batch not found for defective/used item {$product->name}");
                     }
+
+                    if ($batch && (int) $batch->id !== (int) $resaleBatch->id) {
+                        Log::info('Overriding stale defective resale batch_id with actual EXTRA resale batch', [
+                            'product_id' => $product->id,
+                            'defective_product_id' => $defectiveProduct->id,
+                            'submitted_batch_id' => $batch->id,
+                            'resale_batch_id' => $resaleBatch->id,
+                        ]);
+                    }
+
+                    $batch = $resaleBatch;
+                    $itemData['batch_id'] = $batch->id;
 
                     if ($batch->quantity < (int) ($itemData['quantity'] ?? 1)) {
                         throw new \Exception("Insufficient resale stock for {$product->name}. Available: {$batch->quantity}");
@@ -1176,8 +1202,9 @@ class OrderController extends Controller
                         throw new \Exception("Barcode {$barcodeValue} has already been sold and is not available");
                     }
 
-                    // Validate barcode is not defective
-                    if ($barcode->is_defective && !$isDefectiveResale) {
+                    // Validate barcode is not defective. A barcode that was made sellable from
+                    // the Extra/Defect panel is reactivated as non-defective and has resale metadata.
+                    if ($barcode->is_defective) {
                         throw new \Exception("Barcode {$barcodeValue} is marked as defective");
                     }
 

@@ -55,6 +55,8 @@ use Illuminate\Support\Str;
 class CashSheetController extends Controller
 {
     private const CASH_TYPES = ['cash'];
+    private const BRANCH_ORDER_TYPES = ['counter', 'pos', 'offline'];
+    private const ONLINE_ORDER_TYPES = ['social_commerce', 'ecommerce'];
     private const EXCLUDED_ORDER_STATUSES = ['cancelled', 'canceled', 'refunded', 'void', 'deleted'];
     private const INTERNAL_SETTLEMENT_PAYMENT_TYPES = ['exchange_balance', 'store_credit', 'balance_carryover'];
 
@@ -138,8 +140,11 @@ class CashSheetController extends Controller
             $ol_advance = (float) ($online['advance'] ?? 0);
             $ol_payment = (float) ($online['online_payment'] ?? 0);
             $ol_cod     = (float) ($online['cod'] ?? 0);
+            $ol_cod_due = (float) ($online['cod_due'] ?? 0);
+            $ol_cod_collected = (float) ($online['cod_collected'] ?? 0);
+            $ol_refunds = (float) ($online['refunds'] ?? 0);
 
-            $totalBank += $ol_advance; // online advance → bank
+            $totalBank += $ol_advance; // online advance already received into bank/MFS
 
             $sslzc_recv  = (float) ($adminData['_global'][$date]['sslzc'] ?? 0);
             $pathao_recv = (float) ($adminData['_global'][$date]['pathao'] ?? 0);
@@ -164,6 +169,9 @@ class CashSheetController extends Controller
                     'advance'        => round($ol_advance, 2),
                     'online_payment' => round($ol_payment, 2),
                     'cod'            => round($ol_cod, 2),
+                    'cod_due'        => round($ol_cod_due, 2),
+                    'cod_collected'  => round($ol_cod_collected, 2),
+                    'refunds'        => round($ol_refunds, 2),
                 ],
                 'disbursements' => [
                     'sslzc_received'  => round($sslzc_recv, 2),
@@ -739,7 +747,7 @@ class CashSheetController extends Controller
                 DB::raw('SUM(o.total_amount) as total')
             )
             ->whereIn('o.store_id', $ids)
-            ->whereIn('o.order_type', ['counter', 'pos', 'offline'])
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereDate($dateExpr, '>=', $from)
             ->whereDate($dateExpr, '<=', $to);
 
@@ -775,6 +783,7 @@ class CashSheetController extends Controller
         $normalPayments = DB::table('order_payments as op')
             ->join('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->leftJoin('payment_splits as ps_probe', 'ps_probe.order_payment_id', '=', 'op.id')
             ->select(
                 'op.store_id',
                 DB::raw('DATE(op.completed_at) as day'),
@@ -782,7 +791,9 @@ class CashSheetController extends Controller
                 DB::raw('SUM(op.amount) as total')
             )
             ->whereIn('op.store_id', $ids)
-            ->where('o.order_type', 'counter')
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNull('op.deleted_at')
+            ->whereNull('ps_probe.id')
             ->whereDate('op.completed_at', '>=', $from)
             ->whereDate('op.completed_at', '<=', $to)
             ->where('op.status', 'completed')
@@ -812,7 +823,8 @@ class CashSheetController extends Controller
                 DB::raw('SUM(ps.amount) as total')
             )
             ->whereIn('ps.store_id', $ids)
-            ->where('o.order_type', 'counter')
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNull('op.deleted_at')
             ->where('op.status', 'completed')
             ->where('ps.status', 'completed')
             ->where(function ($q) use ($excludedPaymentTypes) {
@@ -841,7 +853,7 @@ class CashSheetController extends Controller
                 DB::raw('SUM(r.refund_amount) as total')
             )
             ->whereIn(DB::raw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id)'), $ids)
-            ->where('o.order_type', 'counter')
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereNull('o.deleted_at')
             ->where('r.status', 'completed')
             ->whereNotNull('r.completed_at')
@@ -874,9 +886,10 @@ class CashSheetController extends Controller
                 DB::raw('SUM(op.amount) as total')
             )
             ->whereIn('op.store_id', $ids)
-            ->where('o.order_type', 'counter')
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereNull('o.deleted_at')
             ->whereNotIn(DB::raw('LOWER(o.status)'), self::EXCLUDED_ORDER_STATUSES)
+            ->whereNull('op.deleted_at')
             ->where('op.status', 'completed')
             ->where('op.payment_type', 'exchange_surplus')
             ->whereNotNull('op.completed_at')
@@ -896,7 +909,7 @@ class CashSheetController extends Controller
                 DB::raw('SUM(r.refund_amount) as total')
             )
             ->whereIn(DB::raw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id)'), $ids)
-            ->where('o.order_type', 'counter')
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereNull('o.deleted_at')
             ->where('r.status', 'completed')
             ->where('r.refund_type', 'exchange_refund')
@@ -987,63 +1000,116 @@ class CashSheetController extends Controller
         $out = [];
         $orderDateExpr = DB::raw('COALESCE(order_date, confirmed_at, created_at)');
 
-        // 1) Order value / COD is counted on the order business date and updates
-        // live when the order is edited, cancelled, soft-deleted, delivered, etc.
+        $ensureOnlineDay = function (string $day) use (&$out): void {
+            $out[$day]['daily_sales'] = $out[$day]['daily_sales'] ?? 0;
+            $out[$day]['advance'] = $out[$day]['advance'] ?? 0;
+            $out[$day]['online_payment'] = $out[$day]['online_payment'] ?? 0;
+            $out[$day]['cod'] = $out[$day]['cod'] ?? 0;
+            $out[$day]['cod_due'] = $out[$day]['cod_due'] ?? 0;
+            $out[$day]['cod_collected'] = $out[$day]['cod_collected'] ?? 0;
+            $out[$day]['refunds'] = $out[$day]['refunds'] ?? 0;
+        };
+
+        $addOnline = function (string $day, string $field, float $amount) use (&$out, $ensureOnlineDay): void {
+            if ($amount == 0.0) {
+                return;
+            }
+            $ensureOnlineDay($day);
+            $out[$day][$field] = ($out[$day][$field] ?? 0) + $amount;
+        };
+
+        // 1) Online/social order value is counted on the order business date and
+        // is always recalculated live from orders.total_amount. Therefore edits,
+        // cancellations, soft deletes, and status changes are reflected as soon as
+        // this endpoint is reloaded.
         DB::table('orders')
             ->select(
                 DB::raw('DATE(COALESCE(order_date, confirmed_at, created_at)) as day'),
-                DB::raw('SUM(total_amount) as ts'),
-                DB::raw('SUM(outstanding_amount) as cod')
+                DB::raw('SUM(total_amount) as total_sales')
             )
-            ->where('order_type', 'social_commerce')
+            ->whereIn('order_type', self::ONLINE_ORDER_TYPES)
             ->whereNull('deleted_at')
             ->whereDate($orderDateExpr, '>=', $from)
             ->whereDate($orderDateExpr, '<=', $to)
             ->whereNotIn(DB::raw('LOWER(status)'), self::EXCLUDED_ORDER_STATUSES)
             ->groupBy('day')
             ->get()
-            ->each(function ($r) use (&$out) {
-                $out[$r->day]['daily_sales'] = ($out[$r->day]['daily_sales'] ?? 0) + (float) $r->ts;
-                $out[$r->day]['cod']         = ($out[$r->day]['cod'] ?? 0) + (float) $r->cod;
+            ->each(function ($r) use ($addOnline) {
+                $addOnline($r->day, 'daily_sales', (float) $r->total_sales);
             });
 
+        // 2) Open COD/due is a receivable bucket, not bank. It is counted on the
+        // order business date while still outstanding. When delivery/payment makes
+        // outstanding_amount zero, this due disappears automatically and the actual
+        // delivery collection is handled below on the payment completion date.
         DB::table('orders')
             ->select(
                 DB::raw('DATE(COALESCE(order_date, confirmed_at, created_at)) as day'),
-                DB::raw('SUM(total_amount) as ts')
+                DB::raw('SUM(outstanding_amount) as total_due')
             )
-            ->where('order_type', 'ecommerce')
+            ->whereIn('order_type', self::ONLINE_ORDER_TYPES)
             ->whereNull('deleted_at')
             ->whereDate($orderDateExpr, '>=', $from)
             ->whereDate($orderDateExpr, '<=', $to)
             ->whereNotIn(DB::raw('LOWER(status)'), self::EXCLUDED_ORDER_STATUSES)
+            ->where('outstanding_amount', '>', 0)
             ->groupBy('day')
             ->get()
-            ->each(function ($r) use (&$out) {
-                $out[$r->day]['daily_sales'] = ($out[$r->day]['daily_sales'] ?? 0) + (float) $r->ts;
+            ->each(function ($r) use ($addOnline) {
+                $amount = (float) $r->total_due;
+                $addOnline($r->day, 'cod_due', $amount);
+                $addOnline($r->day, 'cod', $amount);
             });
 
         $excludedPaymentTypes = self::INTERNAL_SETTLEMENT_PAYMENT_TYPES;
-        $addOnlinePayment = function ($r) use (&$out) {
-            if ($r->order_type === 'social_commerce') {
-                $out[$r->day]['advance'] = ($out[$r->day]['advance'] ?? 0) + (float) $r->total;
-            } elseif ($r->order_type === 'ecommerce') {
-                $out[$r->day]['online_payment'] = ($out[$r->day]['online_payment'] ?? 0) + (float) $r->total;
+
+        $classifyOnlinePayment = function ($r) use ($addOnline): void {
+            $amount = (float) $r->total;
+            if ($amount == 0.0) {
+                return;
+            }
+
+            $orderType = (string) $r->order_type;
+            $isCodCollection = (int) ($r->is_cod_collection ?? 0) === 1;
+
+            if ($isCodCollection) {
+                $addOnline($r->day, 'cod_collected', $amount);
+                $addOnline($r->day, 'cod', $amount);
+                return;
+            }
+
+            if ($orderType === 'social_commerce') {
+                $addOnline($r->day, 'advance', $amount);
+            } elseif ($orderType === 'ecommerce') {
+                $addOnline($r->day, 'online_payment', $amount);
             }
         };
 
-        // 2) Money received is counted on the completed payment date, so payment
-        // creation/update/delivery auto-settlement land on the correct cash-sheet day.
+        // Delivery COD detector: cash/COD payment posted at/after delivery or created
+        // by settleDeliveredOrderPayment() should not be mixed into Advance. It is a
+        // COD/Pathao receivable tracking item until Pathao/COD disbursement is entered.
+        $codCollectionExprForOp = "CASE WHEN (" .
+            "LOWER(COALESCE(pm.code, '')) IN ('cod', 'cash_on_delivery') " .
+            "OR LOWER(COALESCE(o.payment_method, '')) IN ('cod', 'cash_on_delivery') " .
+            "OR LOWER(COALESCE(op.metadata, '')) LIKE '%auto_settled_on_delivery%'" .
+            ") AND (" .
+            "LOWER(COALESCE(op.metadata, '')) LIKE '%auto_settled_on_delivery%' " .
+            "OR (o.delivered_at IS NOT NULL AND op.completed_at IS NOT NULL AND op.completed_at >= o.delivered_at)" .
+            ") THEN 1 ELSE 0 END";
+
         DB::table('order_payments as op')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->join('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
             ->leftJoin('payment_splits as ps_probe', 'ps_probe.order_payment_id', '=', 'op.id')
             ->select(
                 DB::raw('DATE(op.completed_at) as day'),
                 'o.order_type',
+                DB::raw($codCollectionExprForOp . ' as is_cod_collection'),
                 DB::raw('SUM(op.amount) as total')
             )
-            ->whereIn('o.order_type', ['social_commerce', 'ecommerce'])
+            ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
             ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
             ->where('op.status', 'completed')
             ->whereNull('ps_probe.id')
             ->whereNotNull('op.completed_at')
@@ -1053,20 +1119,32 @@ class CashSheetController extends Controller
                 $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
             })
             ->whereNotIn(DB::raw('LOWER(o.status)'), self::EXCLUDED_ORDER_STATUSES)
-            ->groupBy('day', 'o.order_type')
+            ->groupBy('day', 'o.order_type', 'is_cod_collection')
             ->get()
-            ->each($addOnlinePayment);
+            ->each($classifyOnlinePayment);
+
+        $codCollectionExprForSplit = "CASE WHEN (" .
+            "LOWER(COALESCE(pm.code, '')) IN ('cod', 'cash_on_delivery') " .
+            "OR LOWER(COALESCE(o.payment_method, '')) IN ('cod', 'cash_on_delivery') " .
+            "OR LOWER(COALESCE(op.metadata, '')) LIKE '%auto_settled_on_delivery%'" .
+            ") AND (" .
+            "LOWER(COALESCE(op.metadata, '')) LIKE '%auto_settled_on_delivery%' " .
+            "OR (o.delivered_at IS NOT NULL AND COALESCE(ps.completed_at, op.completed_at) IS NOT NULL AND COALESCE(ps.completed_at, op.completed_at) >= o.delivered_at)" .
+            ") THEN 1 ELSE 0 END";
 
         DB::table('payment_splits as ps')
             ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->join('payment_methods as pm', 'pm.id', '=', 'ps.payment_method_id')
             ->select(
                 DB::raw('DATE(COALESCE(ps.completed_at, op.completed_at)) as day'),
                 'o.order_type',
+                DB::raw($codCollectionExprForSplit . ' as is_cod_collection'),
                 DB::raw('SUM(ps.amount) as total')
             )
-            ->whereIn('o.order_type', ['social_commerce', 'ecommerce'])
+            ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
             ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
             ->where('op.status', 'completed')
             ->where('ps.status', 'completed')
             ->whereNotNull('op.completed_at')
@@ -1076,9 +1154,57 @@ class CashSheetController extends Controller
                 $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
             })
             ->whereNotIn(DB::raw('LOWER(o.status)'), self::EXCLUDED_ORDER_STATUSES)
-            ->groupBy('day', 'o.order_type')
+            ->groupBy('day', 'o.order_type', 'is_cod_collection')
             ->get()
-            ->each($addOnlinePayment);
+            ->each($classifyOnlinePayment);
+
+        // 3) Completed online/social refunds reduce the same bucket they originally
+        // affected. They are counted on refund completion date, so return/exchange
+        // cash movements appear on the day money actually moved.
+        $classifyOnlineRefund = function ($r) use ($addOnline): void {
+            $amount = (float) $r->total;
+            if ($amount == 0.0) {
+                return;
+            }
+
+            $addOnline($r->day, 'refunds', $amount);
+
+            if ((int) ($r->is_cod_refund ?? 0) === 1) {
+                $addOnline($r->day, 'cod_collected', -$amount);
+                $addOnline($r->day, 'cod', -$amount);
+                return;
+            }
+
+            if ($r->order_type === 'social_commerce') {
+                $addOnline($r->day, 'advance', -$amount);
+            } elseif ($r->order_type === 'ecommerce') {
+                $addOnline($r->day, 'online_payment', -$amount);
+            }
+        };
+
+        $codRefundExpr = "CASE WHEN " .
+            "LOWER(COALESCE(r.refund_method, '')) IN ('cash', 'cod', 'cash_on_delivery') " .
+            "AND LOWER(COALESCE(o.payment_method, '')) IN ('cod', 'cash_on_delivery') " .
+            "THEN 1 ELSE 0 END";
+
+        DB::table('refunds as r')
+            ->join('orders as o', 'o.id', '=', 'r.order_id')
+            ->select(
+                DB::raw('DATE(r.completed_at) as day'),
+                'o.order_type',
+                DB::raw($codRefundExpr . ' as is_cod_refund'),
+                DB::raw('SUM(r.refund_amount) as total')
+            )
+            ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
+            ->whereNull('o.deleted_at')
+            ->where('r.status', 'completed')
+            ->whereNotNull('r.completed_at')
+            ->whereNotIn('r.refund_method', ['store_credit', 'gift_card'])
+            ->whereDate('r.completed_at', '>=', $from)
+            ->whereDate('r.completed_at', '<=', $to)
+            ->groupBy('day', 'o.order_type', 'is_cod_refund')
+            ->get()
+            ->each($classifyOnlineRefund);
 
         return $out;
     }
@@ -1138,7 +1264,7 @@ class CashSheetController extends Controller
     {
         $summary = [
             'branches'      => [],
-            'online'        => ['daily_sales' => 0, 'advance' => 0, 'online_payment' => 0, 'cod' => 0],
+            'online'        => ['daily_sales' => 0, 'advance' => 0, 'online_payment' => 0, 'cod' => 0, 'cod_due' => 0, 'cod_collected' => 0, 'refunds' => 0],
             'disbursements' => ['sslzc_received' => 0, 'pathao_received' => 0],
             'totals'        => ['total_sale' => 0, 'cash' => 0, 'bank' => 0, 'final_bank' => 0],
             'owner'         => [
@@ -1175,7 +1301,7 @@ class CashSheetController extends Controller
                 }
             }
 
-            foreach (['daily_sales', 'advance', 'online_payment', 'cod'] as $field) {
+            foreach (['daily_sales', 'advance', 'online_payment', 'cod', 'cod_due', 'cod_collected', 'refunds'] as $field) {
                 $summary['online'][$field] += (float) $row['online'][$field];
             }
 

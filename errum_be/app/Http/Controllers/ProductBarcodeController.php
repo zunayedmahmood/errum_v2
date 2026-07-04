@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\ProductBatch;
 use App\Models\ProductMovement;
+use App\Models\DefectiveProduct;
 use App\Traits\DatabaseAgnosticSearch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -45,6 +46,28 @@ class ProductBarcodeController extends Controller
             ], 404);
         }
 
+        $barcodeMetadata = is_array($scanResult['barcode']->location_metadata ?? null)
+            ? $scanResult['barcode']->location_metadata
+            : [];
+        $defectiveProductId = $barcodeMetadata['defective_product_id'] ?? null;
+        $defectiveResale = null;
+
+        if ($defectiveProductId) {
+            $defectiveProduct = DefectiveProduct::whereKey($defectiveProductId)->first();
+            if ($defectiveProduct) {
+                $defectiveResale = [
+                    'is_resale' => true,
+                    'defective_product_id' => $defectiveProduct->id,
+                    'status' => $defectiveProduct->status,
+                    'suggested_selling_price' => $defectiveProduct->suggested_selling_price,
+                    'minimum_selling_price' => $defectiveProduct->minimum_selling_price,
+                    'resale_batch_id' => $barcodeMetadata['resale_batch_id'] ?? $scanResult['barcode']->batch_id,
+                    'original_batch_id' => $barcodeMetadata['original_batch_id'] ?? $defectiveProduct->product_batch_id,
+                    'is_used_item' => (bool) data_get($defectiveProduct->metadata ?? [], 'is_used_item', false),
+                ];
+            }
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -52,6 +75,7 @@ class ProductBarcodeController extends Controller
                 'barcode' => $scanResult['barcode']->barcode,
                 'barcode_type' => $scanResult['barcode']->type,
                 'is_defective' => $scanResult['barcode']->is_defective,
+                'defective_resale' => $defectiveResale,
                 'product' => [
                     'id' => $scanResult['product']->id,
                     'name' => $scanResult['product']->name,

@@ -355,10 +355,9 @@ export default function WarehouseFulfillmentPage() {
       // Initialize scanned items tracking
       const initialScanned: Record<number, ScannedItemTracking> = {};
       order.items?.forEach((item: any) => {
-        const isDefectResale = isDefectiveResaleOrderItem(item);
         initialScanned[item.id] = {
           required: item.quantity,
-          scanned: isDefectResale ? Array.from({ length: Number(item.quantity || 0) }, () => 'Defective/used resale item — no barcode scan required') : [],
+          scanned: [],
           barcodes: [],
         };
       });
@@ -560,7 +559,6 @@ export default function WarehouseFulfillmentPage() {
 
     // Check if all items are fully scanned
     const allItemsScanned = orderDetails.items?.every((item: any) => {
-      if (isDefectiveResaleOrderItem(item)) return true;
       const scanned = scannedItems[item.id];
       return scanned && scanned.scanned.length === scanned.required;
     });
@@ -570,7 +568,6 @@ export default function WarehouseFulfillmentPage() {
 
       // Show which items are missing (debug)
       const missingItems = orderDetails.items?.filter((item: any) => {
-        if (isDefectiveResaleOrderItem(item)) return false;
         const scanned = scannedItems[item.id];
         return !scanned || scanned.scanned.length < scanned.required;
       });
@@ -585,7 +582,7 @@ export default function WarehouseFulfillmentPage() {
       // Prepare fulfillment payload
       const fulfillments = orderDetails.items.map((item: any) => ({
         order_item_id: item.id,
-        barcodes: isDefectiveResaleOrderItem(item) ? [] : scannedItems[item.id].barcodes,
+        barcodes: scannedItems[item.id]?.barcodes || [],
       }));
 
       console.log('📦 Fulfilling order:', orderDetails.order_number);
@@ -634,7 +631,7 @@ export default function WarehouseFulfillmentPage() {
     orderDetails.items?.forEach((item: any) => {
       const quantity = Number(item.quantity || 0);
       total += quantity;
-      scanned += isDefectiveResaleOrderItem(item) ? quantity : (scannedItems[item.id]?.scanned.length || 0);
+      scanned += scannedItems[item.id]?.scanned.length || 0;
     });
 
     return {

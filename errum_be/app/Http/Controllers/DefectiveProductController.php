@@ -275,6 +275,11 @@ class DefectiveProductController extends Controller
 
             DB::commit();
 
+            $defectiveProduct = $defectiveProduct->fresh(['product', 'barcode', 'batch', 'store']);
+            $metadata = is_array($defectiveProduct->metadata ?? null) ? $defectiveProduct->metadata : [];
+            $defectiveProduct->resale_batch_id = $metadata['resale_batch_id'] ?? optional($defectiveProduct->barcode)->batch_id;
+            $defectiveProduct->original_batch_id = $metadata['original_batch_id'] ?? $defectiveProduct->product_batch_id;
+
             return response()->json([
                 'success' => true,
                 'message' => 'Product is now available for sale',
@@ -442,7 +447,12 @@ class DefectiveProductController extends Controller
                 $query->where('suggested_selling_price', '<=', $request->max_price);
             }
 
-            $defectiveProducts = $query->orderBy('suggested_selling_price')->get();
+            $defectiveProducts = $query->orderBy('suggested_selling_price')->get()->map(function ($item) {
+                $metadata = is_array($item->metadata ?? null) ? $item->metadata : [];
+                $item->resale_batch_id = $metadata['resale_batch_id'] ?? optional($item->barcode)->batch_id;
+                $item->original_batch_id = $metadata['original_batch_id'] ?? $item->product_batch_id;
+                return $item;
+            });
 
             return response()->json([
                 'success' => true,

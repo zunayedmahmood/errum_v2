@@ -254,9 +254,9 @@ export default function DefectsPage() {
     setLoading(true);
     
     try {
-      const fullDetails = await defectIntegrationService.getDefectiveById(defect.id);
+      let fullDetails = await defectIntegrationService.getDefectiveById(defect.id);
       
-      if (!fullDetails.product_batch_id) {
+      if (!fullDetails.product_batch_id && !fullDetails.barcode?.batch_id) {
         throw new Error('Missing batch_id - cannot proceed with sale');
       }
       
@@ -270,22 +270,35 @@ export default function DefectsPage() {
         
         setSuccessMessage('Product inspected');
         currentStatus = 'inspected';
+        fullDetails = await defectIntegrationService.getDefectiveById(defect.id);
       }
       
       if (currentStatus === 'inspected') {
         await defectIntegrationService.makeAvailableForSale(defect.id);
         setSuccessMessage('Product ready for sale');
         currentStatus = 'available_for_sale';
+        fullDetails = await defectIntegrationService.getDefectiveById(defect.id);
       } else if (currentStatus === 'sold') {
         throw new Error('This product has already been sold');
       } else if (currentStatus !== 'available_for_sale') {
         throw new Error(`Cannot sell product with status: ${currentStatus}`);
       }
+
+      const metadata = (fullDetails as any).metadata || {};
+      const resaleBatchId = Number((fullDetails as any).resale_batch_id || metadata.resale_batch_id || fullDetails.barcode?.batch_id || 0) || null;
+      const originalBatchId = Number((fullDetails as any).original_batch_id || metadata.original_batch_id || fullDetails.product_batch_id || 0) || null;
+      const saleBatchId = resaleBatchId || originalBatchId;
+
+      if (!saleBatchId) {
+        throw new Error('Missing resale batch_id - cannot proceed with sale');
+      }
       
       setSelectedDefect({
         ...defect,
-        batchId: fullDetails.product_batch_id,
-      });
+        batchId: saleBatchId,
+        store_id: fullDetails.store_id,
+        storeId: fullDetails.store_id,
+      } as any);
       
       const suggestedPrice = fullDetails.suggested_selling_price?.toString() || 
                             defect.sellingPrice?.toString() || 
@@ -322,6 +335,8 @@ export default function DefectsPage() {
         productName: selectedDefect.productName,
         sellingPrice: parseFloat(sellPrice),
         store: selectedDefect.store,
+        store_id: (selectedDefect as any).store_id || (selectedDefect as any).storeId,
+        storeId: (selectedDefect as any).store_id || (selectedDefect as any).storeId,
         batchId: selectedDefect.batchId,
       };
 

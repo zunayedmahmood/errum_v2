@@ -530,6 +530,7 @@ export default function AmountDetailsPage() {
             quantity: item.quantity,
             unit_price: item.unit_price,
             discount_amount: item.discount_amount || 0,
+            ...(item.barcode ? { barcode: item.barcode } : {}),
             ...(item.is_defective ? {
               is_defective: true,
               defective_product_id: item.defective_product_id,

@@ -421,18 +421,31 @@ class StockIntelligenceController extends Controller
             $perPage = min(100, max(10, (int) $request->query('per_page', 50)));
             $page    = max(1, (int) $request->query('page', 1));
             $selectedStoreId = (int) $request->query('store_id', 0);
-            // Inventory View should show the real active selling branches only.
-            // The stores table can contain inactive/import duplicates such as
-            // "Jamuna Future Park" twice or "Main Store (Mirpur)" and "Mirpur".
-            // Canonicalising here prevents duplicate sheet columns and filter options.
-            $storeRowsForFilter = $this->overviewStoreRows();
-            if ($selectedStoreId > 0 && !$storeRowsForFilter->contains('id', $selectedStoreId)) {
-                $selectedStoreId = 0;
+
+            // Inventory View must show every active location that can hold stock:
+            // offline stores, online stores and warehouses. The production data can
+            // contain duplicate location rows (for example the same branch imported
+            // twice, or "Main Store (Mirpur)" plus "Mirpur"). Build one canonical
+            // sheet column per real location, but keep an alias map so stock/movement
+            // saved under duplicate store IDs is merged into that canonical column.
+            $storeCanonical = $this->overviewCanonicalStoreRows();
+            $storeRowsForFilter = $storeCanonical['stores'];
+            $storeIdMap = $storeCanonical['id_map'];
+            $storeAliasMap = $storeCanonical['aliases'];
+
+            if ($selectedStoreId > 0) {
+                $selectedStoreId = (int) ($storeIdMap[$selectedStoreId] ?? 0);
             }
+            $selectedStoreSourceIds = $selectedStoreId > 0
+                ? array_values(array_unique(array_map('intval', $storeAliasMap[$selectedStoreId] ?? [$selectedStoreId])))
+                : [];
+
             $storesForFilterPayload = $storeRowsForFilter->map(fn($s) => [
                 'id' => (int) $s->id,
                 'name' => $s->name,
                 'store_code' => $s->store_code ?? null,
+                'is_warehouse' => (bool) ($s->is_warehouse ?? false),
+                'is_online' => (bool) ($s->is_online ?? false),
             ])->toArray();
 
             $productQuery = DB::table('products as p')
@@ -531,11 +544,11 @@ class StockIntelligenceController extends Controller
             // the page from calculating global stock and then merely hiding rows on
             // the frontend.
             if ($selectedStoreId > 0) {
-                $productQuery->whereExists(function ($q) use ($selectedStoreId) {
+                $productQuery->whereExists(function ($q) use ($selectedStoreSourceIds) {
                     $q->select(DB::raw(1))
                         ->from('product_batches as branch_pb')
                         ->whereColumn('branch_pb.product_id', 'p.id')
-                        ->where('branch_pb.store_id', $selectedStoreId)
+                        ->whereIn('branch_pb.store_id', $selectedStoreSourceIds)
                         ->where('branch_pb.is_active', true)
                         ->where('branch_pb.quantity', '>', 0);
                 });
@@ -610,19 +623,19 @@ class StockIntelligenceController extends Controller
 
             $stores = $storeRowsForFilter->keyBy('id');
 
-            $currentStock = $this->overviewCurrentStock($pageProductIds, $selectedStoreId);
+            $currentStock = $this->overviewCurrentStock($pageProductIds, $selectedStoreSourceIds, $storeIdMap, $storeRowsForFilter);
             $reserved = DB::table('reserved_products')
                 ->whereIn('product_id', $pageProductIds)
                 ->select('product_id', 'reserved_inventory', 'available_inventory')
                 ->get()
                 ->keyBy('product_id');
 
-            $purchases = $this->overviewPurchases($pageProductIds, $from, $to, $selectedStoreId);
-            $sales = $this->overviewSales($pageProductIds, $from, $to, $selectedStoreId);
-            $dispatchOut = $this->overviewDispatchOut($pageProductIds, $from, $to, $selectedStoreId);
-            $dispatchReceived = $this->overviewDispatchReceived($pageProductIds, $from, $to, $selectedStoreId);
-            $defects = $this->overviewDefects($pageProductIds, $from, $to, $selectedStoreId);
-            $batches = $this->overviewBatchDetails($pageProductIds, $from, $to, $selectedStoreId, $this->canViewInventoryCostPrice());
+            $purchases = $this->overviewPurchases($pageProductIds, $from, $to, $selectedStoreSourceIds, $storeIdMap);
+            $sales = $this->overviewSales($pageProductIds, $from, $to, $selectedStoreSourceIds, $storeIdMap);
+            $dispatchOut = $this->overviewDispatchOut($pageProductIds, $from, $to, $selectedStoreSourceIds, $storeIdMap);
+            $dispatchReceived = $this->overviewDispatchReceived($pageProductIds, $from, $to, $selectedStoreSourceIds, $storeIdMap);
+            $defects = $this->overviewDefects($pageProductIds, $from, $to, $selectedStoreSourceIds, $storeIdMap);
+            $batches = $this->overviewBatchDetails($pageProductIds, $from, $to, $selectedStoreSourceIds, $storeIdMap, $storeRowsForFilter, $this->canViewInventoryCostPrice());
 
             $allStoreIds = $selectedStoreId > 0
                 ? collect([$selectedStoreId])
@@ -849,6 +862,8 @@ class StockIntelligenceController extends Controller
                         'id' => (int) $s->id,
                         'name' => $s->name,
                         'store_code' => $s->store_code ?? null,
+                        'is_warehouse' => (bool) ($s->is_warehouse ?? false),
+                        'is_online' => (bool) ($s->is_online ?? false),
                     ])->toArray(),
                     'items' => $items,
                     'total' => $totalGroups,
@@ -982,49 +997,129 @@ class StockIntelligenceController extends Controller
     }
 
 
-    private function overviewStoreRows(): Collection
+
+    /**
+     * Normalize store/warehouse names only for duplicate detection in the
+     * inventory overview sheet.
+     *
+     * Important: do NOT remove words like "warehouse" or "online" globally,
+     * because Inventory View must show active warehouses and online locations
+     * as separate stock-holding locations when they are genuinely separate.
+     * This helper only collapses obvious duplicate naming patterns such as:
+     * - "Jamuna Future Park" vs "Jamuna Future Park"
+     * - "Main Store (Mirpur)" vs "Mirpur"
+     * - "Store (Bashundhara)" vs "Bashundhara"
+     */
+    private function normalizeOverviewStoreName(string $name): string
+    {
+        $value = strtolower(trim($name));
+        if ($value === '') {
+            return '';
+        }
+
+        $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $value = str_replace(['&'], [' and '], $value);
+        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
+        $value = trim($value);
+
+        // "Main Store (Mirpur)" / "Store (Jamuna Future Park)" -> inner name.
+        if (preg_match('/^(?:main\s+)?store\s*\(([^)]+)\)$/i', $value, $m)) {
+            $value = trim($m[1]);
+        }
+
+        // "Main Store - Mirpur" / "Store: Bashundhara" -> trailing name.
+        if (preg_match('/^(?:main\s+)?store\s*[-:]\s*(.+)$/i', $value, $m)) {
+            $value = trim($m[1]);
+        }
+
+        // "Main Store Mirpur" -> "Mirpur". Keep this intentionally narrow so
+        // true locations like "Mirpur Warehouse" do not collapse into "Mirpur".
+        $value = preg_replace('/^main\s+store\s+/i', '', $value) ?? $value;
+
+        // "Store Bashundhara" -> "Bashundhara". Also intentionally narrow.
+        $value = preg_replace('/^store\s+/i', '', $value) ?? $value;
+
+        // Normalize separators/punctuation after the duplicate-specific cleanup.
+        $value = preg_replace('/[^a-z0-9]+/i', ' ', $value) ?? $value;
+        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
+
+        return trim($value);
+    }
+
+    /**
+     * Return the canonical Inventory View location list plus alias mappings.
+     *
+     * Inventory View must include all active stores/warehouses (offline + online),
+     * but the stores table may contain duplicate records for the same physical
+     * location. The returned alias map lets the metric queries merge stock and
+     * movement from duplicate IDs into the one visible canonical column.
+     */
+    private function overviewCanonicalStoreRows(): array
     {
         $rows = DB::table('stores')
-            ->select('id', 'name', 'store_code', 'address', 'is_active', 'is_warehouse')
+            ->select('id', 'name', 'store_code', 'address', 'is_active', 'is_warehouse', 'is_online')
+            ->whereNull('deleted_at')
             ->where(function ($q) {
                 $q->where('is_active', true)->orWhereNull('is_active');
-            })
-            ->where(function ($q) {
-                $q->where('is_warehouse', false)->orWhereNull('is_warehouse');
             })
             ->orderBy('name')
             ->orderBy('id')
             ->get();
 
-        $seen = [];
-        $unique = [];
-
+        $groups = [];
         foreach ($rows as $row) {
             $key = $this->normalizeOverviewStoreName($row->name ?? '');
             if ($key === '') {
                 $key = 'id:' . (int) $row->id;
             }
-
-            if (isset($seen[$key])) {
-                continue;
-            }
-
-            $seen[$key] = true;
-            $unique[] = $row;
+            $groups[$key][] = $row;
         }
 
-        return collect($unique)->values();
+        $canonicalRows = [];
+        $idMap = [];
+        $aliases = [];
+
+        foreach ($groups as $groupRows) {
+            usort($groupRows, function ($a, $b) {
+                // Prefer the configured/code-bearing row (for example MAIN), then
+                // the lowest ID. This keeps stable IDs for filters and URLs.
+                $aHasCode = trim((string) ($a->store_code ?? '')) !== '' ? 0 : 1;
+                $bHasCode = trim((string) ($b->store_code ?? '')) !== '' ? 0 : 1;
+                if ($aHasCode !== $bHasCode) return $aHasCode <=> $bHasCode;
+                return ((int) $a->id) <=> ((int) $b->id);
+            });
+
+            $canonical = $groupRows[0];
+            $canonicalId = (int) $canonical->id;
+            $aliases[$canonicalId] = [];
+
+            foreach ($groupRows as $row) {
+                $sourceId = (int) $row->id;
+                $idMap[$sourceId] = $canonicalId;
+                $aliases[$canonicalId][] = $sourceId;
+            }
+
+            $canonical->alias_store_ids = array_values(array_unique($aliases[$canonicalId]));
+            $canonicalRows[] = $canonical;
+        }
+
+        $stores = collect($canonicalRows)
+            ->sortBy(fn ($row) => strtolower((string) $row->name))
+            ->values();
+
+        return [
+            'stores' => $stores,
+            'id_map' => $idMap,
+            'aliases' => $aliases,
+        ];
     }
 
-    private function normalizeOverviewStoreName(?string $name): string
+    /**
+     * Backward-compatible helper for older call sites inside this controller.
+     */
+    private function overviewStoreRows(): Collection
     {
-        $value = strtolower(trim((string) $name));
-        $value = preg_replace('/^store\s*/i', '', $value);
-        $value = str_replace(['(', ')'], ' ', $value);
-        $value = preg_replace('/\bmain\s+store\b/i', '', $value);
-        $value = preg_replace('/\bstore\b/i', '', $value);
-        $value = preg_replace('/[^a-z0-9]+/i', '', $value);
-        return (string) $value;
+        return $this->overviewCanonicalStoreRows()['stores'];
     }
 
     private function nestedMetricStoreIds(array $map): array
@@ -1036,7 +1131,7 @@ class StockIntelligenceController extends Controller
         return $ids;
     }
 
-    private function overviewCurrentStock(array $productIds, int $storeId = 0): array
+    private function overviewCurrentStock(array $productIds, array $storeIds = [], array $storeIdMap = [], ?Collection $canonicalStores = null): array
     {
         if (empty($productIds)) return [];
 
@@ -1047,7 +1142,7 @@ class StockIntelligenceController extends Controller
             ->where('pb.is_active', true)
             ->where('pb.quantity', '>', 0)
             ->whereIn('pb.product_id', $productIds)
-            ->when($storeId > 0, fn ($q) => $q->where('pb.store_id', $storeId))
+            ->when(!empty($storeIds), fn ($q) => $q->whereIn('pb.store_id', $storeIds))
             ->select([
                 'pb.product_id',
                 'pb.store_id',
@@ -1059,19 +1154,31 @@ class StockIntelligenceController extends Controller
             ->groupBy('pb.product_id', 'pb.store_id', 's.name')
             ->get();
 
+        $storeNames = $canonicalStores ? $canonicalStores->keyBy('id')->map(fn ($s) => $s->name)->toArray() : [];
         $map = [];
         foreach ($rows as $r) {
-            $map[(int) $r->product_id][(int) $r->store_id] = [
-                'store_name' => $r->store_name,
-                'physical_stock' => (int) $r->physical_stock,
-                'batches_count' => (int) $r->batches_count,
-                'stock_value' => round((float) $r->stock_value, 2),
-            ];
+            $productId = (int) $r->product_id;
+            $sourceStoreId = (int) $r->store_id;
+            $storeId = (int) ($storeIdMap[$sourceStoreId] ?? $sourceStoreId);
+            $storeName = $storeNames[$storeId] ?? $r->store_name;
+
+            if (!isset($map[$productId][$storeId])) {
+                $map[$productId][$storeId] = [
+                    'store_name' => $storeName,
+                    'physical_stock' => 0,
+                    'batches_count' => 0,
+                    'stock_value' => 0.0,
+                ];
+            }
+
+            $map[$productId][$storeId]['physical_stock'] += (int) $r->physical_stock;
+            $map[$productId][$storeId]['batches_count'] += (int) $r->batches_count;
+            $map[$productId][$storeId]['stock_value'] = round($map[$productId][$storeId]['stock_value'] + (float) $r->stock_value, 2);
         }
         return $map;
     }
 
-    private function overviewPurchases(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
+    private function overviewPurchases(array $productIds, Carbon $from, Carbon $to, array $storeIds = [], array $storeIdMap = []): array
     {
         if (empty($productIds)) return [];
 
@@ -1081,7 +1188,7 @@ class StockIntelligenceController extends Controller
             ->whereIn('poi.product_id', $productIds)
             ->whereNotIn('po.status', ['draft', 'cancelled', 'returned'])
             ->whereBetween(DB::raw('COALESCE(po.actual_delivery_date, po.order_date, po.created_at)'), [$from, $to])
-            ->when($storeId > 0, fn ($q) => $q->whereRaw('COALESCE(pb.store_id, po.store_id) = ?', [$storeId]))
+            ->when(!empty($storeIds), fn ($q) => $q->whereIn(DB::raw('COALESCE(pb.store_id, po.store_id)'), $storeIds))
             ->select([
                 'poi.product_id',
                 DB::raw('COALESCE(pb.store_id, po.store_id) as store_id'),
@@ -1094,17 +1201,28 @@ class StockIntelligenceController extends Controller
 
         $map = [];
         foreach ($rows as $r) {
+            if (!$r->store_id) continue;
+            $productId = (int) $r->product_id;
+            $sourceStoreId = (int) $r->store_id;
+            $storeId = (int) ($storeIdMap[$sourceStoreId] ?? $sourceStoreId);
             $poNumbers = array_values(array_filter(array_map('trim', explode(',', (string) $r->po_numbers))));
-            $map[(int) $r->product_id][(int) $r->store_id] = [
-                'total_purchase' => (int) $r->total_purchase,
-                'po_count' => (int) $r->po_count,
-                'po_numbers' => $poNumbers,
-            ];
+
+            if (!isset($map[$productId][$storeId])) {
+                $map[$productId][$storeId] = [
+                    'total_purchase' => 0,
+                    'po_count' => 0,
+                    'po_numbers' => [],
+                ];
+            }
+
+            $map[$productId][$storeId]['total_purchase'] += (int) $r->total_purchase;
+            $map[$productId][$storeId]['po_numbers'] = array_values(array_unique(array_merge($map[$productId][$storeId]['po_numbers'], $poNumbers)));
+            $map[$productId][$storeId]['po_count'] = count($map[$productId][$storeId]['po_numbers']);
         }
         return $map;
     }
 
-    private function overviewSales(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
+    private function overviewSales(array $productIds, Carbon $from, Carbon $to, array $storeIds = [], array $storeIdMap = []): array
     {
         if (empty($productIds)) return [];
 
@@ -1114,7 +1232,7 @@ class StockIntelligenceController extends Controller
             ->whereNull('o.deleted_at')
             ->whereNotIn('o.status', ['cancelled', 'refunded'])
             ->whereBetween('o.order_date', [$from, $to])
-            ->when($storeId > 0, fn ($q) => $q->whereRaw('COALESCE(oi.store_id, o.store_id) = ?', [$storeId]))
+            ->when(!empty($storeIds), fn ($q) => $q->whereIn(DB::raw('COALESCE(oi.store_id, o.store_id)'), $storeIds))
             ->select([
                 'oi.product_id',
                 DB::raw('COALESCE(oi.store_id, o.store_id) as store_id'),
@@ -1128,16 +1246,26 @@ class StockIntelligenceController extends Controller
         $map = [];
         foreach ($rows as $r) {
             if (!$r->store_id) continue;
-            $map[(int) $r->product_id][(int) $r->store_id] = [
-                'total_sell' => (int) $r->total_sell,
-                'sales_revenue' => round((float) $r->sales_revenue, 2),
-                'order_count' => (int) $r->order_count,
-            ];
+            $productId = (int) $r->product_id;
+            $sourceStoreId = (int) $r->store_id;
+            $storeId = (int) ($storeIdMap[$sourceStoreId] ?? $sourceStoreId);
+
+            if (!isset($map[$productId][$storeId])) {
+                $map[$productId][$storeId] = [
+                    'total_sell' => 0,
+                    'sales_revenue' => 0.0,
+                    'order_count' => 0,
+                ];
+            }
+
+            $map[$productId][$storeId]['total_sell'] += (int) $r->total_sell;
+            $map[$productId][$storeId]['sales_revenue'] = round($map[$productId][$storeId]['sales_revenue'] + (float) $r->sales_revenue, 2);
+            $map[$productId][$storeId]['order_count'] += (int) $r->order_count;
         }
         return $map;
     }
 
-    private function overviewDispatchOut(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
+    private function overviewDispatchOut(array $productIds, Carbon $from, Carbon $to, array $storeIds = [], array $storeIdMap = []): array
     {
         if (empty($productIds)) return [];
 
@@ -1147,7 +1275,7 @@ class StockIntelligenceController extends Controller
             ->whereIn('pb.product_id', $productIds)
             ->whereNotIn('pd.status', ['cancelled'])
             ->whereBetween('pd.dispatch_date', [$from, $to])
-            ->when($storeId > 0, fn ($q) => $q->where('pd.source_store_id', $storeId))
+            ->when(!empty($storeIds), fn ($q) => $q->whereIn('pd.source_store_id', $storeIds))
             ->select([
                 'pb.product_id',
                 'pd.source_store_id as store_id',
@@ -1158,12 +1286,16 @@ class StockIntelligenceController extends Controller
 
         $map = [];
         foreach ($rows as $r) {
-            $map[(int) $r->product_id][(int) $r->store_id] = ['total_dispatch_out' => (int) $r->total_dispatch_out];
+            if (!$r->store_id) continue;
+            $productId = (int) $r->product_id;
+            $sourceStoreId = (int) $r->store_id;
+            $storeId = (int) ($storeIdMap[$sourceStoreId] ?? $sourceStoreId);
+            $map[$productId][$storeId]['total_dispatch_out'] = ($map[$productId][$storeId]['total_dispatch_out'] ?? 0) + (int) $r->total_dispatch_out;
         }
         return $map;
     }
 
-    private function overviewDispatchReceived(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
+    private function overviewDispatchReceived(array $productIds, Carbon $from, Carbon $to, array $storeIds = [], array $storeIdMap = []): array
     {
         if (empty($productIds)) return [];
 
@@ -1173,7 +1305,7 @@ class StockIntelligenceController extends Controller
             ->whereIn('pb.product_id', $productIds)
             ->whereNotIn('pd.status', ['cancelled'])
             ->whereBetween(DB::raw('COALESCE(pd.actual_delivery_date, pd.dispatch_date)'), [$from, $to])
-            ->when($storeId > 0, fn ($q) => $q->where('pd.destination_store_id', $storeId))
+            ->when(!empty($storeIds), fn ($q) => $q->whereIn('pd.destination_store_id', $storeIds))
             ->select([
                 'pb.product_id',
                 'pd.destination_store_id as store_id',
@@ -1184,12 +1316,16 @@ class StockIntelligenceController extends Controller
 
         $map = [];
         foreach ($rows as $r) {
-            $map[(int) $r->product_id][(int) $r->store_id] = ['total_dispatch_received' => (int) $r->total_dispatch_received];
+            if (!$r->store_id) continue;
+            $productId = (int) $r->product_id;
+            $sourceStoreId = (int) $r->store_id;
+            $storeId = (int) ($storeIdMap[$sourceStoreId] ?? $sourceStoreId);
+            $map[$productId][$storeId]['total_dispatch_received'] = ($map[$productId][$storeId]['total_dispatch_received'] ?? 0) + (int) $r->total_dispatch_received;
         }
         return $map;
     }
 
-    private function overviewDefects(array $productIds, Carbon $from, Carbon $to, int $storeId = 0): array
+    private function overviewDefects(array $productIds, Carbon $from, Carbon $to, array $storeIds = [], array $storeIdMap = []): array
     {
         if (empty($productIds)) return [];
 
@@ -1197,7 +1333,7 @@ class StockIntelligenceController extends Controller
             ->whereNull('dp.deleted_at')
             ->whereIn('dp.product_id', $productIds)
             ->whereBetween(DB::raw('COALESCE(dp.identified_at, dp.created_at)'), [$from, $to])
-            ->when($storeId > 0, fn ($q) => $q->where('dp.store_id', $storeId))
+            ->when(!empty($storeIds), fn ($q) => $q->whereIn('dp.store_id', $storeIds))
             ->select([
                 'dp.product_id',
                 'dp.store_id',
@@ -1208,7 +1344,11 @@ class StockIntelligenceController extends Controller
 
         $map = [];
         foreach ($rows as $r) {
-            $map[(int) $r->product_id][(int) $r->store_id] = ['total_defect' => (int) $r->total_defect];
+            if (!$r->store_id) continue;
+            $productId = (int) $r->product_id;
+            $sourceStoreId = (int) $r->store_id;
+            $storeId = (int) ($storeIdMap[$sourceStoreId] ?? $sourceStoreId);
+            $map[$productId][$storeId]['total_defect'] = ($map[$productId][$storeId]['total_defect'] ?? 0) + (int) $r->total_defect;
         }
         return $map;
     }
@@ -1226,7 +1366,7 @@ class StockIntelligenceController extends Controller
         }
     }
 
-    private function overviewBatchDetails(array $productIds, Carbon $from, Carbon $to, int $storeId = 0, bool $includeCostPrice = false): Collection
+    private function overviewBatchDetails(array $productIds, Carbon $from, Carbon $to, array $storeIds = [], array $storeIdMap = [], ?Collection $canonicalStores = null, bool $includeCostPrice = false): Collection
     {
         if (empty($productIds)) return collect();
 
@@ -1239,7 +1379,7 @@ class StockIntelligenceController extends Controller
             ->whereNull('p.deleted_at')
             ->where('pb.is_active', true)
             ->whereIn('pb.product_id', $productIds)
-            ->when($storeId > 0, fn ($q) => $q->where('pb.store_id', $storeId))
+            ->when(!empty($storeIds), fn ($q) => $q->whereIn('pb.store_id', $storeIds))
             ->where(function ($q) use ($from, $to) {
                 $q->whereBetween('pb.created_at', [$from, $to])
                     ->orWhereBetween('po.order_date', [$from, $to])
@@ -1290,7 +1430,9 @@ class StockIntelligenceController extends Controller
             ->get()
             ->keyBy('batch_id');
 
-        return $rows->map(function ($batch) use ($salesPerBatch, $from, $includeCostPrice) {
+        $storeNames = $canonicalStores ? $canonicalStores->keyBy('id')->map(fn ($s) => $s->name)->toArray() : [];
+
+        return $rows->map(function ($batch) use ($salesPerBatch, $from, $includeCostPrice, $storeIdMap, $storeNames) {
             $sales = $salesPerBatch->get($batch->batch_id);
             $unitsSold = $sales ? (int) $sales->units_sold : 0;
             $originalQty = $batch->po_qty_received ?: ((int) $batch->remaining_stock + $unitsSold);
@@ -1299,14 +1441,17 @@ class StockIntelligenceController extends Controller
             $velocity = $daysSinceReceived && $daysSinceReceived > 0 ? round($unitsSold / $daysSinceReceived, 4) : 0.0;
             $daysOfStock = $velocity > 0 ? round(((int) $batch->remaining_stock) / $velocity, 1) : null;
 
+            $sourceStoreId = (int) $batch->store_id;
+            $canonicalStoreId = (int) ($storeIdMap[$sourceStoreId] ?? $sourceStoreId);
+
             return [
                 'batch_id' => (int) $batch->batch_id,
                 'batch_number' => $batch->batch_number,
                 'product_id' => (int) $batch->product_id,
                 'product_name' => $batch->product_name,
                 'product_sku' => $batch->product_sku,
-                'store_id' => (int) $batch->store_id,
-                'store_name' => $batch->store_name,
+                'store_id' => $canonicalStoreId,
+                'store_name' => $storeNames[$canonicalStoreId] ?? $batch->store_name,
                 'po_id' => $batch->po_id ? (int) $batch->po_id : null,
                 'po_number' => $batch->po_number,
                 'po_order_date' => $batch->po_order_date,

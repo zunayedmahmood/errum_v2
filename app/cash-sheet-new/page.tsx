@@ -238,7 +238,7 @@ export default function CashSheetPage() {
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Sales</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Advance</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">SSLZC</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">COD</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">COD/Due</th>
                     </>)}
 
                     {isAdmin && (<>

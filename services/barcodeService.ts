@@ -56,7 +56,19 @@ export interface MovementInfo {
   quantity: number;
 }
 
+export interface DefectiveResaleInfo {
+  is_resale: boolean;
+  defective_product_id: number;
+  status?: string;
+  suggested_selling_price?: number | string | null;
+  minimum_selling_price?: number | string | null;
+  resale_batch_id?: number | null;
+  original_batch_id?: number | null;
+  is_used_item?: boolean;
+}
+
 export interface ScanResult {
+  barcode_id?: number;
   barcode: string;
   barcode_type: string;
   product: ProductInfo;
@@ -65,6 +77,7 @@ export interface ScanResult {
   is_available: boolean;
   quantity_available: number;
   last_movement: MovementInfo | null;
+  defective_resale?: DefectiveResaleInfo | null;
 }
 
 export interface GenerateBarcodePayload {

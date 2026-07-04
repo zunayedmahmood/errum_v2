@@ -20,6 +20,9 @@ export interface ScannedProduct {
   availableQty: number;
   barcode: string;
   barcodeId?: number;
+  isDefective?: boolean;
+  defectId?: string;
+  source?: string;
 }
 
 export default function BarcodeScanner({ 
@@ -158,22 +161,34 @@ export default function BarcodeScanner({
         return;
       }
 
-      // Extract price
+      const defectiveResale = (scanResult as any).defective_resale;
+      const isDefectiveResale = Boolean(defectiveResale?.is_resale && defectiveResale?.defective_product_id);
+
+      // Extract price. For Extra/Display/Used resale barcodes, prefer the approved resale price.
       const price = parseFloat(
-        String(scanResult.current_batch.sell_price || scanResult.product.selling_price || 0)
-          .replace(/,/g, '')
+        String(
+          (isDefectiveResale ? defectiveResale?.suggested_selling_price : null)
+          || scanResult.current_batch.sell_price
+          || scanResult.product.selling_price
+          || 0
+        ).replace(/,/g, '')
       );
 
       // Create scanned product data
       const scannedProduct: ScannedProduct = {
         productId: scanResult.product.id,
         productName: scanResult.product.name,
-        batchId: scanResult.current_batch.id,
+        batchId: Number(defectiveResale?.resale_batch_id || scanResult.current_batch.id),
         batchNumber: scanResult.current_batch.batch_number,
         price: price,
         availableQty: scanResult.quantity_available,
         barcode: barcode,
         barcodeId: scanResult.barcode_id,
+        ...(isDefectiveResale ? {
+          isDefective: true,
+          defectId: String(defectiveResale.defective_product_id),
+          source: 'defective_resale',
+        } : {}),
       };
 
       // Play success beep

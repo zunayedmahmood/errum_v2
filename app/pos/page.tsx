@@ -553,6 +553,8 @@ export default function POSPage() {
       amount: scannedProduct.price,
       availableQty: scannedProduct.availableQty,
       barcode: scannedProduct.barcode,
+      isDefective: scannedProduct.isDefective,
+      defectId: scannedProduct.defectId,
     };
 
     setCart((prev) => [...prev, newItem]);
