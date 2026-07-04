@@ -14,9 +14,22 @@ import cashSheetNewService, { CashSheetRow, CashSheetSummary } from '@/services/
 const fmt = (n: number) =>
   n === 0 ? '0' : '৳' + Math.round(n).toLocaleString('en-BD');
 
+function dhakaDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 function currentMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return dhakaDateString().slice(0, 7);
 }
 function prevMonth(m: string) {
   const [y, mo] = m.split('-').map(Number);
@@ -268,7 +281,7 @@ export default function CashSheetPage() {
 
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {rows.map((row, idx) => {
-                    const isToday = row.date === new Date().toISOString().split('T')[0];
+                    const isToday = row.date === dhakaDateString();
                     const rowBg = isToday
                       ? 'bg-blue-50/60 dark:bg-blue-900/10'
                       : idx % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/40 dark:bg-gray-800/30';

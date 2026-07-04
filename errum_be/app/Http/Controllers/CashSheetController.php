@@ -59,6 +59,8 @@ class CashSheetController extends Controller
     private const ONLINE_ORDER_TYPES = ['social_commerce', 'ecommerce'];
     private const EXCLUDED_ORDER_STATUSES = ['cancelled', 'canceled', 'refunded', 'void', 'deleted'];
     private const INTERNAL_SETTLEMENT_PAYMENT_TYPES = ['exchange_balance', 'store_credit', 'balance_carryover'];
+    private const MONEY_PAYMENT_STATUSES = ['completed', 'partially_refunded', 'refunded'];
+    private const NON_MONEY_SPLIT_STATUSES = ['failed', 'cancelled'];
 
 
     public function index(Request $request)
@@ -777,16 +779,21 @@ class CashSheetController extends Controller
             $out[$storeKey][$r->day][$bucket] = ($out[$storeKey][$r->day][$bucket] ?? 0) + ($sign * (float) $r->total);
         };
 
+        $normalPaymentAt = 'COALESCE(op.completed_at, op.payment_received_date, op.processed_at, op.created_at)';
+        $splitPaymentAt = 'COALESCE(ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.payment_received_date, op.created_at)';
+
         // 1) Normal single-method payments.
         // Cancelled/refunded orders are excluded, but exchange_surplus is kept because
-        // that is real extra money collected during an upgrade exchange.
+        // that is real extra money collected during an upgrade exchange. If completed_at
+        // is missing in older rows, payment_received_date/processed_at/created_at is used
+        // so a paid receipt cannot show Sale without Cash/Bank.
         $normalPayments = DB::table('order_payments as op')
             ->join('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
             ->leftJoin('payment_splits as ps_probe', 'ps_probe.order_payment_id', '=', 'op.id')
             ->select(
                 'op.store_id',
-                DB::raw('DATE(op.completed_at) as day'),
+                DB::raw("DATE({$normalPaymentAt}) as day"),
                 'pm.type as mt',
                 DB::raw('SUM(op.amount) as total')
             )
@@ -794,13 +801,13 @@ class CashSheetController extends Controller
             ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereNull('op.deleted_at')
             ->whereNull('ps_probe.id')
-            ->whereDate('op.completed_at', '>=', $from)
-            ->whereDate('op.completed_at', '<=', $to)
-            ->where('op.status', 'completed')
+            ->whereDate(DB::raw($normalPaymentAt), '>=', $from)
+            ->whereDate(DB::raw($normalPaymentAt), '<=', $to)
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
             ->where(function ($q) use ($excludedPaymentTypes) {
                 $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
             })
-            ->whereNotNull('op.completed_at');
+            ->whereRaw("{$normalPaymentAt} IS NOT NULL");
 
         $this->applyCashSheetOrderScope($normalPayments, 'o', true, 'op');
 
@@ -810,29 +817,40 @@ class CashSheetController extends Controller
             ->each($addToBucket);
 
         // 2) Split payments. The parent order_payments row has payment_method_id = null,
-        // so the old query skipped all split parts. That made bKash/Nagad/card portions
-        // disappear from Bank even though the sale total was counted.
+        // so cash sheet must read payment_splits. Some legacy POS flows completed the
+        // parent payment but left split rows as pending/null. In that case we still count
+        // non-failed/non-cancelled split rows because the order is paid and the receipt
+        // was printed from these split amounts.
         $splitPayments = DB::table('payment_splits as ps')
             ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
             ->join('payment_methods as pm', 'pm.id', '=', 'ps.payment_method_id')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
             ->select(
                 'ps.store_id',
-                DB::raw('DATE(COALESCE(ps.completed_at, op.completed_at)) as day'),
+                DB::raw("DATE({$splitPaymentAt}) as day"),
                 'pm.type as mt',
                 DB::raw('SUM(ps.amount) as total')
             )
             ->whereIn('ps.store_id', $ids)
             ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereNull('op.deleted_at')
-            ->where('op.status', 'completed')
-            ->where('ps.status', 'completed')
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+            ->where(function ($q) {
+                $q->where('ps.status', 'completed')
+                    ->orWhere(function ($qq) {
+                        $qq->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+                            ->where(function ($statusQ) {
+                                $statusQ->whereNull('ps.status')
+                                    ->orWhereNotIn('ps.status', self::NON_MONEY_SPLIT_STATUSES);
+                            });
+                    });
+            })
             ->where(function ($q) use ($excludedPaymentTypes) {
                 $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
             })
-            ->whereNotNull('op.completed_at')
-            ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '>=', $from)
-            ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '<=', $to);
+            ->whereRaw("{$splitPaymentAt} IS NOT NULL")
+            ->whereDate(DB::raw($splitPaymentAt), '>=', $from)
+            ->whereDate(DB::raw($splitPaymentAt), '<=', $to);
 
         $this->applyCashSheetOrderScope($splitPayments, 'o', true, 'op');
 
@@ -1097,12 +1115,15 @@ class CashSheetController extends Controller
             "OR (o.delivered_at IS NOT NULL AND op.completed_at IS NOT NULL AND op.completed_at >= o.delivered_at)" .
             ") THEN 1 ELSE 0 END";
 
+        $normalOnlinePaymentAt = 'COALESCE(op.completed_at, op.payment_received_date, op.processed_at, op.created_at)';
+        $splitOnlinePaymentAt = 'COALESCE(ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.payment_received_date, op.created_at)';
+
         DB::table('order_payments as op')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
             ->join('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
             ->leftJoin('payment_splits as ps_probe', 'ps_probe.order_payment_id', '=', 'op.id')
             ->select(
-                DB::raw('DATE(op.completed_at) as day'),
+                DB::raw("DATE({$normalOnlinePaymentAt}) as day"),
                 'o.order_type',
                 DB::raw($codCollectionExprForOp . ' as is_cod_collection'),
                 DB::raw('SUM(op.amount) as total')
@@ -1110,11 +1131,11 @@ class CashSheetController extends Controller
             ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
             ->whereNull('o.deleted_at')
             ->whereNull('op.deleted_at')
-            ->where('op.status', 'completed')
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
             ->whereNull('ps_probe.id')
-            ->whereNotNull('op.completed_at')
-            ->whereDate('op.completed_at', '>=', $from)
-            ->whereDate('op.completed_at', '<=', $to)
+            ->whereRaw("{$normalOnlinePaymentAt} IS NOT NULL")
+            ->whereDate(DB::raw($normalOnlinePaymentAt), '>=', $from)
+            ->whereDate(DB::raw($normalOnlinePaymentAt), '<=', $to)
             ->where(function ($q) use ($excludedPaymentTypes) {
                 $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
             })
@@ -1137,7 +1158,7 @@ class CashSheetController extends Controller
             ->join('orders as o', 'o.id', '=', 'op.order_id')
             ->join('payment_methods as pm', 'pm.id', '=', 'ps.payment_method_id')
             ->select(
-                DB::raw('DATE(COALESCE(ps.completed_at, op.completed_at)) as day'),
+                DB::raw("DATE({$splitOnlinePaymentAt}) as day"),
                 'o.order_type',
                 DB::raw($codCollectionExprForSplit . ' as is_cod_collection'),
                 DB::raw('SUM(ps.amount) as total')
@@ -1145,11 +1166,20 @@ class CashSheetController extends Controller
             ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
             ->whereNull('o.deleted_at')
             ->whereNull('op.deleted_at')
-            ->where('op.status', 'completed')
-            ->where('ps.status', 'completed')
-            ->whereNotNull('op.completed_at')
-            ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '>=', $from)
-            ->whereDate(DB::raw('COALESCE(ps.completed_at, op.completed_at)'), '<=', $to)
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+            ->where(function ($q) {
+                $q->where('ps.status', 'completed')
+                    ->orWhere(function ($qq) {
+                        $qq->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+                            ->where(function ($statusQ) {
+                                $statusQ->whereNull('ps.status')
+                                    ->orWhereNotIn('ps.status', self::NON_MONEY_SPLIT_STATUSES);
+                            });
+                    });
+            })
+            ->whereRaw("{$splitOnlinePaymentAt} IS NOT NULL")
+            ->whereDate(DB::raw($splitOnlinePaymentAt), '>=', $from)
+            ->whereDate(DB::raw($splitOnlinePaymentAt), '<=', $to)
             ->where(function ($q) use ($excludedPaymentTypes) {
                 $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
             })
