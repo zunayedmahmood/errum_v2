@@ -176,7 +176,7 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
     { icon: CreditCard, label: 'Installments', href: '/orders?view=installments' },
     { icon: Package, label: 'Online Order Packing', href: '/social-commerce/package' },
     { icon: Package, label: 'PreOrders', href: '/preorders' },
-    { icon: AlertTriangle, label: 'Display Unit / Faulty Unit', href: '/extra' },
+    { icon: AlertTriangle, label: 'Extra Item Management', href: '/extra' },
     { icon: RotateCcw, label: 'Returns & Exchanges', href: '/returns' },
     { icon: Tag, label: 'Sale Campaigns', href: '/campaigns' },
     { icon: Search, label: 'Lookup', href: '/lookup' },

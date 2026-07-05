@@ -134,7 +134,7 @@ class ProductBarcode extends Model
     {
         return $query->where('is_active', true)
                     ->where('is_defective', false)
-                    ->whereIn('current_status', ['in_shop', 'on_display', 'in_warehouse']);
+                    ->whereIn('current_status', ['available', 'in_shop', 'on_display', 'in_warehouse']);
     }
 
     // ============================================
@@ -336,7 +336,7 @@ class ProductBarcode extends Model
     {
         return $this->is_active 
             && !$this->is_defective 
-            && in_array($this->current_status, ['in_shop', 'on_display', 'in_warehouse']);
+            && in_array($this->current_status, ['available', 'in_shop', 'on_display', 'in_warehouse']);
     }
 
     /**
@@ -361,6 +361,7 @@ class ProductBarcode extends Model
     public function getStatusLabel(): string
     {
         return match($this->current_status) {
+            'available' => 'Available',
             'in_warehouse' => 'In Warehouse',
             'in_shop' => 'In Shop Inventory',
             'on_display' => 'On Display Floor',
@@ -636,19 +637,41 @@ class ProductBarcode extends Model
     // Defective / used product methods
     public function markAsUsed(array $usedData): self
     {
-        // Used/display is now metadata only. Do not change batch_id, stock,
+        // Used/display is metadata only. Do not change batch_id, stock,
         // current_status, is_active or is_defective; the barcode must remain
         // sellable/packable exactly like a regular barcode.
-        $metadata = is_array($this->location_metadata ?? null) ? $this->location_metadata : [];
-        $usedHistory = is_array($metadata['used_item_history'] ?? null) ? $metadata['used_item_history'] : [];
+        $rawMetadata = $this->location_metadata ?? [];
+        if (is_string($rawMetadata)) {
+            $decoded = json_decode($rawMetadata, true);
+            $metadata = is_array($decoded) ? $decoded : [];
+        } else {
+            $metadata = is_array($rawMetadata) ? $rawMetadata : [];
+        }
 
-        $usedHistory[] = [
-            'marked_at' => now()->toDateTimeString(),
-            'store_id' => $usedData['store_id'] ?? $this->current_store_id,
-            'reason' => $usedData['defect_description'] ?? 'USED_ITEM',
+        $usedHistory = is_array($metadata['used_item_history'] ?? null) ? $metadata['used_item_history'] : [];
+        $markedAt = now()->toDateTimeString();
+        $storeId = $usedData['store_id'] ?? $this->current_store_id;
+        $reason = $usedData['defect_description'] ?? 'USED_ITEM';
+        $performedBy = $usedData['identified_by'] ?? auth()->id();
+
+        $historyRow = [
+            'marked_at' => $markedAt,
+            'store_id' => $storeId,
+            'reason' => $reason,
             'original_price' => $usedData['original_price'] ?? null,
-            'performed_by' => $usedData['identified_by'] ?? auth()->id(),
+            'performed_by' => $performedBy,
         ];
+        if (!empty($usedData['defective_product_id'])) {
+            $historyRow['defective_product_id'] = (int) $usedData['defective_product_id'];
+        }
+        $usedHistory[] = $historyRow;
+
+        $attributes = is_array($metadata['attributes'] ?? null) ? $metadata['attributes'] : [];
+        $attributes = array_merge($attributes, [
+            'used' => true,
+            'condition' => 'used',
+            'item_condition' => 'used',
+        ]);
 
         $metadata = array_merge($metadata, [
             // Keep multiple aliases because different UI/reporting surfaces read
@@ -658,22 +681,30 @@ class ProductBarcode extends Model
             'condition' => 'used',
             'item_condition' => 'used',
             'is_used_item' => true,
+            'used_item' => true,
+            'attributes' => $attributes,
             'used_item_metadata_only' => true,
-            'used_item_marked_at' => now()->toDateTimeString(),
-            'used_item_store_id' => $usedData['store_id'] ?? $this->current_store_id,
-            'used_item_reason' => $usedData['defect_description'] ?? 'USED_ITEM',
+            'used_at' => $markedAt,
+            'used_item_marked_at' => $markedAt,
+            'used_item_store_id' => $storeId,
+            'used_item_reason' => $reason,
             'used_item_original_price' => $usedData['original_price'] ?? null,
-            'used_item_performed_by' => $usedData['identified_by'] ?? auth()->id(),
+            'used_item_performed_by' => $performedBy,
             'used_item_source' => $usedData['source'] ?? 'extra_items_panel',
             'used_item_history' => $usedHistory,
         ]);
 
-        $this->update([
+        if (!empty($usedData['defective_product_id'])) {
+            $metadata['defective_product_id'] = (int) $usedData['defective_product_id'];
+            $metadata['used_item_defective_product_id'] = (int) $usedData['defective_product_id'];
+        }
+
+        $this->forceFill([
             'location_metadata' => $metadata,
             'location_updated_at' => now(),
-        ]);
+        ])->saveOrFail();
 
-        return $this;
+        return $this->refresh();
     }
 
     public function markAsDefective(array $defectData): DefectiveProduct

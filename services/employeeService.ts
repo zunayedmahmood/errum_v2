@@ -6,6 +6,8 @@ export interface Employee {
   email: string;
   phone: string;
   role: string;
+  employee_code?: string;
+  is_in_service?: boolean;
   store_id?: number;
   is_active: boolean;
   join_date?: string;
@@ -17,6 +19,8 @@ export interface CreateEmployeePayload {
   email: string;
   phone: string;
   role: string;
+  employee_code?: string;
+  is_in_service?: boolean;
   store_id?: number;
   department?: string;
   salary?: number;

@@ -70,7 +70,10 @@ export default function BranchHRMPage() {
     setIsLoading(true);
     try {
       const [empData, attToday, perfData] = await Promise.all([
-        employeeService.getAll({ store_id: selectedStoreId!, is_active: true, per_page: 100 }),
+        // Staff view should match Employee Management for the selected branch.
+        // Do not hide inactive/out-of-service accounts here; instead show them
+        // with a badge and block attendance actions for them.
+        employeeService.getAll({ store_id: selectedStoreId!, per_page: 100 }),
         hrmService.getTodayAttendance(selectedStoreId!),
         hrmService.getPerformanceReport({ store_id: selectedStoreId!, month: format(new Date(), 'yyyy-MM') })
       ]);
@@ -86,10 +89,14 @@ export default function BranchHRMPage() {
     }
   };
 
+  const isAttendanceEligible = (emp: Employee) => emp.is_active !== false && (emp as any).is_in_service !== false;
+  const activeEmployees = (Array.isArray(employees) ? employees : []).filter(isAttendanceEligible);
+
   const filteredEmployees = (Array.isArray(employees) ? employees : []).filter(emp =>
     emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     emp.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    emp.phone?.includes(searchQuery)
+    emp.phone?.includes(searchQuery) ||
+    (emp as any).employee_code?.toLowerCase?.().includes(searchQuery.toLowerCase())
   );
 
   const getEmpAttendance = (empId: number | string) => {
@@ -98,7 +105,8 @@ export default function BranchHRMPage() {
 
   const handleBulkMark = async (type: 'present' | 'absent') => {
     if (!selectedStoreId) return;
-    const confirm = window.confirm(`Mark all ${filteredEmployees.length} employees as ${type === 'present' ? 'Clocked In' : 'Absent'} for today?`);
+    const eligibleEmployees = filteredEmployees.filter(isAttendanceEligible);
+    const confirm = window.confirm(`Mark all ${eligibleEmployees.length} active/in-service employees as ${type === 'present' ? 'Clocked In' : 'Absent'} for today?`);
     if (!confirm) return;
 
     try {
@@ -106,7 +114,7 @@ export default function BranchHRMPage() {
       const payload = {
         store_id: selectedStoreId,
         attendance_date: format(new Date(), 'yyyy-MM-dd'),
-        entries: filteredEmployees.map(emp => ({
+        entries: eligibleEmployees.map(emp => ({
           employee_id: Number(emp.id),
           status: type === 'present' ? 'present' : 'absent',
           in_time: type === 'present' ? nowTime : undefined,
@@ -123,6 +131,11 @@ export default function BranchHRMPage() {
   const handleQuickMark = async (emp: Employee, status: 'present' | 'leave' | 'leaving') => {
     setActiveMenuId(null);
     if (!selectedStoreId) return;
+
+    if (!isAttendanceEligible(emp)) {
+      toast.error('This employee is inactive or out of service. Reactivate the account from Employee Management first.');
+      return;
+    }
 
     if (status === 'present') {
       setAttendanceModal({ isOpen: true, employee: emp, type: 'check_in' });
@@ -175,6 +188,7 @@ export default function BranchHRMPage() {
             <div>
               <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider">Total Staff</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">{employees.length}</p>
+              <p className="text-[10px] font-semibold text-gray-400">{activeEmployees.length} active/in-service</p>
             </div>
           </div>
         </div>
@@ -236,7 +250,7 @@ export default function BranchHRMPage() {
               <div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">Staff Attendance</h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Manage daily arrivals and departures · Showing {filteredEmployees.length} of {employees.length} staff
+                  Manage daily arrivals and departures · Showing {filteredEmployees.length} of {employees.length} branch accounts
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -302,8 +316,15 @@ export default function BranchHRMPage() {
                               {emp.name.charAt(0)}
                             </div>
                             <div>
-                              <p className="text-sm font-bold text-gray-900 dark:text-white">{emp.name}</p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{emp.phone || 'No Phone'}</p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-bold text-gray-900 dark:text-white">{emp.name}</p>
+                                {!isAttendanceEligible(emp) && (
+                                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                                    {emp.is_active === false ? 'Inactive' : 'Out of service'}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{(emp as any).employee_code || emp.phone || 'No Phone'}</p>
                             </div>
                           </div>
                         </td>

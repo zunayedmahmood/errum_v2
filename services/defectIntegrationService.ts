@@ -110,8 +110,11 @@ class DefectIntegrationService {
         throw new Error('Product is not available for marking as defective');
       }
 
-      // Get barcode ID - need to fetch the actual product_barcode record
-      const barcodeId = await this.getProductBarcodeId(formData.barcode);
+      // Prefer the exact product_barcodes.id returned by the scan endpoint.
+      // The old fallback searched /barcodes?search=<barcode>&per_page=1, which can
+      // return the wrong row for similar barcode prefixes and make the UI say
+      // "done" while another barcode received the metadata.
+      const barcodeId = Number(scanResult.barcode_id) || await this.getProductBarcodeId(formData.barcode);
       
       if (!barcodeId) {
         throw new Error('Could not determine product barcode ID. Please ensure the barcode is registered in the system.');
@@ -145,14 +148,15 @@ class DefectIntegrationService {
 
       console.log('4. Sending request to mark as defective');
 
-      // Use the defectiveProductService which now properly handles FormData
+      // Use the defectiveProductService which now properly handles FormData.
+      // Preserve the UI's final defect_type/description. If both Defect and Used
+      // are selected, the backend must treat it as a real defect with a used tag,
+      // not downgrade it to used-only metadata.
       const result = await defectiveProductService.markAsDefective({
         product_barcode_id: barcodeId,
         store_id: formData.store_id,
-        defect_type: formData.is_used_item ? 'other' : formData.defect_type,
-        defect_description: formData.is_used_item 
-          ? 'USED_ITEM - Product has been used' 
-          : formData.defect_description,
+        defect_type: formData.defect_type,
+        defect_description: formData.defect_description,
         severity: formData.severity,
         original_price: originalPrice,
         product_batch_id: batchId,

@@ -151,11 +151,6 @@ class DefectiveProductController extends Controller
         try {
             $barcode = ProductBarcode::findOrFail($request->product_barcode_id);
 
-            // Check if already marked as defective
-            if ($barcode->isDefective()) {
-                throw new \Exception('This product is already marked as defective');
-            }
-
             $employee = auth()->user();
             if (!$employee) {
                 throw new \Exception('Employee authentication required');
@@ -170,10 +165,62 @@ class DefectiveProductController extends Controller
 
             // Used-only is metadata, not a stock event. The barcode keeps the same
             // batch_id, stock, is_active, is_defective and current_status so POS
-            // sales and online packing treat it like a regular barcode.
+            // sales and online packing treat it like a regular barcode. We still
+            // create/update a DefectiveProduct row with metadata.is_used_item so
+            // the Extra Item Management page has a visible audit/list row after
+            // the user clicks Mark as Used.
             if ($isUsedOnly) {
+                if ($barcode->isDefective()) {
+                    throw new \Exception('This product is already marked as defective');
+                }
+
                 if (!$barcode->isAvailableForSale()) {
                     throw new \Exception('This barcode is not currently available for normal sale/packing.');
+                }
+
+                $recordMetadata = [
+                    'is_used_item' => true,
+                    'used_item_metadata_only' => true,
+                    'source' => 'extra_items_panel',
+                    'original_batch_id' => $request->product_batch_id ?: $barcode->batch_id,
+                    'resale_batch_id' => $barcode->batch_id,
+                    'barcode_status_preserved' => true,
+                    'stock_preserved' => true,
+                ];
+
+                $defectiveProduct = DefectiveProduct::withTrashed()
+                    ->where('product_barcode_id', $barcode->id)
+                    ->where('defect_type', 'other')
+                    ->latest('id')
+                    ->get()
+                    ->first(function ($record) {
+                        $metadata = is_array($record->metadata ?? null) ? $record->metadata : [];
+                        return !empty($metadata['is_used_item'])
+                            || str_contains(strtoupper((string) $record->defect_description), 'USED');
+                    });
+
+                $payload = [
+                    'product_id' => $barcode->product_id,
+                    'product_barcode_id' => $barcode->id,
+                    'product_batch_id' => $request->product_batch_id ?: $barcode->batch_id,
+                    'store_id' => $request->store_id,
+                    'defect_type' => 'other',
+                    'defect_description' => $request->defect_description ?: 'USED_ITEM - Product has been used',
+                    'severity' => 'minor',
+                    'original_price' => $request->original_price,
+                    'status' => 'identified',
+                    'identified_by' => $employee->id,
+                    'internal_notes' => $request->internal_notes,
+                    'metadata' => $recordMetadata,
+                ];
+
+                if ($defectiveProduct) {
+                    if (method_exists($defectiveProduct, 'trashed') && $defectiveProduct->trashed()) {
+                        $defectiveProduct->restore();
+                    }
+                    $defectiveProduct->update($payload);
+                } else {
+                    $defectiveProduct = DefectiveProduct::create($payload);
                 }
 
                 $barcode->markAsUsed([
@@ -182,6 +229,7 @@ class DefectiveProductController extends Controller
                     'original_price' => $request->original_price,
                     'identified_by' => $employee->id,
                     'source' => 'extra_items_panel',
+                    'defective_product_id' => $defectiveProduct->id,
                 ]);
 
                 DB::commit();
@@ -189,8 +237,13 @@ class DefectiveProductController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => 'Barcode marked as used successfully. Stock and batch were not changed.',
-                    'data' => $barcode->fresh(['product', 'batch', 'currentStore']),
+                    'data' => $defectiveProduct->fresh(['product', 'barcode', 'store', 'identifiedBy']),
                 ], 201);
+            }
+
+            // Check if already marked as defective for real defect flows only.
+            if ($barcode->isDefective()) {
+                throw new \Exception('This product is already marked as defective');
             }
 
             // Handle image uploads
