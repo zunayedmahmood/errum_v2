@@ -101,7 +101,13 @@ class ProductBarcodeController extends Controller
                 'barcode_type' => $scanResult['barcode']->type,
                 'is_defective' => $scanResult['barcode']->is_defective,
                 'is_used_item' => (bool) ($usedItem['is_used_item'] ?? false),
+                'used' => (bool) ($usedItem['is_used_item'] ?? false),
                 'used_item' => $usedItem,
+                'attributes' => [
+                    'used' => (bool) ($usedItem['is_used_item'] ?? false),
+                    'condition' => !empty($usedItem['is_used_item']) ? 'used' : 'regular',
+                ],
+                'metadata' => $barcodeMetadata,
                 'defective_resale' => $defectiveResale,
                 'product' => [
                     'id' => $scanResult['product']->id,

@@ -9,6 +9,20 @@ import Sidebar from '@/components/Sidebar';
 import { Plus, Trash2, Loader2, CheckCircle, AlertCircle, ShieldCheck } from 'lucide-react';
 import cashSheetService, { AdminEntry, AdminEntryType } from '@/services/cashSheetService';
 import storeService, { Store } from '@/services/storeService';
+function dhakaDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 
 const ENTRY_TYPES: { value: AdminEntryType; label: string; color: string; needsStore: boolean; desc: string }[] = [
   { value: 'salary_setaside', label: 'Salary / Rent Set-aside', color: 'amber',  needsStore: true,  desc: 'Amount kept aside from branch cash for monthly salary & rent' },
@@ -35,7 +49,7 @@ export default function AdminPanel() {
   const isAdmin = role === 'admin' || role === 'super-admin';
   useEffect(() => { if (!authLoading && !isAdmin) router.push('/dashboard'); }, [authLoading, isAdmin]);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = dhakaDateString();
   const [date, setDate]       = useState(today);
   const [type, setType]       = useState<AdminEntryType>('salary_setaside');
   const [storeId, setStoreId] = useState<number | ''>('');

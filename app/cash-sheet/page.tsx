@@ -9,6 +9,20 @@ import Sidebar from '@/components/Sidebar';
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw, Check, X } from 'lucide-react';
 import cashSheetService, { CashSheetRow, CashSheetSummary } from '@/services/cashSheetService';
 
+function dhakaDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 const fmt = (n: number) =>
@@ -268,7 +282,7 @@ export default function CashSheetPage() {
 
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {rows.map((row, idx) => {
-                    const isToday = row.date === new Date().toISOString().split('T')[0];
+                    const isToday = row.date === dhakaDateString();
                     const rowBg = isToday
                       ? 'bg-blue-50/60 dark:bg-blue-900/10'
                       : idx % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/40 dark:bg-gray-800/30';

@@ -161,9 +161,12 @@ class DefectiveProductController extends Controller
                 throw new \Exception('Employee authentication required');
             }
 
+            // If the UI marks an item as used without marking it as a real defect,
+            // this must remain metadata-only. Do not depend on the description text;
+            // older/newer frontends may write different wording such as USED, Used item,
+            // product has been tried, etc.
             $isUsedOnly = $request->boolean('is_used_item')
-                && strtolower((string) $request->defect_type) === 'other'
-                && !str_contains(strtolower((string) $request->defect_description), 'defect');
+                && strtolower((string) $request->defect_type) === 'other';
 
             // Used-only is metadata, not a stock event. The barcode keeps the same
             // batch_id, stock, is_active, is_defective and current_status so POS

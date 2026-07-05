@@ -203,6 +203,7 @@ export default function CheckReservePage() {
                                   <div className="text-right text-[11px] font-bold">
                                     <p>{money(variant.selling_price || variant.price)}</p>
                                     <p className="text-green-600">Avail: {variant.available_inventory ?? variant.stock_quantity ?? 0}</p>
+                                    <p className="text-blue-600 dark:text-blue-300">Reserved: {variant.reserved_inventory ?? 0}</p>
                                   </div>
                                 </button>
                               ))}

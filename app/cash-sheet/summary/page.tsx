@@ -9,6 +9,20 @@ import Sidebar from '@/components/Sidebar';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, BarChart3, X } from 'lucide-react';
 import cashSheetService, { CashSheetRow, CashSheetSummary, DayEntries } from '@/services/cashSheetService';
 
+function dhakaDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 const fmt  = (n: number) => n === 0 ? '0' : '৳' + Math.round(n).toLocaleString('en-BD');
 const fmtV = (n: number) => '৳' + Math.round(n).toLocaleString('en-BD');
 
@@ -186,7 +200,7 @@ function DayDetailDrawer({ date, onClose }: { date: string; onClose: () => void 
 // Summary row card
 function SummaryRow({ row, stores, onClick }: { row: CashSheetRow; stores: {id:number;name:string;is_warehouse?:boolean}[]; onClick: () => void }) {
   const [expanded, setExpanded] = useState(false);
-  const isToday = row.date === new Date().toISOString().split('T')[0];
+  const isToday = row.date === dhakaDateString();
   const branchCostTotal = row.branches.reduce((sum, branch) => sum + Number(branch.daily_cost || 0), 0);
 
   return (

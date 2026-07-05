@@ -651,7 +651,14 @@ class ProductBarcode extends Model
         ];
 
         $metadata = array_merge($metadata, [
+            // Keep multiple aliases because different UI/reporting surfaces read
+            // barcode metadata with different naming conventions. All of these are
+            // metadata only; none of them change stock, batch, status or activity.
+            'used' => true,
+            'condition' => 'used',
+            'item_condition' => 'used',
             'is_used_item' => true,
+            'used_item_metadata_only' => true,
             'used_item_marked_at' => now()->toDateTimeString(),
             'used_item_store_id' => $usedData['store_id'] ?? $this->current_store_id,
             'used_item_reason' => $usedData['defect_description'] ?? 'USED_ITEM',

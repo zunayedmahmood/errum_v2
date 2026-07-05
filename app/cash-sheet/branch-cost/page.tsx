@@ -9,6 +9,20 @@ import Sidebar from '@/components/Sidebar';
 import { Plus, Trash2, Loader2, CheckCircle, AlertCircle, Receipt } from 'lucide-react';
 import cashSheetService, { BranchCostEntry } from '@/services/cashSheetService';
 import storeService, { Store } from '@/services/storeService';
+function dhakaDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 
 export default function BranchCostPanel() {
   const { darkMode, setDarkMode } = useTheme();
@@ -25,7 +39,7 @@ export default function BranchCostPanel() {
   const [loading, setLoading]   = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = dhakaDateString();
   const [date, setDate]         = useState(today);
   const [storeId, setStoreId]   = useState<number | ''>('');
   const [amount, setAmount]     = useState('');

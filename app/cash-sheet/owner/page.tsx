@@ -8,6 +8,20 @@ import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import { Plus, Trash2, Loader2, CheckCircle, AlertCircle, Crown, TrendingUp, TrendingDown } from 'lucide-react';
 import cashSheetService, { OwnerEntry, OwnerEntryType } from '@/services/cashSheetService';
+function dhakaDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 
 const ENTRY_TYPES: { value: OwnerEntryType; label: string; icon: 'in' | 'out'; medium: 'cash' | 'bank'; color: string; desc: string }[] = [
   { value: 'cash_invest', label: 'Cash Investment',  icon: 'in',  medium: 'cash', color: 'emerald', desc: 'Cash added into the business by owner / receivables collected' },
@@ -34,7 +48,7 @@ export default function OwnerPanel() {
   const isAdmin = role === 'admin' || role === 'super-admin';
   useEffect(() => { if (!authLoading && !isAdmin) router.push('/dashboard'); }, [authLoading, isAdmin]);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = dhakaDateString();
   const [date, setDate]       = useState(today);
   const [type, setType]       = useState<OwnerEntryType>('cash_invest');
   const [amount, setAmount]   = useState('');
