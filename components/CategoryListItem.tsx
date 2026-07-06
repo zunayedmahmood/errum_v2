@@ -109,7 +109,7 @@ export default function CategoryListItem({
           </span>
           {totalProductCount !== directProductCount && (
             <span className="text-[10px] text-emerald-700 dark:text-emerald-300">
-              {totalProductCount} incl. subcategories
+              {totalProductCount} total incl. category + subcategories
             </span>
           )}
           <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">

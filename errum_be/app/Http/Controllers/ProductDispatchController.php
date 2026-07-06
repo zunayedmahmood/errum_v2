@@ -178,6 +178,8 @@ class ProductDispatchController extends Controller
             'items' => 'required|array|min:1',
             'items.*.batch_id' => 'required|exists:product_batches,id',
             'items.*.quantity' => 'required|integer|min:1',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
+            'items.*.line_value' => 'nullable|numeric|min:0',
             'draft_scan_history' => 'nullable|array',
             'draft_scan_history.*.barcode' => 'required|string',
             'draft_scan_history.*.batch_id' => 'required|exists:product_batches,id',
@@ -255,7 +257,11 @@ if (!$barcodeAtSourceStore) {
                     throw new \Exception("Insufficient quantity in batch {$batch->batch_number}. Available: {$batch->quantity}");
                 }
 
-                $item = $dispatch->addItem($batch, $itemData['quantity']);
+                $item = $dispatch->addItem(
+                    $batch,
+                    (int) $itemData['quantity'],
+                    isset($itemData['unit_price']) ? (float) $itemData['unit_price'] : null
+                );
                 $batchToItemId[(string)$batch->id] = $item->id;
             }
 
@@ -473,7 +479,9 @@ if (!$barcodeAtSourceStore) {
 
         $validator = Validator::make($request->all(), [
             'batch_id' => 'required|exists:product_batches,id',
-            'quantity' => 'required|integer|min:1'
+            'quantity' => 'required|integer|min:1',
+            'unit_price' => 'nullable|numeric|min:0',
+            'line_value' => 'nullable|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -499,7 +507,11 @@ if (!$barcodeAtSourceStore) {
             }
 
             // Add the item
-            $item = $dispatch->addItem($batch, $request->quantity);
+            $item = $dispatch->addItem(
+                $batch,
+                (int) $request->quantity,
+                $request->filled('unit_price') ? (float) $request->unit_price : null
+            );
 
             DB::commit();
 
@@ -516,10 +528,10 @@ if (!$barcodeAtSourceStore) {
                         ],
                         'batch_number' => $batch->batch_number,
                         'quantity' => $item->quantity,
-                        'unit_cost' => number_format((float)$item->unit_cost, 2),
-                        'unit_price' => number_format((float)$item->unit_price, 2),
-                        'total_cost' => number_format((float)$item->total_cost, 2),
-                        'total_value' => number_format((float)$item->total_value, 2),
+                        'unit_cost' => number_format((float) ($item->unit_cost ?: ($item->batch?->cost_price ?? 0)), 2),
+                        'unit_price' => number_format((float) ($item->unit_price ?: ($item->batch?->sell_price ?? 0)), 2),
+                        'total_cost' => number_format($this->lineCostForDispatchItem($item), 2),
+                        'total_value' => number_format($this->lineValueForDispatchItem($item), 2),
                     ],
                     'dispatch_totals' => [
                         'total_items' => $dispatch->fresh()->total_items,
@@ -1452,10 +1464,55 @@ if (!$barcodeAtSourceStore) {
     }
 
     /**
+     * Return a reliable line value even for legacy dispatch items whose saved
+     * total_value is 0. Old rows sometimes kept quantity and unit_price but
+     * never persisted total_value, which made transfer/dispatch values show 0.
+     */
+    private function lineValueForDispatchItem(ProductDispatchItem $item): float
+    {
+        $savedTotal = (float) ($item->total_value ?? 0);
+        if ($savedTotal > 0) {
+            return $savedTotal;
+        }
+
+        $unitPrice = (float) ($item->unit_price ?: ($item->batch?->sell_price ?? 0));
+        return $unitPrice * (int) ($item->quantity ?? 0);
+    }
+
+    private function lineCostForDispatchItem(ProductDispatchItem $item): float
+    {
+        $savedTotal = (float) ($item->total_cost ?? 0);
+        if ($savedTotal > 0) {
+            return $savedTotal;
+        }
+
+        $unitCost = (float) ($item->unit_cost ?: ($item->batch?->cost_price ?? 0));
+        return $unitCost * (int) ($item->quantity ?? 0);
+    }
+
+    private function computedDispatchTotals(ProductDispatch $dispatch): array
+    {
+        $items = $dispatch->relationLoaded('items')
+            ? $dispatch->items
+            : $dispatch->items()->with('batch.product')->get();
+
+        return [
+            'total_items' => $items->count(),
+            'total_cost' => $items->sum(fn ($item) => $this->lineCostForDispatchItem($item)),
+            'total_value' => $items->sum(fn ($item) => $this->lineValueForDispatchItem($item)),
+        ];
+    }
+
+    /**
      * Helper function to format dispatch response
      */
     private function formatDispatchResponse(ProductDispatch $dispatch, $detailed = false)
     {
+        $computedTotals = $this->computedDispatchTotals($dispatch);
+        $totalItems = max((int) ($dispatch->total_items ?? 0), (int) $computedTotals['total_items']);
+        $totalCost = max((float) ($dispatch->total_cost ?? 0), (float) $computedTotals['total_cost']);
+        $totalValue = max((float) ($dispatch->total_value ?? 0), (float) $computedTotals['total_value']);
+
         $response = [
             'id' => $dispatch->id,
             'dispatch_number' => $dispatch->dispatch_number,
@@ -1475,9 +1532,9 @@ if (!$barcodeAtSourceStore) {
             'is_overdue' => $dispatch->isOverdue(),
             'carrier_name' => $dispatch->carrier_name,
             'tracking_number' => $dispatch->tracking_number,
-            'total_items' => $dispatch->total_items,
-            'total_cost' => number_format((float)$dispatch->total_cost, 2),
-            'total_value' => number_format((float)$dispatch->total_value, 2),
+            'total_items' => $totalItems,
+            'total_cost' => number_format($totalCost, 2),
+            'total_value' => number_format($totalValue, 2),
             'created_by' => $dispatch->createdBy ? [
                 'id' => $dispatch->createdBy->id,
                 'name' => $dispatch->createdBy->name,
@@ -1494,6 +1551,11 @@ if (!$barcodeAtSourceStore) {
             $response['notes'] = $dispatch->notes;
             $response['metadata'] = $dispatch->metadata;
             $response['items'] = $dispatch->items->map(function ($item) {
+                $unitCost = (float) ($item->unit_cost ?: ($item->batch?->cost_price ?? 0));
+                $unitPrice = (float) ($item->unit_price ?: ($item->batch?->sell_price ?? 0));
+                $lineCost = $this->lineCostForDispatchItem($item);
+                $lineValue = $this->lineValueForDispatchItem($item);
+
                 $itemData = [
                     'id' => $item->id,
                     'product' => [
@@ -1511,10 +1573,10 @@ if (!$barcodeAtSourceStore) {
                     'damaged_quantity' => $item->damaged_quantity,
                     'missing_quantity' => $item->missing_quantity,
                     'status' => $item->status,
-                    'unit_cost' => number_format((float)$item->unit_cost, 2),
-                    'unit_price' => number_format((float)$item->unit_price, 2),
-                    'total_cost' => number_format((float)$item->total_cost, 2),
-                    'total_value' => number_format((float)$item->total_value, 2),
+                    'unit_cost' => number_format($unitCost, 2),
+                    'unit_price' => number_format($unitPrice, 2),
+                    'total_cost' => number_format($lineCost, 2),
+                    'total_value' => number_format($lineValue, 2),
                 ];
 
                 // Add barcode scanning status

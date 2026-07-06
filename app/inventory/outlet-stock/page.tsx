@@ -26,6 +26,19 @@ function parseAmount(value: unknown): number {
   return Number.isFinite(amount) ? amount : 0;
 }
 
+function getDispatchItemValue(item: { total_value?: unknown; unit_price?: unknown; quantity?: unknown }): number {
+  const savedTotal = parseAmount(item.total_value);
+  if (savedTotal > 0) return savedTotal;
+
+  const unitPrice = parseAmount(item.unit_price);
+  const quantity = parseAmount(item.quantity);
+  return unitPrice * quantity;
+}
+
+function formatMoney(value: unknown): string {
+  return `৳${parseAmount(value).toLocaleString()}`;
+}
+
 export default function DispatchManagementPage() {
   const { darkMode, setDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -137,6 +150,8 @@ export default function DispatchManagementPage() {
         items: data.items.map((item: any) => ({
           batch_id: typeof item.batch_id === 'string' ? parseInt(item.batch_id) : item.batch_id,
           quantity: typeof item.quantity === 'string' ? parseInt(item.quantity) : item.quantity,
+          unit_price: parseAmount(item.unit_price),
+          line_value: parseAmount(item.line_value) || parseAmount(item.unit_price) * parseAmount(item.quantity),
         })),
         draft_scan_history: (data.draft_scan_history || []).map((s: any) => ({
           barcode: s.barcode,
@@ -546,11 +561,21 @@ export default function DispatchManagementPage() {
                               )}
                             </td>
                             <td className="px-4 py-2 text-gray-900 dark:text-white">
-                              ৳{parseAmount(item.total_value).toLocaleString()}
+                              {formatMoney(getDispatchItemValue(item))}
                             </td>
                           </tr>
                         ))}
                       </tbody>
+                      <tfoot className="bg-gray-50 dark:bg-gray-700/60 border-t border-gray-200 dark:border-gray-700">
+                        <tr>
+                          <td colSpan={4} className="px-4 py-3 text-right font-bold text-gray-900 dark:text-white">
+                            Dispatch subtotal
+                          </td>
+                          <td className="px-4 py-3 font-extrabold text-gray-900 dark:text-white">
+                            {formatMoney(selectedDispatch.items.reduce((sum, item) => sum + getDispatchItemValue(item), 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </div>

@@ -455,7 +455,11 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
       if (nextQty === 0) {
         next.splice(idx, 1);
       } else {
-        next[idx] = { ...item, quantity: String(nextQty) };
+        next[idx] = {
+          ...item,
+          quantity: String(nextQty),
+          line_value: (Number(item.unit_price) || 0) * nextQty,
+        };
       }
       return next;
     });

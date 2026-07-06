@@ -212,7 +212,7 @@ export default function DefectsPage() {
     }
 
     if (!isDefect && !isUsedItem) {
-      alert('Please select at least one: Defect or Used Item');
+      alert('Please select at least one: Defect or Display/Faulty unit (Used)');
       return;
     }
 
@@ -531,10 +531,10 @@ export default function DefectsPage() {
               {/* Header */}
               <div className="mb-6">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                  Extra Item Management
+                  Extra-Item Management
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Manage extra, used, display/open-box, and faulty items
+                  Manage extra, display/open-box, and display/faulty-used items
                 </p>
               </div>
 
@@ -644,10 +644,10 @@ export default function DefectsPage() {
                         />
                         <label htmlFor="isUsed" className="flex-1 cursor-pointer">
                           <div className="text-sm font-medium text-blue-900 dark:text-blue-300">
-                            Mark as Used Item
+                            Mark as Display/Faulty unit (Used)
                           </div>
                           <div className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">
-                            Check this if the item has been used
+                            Check this if this item is a display/faulty unit that has been used
                           </div>
                         </label>
                       </div>

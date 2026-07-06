@@ -380,26 +380,34 @@ class ProductDispatch extends Model
         });
     }
 
-    public function addItem(ProductBatch $batch, int $quantity)
+    public function addItem(ProductBatch $batch, int $quantity, ?float $unitPrice = null)
     {
         $barcodeAtSourceStore = $batch->barcodes()
-    ->where('current_store_id', (int)$this->source_store_id)
-    ->where('is_active', true)
-    ->exists();
+            ->where('current_store_id', (int)$this->source_store_id)
+            ->where('is_active', true)
+            ->exists();
 
-if (!$barcodeAtSourceStore) {
-    throw new \Exception('Batch does not belong to the source store.');
-}
+        if (!$barcodeAtSourceStore) {
+            throw new \Exception('Batch does not belong to the source store.');
+        }
 
         if ($batch->quantity < $quantity) {
             throw new \Exception('Insufficient quantity in batch.');
         }
 
-        return \Illuminate\Support\Facades\DB::transaction(function () use ($batch, $quantity) {
-            $item = $this->items()->create([
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($batch, $quantity, $unitPrice) {
+            $payload = [
                 'product_batch_id' => $batch->id,
                 'quantity' => $quantity,
-            ]);
+            ];
+
+            // Preserve the exact frontend-selected selling value when supplied.
+            // If absent, ProductDispatchItem::creating falls back to the batch sell price.
+            if ($unitPrice !== null && $unitPrice > 0) {
+                $payload['unit_price'] = $unitPrice;
+            }
+
+            $item = $this->items()->create($payload);
 
             $this->updateTotals();
 
@@ -423,16 +431,30 @@ if (!$barcodeAtSourceStore) {
 
     public function updateTotals()
     {
-        $totals = $this->items()->selectRaw('
-            COUNT(*) as total_items,
-            SUM(total_cost) as total_cost,
-            SUM(total_value) as total_value
-        ')->first();
+        $items = $this->items()->with('batch')->get();
+
+        foreach ($items as $item) {
+            $quantity = (int) ($item->quantity ?? 0);
+            $unitCost = (float) ($item->unit_cost ?: ($item->batch?->cost_price ?? 0));
+            $unitPrice = (float) ($item->unit_price ?: ($item->batch?->sell_price ?? 0));
+            $totalCost = $quantity * $unitCost;
+            $totalValue = $quantity * $unitPrice;
+
+            // Heal legacy rows whose totals stayed 0 even though quantity/unit values exist.
+            if ((float) $item->unit_cost <= 0 || (float) $item->unit_price <= 0 || (float) $item->total_cost <= 0 || (float) $item->total_value <= 0) {
+                $item->forceFill([
+                    'unit_cost' => $unitCost,
+                    'unit_price' => $unitPrice,
+                    'total_cost' => $totalCost,
+                    'total_value' => $totalValue,
+                ])->saveQuietly();
+            }
+        }
 
         $this->update([
-            'total_items' => $totals->total_items ?? 0,
-            'total_cost' => $totals->total_cost ?? 0,
-            'total_value' => $totals->total_value ?? 0,
+            'total_items' => $items->count(),
+            'total_cost' => $items->sum(fn ($item) => (float) ($item->total_cost ?: ((float) ($item->unit_cost ?: ($item->batch?->cost_price ?? 0)) * (int) $item->quantity))),
+            'total_value' => $items->sum(fn ($item) => (float) ($item->total_value ?: ((float) ($item->unit_price ?: ($item->batch?->sell_price ?? 0)) * (int) $item->quantity))),
         ]);
 
         return $this;

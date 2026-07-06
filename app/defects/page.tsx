@@ -596,10 +596,10 @@ export default function DefectsPage() {
                       />
                       <label htmlFor="isUsed" className="flex-1 cursor-pointer">
                         <div className="text-sm font-medium text-blue-900 dark:text-blue-300">
-                          Mark as Used Item
+                          Mark as Display/Faulty unit (Used)
                         </div>
                         <div className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">
-                          Check this if the item has been used
+                          Check this if this item is a display/faulty unit that has been used
                         </div>
                       </label>
                     </div>
@@ -654,7 +654,7 @@ export default function DefectsPage() {
                       disabled={loading}
                       className="w-full py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white rounded-md"
                     >
-                      {loading ? 'Processing...' : (isUsedItem ? 'Mark as Used' : 'Mark as Defective')}
+                      {loading ? 'Processing...' : (isUsedItem ? 'Mark as Display/Faulty unit (Used)' : 'Mark as Defective')}
                     </button>
                   </div>
                 </div>

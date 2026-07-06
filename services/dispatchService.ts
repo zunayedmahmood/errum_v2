@@ -123,6 +123,8 @@ export interface CreateDispatchData {
 export interface AddDispatchItemData {
   batch_id: number;
   quantity: number;
+  unit_price?: number;
+  line_value?: number;
 }
 
 export interface DeliverDispatchData {

@@ -43,18 +43,36 @@ class ProductDispatchItem extends Model
         parent::boot();
 
         static::creating(function ($item) {
-            $batch = $item->batch;
-            $item->unit_cost = $batch->cost_price;
-            $item->unit_price = $batch->sell_price;
-            $item->total_cost = $item->quantity * $batch->cost_price;
-            $item->total_value = $item->quantity * $batch->sell_price;
+            $batch = $item->batch ?: ProductBatch::find($item->product_batch_id);
+            if (!$batch) {
+                return;
+            }
+
+            $quantity = (int) ($item->quantity ?? 0);
+            $unitCost = (float) ($item->unit_cost ?: $batch->cost_price ?: 0);
+            $unitPrice = (float) ($item->unit_price ?: $batch->sell_price ?: 0);
+
+            $item->unit_cost = $unitCost;
+            $item->unit_price = $unitPrice;
+            $item->total_cost = $quantity * $unitCost;
+            $item->total_value = $quantity * $unitPrice;
         });
 
         static::updating(function ($item) {
-            if ($item->isDirty(['quantity'])) {
-                $batch = $item->batch;
-                $item->total_cost = $item->quantity * $batch->cost_price;
-                $item->total_value = $item->quantity * $batch->sell_price;
+            if ($item->isDirty(['quantity', 'unit_cost', 'unit_price', 'product_batch_id'])) {
+                $batch = $item->batch ?: ProductBatch::find($item->product_batch_id);
+                if (!$batch) {
+                    return;
+                }
+
+                $quantity = (int) ($item->quantity ?? 0);
+                $unitCost = (float) ($item->unit_cost ?: $batch->cost_price ?: 0);
+                $unitPrice = (float) ($item->unit_price ?: $batch->sell_price ?: 0);
+
+                $item->unit_cost = $unitCost;
+                $item->unit_price = $unitPrice;
+                $item->total_cost = $quantity * $unitCost;
+                $item->total_value = $quantity * $unitPrice;
             }
         });
     }

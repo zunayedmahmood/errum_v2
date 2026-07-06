@@ -93,6 +93,7 @@ class EcommerceCatalogController extends Controller
                      ->where('product_batches.is_active', true)
                      ->where('product_batches.availability', true);
             })
+            ->leftJoin('reserved_products', 'reserved_products.product_id', '=', 'products.id')
             ->whereNull('products.deleted_at')
             ->where('products.is_archived', false)
             ->select([
@@ -101,6 +102,7 @@ class EcommerceCatalogController extends Controller
                 'products.base_name',
                 'products.created_at',
                 DB::raw('MIN(product_batches.sell_price) AS min_batch_price'),
+                DB::raw('MAX(reserved_products.available_inventory) AS reserved_available_inventory'),
                 // We keep category_id in select/groupby because it's often needed for further filtering/grouping
                 'products.category_id', 
             ])
@@ -140,7 +142,18 @@ class EcommerceCatalogController extends Controller
                 });
                 $termsToUse = !empty($nonStopTerms) ? $nonStopTerms : $terms;
 
-                $q->where(function ($sq) use ($termsToUse) {
+                $rawSearch = trim($search);
+                $compactSearch = preg_replace('/[\s\-\/_]+/', '', $rawSearch);
+
+                $q->where(function ($sq) use ($termsToUse, $rawSearch, $compactSearch) {
+                    if ($rawSearch !== '') {
+                        $sq->orWhere('products.sku', 'like', '%' . addslashes($rawSearch) . '%');
+                    }
+
+                    if ($compactSearch !== '') {
+                        $sq->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(products.sku, ' ', ''), '-', ''), '/', ''), '_', '') LIKE ?", ['%' . $compactSearch . '%']);
+                    }
+
                     foreach ($termsToUse as $term) {
                         $term = trim($term);
                         if (empty($term)) continue;
@@ -173,9 +186,9 @@ class EcommerceCatalogController extends Controller
 
         // Apply price and stock filters first (in HAVING)
         if ($inStock === 'true' || $inStock === true) {
-            $q->havingRaw('COALESCE(SUM(product_batches.quantity), 0) > 0');
+            $q->havingRaw('GREATEST(COALESCE(MAX(reserved_products.available_inventory), 0), COALESCE(SUM(product_batches.quantity), 0)) > 0');
         } elseif ($inStock === 'false' || $inStock === false) {
-            $q->havingRaw('COALESCE(SUM(product_batches.quantity), 0) = 0');
+            $q->havingRaw('GREATEST(COALESCE(MAX(reserved_products.available_inventory), 0), COALESCE(SUM(product_batches.quantity), 0)) = 0');
         }
 
         if ($minPrice !== null && $minPrice !== '') {

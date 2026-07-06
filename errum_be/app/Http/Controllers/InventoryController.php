@@ -176,7 +176,7 @@ class InventoryController extends Controller
                     ];
                 })
                 ->filter(function ($product) {
-                    return $product['total_quantity'] > 0;
+                    return $product['available_quantity'] > 0;
                 })
                 ->values();
 
