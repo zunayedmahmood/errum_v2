@@ -873,14 +873,15 @@ Route::middleware('auth:api')->group(function () {
     
     
     // ============================================
-    // MONTHLY CASH SHEET ROUTES
-    // Canonical live monthly accounting sheet (branches + online + owner)
+    // CASH SHEET ROUTES
+    // Fresh live monthly report + manual entry panels.
     // ============================================
 
     Route::prefix('cash-sheet')->group(function () {
-        // GET  /api/cash-sheet?month=2026-04          → full monthly sheet
+        // GET  /api/cash-sheet?month=2026-07 → live monthly cash-sheet
         Route::get('/', [\App\Http\Controllers\CashSheetController::class, 'index']);
-        // GET  /api/cash-sheet/entries?date=2026-04-14 → raw entries for a date (detail panel)
+
+        // GET  /api/cash-sheet/entries?date=2026-04-14 → manual entries for a date
         Route::get('/entries', [\App\Http\Controllers\CashSheetController::class, 'entries']);
 
         // Branch cost entries (branch managers)

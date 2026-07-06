@@ -186,13 +186,12 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
     {
       icon: CreditCard,
       label: 'Cash Sheet',
-      href: '/cash-sheet',
       subMenu: [
-        { label: 'Monthly Cash Sheet', href: '/cash-sheet' },
-        { label: 'Branch Costs',   href: '/cash-sheet/branch-cost' },
-        { label: 'Admin Panel',    href: '/cash-sheet/admin' },
-        { label: 'Owner Panel',    href: '/cash-sheet/owner' },
-        { label: 'Summary View',   href: '/cash-sheet/summary' },
+        { label: 'Monthly Sheet', href: '/cash-sheet' },
+        { label: 'Summary', href: '/cash-sheet/summary' },
+        { label: 'Branch Costs', href: '/cash-sheet/branch-cost' },
+        { label: 'Admin Panel', href: '/cash-sheet/admin' },
+        { label: 'Owner Panel', href: '/cash-sheet/owner' },
       ],
     },
     {

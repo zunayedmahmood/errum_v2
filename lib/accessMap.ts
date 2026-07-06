@@ -84,6 +84,10 @@ export const PAGE_ACCESS: Record<string, RoleSlug[]> = {
   '/hrm/rewards-fines': ['super-admin', 'admin', 'branch-manager', 'online-moderator'],
   '/hrm/payroll': ['super-admin', 'admin', 'branch-manager', 'online-moderator'],
   '/cash-sheet': ['super-admin', 'admin', 'branch-manager', 'pos-salesman'],
+  '/cash-sheet/summary': ['super-admin', 'admin', 'branch-manager', 'pos-salesman'],
+  '/cash-sheet/branch-cost': ['super-admin', 'admin', 'branch-manager', 'pos-salesman'],
+  '/cash-sheet/admin': ['super-admin', 'admin'],
+  '/cash-sheet/owner': ['super-admin', 'admin'],
 };
 
 /**

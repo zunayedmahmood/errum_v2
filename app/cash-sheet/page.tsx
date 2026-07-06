@@ -1,514 +1,314 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Loader2, RefreshCw, AlertTriangle, Check, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
-import cashSheetService, {
-  type BranchDay,
-  type CashSheetRow,
-  type CashSheetStore,
-  type CashSheetSummary,
-} from '@/services/cashSheetService';
+import cashSheetService, { CashSheetResponse, CashSheetBranchDay } from '@/services/cashSheetService';
+import { CalendarDays, RefreshCcw, Loader2, AlertCircle, FileText, ArrowRightLeft, Info } from 'lucide-react';
 
-const BUSINESS_TIMEZONE = 'Asia/Dhaka';
-
-// ─── date and money helpers ──────────────────────────────────────────────────
-
-function money(value: number) {
-  const rounded = Math.round(Number(value || 0));
-  if (rounded === 0) return '0';
-  const sign = rounded < 0 ? '-' : '';
-  return `${sign}৳${Math.abs(rounded).toLocaleString('en-BD')}`;
-}
-
-function dhakaDateString(date = new Date()) {
+function dhakaMonthString(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: BUSINESS_TIMEZONE,
+    timeZone: 'Asia/Dhaka',
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit',
   }).formatToParts(date).reduce<Record<string, string>>((acc, part) => {
     if (part.type !== 'literal') acc[part.type] = part.value;
     return acc;
   }, {});
 
-  return `${parts.year}-${parts.month}-${parts.day}`;
+  return `${parts.year}-${parts.month}`;
 }
 
-function currentDhakaMonth() {
-  return dhakaDateString().slice(0, 7);
+function prettyDate(value: string) {
+  if (!value) return '';
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', weekday: 'short', timeZone: 'UTC' }).format(date);
 }
 
-function addMonths(month: string, delta: number) {
-  const [year, monthNumber] = month.split('-').map(Number);
-  const absolute = year * 12 + (monthNumber - 1) + delta;
-  const nextYear = Math.floor(absolute / 12);
-  const nextMonth = (absolute % 12) + 1;
-  return `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+function money(value: number) {
+  const rounded = Math.round(Number(value || 0));
+  return `৳${rounded.toLocaleString('en-BD')}`;
 }
 
-function monthLabel(month: string) {
-  return new Intl.DateTimeFormat('en-BD', {
-    timeZone: BUSINESS_TIMEZONE,
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(`${month}-01T00:00:00+06:00`));
-}
-
-function dayLabel(date: string) {
-  return new Intl.DateTimeFormat('en-BD', {
-    timeZone: BUSINESS_TIMEZONE,
-    weekday: 'short',
-    day: '2-digit',
-  }).format(new Date(`${date}T00:00:00+06:00`));
-}
-
-function monthRangeLabel(rows: CashSheetRow[]) {
-  if (!rows.length) return 'No dates loaded';
-  return `${rows[0].date} → ${rows[rows.length - 1].date}`;
-}
-
-function getBranch(branches: BranchDay[], storeId: number): BranchDay | null {
-  return branches.find((branch) => Number(branch.store_id) === Number(storeId)) ?? null;
-}
-
-// ─── UI atoms ────────────────────────────────────────────────────────────────
-
-function ValueCell({ value, strong = false }: { value: number; strong?: boolean }) {
-  const numeric = Number(value || 0);
-  const color = numeric < 0
-    ? 'text-rose-600 dark:text-rose-400 font-semibold'
-    : strong
-      ? 'text-slate-900 dark:text-white font-semibold'
-      : numeric > 0
-        ? 'text-slate-700 dark:text-slate-200'
-        : 'text-slate-300 dark:text-slate-600';
-
+function MoneyCell({ value, bold = false }: { value: number; bold?: boolean }) {
+  const negative = Number(value) < 0;
+  const zero = Number(value) === 0;
   return (
-    <td className={`px-2 py-2 text-right text-[11px] tabular-nums whitespace-nowrap border-r border-slate-100 dark:border-slate-800 ${color}`}>
-      {money(numeric)}
+    <td className={`whitespace-nowrap px-2 py-2 text-right text-xs ${bold ? 'font-semibold' : ''} ${negative ? 'text-rose-600 dark:text-rose-400' : zero ? 'text-gray-400 dark:text-gray-600' : 'text-gray-800 dark:text-gray-100'}`}>
+      {zero ? '—' : money(value)}
     </td>
   );
 }
 
-function HeaderCell({ children }: { children: ReactNode }) {
+function StatCard({ label, value, hint }: { label: string; value: number; hint?: string }) {
+  const negative = value < 0;
   return (
-    <th className="px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 whitespace-nowrap border-r border-slate-200 dark:border-slate-700">
-      {children}
-    </th>
-  );
-}
-
-function SectionHeader({ label, cols, className }: { label: string; cols: number; className: string }) {
-  return (
-    <th colSpan={cols} className={`px-3 py-2 text-center text-[10px] font-bold uppercase tracking-wider border-r border-slate-300 dark:border-slate-700 ${className}`}>
-      {label}
-    </th>
-  );
-}
-
-function SummaryCard({ label, value, note }: { label: string; value: number; note: string }) {
-  const negative = Number(value || 0) < 0;
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</div>
-      <div className={`mt-2 text-xl font-bold tabular-nums ${negative ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>
-        {money(value)}
-      </div>
-      <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{note}</div>
+    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+      <p className={`mt-2 text-xl font-bold ${negative ? 'text-rose-600 dark:text-rose-400' : 'text-gray-900 dark:text-white'}`}>{money(value)}</p>
+      {hint && <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{hint}</p>}
     </div>
   );
 }
 
-function MonthlyTotalCell({ value, strong = false }: { value: number; strong?: boolean }) {
-  const numeric = Number(value || 0);
-  const color = numeric < 0
-    ? 'text-rose-600 dark:text-rose-400'
-    : strong
-      ? 'text-slate-900 dark:text-white'
-      : 'text-slate-700 dark:text-slate-200';
-
-  return (
-    <td className={`px-2 py-2 text-right text-[11px] font-semibold tabular-nums whitespace-nowrap border-r border-slate-200 dark:border-slate-700 ${color}`}>
-      {money(numeric)}
-    </td>
-  );
+function branchForStore(branches: CashSheetBranchDay[], storeId: number): CashSheetBranchDay {
+  return branches.find((b) => b.store_id === storeId) || {
+    store_id: storeId,
+    store_name: '',
+    daily_sale: 0,
+    cash: 0,
+    bank: 0,
+    ex_on: 0,
+    salary: 0,
+    daily_cost: 0,
+    cash_to_bank: 0,
+    raw_cash: 0,
+    raw_bank: 0,
+    cash_cost: 0,
+    bank_cost: 0,
+    cash_refunds: 0,
+    bank_refunds: 0,
+  };
 }
 
-// ─── main page ────────────────────────────────────────────────────────────────
-
-export default function CashSheetPage() {
-  const router = useRouter();
+export default function MonthlyCashSheetPage() {
   const { darkMode, setDarkMode } = useTheme();
-  const { role, storeId: userStoreId, isLoading: authLoading } = useAuth() as any;
-
+  const { role, scopedStoreId, isLoading: authLoading } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [month, setMonth] = useState(currentDhakaMonth());
-  const [rows, setRows] = useState<CashSheetRow[]>([]);
-  const [stores, setStores] = useState<CashSheetStore[]>([]);
-  const [summary, setSummary] = useState<CashSheetSummary | null>(null);
-  const [timezone, setTimezone] = useState(BUSINESS_TIMEZONE);
-  const [utcOffset, setUtcOffset] = useState(6);
+  const [month, setMonth] = useState(dhakaMonthString());
+  const [sheet, setSheet] = useState<CashSheetResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{ message: string; ok: boolean } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const isAdmin = role === 'admin' || role === 'super-admin';
-  const isBranch = role === 'branch-manager' || role === 'pos-salesman';
-  const authorized = isAdmin || isBranch;
-  const today = dhakaDateString();
-  const currentMonth = currentDhakaMonth();
-
-  useEffect(() => {
-    if (!authLoading && !authorized) router.push('/dashboard');
-  }, [authLoading, authorized, router]);
-
-  const showToast = useCallback((message: string, ok = true) => {
-    setToast({ message, ok });
-    window.setTimeout(() => setToast(null), 2600);
-  }, []);
-
-  const load = useCallback(async () => {
+  const loadSheet = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const response = await cashSheetService.getSheet(month);
-      setRows(response.data);
-      setStores(response.stores);
-      setSummary(response.summary);
-      setTimezone(response.timezone || BUSINESS_TIMEZONE);
-      setUtcOffset(response.utc_offset_hours ?? 6);
-    } catch (error) {
-      console.error('Failed to load cash sheet', error);
-      showToast('Failed to load monthly cash sheet.', false);
+      const data = await cashSheetService.getSheet(month);
+      setSheet(data);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to load monthly cash sheet.');
     } finally {
       setLoading(false);
     }
-  }, [month, showToast]);
+  };
 
   useEffect(() => {
-    if (!authLoading && authorized) load();
-  }, [authLoading, authorized, load]);
+    if (!authLoading) loadSheet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month, authLoading]);
 
   const visibleStores = useMemo(() => {
-    if (!isBranch || !userStoreId) return stores;
-    return stores.filter((store) => Number(store.id) === Number(userStoreId));
-  }, [isBranch, stores, userStoreId]);
+    const stores = sheet?.stores || [];
+    if (scopedStoreId) return stores.filter((s) => Number(s.id) === Number(scopedStoreId));
+    return stores;
+  }, [sheet?.stores, scopedStoreId]);
 
-  const totalColumns = 1 + (visibleStores.length * 7) + (isAdmin ? 6 + 2 + 4 + 8 : 0);
-
-  if (!authorized && !authLoading) return null;
+  const isAdminLike = role === 'admin' || role === 'super-admin';
 
   return (
-    <div className={`min-h-screen flex ${darkMode ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
+    <div className={`min-h-screen flex ${darkMode ? 'dark bg-gray-950' : 'bg-gray-50'}`}>
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Header
-          darkMode={darkMode}
-          setDarkMode={setDarkMode}
-          toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-        />
-
-        <main className="flex-1 overflow-auto p-4 md:p-6">
-          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header darkMode={darkMode} setDarkMode={setDarkMode} toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
+        <main className="flex-1 p-4 md:p-6 min-w-0">
+          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-medium text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300">
-                Canonical /cash-sheet · Backend formula owned · {timezone}
+              <div className="flex items-center gap-2 text-gray-900 dark:text-white">
+                <FileText size={22} className="text-blue-600" />
+                <h1 className="text-2xl font-bold">Monthly Cash Sheet</h1>
               </div>
-              <h1 className="mt-3 text-2xl font-bold text-slate-950 dark:text-white">Monthly Cash Sheet</h1>
-              <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-                One live monthly sheet rebuilt from orders, payments, splits, refunds, costs, admin entries, online receivables, disbursements, and owner entries.
-                Sales show valid order value; cash/bank show actual money movement.
+              <p className="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+                Fresh live aggregation of commercial sales and real cash/bank movement. Sales stay on order date; payments, refunds, costs, settlements, and owner entries stay on their own business dates.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-2 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <button
-                  onClick={() => setMonth(addMonths(month, -1))}
-                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 dark:text-slate-400 dark:hover:bg-slate-800"
-                  aria-label="Previous month"
-                >
-                  <ChevronLeft size={17} />
-                </button>
-                <div className="min-w-[150px] text-center text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  {monthLabel(month)}
-                </div>
-                <button
-                  onClick={() => setMonth(addMonths(month, 1))}
-                  disabled={month >= currentMonth}
-                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-30 dark:text-slate-400 dark:hover:bg-slate-800"
-                  aria-label="Next month"
-                >
-                  <ChevronRight size={17} />
-                </button>
-              </div>
+              <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white">
+                <CalendarDays size={16} className="text-gray-500" />
+                <input
+                  type="month"
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                  className="bg-transparent outline-none"
+                />
+              </label>
               <button
-                onClick={load}
+                onClick={loadSheet}
                 disabled={loading}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-blue-300 hover:text-blue-600 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-700"
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
               >
-                <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-                {loading ? 'Reloading' : 'Refresh'}
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+                Refresh
               </button>
+              <Link href="/cash-sheet/summary" className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+                Summary
+              </Link>
             </div>
           </div>
 
-          {summary && isAdmin && (
-            <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <SummaryCard label="Total Sale" value={summary.totals.total_sale} note="Branch sales + online sales" />
-              <SummaryCard label="Cash" value={summary.totals.cash} note="After salary, cost, cash→bank" />
-              <SummaryCard label="Bank" value={summary.totals.bank} note="Branch bank + online advance" />
-              <SummaryCard label="Final Bank" value={summary.totals.final_bank} note="Bank + SSLZC + Pathao received" />
-              <SummaryCard label="Owner Bank Remain" value={summary.owner.bank_after_cost} note="After owner bank cost" />
+          {error && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+              <AlertCircle size={18} /> {error}
             </div>
           )}
 
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-            <div className="flex gap-2">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <div>
-                Business dates are aligned to <b>Asia/Dhaka</b>. Order sales use order date; payments prefer <b>payment_received_date</b> before completion/processing timestamps. Backend UTC offset is currently <b>{utcOffset}</b> hour(s), so frontend labels and backend buckets stay on the same business calendar.
-              </div>
-            </div>
-          </div>
-
-          {loading && rows.length === 0 ? (
-            <div className="flex h-72 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 dark:border-slate-800 dark:bg-slate-900">
-              <Loader2 size={24} className="mr-2 animate-spin" /> Loading monthly sheet…
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900 dark:text-white">{monthLabel(month)}</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">{monthRangeLabel(rows)} · {isAdmin ? `${visibleStores.length} branch column(s)` : visibleStores.map((s) => s.name).join(', ') || 'Your branch'}</div>
-                </div>
-                <div className="text-xs text-slate-400 dark:text-slate-500">
-                  Negative cash stays visible in red; it is never clamped to zero.
-                </div>
+          {sheet && (
+            <>
+              <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+                <StatCard label="Total Sale" value={sheet.summary.totals.sale} hint="Branch + online order value" />
+                <StatCard label="Branch Cash" value={sheet.summary.totals.cash} hint="Can be negative" />
+                <StatCard label="Bank" value={sheet.summary.totals.bank} hint="Branch bank + online advance" />
+                <StatCard label="Final Bank" value={sheet.summary.totals.final_bank} hint="Bank + SSLZC + Pathao" />
+                <StatCard label="COD/Due" value={sheet.summary.online.cod} hint="COD receivable tracker" />
+                <StatCard label="Daily Cost" value={sheet.summary.totals.daily_cost} hint="Manual + accounting costs" />
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-max border-collapse text-xs">
-                  <thead className="sticky top-0 z-20">
-                    <tr>
-                      <th rowSpan={2} className="sticky left-0 z-30 min-w-[96px] border-r border-slate-300 bg-slate-100 px-3 py-2 text-left text-xs font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                        Date
-                      </th>
-                      {visibleStores.map((store) => (
-                        <SectionHeader
-                          key={`branch-section-${store.id}`}
-                          label={store.name}
-                          cols={7}
-                          className="bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200"
-                        />
-                      ))}
-                      {isAdmin && (
-                        <>
-                          <SectionHeader label="Online / Ecommerce" cols={6} className="bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-200" />
-                          <SectionHeader label="Disbursement" cols={2} className="bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200" />
-                          <SectionHeader label="Day Totals" cols={4} className="bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-200" />
-                          <SectionHeader label="Owner" cols={8} className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200" />
-                        </>
-                      )}
-                    </tr>
-                    <tr className="border-b border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                      {visibleStores.map((store) => (
-                        <FragmentBranchHeader key={`branch-header-${store.id}`} />
-                      ))}
-                      {isAdmin && (
-                        <>
-                          <HeaderCell>Sales</HeaderCell>
-                          <HeaderCell>Advance</HeaderCell>
-                          <HeaderCell>SSLZC</HeaderCell>
-                          <HeaderCell>COD/Due</HeaderCell>
-                          <HeaderCell>COD Collected</HeaderCell>
-                          <HeaderCell>Refunds</HeaderCell>
-                          <HeaderCell>SSLZC Rec.</HeaderCell>
-                          <HeaderCell>Pathao Rec.</HeaderCell>
-                          <HeaderCell>Total Sale</HeaderCell>
-                          <HeaderCell>Cash</HeaderCell>
-                          <HeaderCell>Bank</HeaderCell>
-                          <HeaderCell>Final Bank</HeaderCell>
-                          <HeaderCell>+Cash</HeaderCell>
-                          <HeaderCell>Total Cash</HeaderCell>
-                          <HeaderCell>Cash Cost</HeaderCell>
-                          <HeaderCell>+Bank</HeaderCell>
-                          <HeaderCell>Total Bank</HeaderCell>
-                          <HeaderCell>Bank Cost</HeaderCell>
-                          <HeaderCell>Cash Remain</HeaderCell>
-                          <HeaderCell>Bank Remain</HeaderCell>
-                        </>
-                      )}
-                    </tr>
-                  </thead>
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"><Info size={13} /> Timezone: {sheet.timezone}</span>
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-900">Range: {sheet.date_from} → {sheet.date_to}</span>
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-900">UTC offset env: {sheet.utc_offset_hours}</span>
+                {!isAdminLike && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">Branch view: own store only</span>}
+              </div>
 
-                  <tbody>
-                    {rows.length === 0 && (
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <div className="max-h-[72vh] overflow-auto">
+                  <table className="min-w-full border-collapse text-sm">
+                    <thead className="sticky top-0 z-20 bg-gray-100 text-xs uppercase tracking-wide text-gray-600 dark:bg-gray-900 dark:text-gray-300">
                       <tr>
-                        <td colSpan={totalColumns} className="px-4 py-16 text-center text-sm text-slate-400 dark:text-slate-500">
-                          No cash sheet data returned for this month.
-                        </td>
+                        <th className="sticky left-0 z-30 border-b border-r border-gray-200 bg-gray-100 px-3 py-3 text-left dark:border-gray-800 dark:bg-gray-900">Date</th>
+                        {visibleStores.map((store) => (
+                          <th key={store.id} colSpan={7} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">
+                            {store.name}
+                          </th>
+                        ))}
+                        <th colSpan={4} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">Online / Ecommerce</th>
+                        <th colSpan={2} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">Disbursement</th>
+                        <th colSpan={4} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">Day Totals</th>
+                        <th colSpan={2} className="border-b border-gray-200 px-3 py-2 text-center dark:border-gray-800">Owner Remain</th>
                       </tr>
-                    )}
-
-                    {rows.map((row) => {
-                      const isToday = row.date === today;
-                      return (
-                        <tr key={row.date} className={`${isToday ? 'bg-blue-50/70 dark:bg-blue-950/20' : 'odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/70'} border-b border-slate-100 dark:border-slate-800`}>
-                          <td className="sticky left-0 z-10 border-r border-slate-200 bg-inherit px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">
-                            <div>{dayLabel(row.date)}</div>
-                            <div className="text-[10px] font-normal text-slate-400">{row.date}</div>
+                      <tr className="text-[11px]">
+                        <th className="sticky left-0 z-30 border-b border-r border-gray-200 bg-gray-100 px-3 py-2 dark:border-gray-800 dark:bg-gray-900"></th>
+                        {visibleStores.map((store) => (
+                          <FragmentHeader key={store.id} />
+                        ))}
+                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Sales</th>
+                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Advance</th>
+                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">SSLZC</th>
+                        <th className="border-b border-r border-gray-200 px-2 py-2 dark:border-gray-800">COD/Due</th>
+                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">SSLZC Rcv</th>
+                        <th className="border-b border-r border-gray-200 px-2 py-2 dark:border-gray-800">Pathao Rcv</th>
+                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Sale</th>
+                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Cash</th>
+                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Bank</th>
+                        <th className="border-b border-r border-gray-200 px-2 py-2 dark:border-gray-800">Final Bank</th>
+                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Cash</th>
+                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Bank</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                      {sheet.data.map((row) => (
+                        <tr key={row.date} className="hover:bg-blue-50/50 dark:hover:bg-gray-800/50">
+                          <td className="sticky left-0 z-10 whitespace-nowrap border-r border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
+                            <div>{prettyDate(row.date)}</div>
+                            <div className="text-[10px] font-normal text-gray-400">{row.date}</div>
                           </td>
-
                           {visibleStores.map((store) => {
-                            const branch = getBranch(row.branches, store.id);
+                            const b = branchForStore(row.branches, store.id);
                             return (
-                              <FragmentBranchValues key={`branch-${row.date}-${store.id}`} branch={branch} />
+                              <FragmentCells key={`${row.date}-${store.id}`} b={b} />
                             );
                           })}
-
-                          {isAdmin && (
-                            <>
-                              <ValueCell value={row.online.daily_sales} strong />
-                              <ValueCell value={row.online.advance} />
-                              <ValueCell value={row.online.online_payment} />
-                              <ValueCell value={row.online.cod} />
-                              <ValueCell value={row.online.cod_collected} />
-                              <ValueCell value={row.online.refunds} />
-                              <ValueCell value={row.disbursements.sslzc_received} />
-                              <ValueCell value={row.disbursements.pathao_received} />
-                              <ValueCell value={row.totals.total_sale} strong />
-                              <ValueCell value={row.totals.cash} />
-                              <ValueCell value={row.totals.bank} />
-                              <ValueCell value={row.totals.final_bank} strong />
-                              <ValueCell value={row.owner.cash_invest} />
-                              <ValueCell value={row.owner.total_cash} strong />
-                              <ValueCell value={row.owner.cash_cost} />
-                              <ValueCell value={row.owner.bank_invest} />
-                              <ValueCell value={row.owner.total_bank} strong />
-                              <ValueCell value={row.owner.bank_cost} />
-                              <ValueCell value={row.owner.cash_after_cost} strong />
-                              <ValueCell value={row.owner.bank_after_cost} strong />
-                            </>
-                          )}
+                          <MoneyCell value={row.online.daily_sales} />
+                          <MoneyCell value={row.online.advance} />
+                          <MoneyCell value={row.online.online_payment} />
+                          <MoneyCell value={row.online.cod} />
+                          <MoneyCell value={row.disbursements.sslzc_received} />
+                          <MoneyCell value={row.disbursements.pathao_received} />
+                          <MoneyCell value={row.totals.sale} bold />
+                          <MoneyCell value={row.totals.cash} bold />
+                          <MoneyCell value={row.totals.bank} bold />
+                          <MoneyCell value={row.totals.final_bank} bold />
+                          <MoneyCell value={row.owner.cash_after_cost} />
+                          <MoneyCell value={row.owner.bank_after_cost} />
                         </tr>
-                      );
-                    })}
-                  </tbody>
-
-                  {summary && (
-                    <tfoot>
-                      <tr className="border-t-2 border-slate-300 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
-                        <td className="sticky left-0 z-10 border-r border-slate-300 bg-slate-100 px-3 py-3 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
-                          Monthly Total
-                        </td>
-
+                      ))}
+                    </tbody>
+                    <tfoot className="sticky bottom-0 bg-gray-100 text-xs font-bold text-gray-800 dark:bg-gray-900 dark:text-gray-100">
+                      <tr>
+                        <td className="sticky left-0 border-r border-gray-200 bg-gray-100 px-3 py-3 dark:border-gray-800 dark:bg-gray-900">Month Total</td>
                         {visibleStores.map((store) => {
-                          const branch = getBranch(summary.branches, store.id);
-                          return (
-                            <FragmentBranchTotals key={`branch-total-${store.id}`} branch={branch} />
-                          );
+                          const b = sheet.summary.stores.find((s) => s.store_id === store.id);
+                          return <FragmentCells key={`sum-${store.id}`} b={b || branchForStore([], store.id)} />;
                         })}
-
-                        {isAdmin && (
-                          <>
-                            <MonthlyTotalCell value={summary.online.daily_sales} strong />
-                            <MonthlyTotalCell value={summary.online.advance} />
-                            <MonthlyTotalCell value={summary.online.online_payment} />
-                            <MonthlyTotalCell value={summary.online.cod} />
-                            <MonthlyTotalCell value={summary.online.cod_collected} />
-                            <MonthlyTotalCell value={summary.online.refunds} />
-                            <MonthlyTotalCell value={summary.disbursements.sslzc_received} />
-                            <MonthlyTotalCell value={summary.disbursements.pathao_received} />
-                            <MonthlyTotalCell value={summary.totals.total_sale} strong />
-                            <MonthlyTotalCell value={summary.totals.cash} />
-                            <MonthlyTotalCell value={summary.totals.bank} />
-                            <MonthlyTotalCell value={summary.totals.final_bank} strong />
-                            <MonthlyTotalCell value={summary.owner.cash_invest} />
-                            <MonthlyTotalCell value={summary.owner.total_cash} strong />
-                            <MonthlyTotalCell value={summary.owner.cash_cost} />
-                            <MonthlyTotalCell value={summary.owner.bank_invest} />
-                            <MonthlyTotalCell value={summary.owner.total_bank} strong />
-                            <MonthlyTotalCell value={summary.owner.bank_cost} />
-                            <MonthlyTotalCell value={summary.owner.cash_after_cost} strong />
-                            <MonthlyTotalCell value={summary.owner.bank_after_cost} strong />
-                          </>
-                        )}
+                        <MoneyCell value={sheet.summary.online.daily_sales} bold />
+                        <MoneyCell value={sheet.summary.online.advance} bold />
+                        <MoneyCell value={sheet.summary.online.online_payment} bold />
+                        <MoneyCell value={sheet.summary.online.cod} bold />
+                        <MoneyCell value={sheet.summary.disbursements.sslzc_received} bold />
+                        <MoneyCell value={sheet.summary.disbursements.pathao_received} bold />
+                        <MoneyCell value={sheet.summary.totals.sale} bold />
+                        <MoneyCell value={sheet.summary.totals.cash} bold />
+                        <MoneyCell value={sheet.summary.totals.bank} bold />
+                        <MoneyCell value={sheet.summary.totals.final_bank} bold />
+                        <MoneyCell value={sheet.summary.owner.cash_after_cost} bold />
+                        <MoneyCell value={sheet.summary.owner.bank_after_cost} bold />
                       </tr>
                     </tfoot>
-                  )}
-                </table>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
 
-          <div className="mt-4 grid gap-3 text-[11px] text-slate-500 dark:text-slate-400 md:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-              <b>Branch cash:</b> raw cash − salary − cash costs − cash→bank.
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-              <b>Branch bank:</b> raw non-cash − bank costs + cash→bank.
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-              <b>Final bank:</b> day bank + SSLZC received + Pathao received.
-            </div>
-          </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                  <p className="font-semibold">Date rule</p>
+                  <p className="mt-1 text-xs">Payments use payment_received_date first, then completed/processed/created timestamps. Month rows are grouped by Dhaka business date.</p>
+                </div>
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                  <p className="font-semibold">Cancellation/refund rule</p>
+                  <p className="mt-1 text-xs">Cancelled/refunded order value leaves the Sale column, but completed money-in remains. Refunds subtract separately on refund date.</p>
+                </div>
+                <div className="rounded-xl border border-violet-100 bg-violet-50 p-4 text-sm text-violet-800 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-200">
+                  <p className="font-semibold flex items-center gap-1"><ArrowRightLeft size={14} /> Ex/On rule</p>
+                  <p className="mt-1 text-xs">Exchange extra collection adds to cash/bank and Ex/On. Exchange refund subtracts from both money movement and Ex/On.</p>
+                </div>
+              </div>
+            </>
+          )}
         </main>
       </div>
-
-      {toast && (
-        <div className={`fixed bottom-4 right-4 z-50 rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-lg ${toast.ok ? 'bg-emerald-500' : 'bg-rose-500'}`}>
-          {toast.ok ? <Check size={14} className="mr-1.5 inline" /> : <X size={14} className="mr-1.5 inline" />}
-          {toast.message}
-        </div>
-      )}
     </div>
   );
 }
 
-function FragmentBranchHeader() {
+function FragmentHeader() {
   return (
     <>
-      <HeaderCell>Sale</HeaderCell>
-      <HeaderCell>Cash</HeaderCell>
-      <HeaderCell>Bank</HeaderCell>
-      <HeaderCell>Ex/On</HeaderCell>
-      <HeaderCell>Salary</HeaderCell>
-      <HeaderCell>Cost</HeaderCell>
-      <HeaderCell>→Bank</HeaderCell>
+      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Sale</th>
+      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Cash</th>
+      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Bank</th>
+      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Ex/On</th>
+      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Salary</th>
+      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Cost</th>
+      <th className="border-b border-r border-gray-200 px-2 py-2 dark:border-gray-800">→Bank</th>
     </>
   );
 }
 
-function FragmentBranchValues({ branch }: { branch: BranchDay | null }) {
+function FragmentCells({ b }: { b: Partial<CashSheetBranchDay> }) {
   return (
     <>
-      <ValueCell value={branch?.daily_sale ?? 0} strong />
-      <ValueCell value={branch?.cash ?? 0} />
-      <ValueCell value={branch?.bank ?? 0} />
-      <ValueCell value={branch?.ex_on ?? 0} />
-      <ValueCell value={branch?.salary ?? 0} />
-      <ValueCell value={branch?.daily_cost ?? 0} />
-      <ValueCell value={branch?.cash_to_bank ?? 0} />
-    </>
-  );
-}
-
-function FragmentBranchTotals({ branch }: { branch: BranchDay | null }) {
-  return (
-    <>
-      <MonthlyTotalCell value={branch?.daily_sale ?? 0} strong />
-      <MonthlyTotalCell value={branch?.cash ?? 0} />
-      <MonthlyTotalCell value={branch?.bank ?? 0} />
-      <MonthlyTotalCell value={branch?.ex_on ?? 0} />
-      <MonthlyTotalCell value={branch?.salary ?? 0} />
-      <MonthlyTotalCell value={branch?.daily_cost ?? 0} />
-      <MonthlyTotalCell value={branch?.cash_to_bank ?? 0} />
+      <MoneyCell value={Number(b.daily_sale || 0)} />
+      <MoneyCell value={Number(b.cash || 0)} />
+      <MoneyCell value={Number(b.bank || 0)} />
+      <MoneyCell value={Number(b.ex_on || 0)} />
+      <MoneyCell value={Number(b.salary || 0)} />
+      <MoneyCell value={Number(b.daily_cost || 0)} />
+      <MoneyCell value={Number(b.cash_to_bank || 0)} />
     </>
   );
 }
