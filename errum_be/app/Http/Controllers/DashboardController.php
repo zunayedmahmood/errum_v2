@@ -704,10 +704,11 @@ $totalProducts = (int) ($inventorySummary['total_products'] ?? 0);
     {
         try {
             $storeId = $request->query('store_id');
-            $limit = $request->query('limit', 10);
-            $days = $request->query('days', 90); // Default 90 days lookback
+            $storeId = $storeId !== null && $storeId !== '' ? (int) $storeId : null;
+            $limit = max(1, min(50, (int) $request->query('limit', 10)));
+            $days = max(1, min(365, (int) $request->query('days', 90))); // Default 90 days lookback
 
-            $startDate = Carbon::now()->subDays($days);
+            $startDate = Carbon::now()->subDays($days)->startOfDay();
 
             // Get products with inventory but low/no sales
             $inventoryQuery = ProductBatch::select(
@@ -738,8 +739,8 @@ $totalProducts = (int) ($inventorySummary['total_products'] ?? 0);
 
             $salesQuery = OrderItem::whereIn('product_id', $productIds)
                 ->whereHas('order', function ($query) use ($startDate, $storeId) {
-                    $query->whereDate('order_date', '>=', $startDate)
-                        ->whereNotIn('status', ['cancelled']);
+                    $query->whereDate('order_date', '>=', $startDate->toDateString())
+                        ->whereNotIn('status', ['cancelled', 'canceled', 'void', 'deleted']);
                     if ($storeId) {
                         $query->where('store_id', $storeId);
                     }
@@ -807,12 +808,15 @@ $totalProducts = (int) ($inventorySummary['total_products'] ?? 0);
             \Log::error('Dashboard slowMovingProducts error: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
+            // Dashboard card should never break the page or unrelated workflows such as barcode packing.
+            // Keep the server-side log for debugging, but return a safe empty dataset to the frontend.
             return response()->json([
-                'success' => false,
-                'message' => 'Error fetching slow-moving products',
-                'error' => $e->getMessage(),
-                'trace' => config('app.debug') ? $e->getTraceAsString() : null,
-            ], 500);
+                'success' => true,
+                'message' => 'Slow-moving products temporarily unavailable',
+                'period_days' => (int) $request->query('days', 90),
+                'slow_moving_products' => [],
+                'debug_error' => config('app.debug') ? $e->getMessage() : null,
+            ]);
         }
     }
 

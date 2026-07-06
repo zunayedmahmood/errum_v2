@@ -9,6 +9,15 @@ import Sidebar from '@/components/Sidebar';
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw, Check, X } from 'lucide-react';
 import cashSheetService, { CashSheetRow, CashSheetSummary } from '@/services/cashSheetService';
 
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+const fmt = (n: number) => {
+  const rounded = Math.round(n || 0);
+  if (rounded === 0) return '0';
+  const sign = rounded < 0 ? '-' : '';
+  return `${sign}৳${Math.abs(rounded).toLocaleString('en-BD')}`;
+};
+
 function dhakaDateString(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Dhaka',
@@ -23,14 +32,8 @@ function dhakaDateString(date = new Date()) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-const fmt = (n: number) =>
-  n === 0 ? '0' : '৳' + Math.round(n).toLocaleString('en-BD');
-
 function currentMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return dhakaDateString().slice(0, 7);
 }
 function prevMonth(m: string) {
   const [y, mo] = m.split('-').map(Number);
@@ -54,14 +57,16 @@ function dayLabel(dateStr: string) {
 // ─── read-only stat cell ──────────────────────────────────────────────────────
 
 function StatCell({ value, highlight }: { value: number; highlight?: 'green' | 'blue' | 'amber' }) {
+  const numeric = Number(value || 0);
   const color =
+    numeric < 0 ? 'text-rose-600 dark:text-rose-400 font-semibold' :
     highlight === 'green' ? 'text-emerald-500 dark:text-emerald-400 font-semibold' :
     highlight === 'blue'  ? 'text-blue-500 dark:text-blue-400 font-semibold' :
     highlight === 'amber' ? 'text-amber-500 dark:text-amber-400 font-semibold' :
-    value > 0 ? 'text-gray-700 dark:text-gray-300' : 'text-gray-300 dark:text-gray-600';
+    numeric > 0 ? 'text-gray-700 dark:text-gray-300' : 'text-gray-300 dark:text-gray-600';
   return (
     <td className={`px-2 py-1.5 text-right text-xs whitespace-nowrap tabular-nums ${color}`}>
-      {value > 0 ? '৳' + Math.round(value).toLocaleString('en-BD') : '0'}
+      {fmt(numeric)}
     </td>
   );
 }
@@ -252,7 +257,7 @@ export default function CashSheetPage() {
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Sales</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Advance</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">SSLZC</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">COD</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">COD/Due</th>
                     </>)}
 
                     {isAdmin && (<>

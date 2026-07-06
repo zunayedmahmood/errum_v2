@@ -221,7 +221,7 @@ class StoreFulfillmentController extends Controller
             // 1. Find and validate barcode
             $barcode = ProductBarcode::where('barcode', $request->barcode)
                 ->where('current_store_id', $employee->store_id)
-                ->where('current_status', 'in_shop')
+                ->whereIn('current_status', ['available', 'in_shop', 'in_warehouse', 'on_display'])
                 ->with(['product', 'batch'])
                 ->first();
 
@@ -326,7 +326,8 @@ class StoreFulfillmentController extends Controller
 
                 $barcode->update([
                     'is_active' => true,
-                    'current_status' => 'reserved_for_order',
+                    'current_status' => 'in_shipment',
+                    'current_store_id' => $employee->store_id,
                     'location_updated_at' => now(),
                     'location_metadata' => array_merge($barcode->location_metadata ?? [], [
                         'reserved_for_order_id' => $order->id,
@@ -334,6 +335,9 @@ class StoreFulfillmentController extends Controller
                         'reserved_order_item_id' => $orderItem->id,
                         'reserved_by' => $employeeId,
                         'reserved_at' => now()->toDateTimeString(),
+                        'stock_deducted_on_scan' => false,
+                        'packing_lifecycle_status' => 'reserved_for_order',
+                        'packing_batch_quantity_before' => $barcode->batch ? (int) $barcode->batch->quantity : null,
                     ]),
                 ]);
 

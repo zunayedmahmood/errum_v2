@@ -88,6 +88,35 @@ const formatBDT = (value: any, decimals: 0 | 2 = 0) => {
 
 const normalize = (v: any) => String(v ?? '').trim().toLowerCase();
 
+
+const playPackingTone = (frequency = 880, durationMs = 120) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const audioContext = new AudioContextClass();
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+
+    oscillator.type = 'sine';
+    oscillator.frequency.value = frequency;
+    gain.gain.value = 0.05;
+
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start();
+
+    window.setTimeout(() => {
+      try {
+        oscillator.stop();
+        audioContext.close();
+      } catch {}
+    }, durationMs);
+  } catch {}
+};
+
 export default function WarehouseFulfillmentPage() {
   const { darkMode, setDarkMode } = useTheme();
   const { isRole } = useAuth();
@@ -381,16 +410,14 @@ export default function WarehouseFulfillmentPage() {
   const playSuccessSound = () => {
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch((e) => console.log('Audio play failed:', e));
+      audioRef.current.play().catch(() => playPackingTone(880, 120));
+      return;
     }
+    playPackingTone(880, 120);
   };
 
   const playErrorSound = () => {
-    // Different pitch for errors (tiny embedded wav)
-    const audio = new Audio(
-      'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8ti...'
-    );
-    audio.play().catch(() => console.log('Error sound failed'));
+    playPackingTone(220, 180);
   };
 
   const addToScanHistory = (barcode: string, status: 'success' | 'warning' | 'error', message: string) => {

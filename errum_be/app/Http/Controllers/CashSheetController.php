@@ -71,10 +71,7 @@ class CashSheetController extends Controller
         $dateFrom = Carbon::parse($month . '-01')->startOfMonth()->toDateString();
         $dateTo   = Carbon::parse($month . '-01')->endOfMonth()->toDateString();
 
-        $stores = Store::where('is_active', true)
-            ->orderBy('is_warehouse')
-            ->orderBy('id')
-            ->get(['id', 'name', 'is_warehouse']);
+        $stores = $this->loadCashSheetStores($dateFrom, $dateTo);
 
         $storeIds = $stores->pluck('id')->map(fn ($id) => (int) $id)->toArray();
         $dates    = collect(CarbonPeriod::create($dateFrom, $dateTo))
@@ -115,7 +112,7 @@ class CashSheetController extends Controller
                 // and completed Expense Payments from the accounting module. Cash
                 // expenses reduce branch cash; non-cash/MFS/card/bank expenses reduce
                 // the bank bucket so totals stay aligned with the accounting ledger.
-                $disp_cash = max(0, $raw_cash - $salary - $cash_cost - $cash_to_bank);
+                $disp_cash = $raw_cash - $salary - $cash_cost - $cash_to_bank;
                 $disp_bank = $raw_bank - $bank_cost + $cash_to_bank;
 
                 $branches[] = [
@@ -743,12 +740,20 @@ class CashSheetController extends Controller
     private function businessDateSql(string $expr): string
     {
         $driver = DB::connection()->getDriverName();
+        $offsetHours = (int) env('CASH_SHEET_UTC_OFFSET_HOURS', 6);
 
-        if ($driver === 'sqlite') {
-            return "DATE({$expr}, '+6 hours')";
+        if ($offsetHours === 0) {
+            return "DATE({$expr})";
         }
 
-        return "DATE(DATE_ADD({$expr}, INTERVAL 6 HOUR))";
+        $sign = $offsetHours > 0 ? '+' : '-';
+        $hours = abs($offsetHours);
+
+        if ($driver === 'sqlite') {
+            return "DATE({$expr}, '{$sign}{$hours} hours')";
+        }
+
+        return "DATE(DATE_ADD({$expr}, INTERVAL {$offsetHours} HOUR))";
     }
 
     private function whereBusinessDateBetween($query, string $expr, string $from, string $to): void
@@ -756,6 +761,76 @@ class CashSheetController extends Controller
         $businessDate = $this->businessDateSql($expr);
         $query->whereRaw("{$businessDate} >= ?", [$from])
             ->whereRaw("{$businessDate} <= ?", [$to]);
+    }
+
+    /**
+     * Load all stores that should appear in the selected month.
+     *
+     * Active stores are always shown. Inactive stores are also shown when they
+     * have historical sale/payment/refund/cost/admin activity in the month, so
+     * old cash sheets do not lose branch columns after a branch is deactivated.
+     */
+    private function loadCashSheetStores(string $from, string $to)
+    {
+        $ids = collect(Store::where('is_active', true)->pluck('id')->all());
+
+        $merge = function ($values) use (&$ids): void {
+            $ids = $ids->merge(collect($values)->filter(fn ($id) => $id !== null)->map(fn ($id) => (int) $id));
+        };
+
+        $orderAt = 'COALESCE(order_date, confirmed_at, created_at)';
+        $paymentAt = 'COALESCE(payment_received_date, completed_at, processed_at, created_at)';
+        $splitPaymentAt = 'COALESCE(op.payment_received_date, ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.created_at)';
+        $expenseAt = 'COALESCE(ep.completed_at, ep.processed_at, e.expense_date)';
+
+        $merge(DB::table('orders')
+            ->whereNull('deleted_at')
+            ->whereRaw($this->businessDateSql($orderAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($orderAt) . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('order_payments')
+            ->whereNull('deleted_at')
+            ->whereRaw($this->businessDateSql($paymentAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($paymentAt) . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('payment_splits as ps')
+            ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
+            ->selectRaw('COALESCE(ps.store_id, op.store_id) as store_id')
+            ->whereRaw($this->businessDateSql($splitPaymentAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($splitPaymentAt) . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('refunds as r')
+            ->leftJoin('product_returns as pr', 'pr.id', '=', 'r.return_id')
+            ->leftJoin('orders as o', 'o.id', '=', 'r.order_id')
+            ->selectRaw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id) as store_id')
+            ->whereNotNull('r.completed_at')
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('branch_cost_entries')
+            ->whereBetween('entry_date', [$from, $to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('expense_payments as ep')
+            ->join('expenses as e', 'e.id', '=', 'ep.expense_id')
+            ->selectRaw('COALESCE(ep.store_id, e.store_id) as store_id')
+            ->whereRaw($this->businessDateSql($expenseAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($expenseAt) . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('admin_entries')
+            ->whereNotNull('store_id')
+            ->whereBetween('entry_date', [$from, $to])
+            ->pluck('store_id'));
+
+        return Store::whereIn('id', $ids->unique()->values()->all())
+            ->orderBy('is_warehouse')
+            ->orderBy('id')
+            ->get(['id', 'name', 'is_warehouse', 'is_active']);
     }
 
     private function loadBranchSales(array $ids, string $from, string $to): array
@@ -805,15 +880,16 @@ class CashSheetController extends Controller
             $out[$storeKey][$r->day][$bucket] = ($out[$storeKey][$r->day][$bucket] ?? 0) + ($sign * (float) $r->total);
         };
 
-        $normalPaymentAt = 'COALESCE(op.completed_at, op.payment_received_date, op.processed_at, op.created_at)';
-        $splitPaymentAt = 'COALESCE(ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.payment_received_date, op.created_at)';
+        $normalPaymentAt = 'COALESCE(op.payment_received_date, op.completed_at, op.processed_at, op.created_at)';
+        $splitPaymentAt = 'COALESCE(op.payment_received_date, ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.created_at)';
         $splitStoreExpr = 'COALESCE(ps.store_id, op.store_id, o.store_id)';
 
         // 1) Normal single-method payments.
-        // Cancelled/refunded orders are excluded, but exchange_surplus is kept because
-        // that is real extra money collected during an upgrade exchange. If completed_at
-        // is missing in older rows, payment_received_date/processed_at/created_at is used
-        // so a paid receipt cannot show Sale without Cash/Bank.
+        // Payment cash-flow is counted even if the order is later cancelled/refunded;
+        // the matching refund will subtract cash/bank on the refund date. This avoids
+        // the old double-negative problem where the payment disappeared but refund remained.
+        // Explicit payment_received_date is preferred so backdated POS/offline payments
+        // hydrate the intended business day instead of the processing day.
         $normalPayments = DB::table('order_payments as op')
             ->join('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
@@ -836,7 +912,7 @@ class CashSheetController extends Controller
 
         $this->whereBusinessDateBetween($normalPayments, $normalPaymentAt, $from, $to);
 
-        $this->applyCashSheetOrderScope($normalPayments, 'o', true, 'op');
+        $this->applyCashFlowOrderScope($normalPayments, 'o', true, 'op');
 
         $normalPayments
             ->groupBy('op.store_id', 'day', 'pm.type')
@@ -879,7 +955,7 @@ class CashSheetController extends Controller
 
         $this->whereBusinessDateBetween($splitPayments, $splitPaymentAt, $from, $to);
 
-        $this->applyCashSheetOrderScope($splitPayments, 'o', true, 'op');
+        $this->applyCashFlowOrderScope($splitPayments, 'o', true, 'op');
 
         $splitPayments
             ->groupBy('store_id', 'day', 'pm.type')
@@ -902,7 +978,9 @@ class CashSheetController extends Controller
             ->whereNull('o.deleted_at')
             ->where('r.status', 'completed')
             ->whereNotNull('r.completed_at')
-            ->whereNotIn('r.refund_method', ['store_credit', 'gift_card'])
+            ->where(function ($q) {
+                $q->whereNull('r.refund_method')->orWhereNotIn('r.refund_method', ['store_credit', 'gift_card']);
+            })
             ->whereRaw($this->businessDateSql('r.completed_at') . ' >= ?', [$from])
             ->whereRaw($this->businessDateSql('r.completed_at') . ' <= ?', [$to])
             ->groupBy('store_id', 'day', 'mt')
@@ -933,7 +1011,6 @@ class CashSheetController extends Controller
             ->whereIn('op.store_id', $ids)
             ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereNull('o.deleted_at')
-            ->whereNotIn(DB::raw('LOWER(o.status)'), self::EXCLUDED_ORDER_STATUSES)
             ->whereNull('op.deleted_at')
             ->where('op.status', 'completed')
             ->where('op.payment_type', 'exchange_surplus')
@@ -1097,6 +1174,11 @@ class CashSheetController extends Controller
             ->whereNull('deleted_at')
             ->whereNotIn(DB::raw('LOWER(status)'), self::EXCLUDED_ORDER_STATUSES)
             ->where('outstanding_amount', '>', 0)
+            ->where(function ($q) {
+                $q->whereIn(DB::raw("LOWER(COALESCE(payment_method, ''))"), ['cod', 'cash_on_delivery'])
+                    ->orWhereIn(DB::raw("LOWER(COALESCE(intended_courier, ''))"), ['pathao', 'steadfast', 'redx', 'paperfly'])
+                    ->orWhereRaw("LOWER(COALESCE(metadata, '')) LIKE ?", ['%cod%']);
+            })
             ->whereRaw($this->businessDateSql($orderDateExpr) . ' >= ?', [$from])
             ->whereRaw($this->businessDateSql($orderDateExpr) . ' <= ?', [$to])
             ->groupBy('day')
@@ -1143,8 +1225,8 @@ class CashSheetController extends Controller
             "OR (o.delivered_at IS NOT NULL AND op.completed_at IS NOT NULL AND op.completed_at >= o.delivered_at)" .
             ") THEN 1 ELSE 0 END";
 
-        $normalOnlinePaymentAt = 'COALESCE(op.completed_at, op.payment_received_date, op.processed_at, op.created_at)';
-        $splitOnlinePaymentAt = 'COALESCE(ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.payment_received_date, op.created_at)';
+        $normalOnlinePaymentAt = 'COALESCE(op.payment_received_date, op.completed_at, op.processed_at, op.created_at)';
+        $splitOnlinePaymentAt = 'COALESCE(op.payment_received_date, ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.created_at)';
 
         DB::table('order_payments as op')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
@@ -1165,7 +1247,9 @@ class CashSheetController extends Controller
             ->where(function ($q) use ($excludedPaymentTypes) {
                 $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
             })
-            ->whereNotIn(DB::raw('LOWER(o.status)'), self::EXCLUDED_ORDER_STATUSES)
+            ->where(function ($q) {
+                $this->whereNotExchangeReplacement($q, 'o');
+            })
             ->whereRaw($this->businessDateSql($normalOnlinePaymentAt) . ' >= ?', [$from])
             ->whereRaw($this->businessDateSql($normalOnlinePaymentAt) . ' <= ?', [$to])
             ->groupBy('day', 'o.order_type', 'is_cod_collection')
@@ -1209,7 +1293,9 @@ class CashSheetController extends Controller
             ->where(function ($q) use ($excludedPaymentTypes) {
                 $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
             })
-            ->whereNotIn(DB::raw('LOWER(o.status)'), self::EXCLUDED_ORDER_STATUSES)
+            ->where(function ($q) {
+                $this->whereNotExchangeReplacement($q, 'o');
+            })
             ->whereRaw($this->businessDateSql($splitOnlinePaymentAt) . ' >= ?', [$from])
             ->whereRaw($this->businessDateSql($splitOnlinePaymentAt) . ' <= ?', [$to])
             ->groupBy('day', 'o.order_type', 'is_cod_collection')
@@ -1257,7 +1343,9 @@ class CashSheetController extends Controller
             ->whereNull('o.deleted_at')
             ->where('r.status', 'completed')
             ->whereNotNull('r.completed_at')
-            ->whereNotIn('r.refund_method', ['store_credit', 'gift_card'])
+            ->where(function ($q) {
+                $q->whereNull('r.refund_method')->orWhereNotIn('r.refund_method', ['store_credit', 'gift_card']);
+            })
             ->whereRaw($this->businessDateSql('r.completed_at') . ' >= ?', [$from])
             ->whereRaw($this->businessDateSql('r.completed_at') . ' <= ?', [$to])
             ->groupBy('day', 'o.order_type', 'is_cod_refund')
@@ -1289,6 +1377,30 @@ class CashSheetController extends Controller
     {
         $query->whereNull($orderAlias . '.deleted_at')
             ->whereNotIn(DB::raw('LOWER(' . $orderAlias . '.status)'), self::EXCLUDED_ORDER_STATUSES);
+
+        if ($allowExchangeSurplusPayment) {
+            $query->where(function ($q) use ($orderAlias, $paymentAlias) {
+                $this->whereNotExchangeReplacement($q, $orderAlias);
+                $q->orWhere($paymentAlias . '.payment_type', 'exchange_surplus');
+            });
+            return;
+        }
+
+        $this->whereNotExchangeReplacement($query, $orderAlias);
+    }
+
+    /**
+     * Cash movements should survive later order status changes.
+     *
+     * Sales columns exclude cancelled/refunded orders. Cash/bank columns are
+     * different: once a completed payment exists, it was a real cash-flow event.
+     * If the order is later cancelled or refunded, the completed refund row creates
+     * the opposite cash-flow event. Therefore payment loaders must not filter out
+     * completed payments only because the parent order status changed.
+     */
+    private function applyCashFlowOrderScope($query, string $orderAlias = 'o', bool $allowExchangeSurplusPayment = false, string $paymentAlias = 'op'): void
+    {
+        $query->whereNull($orderAlias . '.deleted_at');
 
         if ($allowExchangeSurplusPayment) {
             $query->where(function ($q) use ($orderAlias, $paymentAlias) {

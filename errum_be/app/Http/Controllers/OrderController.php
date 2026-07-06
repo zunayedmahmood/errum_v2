@@ -3100,6 +3100,12 @@ class OrderController extends Controller
                     throw new \Exception("Item '{$orderItem->product_name}' requires {$orderItem->quantity} barcode(s), but " . count($barcodes) . " provided");
                 }
 
+                // Prevent the same physical barcode from being submitted twice in one fulfillment payload.
+                $normalizedBarcodes = array_map(fn ($value) => trim((string) $value), $barcodes);
+                if (count($normalizedBarcodes) !== count(array_unique($normalizedBarcodes))) {
+                    throw new \Exception("Duplicate barcode scanned for item '{$orderItem->product_name}'. Each quantity must use a different physical barcode.");
+                }
+
                 // Validate all barcodes
                 $barcodeModels = [];
                 foreach ($barcodes as $barcodeValue) {
@@ -3119,9 +3125,21 @@ class OrderController extends Controller
                         throw new \Exception("Barcode {$barcodeValue} not found for product {$orderItem->product_name}");
                     }
 
-                    // Check if barcode is already sold
+                    // Check if barcode is already sold or already packed for another active order.
                     if (in_array($barcode->current_status, ['sold', 'with_customer'])) {
                         throw new \Exception("Barcode {$barcodeValue} has already been sold");
+                    }
+
+                    $barcodeMetadata = is_array($barcode->location_metadata) ? $barcode->location_metadata : [];
+                    $heldOrderId = (int) ($barcodeMetadata['reserved_for_order_id'] ?? 0);
+                    if ($barcode->current_status === 'in_shipment' && $heldOrderId > 0 && $heldOrderId !== (int) $order->id) {
+                        throw new \Exception("Barcode {$barcodeValue} is already packed for another order");
+                    }
+
+                    if (!in_array($barcode->current_status, ['available', 'in_shop', 'in_warehouse', 'on_display'], true)
+                        && !($barcode->current_status === 'in_shipment' && $heldOrderId === (int) $order->id)
+                    ) {
+                        throw new \Exception("Barcode {$barcodeValue} is not available for packing. Current status: {$barcode->current_status}");
                     }
 
                     if ($barcode->is_defective && !$isDefectiveResale) {
@@ -3141,6 +3159,23 @@ class OrderController extends Controller
                     $orderItem->update([
                         'product_barcode_id' => $barcodeModels[0]->id,
                         'product_batch_id' => $barcodeModels[0]->batch_id // Sync batch ID with physical unit
+                    ]);
+
+                    $barcodeModels[0]->update([
+                        'is_active' => true,
+                        'current_status' => 'in_shipment',
+                        'current_store_id' => $order->store_id ?: ($barcodeModels[0]->current_store_id ?: ($barcodeModels[0]->batch?->store_id)),
+                        'location_updated_at' => now(),
+                        'location_metadata' => array_merge($barcodeModels[0]->location_metadata ?? [], [
+                            'reserved_for_order_id' => $order->id,
+                            'reserved_for_order_number' => $order->order_number,
+                            'reserved_order_item_id' => $orderItem->id,
+                            'reserved_by' => Auth::id(),
+                            'reserved_at' => now()->toDateTimeString(),
+                            'stock_deducted_on_scan' => false,
+                            'packing_lifecycle_status' => 'reserved_for_order',
+                            'packing_batch_quantity_before' => $barcodeModels[0]->batch ? (int) $barcodeModels[0]->batch->quantity : null,
+                        ]),
                     ]);
                     
                     $fulfilledItems[] = [
@@ -3168,11 +3203,28 @@ class OrderController extends Controller
                         'total_amount' => round($unitPrice - $discountPerUnit + $taxPerUnit, 2),
                     ]);
 
+                    $barcodeModels[0]->update([
+                        'is_active' => true,
+                        'current_status' => 'in_shipment',
+                        'current_store_id' => $order->store_id ?: ($barcodeModels[0]->current_store_id ?: ($barcodeModels[0]->batch?->store_id)),
+                        'location_updated_at' => now(),
+                        'location_metadata' => array_merge($barcodeModels[0]->location_metadata ?? [], [
+                            'reserved_for_order_id' => $order->id,
+                            'reserved_for_order_number' => $order->order_number,
+                            'reserved_order_item_id' => $orderItem->id,
+                            'reserved_by' => Auth::id(),
+                            'reserved_at' => now()->toDateTimeString(),
+                            'stock_deducted_on_scan' => false,
+                            'packing_lifecycle_status' => 'reserved_for_order',
+                            'packing_batch_quantity_before' => $barcodeModels[0]->batch ? (int) $barcodeModels[0]->batch->quantity : null,
+                        ]),
+                    ]);
+
                     $fulfilledBarcodes = [$barcodeModels[0]->barcode];
 
                     // Create new items for remaining barcodes
                     for ($i = 1; $i < count($barcodeModels); $i++) {
-                        OrderItem::create([
+                        $splitOrderItem = OrderItem::create([
                             'order_id' => $order->id,
                             'product_id' => $orderItem->product_id,
                             'product_batch_id' => $barcodeModels[$i]->batch_id, // Use actual batch ID of the barcode
@@ -3185,6 +3237,22 @@ class OrderController extends Controller
                             'tax_amount' => round($taxPerUnit, 2),
                             'cogs' => round($cogsPerUnit, 2),
                             'total_amount' => round($unitPrice - $discountPerUnit + $taxPerUnit, 2),
+                        ]);
+
+                        $barcodeModels[$i]->update([
+                            'is_active' => true,
+                            'current_status' => 'in_shipment',
+                            'current_store_id' => $order->store_id ?: ($barcodeModels[$i]->current_store_id ?: ($barcodeModels[$i]->batch?->store_id)),
+                            'location_updated_at' => now(),
+                            'location_metadata' => array_merge($barcodeModels[$i]->location_metadata ?? [], [
+                                'reserved_for_order_id' => $order->id,
+                                'reserved_for_order_number' => $order->order_number,
+                                'reserved_order_item_id' => $splitOrderItem->id,
+                                'reserved_by' => Auth::id(),
+                                'reserved_at' => now()->toDateTimeString(),
+                                'stock_deducted_on_scan' => false,
+                                'packing_batch_quantity_before' => $barcodeModels[$i]->batch ? (int) $barcodeModels[$i]->batch->quantity : null,
+                            ]),
                         ]);
 
                         $fulfilledBarcodes[] = $barcodeModels[$i]->barcode;
