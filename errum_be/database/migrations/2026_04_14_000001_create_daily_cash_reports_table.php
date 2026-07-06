@@ -1,60 +1,28 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
 /**
- * branch_cost_entries  — multiple entries per branch per day
- * admin_entries        — multiple entries per day (salary, cash_to_bank, sslzc, pathao)
- * owner_entries        — multiple entries per day (cash_invest, bank_invest, cash_cost, bank_cost)
+ * Legacy monthly-sheet migration removed.
+ *
+ * The cash sheet no longer has a saved daily/monthly sheet table. The canonical
+ * report is rebuilt live from source tables by /api/cash-sheet. The three
+ * manual entry tables used by the Branch Cost, Admin, and Owner panels are
+ * created by 2026_04_14_000003_create_cash_sheet_entry_tables.php.
+ *
+ * This migration is intentionally kept as a no-op so already-installed systems
+ * keep a stable migration history and fresh installs do not create duplicate
+ * cash-sheet tables.
  */
 return new class extends Migration
 {
     public function up(): void
     {
-        // Branch managers log daily operational costs
-        Schema::create('branch_cost_entries', function (Blueprint $table) {
-            $table->id();
-            $table->date('entry_date');
-            $table->foreignId('store_id')->constrained('stores')->cascadeOnDelete();
-            $table->decimal('amount', 14, 2);
-            $table->text('details')->nullable();
-            $table->foreignId('created_by')->nullable()->constrained('employees')->nullOnDelete();
-            $table->timestamps();
-            $table->index(['entry_date', 'store_id']);
-        });
-
-        // Admin entries: salary set-aside, cash→bank transfers, SSLZC & Pathao disbursements
-        Schema::create('admin_entries', function (Blueprint $table) {
-            $table->id();
-            $table->date('entry_date');
-            $table->enum('type', ['salary_setaside', 'cash_to_bank', 'sslzc', 'pathao']);
-            $table->foreignId('store_id')->nullable()->constrained('stores')->nullOnDelete(); // null for sslzc/pathao
-            $table->decimal('amount', 14, 2);
-            $table->text('details')->nullable();
-            $table->foreignId('created_by')->nullable()->constrained('employees')->nullOnDelete();
-            $table->timestamps();
-            $table->index(['entry_date', 'type']);
-        });
-
-        // Owner entries: investments in and costs out
-        Schema::create('owner_entries', function (Blueprint $table) {
-            $table->id();
-            $table->date('entry_date');
-            $table->enum('type', ['cash_invest', 'bank_invest', 'cash_cost', 'bank_cost']);
-            $table->decimal('amount', 14, 2);
-            $table->text('details')->nullable();
-            $table->foreignId('created_by')->nullable()->constrained('employees')->nullOnDelete();
-            $table->timestamps();
-            $table->index('entry_date');
-        });
+        // no-op; superseded by the canonical cash-sheet entry-table migration
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('owner_entries');
-        Schema::dropIfExists('admin_entries');
-        Schema::dropIfExists('branch_cost_entries');
+        // no-op; do not drop canonical cash-sheet entry tables from a legacy migration
     }
 };
