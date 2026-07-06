@@ -12,7 +12,7 @@ export default function DeprecatedCashSheetNewRedirect() {
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-gray-950 text-white text-sm">
-      Redirecting to Daily Cash Sheet...
+      Redirecting to Monthly Cash Sheet...
     </main>
   );
 }

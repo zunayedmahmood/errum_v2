@@ -873,8 +873,8 @@ Route::middleware('auth:api')->group(function () {
     
     
     // ============================================
-    // DAILY CASH SHEET ROUTES
-    // Daily accounting sheet (branches + online + owner)
+    // MONTHLY CASH SHEET ROUTES
+    // Canonical live monthly accounting sheet (branches + online + owner)
     // ============================================
 
     Route::prefix('cash-sheet')->group(function () {
