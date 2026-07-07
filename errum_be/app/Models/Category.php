@@ -88,7 +88,7 @@ class Category extends Model
     public function allChildren()
     {
         return $this->children()
-            ->withCount(['products', 'activeProducts'])
+            ->withCount(static::skuGroupCountRelations())
             ->with('allChildren');
     }
 
@@ -172,6 +172,24 @@ class Category extends Model
             $child->save();
             $child->updateChildrenHierarchy();
         }
+    }
+
+    /**
+     * Category product counters in the admin category tree must represent
+     * sellable SKU groups, not variant/product rows. Multiple Product rows
+     * can share one SKU because Errum stores variations as rows under the
+     * same SKU group.
+     */
+    public static function skuGroupCountRelations(): array
+    {
+        return [
+            'products as products_count' => function ($query) {
+                $query->selectRaw('COUNT(DISTINCT products.sku)');
+            },
+            'activeProducts as active_products_count' => function ($query) {
+                $query->selectRaw('COUNT(DISTINCT products.sku)');
+            },
+        ];
     }
 
     // Product relationships

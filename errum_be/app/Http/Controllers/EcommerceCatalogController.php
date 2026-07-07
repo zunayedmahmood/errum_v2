@@ -119,7 +119,7 @@ class EcommerceCatalogController extends Controller
             // Size-only searches such as "L", "M", "XL" or "40" must be exact
             // variation/size filters. A broad LIKE search makes "L" match unrelated
             // product names, colours, categories, XL, 40/42 groups, etc.
-            if ($this->isStrictSizeSearch($search) && !$this->searchMatchesSku($search)) {
+            if ($this->shouldTreatAsStrictSizeSearch($search)) {
                 $sizeToken = $this->normalizeSizeToken($search);
                 $q->where(function ($sizeQ) use ($sizeToken) {
                     $this->whereExactSizeToken($sizeQ, 'products.variation_suffix', $sizeToken);
@@ -283,7 +283,7 @@ class EcommerceCatalogController extends Controller
         // When the sidebar search is a pure size filter, do not send unrelated
         // variants back inside the matching product group. Example: searching "L"
         // should not show M, XL, 40 or 42 variants under the same base product.
-        if ($search && $this->isStrictSizeSearch($search) && !$this->searchMatchesSku($search)) {
+        if ($search && $this->shouldTreatAsStrictSizeSearch($search)) {
             $sizeToken = $this->normalizeSizeToken($search);
             $allVariantsQuery->where(function ($variantQ) use ($sizeToken) {
                 $this->whereExactSizeToken($variantQ, 'variation_suffix', $sizeToken);
@@ -1385,7 +1385,35 @@ class EcommerceCatalogController extends Controller
 
         // Numeric apparel/shoe sizes should also be exact. This prevents searching
         // 40 from returning unrelated SKUs/names through broad LIKE matching.
-        return (bool) preg_match('/^\d{1,3}(\.5)?$/', $token);
+        return (bool) preg_match('/^\d{1,2}(\.5)?$/', $token);
+    }
+
+
+    private function shouldTreatAsStrictSizeSearch(?string $search): bool
+    {
+        return $this->isStrictSizeSearch($search) && !$this->hasExactSkuMatch($search);
+    }
+
+    private function hasExactSkuMatch(?string $search): bool
+    {
+        $rawSearch = trim((string) $search);
+        if ($rawSearch === '') {
+            return false;
+        }
+
+        $compactSearch = preg_replace('/[\s\-\/_]+/', '', $rawSearch);
+
+        return Product::query()
+            ->where('is_archived', false)
+            ->whereNull('deleted_at')
+            ->where(function ($q) use ($rawSearch, $compactSearch) {
+                $q->where('sku', $rawSearch);
+
+                if ($compactSearch !== '') {
+                    $q->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(sku, ''), ' ', ''), '-', ''), '/', ''), '_', '') = ?", [$compactSearch]);
+                }
+            })
+            ->exists();
     }
 
     private function whereExactSizeToken($query, string $column, string $sizeToken): void
@@ -1436,43 +1464,6 @@ class EcommerceCatalogController extends Controller
         return $types;
     }
 
-    private function compactSku(?string $value): string
-    {
-        $value = mb_strtolower(trim((string) $value), 'UTF-8');
-        return preg_replace('/[\s\-\/_]+/', '', $value) ?: '';
-    }
-
-    private function searchMatchesSku(?string $search): bool
-    {
-        $raw = trim((string) $search);
-        if ($raw === '') {
-            return false;
-        }
-
-        static $cache = [];
-        $cacheKey = mb_strtolower($raw, 'UTF-8');
-        if (array_key_exists($cacheKey, $cache)) {
-            return $cache[$cacheKey];
-        }
-
-        $compact = $this->compactSku($raw);
-
-        $exists = Product::query()
-            ->whereNull('deleted_at')
-            ->where('is_archived', false)
-            ->where(function ($q) use ($raw, $compact) {
-                $q->where('sku', 'like', '%' . addslashes($raw) . '%');
-
-                if ($compact !== '') {
-                    $q->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(sku, ''), ' ', ''), '-', ''), '/', ''), '_', '')) LIKE ?", ['%' . $compact . '%']);
-                }
-            })
-            ->exists();
-
-        $cache[$cacheKey] = $exists;
-        return $exists;
-    }
-
     private function scoreAndRankProducts(array $candidates, string $search): array
     {
         $normalizedQuery = $this->normalizeString($search);
@@ -1483,7 +1474,7 @@ class EcommerceCatalogController extends Controller
         // For exact size searches, buildFilterQuery already filtered the matching
         // variants. Do not re-score against base_name, otherwise size "L" would
         // either disappear or rank unrelated base names.
-        if ($this->isStrictSizeSearch($search) && !$this->searchMatchesSku($search)) {
+        if ($this->shouldTreatAsStrictSizeSearch($search)) {
             usort($candidates, function ($a, $b) {
                 return strcasecmp(((array) $a)['base_name'] ?? '', ((array) $b)['base_name'] ?? '');
             });
@@ -1502,10 +1493,18 @@ class EcommerceCatalogController extends Controller
             foreach ($candidates as $cand) {
                 $candObj = (object) $cand;
                 $baseName = $candObj->base_name ?? '';
+                $sku = (string) ($candObj->sku ?? '');
                 $normalizedBaseName = $this->normalizeString($baseName);
-                if (str_starts_with($normalizedBaseName, $normalizedQuery)) {
+                $normalizedSku = mb_strtolower(trim($sku), 'UTF-8');
+                $compactSku = preg_replace('/[\s\-\/_]+/', '', $normalizedSku);
+                $compactQuery = preg_replace('/[\s\-\/_]+/', '', mb_strtolower(trim($search), 'UTF-8'));
+                if (
+                    str_starts_with($normalizedBaseName, $normalizedQuery) ||
+                    ($normalizedSku !== '' && str_contains($normalizedSku, mb_strtolower(trim($search), 'UTF-8'))) ||
+                    ($compactQuery !== '' && $compactSku !== '' && str_contains($compactSku, $compactQuery))
+                ) {
                     $candArray = (array) $cand;
-                    $candArray['total_score'] = 1;
+                    $candArray['total_score'] = ($normalizedSku === mb_strtolower(trim($search), 'UTF-8') || ($compactQuery !== '' && $compactSku === $compactQuery)) ? 100 : 1;
                     $filtered[] = $candArray;
                 }
             }
@@ -1528,15 +1527,15 @@ class EcommerceCatalogController extends Controller
             $candObj = (object) $cand;
             $baseName = $candObj->base_name ?? '';
             $fullName = $candObj->name ?? '';
-            $sku = $candObj->sku ?? '';
+            $sku = (string) ($candObj->sku ?? '');
             
             $normalizedBaseName = $this->normalizeString($baseName);
             $normalizedFullName = $this->normalizeString($fullName);
-            $normalizedSku = $this->normalizeString($sku);
-            $compactSku = $this->compactSku($sku);
-            $compactQuery = $this->compactSku($search);
+            $normalizedSku = mb_strtolower(trim($sku), 'UTF-8');
+            $compactSku = preg_replace('/[\s\-\/_]+/', '', $normalizedSku);
+            $compactQuery = preg_replace('/[\s\-\/_]+/', '', mb_strtolower(trim($search), 'UTF-8'));
             
-            $candidateTokens = explode(' ', trim($normalizedBaseName . ' ' . $normalizedSku));
+            $candidateTokens = explode(' ', $normalizedBaseName);
             
             // Step 3 & 4: Compute score
             $scoreA = 0;
@@ -1585,20 +1584,18 @@ class EcommerceCatalogController extends Controller
             if (str_contains($normalizedFullName, $normalizedQuery)) {
                 $scoreExactPhrase = 15;
             }
-
+            
             $scoreSku = 0;
-            if ($normalizedSku !== '' && $normalizedQuery !== '') {
-                if ($normalizedSku === $normalizedQuery) {
-                    $scoreSku = 120;
-                } elseif ($compactSku !== '' && $compactSku === $compactQuery) {
-                    $scoreSku = 110;
-                } elseif (str_starts_with($normalizedSku, $normalizedQuery) || ($compactSku !== '' && str_starts_with($compactSku, $compactQuery))) {
-                    $scoreSku = 90;
-                } elseif (str_contains($normalizedSku, $normalizedQuery) || ($compactSku !== '' && str_contains($compactSku, $compactQuery))) {
-                    $scoreSku = 70;
+            if ($normalizedSku !== '' || $compactSku !== '') {
+                if ($normalizedSku === mb_strtolower(trim($search), 'UTF-8') || ($compactQuery !== '' && $compactSku === $compactQuery)) {
+                    $scoreSku = 100;
+                } elseif ($normalizedSku !== '' && str_contains($normalizedSku, mb_strtolower(trim($search), 'UTF-8'))) {
+                    $scoreSku = 60;
+                } elseif ($compactQuery !== '' && $compactSku !== '' && str_contains($compactSku, $compactQuery)) {
+                    $scoreSku = 60;
                 }
             }
-            
+
             $totalScore = $scoreA + $scoreB + $scoreC + $scoreD + $scoreExactPhrase + $scoreSku;
             
             $candArray = (array) $cand;

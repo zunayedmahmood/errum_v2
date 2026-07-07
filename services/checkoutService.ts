@@ -43,16 +43,6 @@ export interface OrderItem {
   };
 }
 
-export interface DeliveryChargeSetting {
-  inside_dhaka_delivery_charge: number;
-  outside_dhaka_delivery_charge: number;
-  standard_delivery_charge: number;
-  amount: number;
-  city?: string;
-  zone?: 'inside_dhaka' | 'outside_dhaka';
-  currency: string;
-}
-
 export interface OrderSummary {
   subtotal: number;
   shipping_charge: number;
@@ -110,6 +100,16 @@ export interface Order {
 }
 
 // ✅ FIXED: Match actual backend PaymentMethod model
+export interface DeliveryChargeSettings {
+  inside_dhaka: number;
+  outside_dhaka: number;
+}
+
+const DEFAULT_DELIVERY_CHARGE_SETTINGS: DeliveryChargeSettings = {
+  inside_dhaka: 60,
+  outside_dhaka: 120,
+};
+
 export interface PaymentMethod {
   id: number;
   code: string;
@@ -189,51 +189,33 @@ export interface OrdersListResponse {
 }
 
 class CheckoutService {
-  private normalizeDeliveryChargePayload(payload: any): DeliveryChargeSetting {
-    const inside = Number(payload.inside_dhaka_delivery_charge ?? payload.standard_delivery_charge ?? payload.amount ?? 60);
-    const outside = Number(payload.outside_dhaka_delivery_charge ?? 120);
-    const amount = Number(payload.amount ?? payload.standard_delivery_charge ?? inside);
+  private deliveryChargeSettings: DeliveryChargeSettings = { ...DEFAULT_DELIVERY_CHARGE_SETTINGS };
 
-    const safeInside = Number.isFinite(inside) ? Math.max(0, inside) : 60;
-    const safeOutside = Number.isFinite(outside) ? Math.max(0, outside) : 120;
-    const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : safeInside;
+  private normalizeDeliveryChargeSettings(settings?: Partial<DeliveryChargeSettings> | null): DeliveryChargeSettings {
+    const inside = Number(settings?.inside_dhaka ?? DEFAULT_DELIVERY_CHARGE_SETTINGS.inside_dhaka);
+    const outside = Number(settings?.outside_dhaka ?? DEFAULT_DELIVERY_CHARGE_SETTINGS.outside_dhaka);
 
     return {
-      inside_dhaka_delivery_charge: safeInside,
-      outside_dhaka_delivery_charge: safeOutside,
-      standard_delivery_charge: safeAmount,
-      amount: safeAmount,
-      city: payload.city,
-      zone: payload.zone,
-      currency: payload.currency ?? 'BDT',
+      inside_dhaka: Number.isFinite(inside) && inside >= 0 ? inside : DEFAULT_DELIVERY_CHARGE_SETTINGS.inside_dhaka,
+      outside_dhaka: Number.isFinite(outside) && outside >= 0 ? outside : DEFAULT_DELIVERY_CHARGE_SETTINGS.outside_dhaka,
     };
   }
 
-  /**
-   * Get e-commerce delivery charges from backend settings. The returned amount is resolved for the city.
-   */
-  async getDeliveryChargeSetting(city = 'Dhaka'): Promise<DeliveryChargeSetting> {
+  async getDeliveryChargeSettings(): Promise<DeliveryChargeSettings> {
     try {
-      const response = await axiosInstance.get('/settings/delivery-charge', { params: { city } });
-      const payload = response.data?.data ?? response.data ?? {};
-      return this.normalizeDeliveryChargePayload(payload);
+      const response = await axiosInstance.get<ApiResponse<DeliveryChargeSettings> | { data?: DeliveryChargeSettings }>('/catalog/delivery-charges');
+      const payload = (response.data as any)?.data ?? response.data;
+      this.deliveryChargeSettings = this.normalizeDeliveryChargeSettings(payload);
     } catch (error) {
-      console.error('Failed to fetch delivery charge setting:', error);
-      return {
-        inside_dhaka_delivery_charge: 60,
-        outside_dhaka_delivery_charge: 120,
-        standard_delivery_charge: 60,
-        amount: 60,
-        city,
-        zone: this.isDhakaCity(city) ? 'inside_dhaka' : 'outside_dhaka',
-        currency: 'BDT',
-      };
+      console.warn('Failed to fetch delivery charge settings; using defaults.', error);
+      this.deliveryChargeSettings = { ...DEFAULT_DELIVERY_CHARGE_SETTINGS };
     }
+
+    return this.getCachedDeliveryChargeSettings();
   }
 
-  async getDeliveryChargeAmount(city = 'Dhaka'): Promise<number> {
-    const settings = await this.getDeliveryChargeSetting(city);
-    return settings.amount;
+  getCachedDeliveryChargeSettings(): DeliveryChargeSettings {
+    return { ...this.deliveryChargeSettings };
   }
 
   /**
@@ -625,7 +607,7 @@ class CheckoutService {
    */
   calculateOrderSummary(
     items: OrderItem[],
-    shippingCharge: number = 0,
+    shippingCharge: number = 60,
     couponDiscount: number = 0
   ): OrderSummary {
     const subtotal = items.reduce((sum, item) => sum + item.total, 0);
@@ -685,29 +667,16 @@ class CheckoutService {
     };
   }
 
-  isDhakaCity(city?: string | null): boolean {
-    const normalized = String(city || 'Dhaka').trim().toLowerCase();
-    if (!normalized) return true;
-    return normalized.includes('dhaka') || normalized.includes('ঢাকা');
-  }
-
   /**
-   * Resolve the delivery charge from loaded settings for the current checkout city.
+   * Calculate delivery charge based on city (matches backend/admin settings).
    */
-  calculateDeliveryCharge(city?: string, settings?: DeliveryChargeSetting | number): number {
-    if (typeof settings === 'number') {
-      return Math.max(0, Number(settings) || 0);
-    }
+  calculateDeliveryCharge(city: string = 'Dhaka'): number {
+    const cityLower = (city || 'Dhaka').trim().toLowerCase();
+    const insideDhaka = cityLower === '' || cityLower.includes('dhaka') || cityLower.includes('ঢাকা');
 
-    if (!settings) {
-      return this.isDhakaCity(city) ? 60 : 120;
-    }
-
-    const amount = this.isDhakaCity(city)
-      ? settings.inside_dhaka_delivery_charge
-      : settings.outside_dhaka_delivery_charge;
-
-    return Math.max(0, Number(amount) || 0);
+    return insideDhaka
+      ? this.deliveryChargeSettings.inside_dhaka
+      : this.deliveryChargeSettings.outside_dhaka;
   }
 
   /**

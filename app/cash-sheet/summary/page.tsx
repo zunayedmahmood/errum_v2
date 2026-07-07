@@ -53,7 +53,7 @@ function Row({ label, value, note }: { label: string; value: number; note?: stri
 
 export default function CashSheetSummaryPage() {
   const { darkMode, setDarkMode } = useTheme();
-  const { isLoading: authLoading } = useAuth() as any;
+  const { scopedStoreId, isLoading: authLoading } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [month, setMonth] = useState(dhakaMonthString());
   const [sheet, setSheet] = useState<CashSheetResponse | null>(null);
@@ -77,7 +77,11 @@ export default function CashSheetSummaryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, authLoading]);
 
-  const stores = useMemo(() => sheet?.summary.stores || [], [sheet?.summary.stores]);
+  const stores = useMemo(() => {
+    const list = sheet?.summary.stores || [];
+    if (scopedStoreId) return list.filter((s) => Number(s.store_id) === Number(scopedStoreId));
+    return list;
+  }, [sheet?.summary.stores, scopedStoreId]);
 
   return (
     <div className={`min-h-screen flex ${darkMode ? 'dark bg-gray-950' : 'bg-gray-50'}`}>

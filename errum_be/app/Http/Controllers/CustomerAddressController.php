@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CustomerAddress;
+use App\Services\DeliveryChargeService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -379,14 +380,14 @@ class CustomerAddressController extends Controller
                         if (in_array($postalCode, $codes)) {
                             $isDeliveryAvailable = true;
                             $estimatedDays = $area === 'Dhaka' ? '1-2' : '2-4';
-                            $deliveryCharge = $area === 'Dhaka' ? 60 : 120;
+                            $deliveryCharge = app(DeliveryChargeService::class)->chargeForCity($city);
                             break;
                         }
                     } else {
                         // If no postal code, match based on city/state only
                         $isDeliveryAvailable = true;
                         $estimatedDays = $area === 'Dhaka' ? '1-2' : '2-4';
-                        $deliveryCharge = $area === 'Dhaka' ? 60 : 120;
+                        $deliveryCharge = app(DeliveryChargeService::class)->chargeForCity($city);
                         break;
                     }
                 }

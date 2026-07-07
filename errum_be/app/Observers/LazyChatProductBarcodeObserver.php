@@ -2,11 +2,9 @@
 
 namespace App\Observers;
 
-use App\Jobs\SendLazyChatProductWebhook;
 use App\Models\ProductBarcode;
+use App\Services\LazyChat\LazyChatProductWebhookDispatcher;
 use App\Services\LazyChat\LazyChatWebhookTestContext;
-use Illuminate\Support\Facades\Log;
-use Throwable;
 
 class LazyChatProductBarcodeObserver
 {
@@ -26,28 +24,10 @@ class LazyChatProductBarcodeObserver
             return;
         }
 
-        $meta = LazyChatWebhookTestContext::meta([
+        LazyChatProductWebhookDispatcher::dispatch((int) $barcode->product_id, 'product/update', LazyChatWebhookTestContext::meta([
             'model' => ProductBarcode::class,
             'observer' => self::class,
             'model_event' => $event,
-        ]);
-
-        try {
-            if (LazyChatWebhookTestContext::isActive()) {
-                SendLazyChatProductWebhook::dispatchSync((int) $barcode->product_id, 'product/update', $meta);
-                return;
-            }
-
-            $dispatch = SendLazyChatProductWebhook::dispatch((int) $barcode->product_id, 'product/update', $meta);
-            if (method_exists($dispatch, 'afterCommit')) {
-                $dispatch->afterCommit();
-            }
-        } catch (Throwable $e) {
-            Log::warning('Could not dispatch LazyChat product barcode webhook job.', [
-                'product_id' => $barcode->product_id,
-                'barcode_id' => $barcode->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        ]));
     }
 }

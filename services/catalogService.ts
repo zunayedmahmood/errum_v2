@@ -1103,6 +1103,7 @@ const catalogService = {
   async searchProducts(params: SearchProductsParams): Promise<SearchProductsResponse> {
     const mappedParams = {
       search: params.q,
+      q: params.q,
       category_id: params.category_id,
       min_price: params.min_price,
       max_price: params.max_price,

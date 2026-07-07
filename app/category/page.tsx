@@ -52,6 +52,24 @@ export default function CategoryPageWrapper() {
     setToast({ message, type });
   };
 
+  const normalizeParentId = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  };
+
+  const findParentCategoryId = (cats: Category[], targetId: number): number | null => {
+    for (const cat of cats) {
+      const children = cat.children || cat.all_children || [];
+      if (children.some(child => child.id === targetId)) {
+        return cat.id;
+      }
+      const nestedParentId = findParentCategoryId(children, targetId);
+      if (nestedParentId !== null) return nestedParentId;
+    }
+    return null;
+  };
+
   const loadCategories = async () => {
     try {
       setLoading(true);
@@ -59,13 +77,17 @@ export default function CategoryPageWrapper() {
       const result = await categoryService.getTree(true);
       
       // Transform all_children to children
-      const transformCategories = (cats: Category[]): Category[] => {
+      const transformCategories = (cats: Category[], inferredParentId: number | null = null): Category[] => {
         return cats
           .filter(cat => cat.is_active) // Filter out inactive categories
-          .map(cat => ({
-            ...cat,
-            children: cat.all_children ? transformCategories(cat.all_children) : []
-          }));
+          .map(cat => {
+            const resolvedParentId = normalizeParentId(cat.parent_id ?? cat.parent?.id ?? inferredParentId);
+            return {
+              ...cat,
+              parent_id: resolvedParentId ?? undefined,
+              children: cat.all_children ? transformCategories(cat.all_children, cat.id) : []
+            };
+          });
       };
       
       setCategories(transformCategories(result));
@@ -127,7 +149,10 @@ export default function CategoryPageWrapper() {
       return;
     }
     setEditCategory(category);
-    setParentId(category.parent_id || null);
+    setParentId(
+      normalizeParentId(category.parent_id ?? category.parent?.id) ??
+      findParentCategoryId(categories, category.id)
+    );
     setDialogOpen(true);
   };
 

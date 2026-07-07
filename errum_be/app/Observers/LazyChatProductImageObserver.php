@@ -2,11 +2,9 @@
 
 namespace App\Observers;
 
-use App\Jobs\SendLazyChatProductWebhook;
 use App\Models\ProductImage;
+use App\Services\LazyChat\LazyChatProductWebhookDispatcher;
 use App\Services\LazyChat\LazyChatWebhookTestContext;
-use Illuminate\Support\Facades\Log;
-use Throwable;
 
 class LazyChatProductImageObserver
 {
@@ -26,27 +24,10 @@ class LazyChatProductImageObserver
             return;
         }
 
-        $meta = LazyChatWebhookTestContext::meta([
+        LazyChatProductWebhookDispatcher::dispatch((int) $productId, 'product/update', LazyChatWebhookTestContext::meta([
             'model' => ProductImage::class,
             'observer' => self::class,
             'model_event' => $event,
-        ]);
-
-        try {
-            if (LazyChatWebhookTestContext::isActive()) {
-                SendLazyChatProductWebhook::dispatchSync($productId, 'product/update', $meta);
-                return;
-            }
-
-            $dispatch = SendLazyChatProductWebhook::dispatch($productId, 'product/update', $meta);
-            if (method_exists($dispatch, 'afterCommit')) {
-                $dispatch->afterCommit();
-            }
-        } catch (Throwable $e) {
-            Log::warning('Could not dispatch LazyChat product image webhook job.', [
-                'product_id' => $productId,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        ]));
     }
 }

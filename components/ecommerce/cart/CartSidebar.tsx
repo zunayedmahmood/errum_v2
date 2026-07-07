@@ -21,17 +21,17 @@ export default function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
   const router = useRouter();
 
   const subtotal = getTotalPrice();
-  const [deliveryCharge, setDeliveryCharge] = useState(() => checkoutService.calculateDeliveryCharge('Dhaka'));
+  const [deliveryCharge, setDeliveryCharge] = useState(checkoutService.calculateDeliveryCharge('Dhaka'));
 
   useEffect(() => {
     let isMounted = true;
-    checkoutService.getDeliveryChargeSetting('Dhaka')
-      .then((settings) => {
-        if (isMounted) {
-          setDeliveryCharge(checkoutService.calculateDeliveryCharge('Dhaka', settings));
-        }
-      })
-      .catch(() => undefined);
+    checkoutService.getDeliveryChargeSettings().then(() => {
+      if (isMounted) {
+        setDeliveryCharge(checkoutService.calculateDeliveryCharge('Dhaka'));
+      }
+    }).catch(() => {
+      // Defaults are already applied in checkoutService.
+    });
 
     return () => {
       isMounted = false;

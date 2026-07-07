@@ -204,6 +204,20 @@ export default function SocialCommercePage() {
 
   const [selectedProductInventory, setSelectedProductInventory] = useState<GlobalInventoryItem | null>(null);
 
+  const normalizeSkuForSearch = (value: unknown) =>
+    String(value ?? '').trim().toLowerCase().replace(/[\s\-\/_]+/g, '');
+
+  const findExactSkuGroup = (groups: CatalogGroupedProduct[], query: string): CatalogGroupedProduct | null => {
+    const normalizedQuery = normalizeSkuForSearch(query);
+    if (!normalizedQuery) return null;
+
+    return groups.find((group) => {
+      const variants = [group.main_variant, ...(group.variants || [])];
+      return variants.some((variant) => normalizeSkuForSearch(variant?.sku) === normalizedQuery);
+    }) || null;
+  };
+
+
   const [quantity, setQuantity] = useState('');
   const [discountPercent, setDiscountPercent] = useState('');
   const [discountTk, setDiscountTk] = useState('');
@@ -758,9 +772,15 @@ export default function SocialCommercePage() {
         });
 
         if (active && response && response.grouped_products) {
-          setSearchResults(response.grouped_products);
+          const groupedProducts = response.grouped_products;
+          setSearchResults(groupedProducts);
 
-          if (response.grouped_products.length === 0) {
+          const exactSkuGroup = findExactSkuGroup(groupedProducts, searchQuery);
+          if (exactSkuGroup) {
+            setExpandedGroupId(exactSkuGroup.base_name);
+          }
+
+          if (groupedProducts.length === 0) {
             fireToast('No products found', 'error');
           }
         }

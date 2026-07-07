@@ -445,15 +445,11 @@ class PurchaseOrder extends Model
             $store = $po->store;
             $initialStatus = $store && $store->is_warehouse ? 'in_warehouse' : 'in_shop';
             $now = now();
-            $seen = [];
             $rows = [];
 
-            for ($i = 0; $i < $missingCount; $i++) {
-                do {
-                    $barcodeValue = ProductBarcode::generateUniqueBarcode();
-                } while (isset($seen[$barcodeValue]));
-                $seen[$barcodeValue] = true;
+            $barcodeValues = ProductBarcode::generateUniqueBarcodes($missingCount);
 
+            foreach ($barcodeValues as $i => $barcodeValue) {
                 $rows[] = [
                     'product_id' => $item->product_id,
                     'batch_id' => $batch->id,

@@ -661,7 +661,7 @@ class OrderController extends Controller
                     }
                     
                     // NEW LOGIC: Check global reservation table
-                    $reservedRecord = \App\Models\ReservedProduct::where('product_id', $product->id)->lockForUpdate()->first();
+                    $reservedRecord = $this->reservedProductForAvailabilityCheck($product->id, $request->order_type);
                     $globalAvailable = $reservedRecord ? $reservedRecord->available_inventory : 0;
                     
                     if ($globalAvailable < $itemData['quantity']) {
@@ -678,7 +678,7 @@ class OrderController extends Controller
                     }
 
                     // Check global available inventory too
-                    $reservedRecord = \App\Models\ReservedProduct::where('product_id', $product->id)->lockForUpdate()->first();
+                    $reservedRecord = $this->reservedProductForAvailabilityCheck($product->id, $request->order_type);
                     $globalAvailable = $reservedRecord ? $reservedRecord->available_inventory : 0;
                     
                     // Online orders (social commerce) ARE blocked by global reservations
@@ -729,7 +729,6 @@ class OrderController extends Controller
                     throw new \Exception("Missing barcode for defective/used resale item {$product->name}");
                 }
                 
-                // Debug: Log barcode capture
                 Log::info('Order item barcode capture', [
                     'barcode_value' => $itemData['barcode'] ?? 'NOT_PROVIDED',
                     'barcode_id' => $barcodeId,
@@ -754,7 +753,6 @@ class OrderController extends Controller
                 // Calculate COGS from batch cost price (0 if no batch - pre-order)
                 $cogs = $batch ? round(($batch->cost_price ?? 0) * $quantity, 2) : 0;
                 
-                // Log COGS during order creation for debugging
                 Log::info('Order Item COGS at Creation', [
                     'product_name' => $product->name,
                     'batch_id' => $batch?->id,
@@ -794,12 +792,14 @@ class OrderController extends Controller
                 $taxTotal += $tax;
                 $totalItemDiscount += $discount;
 
-                // Stock deduction is now centralizing in OrderController@complete
-                // Reservations are handled by OrderItemObserver
-                Log::info('Order item created, reservation handled by observer', [
+                // Stock deduction is centralized in OrderController@complete.
+                // Online reservations are handled by OrderItemObserver; POS/counter
+                // orders only refresh reserved_products availability snapshots.
+                Log::info('Order item created', [
                     'order_id' => $order->id,
                     'product_id' => $product->id,
                     'quantity' => $quantity,
+                    'order_type' => $order->order_type,
                 ]);
             }
 
@@ -916,6 +916,23 @@ class OrderController extends Controller
                 'message' => 'Failed to create order: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * POS/counter order creation only needs a non-blocking snapshot of global
+     * available stock. It should not lock reserved_products because the POS sale
+     * is completed immediately in the next call and does not create a reservation.
+     * Online orders still lock this row because they actually reserve stock.
+     */
+    private function reservedProductForAvailabilityCheck(int $productId, string $orderType): ?ReservedProduct
+    {
+        $query = ReservedProduct::where('product_id', $productId);
+
+        if ($orderType === 'counter') {
+            return $query->first();
+        }
+
+        return $query->lockForUpdate()->first();
     }
 
     /**
@@ -1664,7 +1681,15 @@ class OrderController extends Controller
             $defectiveOrderItemIds = array_map('intval', (array) ($metadata['defective_order_item_ids'] ?? []));
             $defectiveProductIdsByOrderItem = (array) ($metadata['defective_product_ids_by_order_item'] ?? []);
 
-            // Reduce inventory for each item
+            // Reduce inventory for each item.
+            // Keep item/barcode audit logs per unit, but batch stock and reservation
+            // writes are grouped so online packing does not update the same batch
+            // and reserved_products row once per scanned unit.
+            $batchDeductions = [];
+            $batchNotes = [];
+            $reservationReleaseByProduct = [];
+            $batchRemaining = [];
+
             foreach ($order->items as $item) {
                 $batch = $item->batch;
                 $isDefectiveResale = in_array((int) $item->id, $defectiveOrderItemIds, true)
@@ -1675,8 +1700,18 @@ class OrderController extends Controller
                     throw new \Exception("Batch not found for item {$item->product_name}");
                 }
 
-                if (!$isDefectiveResale && $batch && $batch->quantity < $item->quantity) {
-                    throw new \Exception("Insufficient stock for {$item->product_name}. Available: {$batch->quantity}");
+                if ($batch) {
+                    $batchId = (int) $batch->id;
+                    if (!array_key_exists($batchId, $batchRemaining)) {
+                        $batchRemaining[$batchId] = (int) $batch->quantity;
+                    }
+
+                    if ($batchRemaining[$batchId] < (int) $item->quantity) {
+                        $label = $isDefectiveResale ? 'resale stock' : 'stock';
+                        throw new \Exception("Insufficient {$label} for {$item->product_name}. Available: {$batchRemaining[$batchId]}");
+                    }
+
+                    $batchRemaining[$batchId] -= (int) $item->quantity;
                 }
 
                 // Handle barcode-tracked items (check if barcode exists and is not null)
@@ -1723,7 +1758,6 @@ class OrderController extends Controller
                 // Ensure COGS is stored/updated at the time of completion
                 $calculatedCogs = ($batch ? ($batch->cost_price ?? 0) * $item->quantity : 0);
                 
-                // Log COGS calculation for debugging
                 Log::info('COGS Calculation', [
                     'order_item_id' => $item->id,
                     'product_name' => $item->product_name,
@@ -1736,16 +1770,7 @@ class OrderController extends Controller
                 
                 $item->update(['cogs' => round($calculatedCogs, 2)]);
 
-                // Stock deduction is now centralized here in OrderController@complete.
-                // Used/display/faulty resale items are moved into a dedicated resale batch,
-                // so that resale batch must be reduced when the item is actually sold.
                 if ($isDefectiveResale && $batch) {
-                    if ($batch->quantity < $item->quantity) {
-                        throw new \Exception("Insufficient resale stock for {$item->product_name}. Available: {$batch->quantity}");
-                    }
-
-                    $batch->removeStock($item->quantity);
-
                     $note = sprintf(
                         "[%s] Sold %d display/faulty/used resale unit(s) via Order #%s from resale batch",
                         now()->format('Y-m-d H:i:s'),
@@ -1776,27 +1801,58 @@ class OrderController extends Controller
                         'product_id' => $item->product_id,
                         'batch_id' => $batch->id,
                     ]);
-                } elseif ($batch) {
-                    $batch->removeStock($item->quantity);
+                } elseif ($batch && $order->order_type !== 'counter') {
+                    $reservationReleaseByProduct[(int) $item->product_id] = ($reservationReleaseByProduct[(int) $item->product_id] ?? 0) + (int) $item->quantity;
 
-                    // RELEASE RESERVATION concurrently to keep available_stock (Total - Reserved) consistent
-                    if ($reservedRecord = ReservedProduct::where('product_id', $item->product_id)->first()) {
-                        $reservedRecord->decrement('reserved_inventory', $item->quantity);
-                        $reservedRecord->refresh();
-                        $reservedRecord->available_inventory = $reservedRecord->total_inventory - $reservedRecord->reserved_inventory;
-                        $reservedRecord->save();
-
-                        Log::info('Reservation released at order completion', [
-                            'order_id' => $order->id,
-                            'product_id' => $item->product_id,
-                            'quantity' => $item->quantity,
-                        ]);
-                    }
+                    Log::info('Reservation release queued at order completion', [
+                        'order_id' => $order->id,
+                        'order_item_id' => $item->id,
+                        'product_id' => $item->product_id,
+                        'quantity' => $item->quantity,
+                    ]);
                 }
-                
+
                 if ($batch) {
-                    $batch->update([
-                        'notes' => ($batch->notes ? $batch->notes . "\n" : '') . $note
+                    $batchId = (int) $batch->id;
+                    $batchDeductions[$batchId] = ($batchDeductions[$batchId] ?? 0) + (int) $item->quantity;
+                    $batchNotes[$batchId][] = $note;
+                }
+            }
+
+            foreach ($batchDeductions as $batchId => $quantityToDeduct) {
+                /** @var \App\Models\ProductBatch|null $batch */
+                $batch = \App\Models\ProductBatch::whereKey($batchId)->lockForUpdate()->first();
+                if (!$batch) {
+                    throw new \Exception("Batch {$batchId} not found while completing order {$order->order_number}");
+                }
+
+                if ((int) $batch->quantity < (int) $quantityToDeduct) {
+                    throw new \Exception("Insufficient stock for batch {$batch->batch_number}. Available: {$batch->quantity}");
+                }
+
+                $batch->quantity = max(0, (int) $batch->quantity - (int) $quantityToDeduct);
+                $batch->availability = $batch->quantity > 0;
+                $batch->notes = trim(($batch->notes ? $batch->notes . "\n" : '') . implode("\n", $batchNotes[$batchId] ?? []));
+                $batch->save();
+
+                Log::info('Batch stock deducted at order completion', [
+                    'order_id' => $order->id,
+                    'batch_id' => $batch->id,
+                    'quantity_deducted' => (int) $quantityToDeduct,
+                    'quantity_remaining' => (int) $batch->quantity,
+                ]);
+            }
+
+            foreach ($reservationReleaseByProduct as $productId => $quantityToRelease) {
+                if ($reservedRecord = ReservedProduct::where('product_id', $productId)->lockForUpdate()->first()) {
+                    $reservedRecord->reserved_inventory = max(0, (int) $reservedRecord->reserved_inventory - (int) $quantityToRelease);
+                    $reservedRecord->available_inventory = max(0, (int) $reservedRecord->total_inventory - (int) $reservedRecord->reserved_inventory);
+                    $reservedRecord->save();
+
+                    Log::info('Reservation released at order completion', [
+                        'order_id' => $order->id,
+                        'product_id' => (int) $productId,
+                        'quantity' => (int) $quantityToRelease,
                     ]);
                 }
             }
@@ -3053,9 +3109,9 @@ class OrderController extends Controller
 
         $validator = Validator::make($request->all(), [
             'fulfillments' => 'required|array|min:1',
-            'fulfillments.*.order_item_id' => 'required|exists:order_items,id',
+            'fulfillments.*.order_item_id' => 'required|integer',
             'fulfillments.*.barcodes' => 'nullable|array',
-            'fulfillments.*.barcodes.*' => 'nullable|string|exists:product_barcodes,barcode',
+            'fulfillments.*.barcodes.*' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -3070,16 +3126,33 @@ class OrderController extends Controller
         try {
             $fulfilledItems = [];
             $employee = Employee::find(Auth::id());
+            $orderItemsById = $order->items->keyBy('id');
+            $allBarcodeValues = collect($request->fulfillments)
+                ->flatMap(fn ($fulfillment) => $fulfillment['barcodes'] ?? [])
+                ->map(fn ($barcode) => trim((string) $barcode))
+                ->filter()
+                ->unique()
+                ->values();
+
+            $barcodesByValue = $allBarcodeValues->isEmpty()
+                ? collect()
+                : \App\Models\ProductBarcode::with('batch')
+                    ->whereIn('barcode', $allBarcodeValues->all())
+                    ->lockForUpdate()
+                    ->get()
+                    ->groupBy('barcode');
 
             foreach ($request->fulfillments as $fulfillment) {
-                $orderItem = OrderItem::where('order_id', $order->id)
-                    ->find($fulfillment['order_item_id']);
+                $orderItem = $orderItemsById->get((int) $fulfillment['order_item_id']);
 
                 if (!$orderItem) {
                     throw new \Exception("Order item {$fulfillment['order_item_id']} not found in this order");
                 }
 
-                $barcodes = $fulfillment['barcodes'] ?? [];
+                $barcodes = array_values(array_filter(array_map(
+                    fn ($barcode) => trim((string) $barcode),
+                    $fulfillment['barcodes'] ?? []
+                ), fn ($barcode) => $barcode !== ''));
                 $isDefectiveResale = str_contains(strtolower((string) $orderItem->product_name), '[defective/used resale]')
                     || str_contains(strtolower((string) $orderItem->product_name), '[defective]');
 
@@ -3106,19 +3179,18 @@ class OrderController extends Controller
                     throw new \Exception("Duplicate barcode scanned for item '{$orderItem->product_name}'. Each quantity must use a different physical barcode.");
                 }
 
-                // Validate all barcodes
+                // Validate all barcodes. They were preloaded above so packing does
+                // not run one or two database queries for every scanned unit.
                 $barcodeModels = [];
                 foreach ($barcodes as $barcodeValue) {
-                    // Start query for barcode
-                    $barcodeQuery = \App\Models\ProductBarcode::where('barcode', $barcodeValue)
-                        ->where('product_id', $orderItem->product_id);
+                    $matches = $barcodesByValue->get($barcodeValue, collect());
+                    $barcode = $matches->first(function ($candidate) use ($orderItem) {
+                        return (int) $candidate->product_id === (int) $orderItem->product_id
+                            && (empty($orderItem->product_batch_id) || (int) $candidate->batch_id === (int) $orderItem->product_batch_id);
+                    });
 
-                    // Try to find the barcode
-                    $barcode = (clone $barcodeQuery)->where('batch_id', $orderItem->product_batch_id)->first();
-                    
-                    // If not found in specified batch, try finding it in ANY batch for this product
                     if (!$barcode) {
-                        $barcode = $barcodeQuery->first();
+                        $barcode = $matches->first(fn ($candidate) => (int) $candidate->product_id === (int) $orderItem->product_id);
                     }
 
                     if (!$barcode) {

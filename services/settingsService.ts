@@ -28,13 +28,8 @@ export interface HomepagePromotionBannerItem {
 }
 
 export interface DeliveryChargeSettings {
-  inside_dhaka_delivery_charge: number;
-  outside_dhaka_delivery_charge: number;
-  standard_delivery_charge: number;
-  amount: number;
-  city?: string;
-  zone?: 'inside_dhaka' | 'outside_dhaka';
-  currency: string;
+  inside_dhaka: number;
+  outside_dhaka: number;
 }
 
 export interface HomepageSettings {
@@ -92,6 +87,30 @@ export interface HomepageSettings {
 
 class SettingsService {
   /**
+   * Get e-commerce delivery charge settings for public checkout.
+   */
+  async getDeliveryChargeSettings(): Promise<DeliveryChargeSettings> {
+    const response = await axiosInstance.get('/catalog/delivery-charges');
+    return response.data?.data ?? response.data;
+  }
+
+  /**
+   * Get e-commerce delivery charge settings for admin panel.
+   */
+  async getAdminDeliveryChargeSettings(): Promise<DeliveryChargeSettings> {
+    const response = await axiosInstance.get('/settings/delivery-charge');
+    return response.data?.data ?? response.data;
+  }
+
+  /**
+   * Update delivery charge settings (admin).
+   */
+  async updateDeliveryChargeSettings(data: DeliveryChargeSettings): Promise<{ message: string; data: DeliveryChargeSettings }> {
+    const response = await axiosInstance.post('/settings/delivery-charge', data);
+    return response.data;
+  }
+
+  /**
    * Get homepage settings for public display
    */
   async getHomepageSettings(group?: 'hero' | 'collections' | 'new_arrivals' | 'showcase' | 'bannered_collections' | 'promotion_banners' | 'global_theme'): Promise<Partial<HomepageSettings>> {
@@ -131,45 +150,6 @@ class SettingsService {
     });
     return response.data;
   }
-
-  private normalizeDeliveryChargePayload(data: any): DeliveryChargeSettings {
-    const inside = Number(data.inside_dhaka_delivery_charge ?? data.standard_delivery_charge ?? data.amount ?? 60);
-    const outside = Number(data.outside_dhaka_delivery_charge ?? 120);
-    const amount = Number(data.amount ?? data.standard_delivery_charge ?? inside);
-
-    const safeInside = Number.isFinite(inside) ? Math.max(0, inside) : 60;
-    const safeOutside = Number.isFinite(outside) ? Math.max(0, outside) : 120;
-    const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : safeInside;
-
-    return {
-      inside_dhaka_delivery_charge: safeInside,
-      outside_dhaka_delivery_charge: safeOutside,
-      standard_delivery_charge: safeAmount,
-      amount: safeAmount,
-      city: data.city,
-      zone: data.zone,
-      currency: data.currency ?? 'BDT',
-    };
-  }
-
-  /**
-   * Get ecommerce delivery charges. Pass city when you need the resolved checkout amount.
-   */
-  async getDeliveryCharge(city = 'Dhaka'): Promise<DeliveryChargeSettings> {
-    const response = await axiosInstance.get('/settings/delivery-charge', { params: { city } });
-    const data = response.data?.data ?? response.data ?? {};
-    return this.normalizeDeliveryChargePayload(data);
-  }
-
-  /**
-   * Update inside-Dhaka and outside-Dhaka ecommerce delivery charges.
-   */
-  async updateDeliveryCharge(charges: { inside_dhaka_delivery_charge: number; outside_dhaka_delivery_charge: number }): Promise<DeliveryChargeSettings> {
-    const response = await axiosInstance.put('/settings/delivery-charge', charges);
-    const data = response.data?.data ?? response.data ?? {};
-    return this.normalizeDeliveryChargePayload(data);
-  }
-
 }
 
 const settingsService = new SettingsService();

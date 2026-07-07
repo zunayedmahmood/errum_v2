@@ -6,7 +6,6 @@ export interface StoreLite {
   is_active?: boolean;
   is_online?: boolean;
   is_warehouse?: boolean;
-  deleted_at?: string | null;
 }
 
 export interface EmployeeLite {
@@ -174,7 +173,6 @@ function normalizeStore(store: any): StoreLite | undefined {
     is_active: store.is_active == null ? undefined : Boolean(store.is_active),
     is_online: store.is_online == null ? undefined : Boolean(store.is_online),
     is_warehouse: store.is_warehouse == null ? undefined : Boolean(store.is_warehouse),
-    deleted_at: store.deleted_at ?? null,
   };
 }
 
@@ -228,7 +226,7 @@ function normalizeDisbursements(row: any): CashSheetDisbursementDay {
 
 function normalizeTotals(row: any): CashSheetTotalsDay {
   return {
-    sale: num(row?.sale ?? row?.total_sale),
+    sale: num(row?.sale),
     branch_sale: num(row?.branch_sale),
     cash: num(row?.cash),
     bank: num(row?.bank),
@@ -277,7 +275,7 @@ function normalizeSheet(raw: any): CashSheetResponse {
       online: normalizeOnline(raw?.summary?.online),
       disbursements: normalizeDisbursements(raw?.summary?.disbursements),
       owner: normalizeOwner(raw?.summary?.owner),
-      stores: (raw?.summary?.stores || raw?.summary?.branches || []).map(normalizeBranchDay),
+      stores: (raw?.summary?.stores || []).map(normalizeBranchDay),
     },
     rules: raw?.rules ?? undefined,
   };

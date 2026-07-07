@@ -435,11 +435,62 @@ class ProductBarcode extends Model
 
     public static function generateUniqueBarcode($length = 12): string
     {
-        do {
-            $barcode = static::generateBarcode($length);
-        } while (static::where('barcode', $barcode)->exists());
+        return static::generateUniqueBarcodes(1, $length)[0];
+    }
 
-        return $barcode;
+    /**
+     * Generate many unique barcode values with batched database checks.
+     *
+     * Purchase receiving can create hundreds/thousands of physical barcode rows
+     * in one request. The old generateUniqueBarcode() method ran one SELECT
+     * EXISTS query per unit, which made large PO receipts very slow. This method
+     * creates a candidate pool in memory and validates it with WHERE IN chunks.
+     */
+    public static function generateUniqueBarcodes(int $count, int $length = 12): array
+    {
+        if ($count <= 0) {
+            return [];
+        }
+
+        $accepted = [];
+        $acceptedLookup = [];
+
+        while (count($accepted) < $count) {
+            $needed = $count - count($accepted);
+            $candidatePoolSize = max($needed * 2, 100);
+            $candidates = [];
+
+            while (count($candidates) < $candidatePoolSize) {
+                $candidate = static::generateBarcode($length);
+                if (isset($acceptedLookup[$candidate]) || isset($candidates[$candidate])) {
+                    continue;
+                }
+                $candidates[$candidate] = true;
+            }
+
+            $candidateValues = array_keys($candidates);
+            $existing = [];
+            foreach (array_chunk($candidateValues, 1000) as $chunk) {
+                foreach (static::whereIn('barcode', $chunk)->pluck('barcode')->all() as $barcode) {
+                    $existing[(string) $barcode] = true;
+                }
+            }
+
+            foreach ($candidateValues as $candidate) {
+                if (isset($existing[$candidate])) {
+                    continue;
+                }
+
+                $accepted[] = $candidate;
+                $acceptedLookup[$candidate] = true;
+
+                if (count($accepted) >= $count) {
+                    break;
+                }
+            }
+        }
+
+        return $accepted;
     }
 
     public static function generateBarcode($length = 12): string

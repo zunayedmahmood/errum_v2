@@ -33,6 +33,27 @@ export default function AddCategoryDialog({
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
 
+  const normalizeParentId = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  };
+
+  const getInitialParentId = (): number | null => {
+    return normalizeParentId(initialParentId ?? editCategory?.parent_id ?? editCategory?.parent?.id ?? null);
+  };
+
+  const collectAncestorIds = (cats: Category[], targetId: number | null, ancestors: number[] = []): number[] => {
+    if (targetId === null) return [];
+    for (const cat of cats) {
+      if (cat.id === targetId) return ancestors;
+      const children = cat.children || cat.all_children || [];
+      const found = collectAncestorIds(children, targetId, [...ancestors, cat.id]);
+      if (found.length > 0 || children.some(child => child.id === targetId)) return found;
+    }
+    return [];
+  };
+
   useEffect(() => {
     if (editCategory) {
       setTitle(editCategory.title);
@@ -42,7 +63,7 @@ export default function AddCategoryDialog({
       setBannerFile(null);
       setBannerPreview("");
       setRemoveBanner(false);
-      setParentId(initialParentId ?? null);
+      setParentId(getInitialParentId());
     } else {
       setTitle("");
       setDescription("");
@@ -51,7 +72,7 @@ export default function AddCategoryDialog({
       setBannerFile(null);
       setBannerPreview("");
       setRemoveBanner(false);
-      setParentId(initialParentId ?? null);
+      setParentId(getInitialParentId());
     }
   }, [editCategory, open, initialParentId]);
 
@@ -78,18 +99,23 @@ export default function AddCategoryDialog({
       const data = await categoryService.getTree(true);
       
       // Transform all_children to children for consistency
-      const transformCategories = (cats: Category[]): Category[] => {
-        return cats.map(cat => ({
-          ...cat,
-          children: cat.all_children ? transformCategories(cat.all_children) : []
-        }));
+      const transformCategories = (cats: Category[], inferredParentId: number | null = null): Category[] => {
+        return cats.map(cat => {
+          const resolvedParentId = normalizeParentId(cat.parent_id ?? cat.parent?.id ?? inferredParentId);
+          return {
+            ...cat,
+            parent_id: resolvedParentId ?? undefined,
+            children: cat.all_children ? transformCategories(cat.all_children, cat.id) : []
+          };
+        });
       };
       
       const transformedData = transformCategories(data);
+      const selectedParentId = getInitialParentId();
       setCategories(transformedData);
       
-      // Start with all categories collapsed
-      setExpandedCategories(new Set());
+      // Keep the selected parent visible in the edit modal tree.
+      setExpandedCategories(new Set(collectAncestorIds(transformedData, selectedParentId)));
     } catch (error) {
       console.error('Failed to load categories:', error);
       setCategories([]);
@@ -111,7 +137,7 @@ export default function AddCategoryDialog({
   };
 
   const getSelectedCategoryPath = (): string => {
-    if (!parentId) return "None (Root Level)";
+    if (parentId === null) return "None (Root Level)";
     
     const findCategoryWithPath = (cats: Category[], path: string[] = []): string | null => {
       for (const cat of cats) {
@@ -220,6 +246,9 @@ export default function AddCategoryDialog({
     }
     if (parentId !== null) {
       formData.append('parent_id', String(parentId));
+    } else if (editCategory) {
+      // On edit, an empty nullable parent_id explicitly moves a subcategory to root.
+      formData.append('parent_id', '');
     }
     if (imageFile) {
       formData.append('image', imageFile);
