@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Loader2, ShoppingCart, ShoppingBag } from 'lucide-react';
 import { useCart } from '../../../app/e-commerce/CartContext';
 import { useRouter } from 'next/navigation';
@@ -21,7 +21,23 @@ export default function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
   const router = useRouter();
 
   const subtotal = getTotalPrice();
-  const deliveryCharge = checkoutService.calculateDeliveryCharge('Dhaka');
+  const [deliveryCharge, setDeliveryCharge] = useState(() => checkoutService.calculateDeliveryCharge('Dhaka'));
+
+  useEffect(() => {
+    let isMounted = true;
+    checkoutService.getDeliveryChargeSetting('Dhaka')
+      .then((settings) => {
+        if (isMounted) {
+          setDeliveryCharge(checkoutService.calculateDeliveryCharge('Dhaka', settings));
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const total = subtotal + deliveryCharge;
 
   const isAnyOverStock = cart.some(item => typeof item.maxQuantity === 'number' && item.quantity > item.maxQuantity);

@@ -11,6 +11,7 @@ use App\Models\ProductBatch;
 use App\Models\ReservedProduct;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
+use App\Models\Setting;
 use App\Traits\DatabaseAgnosticSearch;
 use App\Services\InventoryReservationService;
 use Illuminate\Http\Request;
@@ -663,16 +664,63 @@ class EcommerceOrderController extends Controller
 
     private function calculateDeliveryCharge(CustomerAddress $address): float
     {
-        // Simple delivery charge calculation
-        $city = strtolower($address->city);
-        
-        if (str_contains($city, 'dhaka')) {
-            return 60.00; // Dhaka delivery
-        } elseif (in_array($city, ['chittagong', 'sylhet', 'rajshahi', 'khulna', 'chattogram'])) {
-            return 120.00; // Major cities
-        } else {
-            return 150.00; // Other areas
+        return $this->resolveDeliveryChargeForCity($address->city ?? 'Dhaka');
+    }
+
+    private function currentDeliveryChargeSettings(): array
+    {
+        $setting = Setting::where('group', 'ecommerce')
+            ->where('key', 'standard_delivery_charge')
+            ->first();
+
+        $value = $setting?->value;
+        $inside = 60.0;
+        $outside = 120.0;
+
+        if (is_array($value)) {
+            $insideValue = $value['inside_dhaka_delivery_charge']
+                ?? $value['inside_dhaka']
+                ?? $value['standard_delivery_charge']
+                ?? $value['amount']
+                ?? null;
+            $outsideValue = $value['outside_dhaka_delivery_charge']
+                ?? $value['outside_dhaka']
+                ?? null;
+
+            if (is_numeric($insideValue)) {
+                $inside = (float) $insideValue;
+            }
+            if (is_numeric($outsideValue)) {
+                $outside = (float) $outsideValue;
+            }
+        } elseif (is_numeric($value)) {
+            $inside = (float) $value;
         }
+
+        return [
+            'inside_dhaka_delivery_charge' => max(0, round($inside, 2)),
+            'outside_dhaka_delivery_charge' => max(0, round($outside, 2)),
+        ];
+    }
+
+    private function resolveDeliveryChargeForCity(?string $city): float
+    {
+        $settings = $this->currentDeliveryChargeSettings();
+
+        return $this->isDhakaCity($city)
+            ? $settings['inside_dhaka_delivery_charge']
+            : $settings['outside_dhaka_delivery_charge'];
+    }
+
+    private function isDhakaCity(?string $city): bool
+    {
+        $normalized = strtolower(trim((string) $city));
+
+        if ($normalized === '') {
+            return true;
+        }
+
+        return str_contains($normalized, 'dhaka') || str_contains($normalized, 'ঢাকা');
     }
 
     private function applyCoupon(string $couponCode, float $subtotal): float

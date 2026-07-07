@@ -214,6 +214,7 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
       subMenu: [
         { label: 'Homepage Configuration', href: '/settings/homepage' },
         { label: 'Homepage Visual Builder', href: '/settings/homepage-visual-builder' },
+        { label: 'Delivery Charge', href: '/settings/delivery-charge' },
       ],
     },
 

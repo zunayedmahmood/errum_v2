@@ -43,6 +43,16 @@ export interface OrderItem {
   };
 }
 
+export interface DeliveryChargeSetting {
+  inside_dhaka_delivery_charge: number;
+  outside_dhaka_delivery_charge: number;
+  standard_delivery_charge: number;
+  amount: number;
+  city?: string;
+  zone?: 'inside_dhaka' | 'outside_dhaka';
+  currency: string;
+}
+
 export interface OrderSummary {
   subtotal: number;
   shipping_charge: number;
@@ -179,6 +189,53 @@ export interface OrdersListResponse {
 }
 
 class CheckoutService {
+  private normalizeDeliveryChargePayload(payload: any): DeliveryChargeSetting {
+    const inside = Number(payload.inside_dhaka_delivery_charge ?? payload.standard_delivery_charge ?? payload.amount ?? 60);
+    const outside = Number(payload.outside_dhaka_delivery_charge ?? 120);
+    const amount = Number(payload.amount ?? payload.standard_delivery_charge ?? inside);
+
+    const safeInside = Number.isFinite(inside) ? Math.max(0, inside) : 60;
+    const safeOutside = Number.isFinite(outside) ? Math.max(0, outside) : 120;
+    const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : safeInside;
+
+    return {
+      inside_dhaka_delivery_charge: safeInside,
+      outside_dhaka_delivery_charge: safeOutside,
+      standard_delivery_charge: safeAmount,
+      amount: safeAmount,
+      city: payload.city,
+      zone: payload.zone,
+      currency: payload.currency ?? 'BDT',
+    };
+  }
+
+  /**
+   * Get e-commerce delivery charges from backend settings. The returned amount is resolved for the city.
+   */
+  async getDeliveryChargeSetting(city = 'Dhaka'): Promise<DeliveryChargeSetting> {
+    try {
+      const response = await axiosInstance.get('/settings/delivery-charge', { params: { city } });
+      const payload = response.data?.data ?? response.data ?? {};
+      return this.normalizeDeliveryChargePayload(payload);
+    } catch (error) {
+      console.error('Failed to fetch delivery charge setting:', error);
+      return {
+        inside_dhaka_delivery_charge: 60,
+        outside_dhaka_delivery_charge: 120,
+        standard_delivery_charge: 60,
+        amount: 60,
+        city,
+        zone: this.isDhakaCity(city) ? 'inside_dhaka' : 'outside_dhaka',
+        currency: 'BDT',
+      };
+    }
+  }
+
+  async getDeliveryChargeAmount(city = 'Dhaka'): Promise<number> {
+    const settings = await this.getDeliveryChargeSetting(city);
+    return settings.amount;
+  }
+
   /**
    * Get available payment methods for e-commerce customers
    */
@@ -568,7 +625,7 @@ class CheckoutService {
    */
   calculateOrderSummary(
     items: OrderItem[],
-    shippingCharge: number = 60,
+    shippingCharge: number = 0,
     couponDiscount: number = 0
   ): OrderSummary {
     const subtotal = items.reduce((sum, item) => sum + item.total, 0);
@@ -628,19 +685,29 @@ class CheckoutService {
     };
   }
 
-  /**
-   * Calculate delivery charge based on city (matches backend logic)
-   */
-  calculateDeliveryCharge(city: string): number {
-    const cityLower = city.toLowerCase();
+  isDhakaCity(city?: string | null): boolean {
+    const normalized = String(city || 'Dhaka').trim().toLowerCase();
+    if (!normalized) return true;
+    return normalized.includes('dhaka') || normalized.includes('ঢাকা');
+  }
 
-    if (cityLower.includes('dhaka')) {
-      return 60.00;
-    } else if (['chittagong', 'sylhet', 'rajshahi', 'khulna', 'chattogram'].some(c => cityLower.includes(c))) {
-      return 120.00;
-    } else {
-      return 120.00;
+  /**
+   * Resolve the delivery charge from loaded settings for the current checkout city.
+   */
+  calculateDeliveryCharge(city?: string, settings?: DeliveryChargeSetting | number): number {
+    if (typeof settings === 'number') {
+      return Math.max(0, Number(settings) || 0);
     }
+
+    if (!settings) {
+      return this.isDhakaCity(city) ? 60 : 120;
+    }
+
+    const amount = this.isDhakaCity(city)
+      ? settings.inside_dhaka_delivery_charge
+      : settings.outside_dhaka_delivery_charge;
+
+    return Math.max(0, Number(amount) || 0);
   }
 
   /**

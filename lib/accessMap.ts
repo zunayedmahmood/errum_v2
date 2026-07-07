@@ -76,6 +76,7 @@ export const PAGE_ACCESS: Record<string, RoleSlug[]> = {
   '/settings': ['super-admin', 'admin'],
   '/settings/homepage': ['super-admin', 'admin', 'online-moderator'],
   '/settings/homepage-visual-builder': ['super-admin', 'admin', 'online-moderator'],
+  '/settings/delivery-charge': ['super-admin', 'admin'],
   '/hrm': ['super-admin', 'admin', 'branch-manager', 'online-moderator', 'pos-salesman', 'employee'],
   '/hrm/my': ['super-admin', 'admin', 'branch-manager', 'online-moderator', 'pos-salesman', 'employee'],
   '/hrm/branch': ['super-admin', 'admin', 'branch-manager', 'online-moderator'],

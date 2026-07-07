@@ -75,6 +75,7 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 Route::post('/guest-checkout', [\App\Http\Controllers\GuestCheckoutController::class, 'checkout']);
 Route::post('/guest-orders/by-phone', [\App\Http\Controllers\GuestCheckoutController::class, 'getOrdersByPhone']);
+Route::get('/settings/delivery-charge', [SettingController::class, 'getDeliveryCharge']);
 
 // LazyChat AI order creation endpoint (public webhook receiver)
 Route::post('/order/create', [\App\Http\Controllers\LazyChatOrderController::class, 'store']);
@@ -307,6 +308,9 @@ Route::middleware('auth:api')->group(function () {
     Route::prefix('settings')->group(function () {
         Route::get('/homepage', [\App\Http\Controllers\SettingController::class, 'getAdminHomepageSettings']);
         Route::post('/homepage', [\App\Http\Controllers\SettingController::class, 'updateHomepageSettings']);
+        Route::get('/delivery-charge', [\App\Http\Controllers\SettingController::class, 'getDeliveryCharge']);
+        Route::post('/delivery-charge', [\App\Http\Controllers\SettingController::class, 'updateDeliveryCharge']);
+        Route::put('/delivery-charge', [\App\Http\Controllers\SettingController::class, 'updateDeliveryCharge']);
     });
 
     // ============================================
@@ -874,11 +878,11 @@ Route::middleware('auth:api')->group(function () {
     
     // ============================================
     // CASH SHEET ROUTES
-    // Fresh live monthly report + manual entry panels.
+    // Monthly report + manual entry panels share one canonical /api/cash-sheet route group.
     // ============================================
 
     Route::prefix('cash-sheet')->group(function () {
-        // GET  /api/cash-sheet?month=2026-07 → live monthly cash-sheet
+        // GET  /api/cash-sheet?month=2026-04 → full monthly cash sheet rebuilt live from source tables
         Route::get('/', [\App\Http\Controllers\CashSheetController::class, 'index']);
 
         // GET  /api/cash-sheet/entries?date=2026-04-14 → manual entries for a date

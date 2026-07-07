@@ -836,4 +836,129 @@ class SettingController extends Controller
             'has_variants' => Product::where('base_name', $product->base_name)->count() > 1
         ];
     }
+
+    /**
+     * Public ecommerce delivery charge setting used by storefront checkout.
+     * Supports separate inside-Dhaka and outside-Dhaka delivery charges.
+     */
+    public function getDeliveryCharge(Request $request)
+    {
+        $settings = $this->currentDeliveryChargeSettings();
+        $city = (string) $request->query('city', 'Dhaka');
+        $amount = $this->resolveDeliveryChargeForCity($city, $settings);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'inside_dhaka_delivery_charge' => $settings['inside_dhaka_delivery_charge'],
+                'outside_dhaka_delivery_charge' => $settings['outside_dhaka_delivery_charge'],
+                // Compatibility fields for older callers. They now represent the amount for the requested city.
+                'standard_delivery_charge' => $amount,
+                'amount' => $amount,
+                'city' => $city ?: 'Dhaka',
+                'zone' => $this->isDhakaCity($city) ? 'inside_dhaka' : 'outside_dhaka',
+                'currency' => 'BDT',
+            ],
+        ]);
+    }
+
+    /**
+     * Admin update endpoint for ecommerce delivery charges.
+     */
+    public function updateDeliveryCharge(Request $request)
+    {
+        $validated = $request->validate([
+            'inside_dhaka_delivery_charge' => 'required_without:standard_delivery_charge|numeric|min:0|max:100000',
+            'outside_dhaka_delivery_charge' => 'required_without:standard_delivery_charge|numeric|min:0|max:100000',
+            // Backward compatibility with the old one-field settings page/API.
+            'standard_delivery_charge' => 'nullable|numeric|min:0|max:100000',
+        ]);
+
+        $inside = round((float) ($validated['inside_dhaka_delivery_charge'] ?? $validated['standard_delivery_charge'] ?? 60), 2);
+        $outside = round((float) ($validated['outside_dhaka_delivery_charge'] ?? $inside), 2);
+
+        $payload = [
+            'inside_dhaka_delivery_charge' => $inside,
+            'outside_dhaka_delivery_charge' => $outside,
+        ];
+
+        Setting::updateOrCreate(
+            ['key' => 'standard_delivery_charge', 'group' => 'ecommerce'],
+            ['value' => $payload]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Delivery charges updated successfully',
+            'data' => [
+                'inside_dhaka_delivery_charge' => $inside,
+                'outside_dhaka_delivery_charge' => $outside,
+                'standard_delivery_charge' => $inside,
+                'amount' => $inside,
+                'city' => 'Dhaka',
+                'zone' => 'inside_dhaka',
+                'currency' => 'BDT',
+            ],
+        ]);
+    }
+
+    /**
+     * Resolve delivery charge settings while preserving old scalar settings.
+     */
+    private function currentDeliveryChargeSettings(): array
+    {
+        $setting = Setting::where('group', 'ecommerce')
+            ->where('key', 'standard_delivery_charge')
+            ->first();
+
+        $value = $setting?->value;
+        $inside = 60.0;
+        $outside = 120.0;
+
+        if (is_array($value)) {
+            $insideValue = $value['inside_dhaka_delivery_charge']
+                ?? $value['inside_dhaka']
+                ?? $value['standard_delivery_charge']
+                ?? $value['amount']
+                ?? null;
+            $outsideValue = $value['outside_dhaka_delivery_charge']
+                ?? $value['outside_dhaka']
+                ?? null;
+
+            if (is_numeric($insideValue)) {
+                $inside = (float) $insideValue;
+            }
+            if (is_numeric($outsideValue)) {
+                $outside = (float) $outsideValue;
+            }
+        } elseif (is_numeric($value)) {
+            // Old single-charge setting becomes the inside-Dhaka charge. Outside keeps the new default until admin saves it.
+            $inside = (float) $value;
+        }
+
+        return [
+            'inside_dhaka_delivery_charge' => max(0, round($inside, 2)),
+            'outside_dhaka_delivery_charge' => max(0, round($outside, 2)),
+        ];
+    }
+
+    private function resolveDeliveryChargeForCity(?string $city, ?array $settings = null): float
+    {
+        $settings = $settings ?: $this->currentDeliveryChargeSettings();
+        return $this->isDhakaCity($city)
+            ? $settings['inside_dhaka_delivery_charge']
+            : $settings['outside_dhaka_delivery_charge'];
+    }
+
+    private function isDhakaCity(?string $city): bool
+    {
+        $normalized = strtolower(trim((string) $city));
+
+        if ($normalized === '') {
+            return true;
+        }
+
+        return str_contains($normalized, 'dhaka') || str_contains($normalized, 'ঢাকা');
+    }
+
 }

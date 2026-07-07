@@ -5,14 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\BranchCostEntry;
 use App\Models\AdminEntry;
 use App\Models\OwnerEntry;
+use App\Models\Store;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\ExpensePayment;
 use App\Models\PaymentMethod;
-use App\Models\Store;
 use App\Models\Transaction;
 use Carbon\Carbon;
-use Carbon\CarbonImmutable;
+use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -21,216 +21,223 @@ use Illuminate\Support\Str;
 /**
  * CashSheetController
  *
- * Fresh monthly cash-sheet implementation.
+ * GET  /api/cash-sheet               → full monthly sheet
+ * GET  /api/cash-sheet/entries       → raw entries for a date (detail panel)
+ * POST /api/cash-sheet/branch-cost   → branch manager adds a cost entry
+ * DELETE /api/cash-sheet/branch-cost/{id}
+ * POST /api/cash-sheet/admin         → admin: salary_setaside | cash_to_bank | sslzc | pathao
+ * DELETE /api/cash-sheet/admin/{id}
+ * POST /api/cash-sheet/owner         → owner: cash_invest | bank_invest | cash_cost | bank_cost
+ * DELETE /api/cash-sheet/owner/{id}
  *
- * The monthly sheet is intentionally a live aggregation. It does not save daily
- * rows. Every reload reads source transactions again and rebuilds the month from
- * orders, order payments, split payments, refunds, exchanges, branch costs,
- * accounting expenses, admin entries, online settlements, and owner entries.
+ * ── Displayed cash / bank per branch ────────────────────────────────────────
+ *   raw_cash      = completed cash counter payments − completed cash refunds
+ *   raw_bank      = completed non-cash counter payments − completed non-cash refunds
+ *                   (both include split payments; completed cash-flow survives later cancellation/refund)
+ *   salary        = SUM admin_entries salary_setaside for this store+date
+ *   daily_cost    = branch_cost_entries + completed ExpensePayment rows for this store+date
+ *   cash_to_bank  = SUM admin_entries cash_to_bank for this store+date
+ *   displayed_cash = raw_cash − salary − cash-paid daily_cost − cash_to_bank
+ *   displayed_bank = raw_bank − non-cash daily_cost + cash_to_bank
+ *   Ex/On          = exchange top-up collected − exchange refund paid
+ *
+ * ── Grand totals ─────────────────────────────────────────────────────────────
+ *   cash       = SUM displayed_cash (branches only)
+ *   bank       = SUM displayed_bank (branches) + online advance
+ *   final_bank = bank + sslzc_received + pathao_received
+ *
+ * ── Owner ────────────────────────────────────────────────────────────────────
+ *   total_cash      = cash + cash_invest
+ *   total_bank      = final_bank + bank_invest
+ *   cash_after_cost = total_cash − cash_cost
+ *   bank_after_cost = total_bank − bank_cost
  */
 class CashSheetController extends Controller
 {
-    private const DHAKA_TZ = 'Asia/Dhaka';
-
+    private const BUSINESS_TIMEZONE = 'Asia/Dhaka';
+    private const CASH_TYPES = ['cash'];
     private const BRANCH_ORDER_TYPES = ['counter', 'pos', 'offline'];
     private const ONLINE_ORDER_TYPES = ['social_commerce', 'ecommerce'];
-    private const SALE_EXCLUDED_STATUSES = ['cancelled', 'canceled', 'refunded', 'void', 'deleted'];
-    private const MONEY_PAYMENT_STATUSES = ['completed'];
-    private const VIRTUAL_PAYMENT_TYPES = ['exchange_balance', 'store_credit', 'balance_carryover'];
-    private const NON_MONEY_REFUND_METHODS = ['store_credit', 'gift_card'];
+    private const EXCLUDED_ORDER_STATUSES = ['cancelled', 'canceled', 'refunded', 'void', 'deleted'];
+    private const INTERNAL_SETTLEMENT_PAYMENT_TYPES = ['exchange_balance', 'store_credit', 'balance_carryover'];
+    private const MONEY_PAYMENT_STATUSES = ['completed', 'partially_refunded', 'refunded'];
+    private const NON_MONEY_SPLIT_STATUSES = ['failed', 'cancelled', 'canceled', 'void'];
+
 
     public function index(Request $request)
     {
-        [$month, $dateFrom, $dateTo, $dates] = $this->resolveMonthWindow($request->query('month'));
-        $requestedStoreId = $this->positiveInt($request->query('store_id'));
+        $request->validate(['month' => 'nullable|date_format:Y-m']);
 
-        $branchSales = $this->loadBranchSales($dateFrom, $dateTo);
-        $branchPayments = $this->loadBranchPaymentMovements($dateFrom, $dateTo);
-        $branchRefunds = $this->loadBranchRefundMovements($dateFrom, $dateTo);
-        $branchCosts = $this->loadBranchCosts($dateFrom, $dateTo);
-        $adminData = $this->loadAdminEntryBuckets($dateFrom, $dateTo);
-        $onlineData = $this->loadOnlineBuckets($dateFrom, $dateTo);
-        $ownerData = $this->loadOwnerEntryBuckets($dateFrom, $dateTo);
+        $month    = $request->input('month', now(self::BUSINESS_TIMEZONE)->format('Y-m'));
+        $monthBase = Carbon::createFromFormat('Y-m-d', $month . '-01', self::BUSINESS_TIMEZONE);
+        $dateFrom = $monthBase->copy()->startOfMonth()->toDateString();
+        $dateTo   = $monthBase->copy()->endOfMonth()->toDateString();
 
-        $activityStoreIds = $this->collectActivityStoreIds(
-            $branchSales,
-            $branchPayments,
-            $branchRefunds,
-            $branchCosts,
-            $adminData
-        );
+        $stores = $this->loadCashSheetStores($dateFrom, $dateTo);
 
-        $stores = $this->loadReportStores($activityStoreIds, $requestedStoreId);
-        $storeIds = $stores->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $storeIds = $stores->pluck('id')->map(fn ($id) => (int) $id)->toArray();
+        $dates    = collect(CarbonPeriod::create($dateFrom, $dateTo))
+            ->map(fn ($d) => $d->toDateString());
+
+        $rawSales      = $this->loadBranchSales($storeIds, $dateFrom, $dateTo);
+        $rawPayments   = $this->loadBranchPayments($storeIds, $dateFrom, $dateTo);
+        $branchExOn    = $this->loadBranchExOn($storeIds, $dateFrom, $dateTo);
+        $branchCosts   = $this->loadBranchCosts($storeIds, $dateFrom, $dateTo);
+        $adminData     = $this->loadAdminEntries($dateFrom, $dateTo);
+        $onlineData    = $this->loadOnlineData($dateFrom, $dateTo);
+        $ownerData     = $this->loadOwnerEntries($dateFrom, $dateTo);
 
         $rows = [];
-        $summary = $this->emptySummary($stores);
 
         foreach ($dates as $date) {
-            $branches = [];
-            $dayCash = 0.0;
-            $dayBank = 0.0;
-            $dayBranchSale = 0.0;
-            $dayBranchCost = 0.0;
-            $dayExOn = 0.0;
-            $daySalary = 0.0;
-            $dayCashToBank = 0.0;
+            $branches  = [];
+            $totalCash = 0;
+            $totalBank = 0;
+            $totalSale = 0;
+            $totalDailyCost = 0;
+            $totalExOn = 0;
+            $totalSalary = 0;
+            $totalCashToBank = 0;
 
             foreach ($stores as $store) {
                 $sid = (int) $store->id;
+                $storeKey = (string) $sid;
 
-                $sale = $this->amountAt($branchSales, $sid, $date, 'sale');
-                $paymentCash = $this->amountAt($branchPayments, $sid, $date, 'cash');
-                $paymentBank = $this->amountAt($branchPayments, $sid, $date, 'bank');
-                $paymentExOn = $this->amountAt($branchPayments, $sid, $date, 'ex_on');
+                $raw_cash     = (float) ($rawPayments[$storeKey][$date]['cash'] ?? 0);
+                $raw_bank     = (float) ($rawPayments[$storeKey][$date]['bank'] ?? 0);
+                $sale         = (float) ($rawSales[$storeKey][$date] ?? 0);
+                $ex_on        = (float) ($branchExOn[$storeKey][$date] ?? 0);
+                $costBucket   = $branchCosts[$storeKey][$date] ?? ['total' => 0, 'cash' => 0, 'bank' => 0];
+                $daily_cost   = (float) ($costBucket['total'] ?? 0);
+                $cash_cost    = (float) ($costBucket['cash'] ?? 0);
+                $bank_cost    = (float) ($costBucket['bank'] ?? 0);
+                $salary       = (float) ($adminData[$storeKey][$date]['salary_setaside'] ?? 0);
+                $cash_to_bank = (float) ($adminData[$storeKey][$date]['cash_to_bank'] ?? 0);
 
-                $refundCash = $this->amountAt($branchRefunds, $sid, $date, 'cash');
-                $refundBank = $this->amountAt($branchRefunds, $sid, $date, 'bank');
-                $refundExOn = $this->amountAt($branchRefunds, $sid, $date, 'ex_on');
+                // Daily costs can now come from both the cash-sheet branch-cost page
+                // and completed Expense Payments from the accounting module. Cash
+                // expenses reduce branch cash; non-cash/MFS/card/bank expenses reduce
+                // the bank bucket so totals stay aligned with the accounting ledger.
+                $disp_cash = $raw_cash - $salary - $cash_cost - $cash_to_bank;
+                $disp_bank = $raw_bank - $bank_cost + $cash_to_bank;
 
-                $rawCash = $paymentCash - $refundCash;
-                $rawBank = $paymentBank - $refundBank;
-                $exOn = $paymentExOn - $refundExOn;
-
-                $cashCost = $this->amountAt($branchCosts, $sid, $date, 'cash');
-                $bankCost = $this->amountAt($branchCosts, $sid, $date, 'bank');
-                $dailyCost = $cashCost + $bankCost;
-
-                $salary = $this->amountAt($adminData, $sid, $date, 'salary_setaside');
-                $cashToBank = $this->amountAt($adminData, $sid, $date, 'cash_to_bank');
-
-                // Never clamp to zero. A negative value is a real branch cash shortage.
-                $cash = $rawCash - $salary - $cashCost - $cashToBank;
-                $bank = $rawBank - $bankCost + $cashToBank;
-
-                $branch = [
-                    'store_id' => $sid,
-                    'store_name' => (string) $store->name,
-                    'daily_sale' => $this->round($sale),
-                    'cash' => $this->round($cash),
-                    'bank' => $this->round($bank),
-                    'ex_on' => $this->round($exOn),
-                    'salary' => $this->round($salary),
-                    'daily_cost' => $this->round($dailyCost),
-                    'cash_to_bank' => $this->round($cashToBank),
-                    'raw_cash' => $this->round($rawCash),
-                    'raw_bank' => $this->round($rawBank),
-                    'cash_cost' => $this->round($cashCost),
-                    'bank_cost' => $this->round($bankCost),
-                    'cash_refunds' => $this->round($refundCash),
-                    'bank_refunds' => $this->round($refundBank),
+                $branches[] = [
+                    'store_id'     => $sid,
+                    'store_name'   => $store->name,
+                    'is_warehouse' => (bool) $store->is_warehouse,
+                    'daily_sale'   => round($sale, 2),
+                    'raw_cash'     => round($raw_cash, 2),
+                    'raw_bank'     => round($raw_bank, 2),
+                    'cash'         => round($disp_cash, 2),
+                    'bank'         => round($disp_bank, 2),
+                    'ex_on'        => round($ex_on, 2),
+                    'salary'       => round($salary, 2),
+                    'cash_to_bank' => round($cash_to_bank, 2),
+                    'daily_cost'   => round($daily_cost, 2),
+                    'cash_cost'    => round($cash_cost, 2),
+                    'bank_cost'    => round($bank_cost, 2),
                 ];
 
-                $branches[] = $branch;
-
-                $dayCash += $cash;
-                $dayBank += $bank;
-                $dayBranchSale += $sale;
-                $dayBranchCost += $dailyCost;
-                $dayExOn += $exOn;
-                $daySalary += $salary;
-                $dayCashToBank += $cashToBank;
-
-                $summary['stores'][$sid]['daily_sale'] += $sale;
-                $summary['stores'][$sid]['cash'] += $cash;
-                $summary['stores'][$sid]['bank'] += $bank;
-                $summary['stores'][$sid]['ex_on'] += $exOn;
-                $summary['stores'][$sid]['salary'] += $salary;
-                $summary['stores'][$sid]['daily_cost'] += $dailyCost;
-                $summary['stores'][$sid]['cash_to_bank'] += $cashToBank;
-                $summary['stores'][$sid]['raw_cash'] += $rawCash;
-                $summary['stores'][$sid]['raw_bank'] += $rawBank;
+                $totalSale += $sale;
+                $totalCash += $disp_cash;
+                $totalBank += $disp_bank;
+                $totalDailyCost += $daily_cost;
+                $totalExOn += $ex_on;
+                $totalSalary += $salary;
+                $totalCashToBank += $cash_to_bank;
             }
 
-            $online = $this->onlineForDate($onlineData, $date);
-            $sslzcReceived = $this->amountAt($adminData, '_global', $date, 'sslzc');
-            $pathaoReceived = $this->amountAt($adminData, '_global', $date, 'pathao');
+            $online     = $onlineData[$date] ?? [];
+            $ol_sales   = (float) ($online['daily_sales'] ?? 0);
+            $ol_advance = (float) ($online['advance'] ?? 0);
+            $ol_payment = (float) ($online['online_payment'] ?? 0);
+            $ol_cod     = (float) ($online['cod'] ?? 0);
+            $ol_cod_due = (float) ($online['cod_due'] ?? 0);
+            $ol_cod_collected = (float) ($online['cod_collected'] ?? 0);
+            $ol_refunds = (float) ($online['refunds'] ?? 0);
 
-            $bankBeforeDisbursement = $dayBank + $online['advance'];
-            $finalBank = $bankBeforeDisbursement + $sslzcReceived + $pathaoReceived;
-            $totalSale = $dayBranchSale + $online['daily_sales'];
+            $totalBank += $ol_advance; // online advance already received into bank/MFS
 
-            $owner = $this->ownerForDate($ownerData, $date, $dayCash, $finalBank);
+            $sslzc_recv  = (float) ($adminData['_global'][$date]['sslzc'] ?? 0);
+            $pathao_recv = (float) ($adminData['_global'][$date]['pathao'] ?? 0);
 
-            $row = [
-                'date' => $date,
+            $owner       = $ownerData[$date] ?? [];
+            $cash_invest = (float) ($owner['cash_invest'] ?? 0);
+            $bank_invest = (float) ($owner['bank_invest'] ?? 0);
+            $cash_cost   = (float) ($owner['cash_cost'] ?? 0);
+            $bank_cost   = (float) ($owner['bank_cost'] ?? 0);
+
+            $final_bank      = $totalBank + $sslzc_recv + $pathao_recv;
+            $total_cash      = $totalCash + $cash_invest;
+            $total_bank      = $final_bank + $bank_invest;
+            $cash_after_cost = $total_cash - $cash_cost;
+            $bank_after_cost = $total_bank - $bank_cost;
+
+            $rows[] = [
+                'date'     => $date,
                 'branches' => $branches,
-                'online' => $online,
+                'online'   => [
+                    'daily_sales'    => round($ol_sales, 2),
+                    'advance'        => round($ol_advance, 2),
+                    'online_payment' => round($ol_payment, 2),
+                    'cod'            => round($ol_cod, 2),
+                    'cod_due'        => round($ol_cod_due, 2),
+                    'cod_collected'  => round($ol_cod_collected, 2),
+                    'refunds'        => round($ol_refunds, 2),
+                ],
                 'disbursements' => [
-                    'sslzc_received' => $this->round($sslzcReceived),
-                    'pathao_received' => $this->round($pathaoReceived),
+                    'sslzc_received'  => round($sslzc_recv, 2),
+                    'pathao_received' => round($pathao_recv, 2),
                 ],
                 'totals' => [
-                    'sale' => $this->round($totalSale),
-                    'branch_sale' => $this->round($dayBranchSale),
-                    'cash' => $this->round($dayCash),
-                    'bank' => $this->round($bankBeforeDisbursement),
-                    'final_bank' => $this->round($finalBank),
-                    'daily_cost' => $this->round($dayBranchCost),
-                    'ex_on' => $this->round($dayExOn),
-                    'salary' => $this->round($daySalary),
-                    'cash_to_bank' => $this->round($dayCashToBank),
+                    'sale'         => round($totalSale + $ol_sales, 2),
+                    'total_sale'   => round($totalSale + $ol_sales, 2), // backward-compatible alias
+                    'branch_sale'  => round($totalSale, 2),
+                    'cash'         => round($totalCash, 2),
+                    'bank'         => round($totalBank, 2),
+                    'final_bank'   => round($final_bank, 2),
+                    'daily_cost'   => round($totalDailyCost, 2),
+                    'ex_on'        => round($totalExOn, 2),
+                    'salary'       => round($totalSalary, 2),
+                    'cash_to_bank' => round($totalCashToBank, 2),
                 ],
-                'owner' => $owner,
+                'owner' => [
+                    'cash_invest'     => round($cash_invest, 2),
+                    'bank_invest'     => round($bank_invest, 2),
+                    'total_cash'      => round($total_cash, 2),
+                    'total_bank'      => round($total_bank, 2),
+                    'cash_cost'       => round($cash_cost, 2),
+                    'bank_cost'       => round($bank_cost, 2),
+                    'cash_after_cost' => round($cash_after_cost, 2),
+                    'bank_after_cost' => round($bank_after_cost, 2),
+                ],
             ];
-
-            $rows[] = $row;
-
-            $summary['totals']['sale'] += $totalSale;
-            $summary['totals']['branch_sale'] += $dayBranchSale;
-            $summary['totals']['cash'] += $dayCash;
-            $summary['totals']['bank'] += $bankBeforeDisbursement;
-            $summary['totals']['final_bank'] += $finalBank;
-            $summary['totals']['daily_cost'] += $dayBranchCost;
-            $summary['totals']['ex_on'] += $dayExOn;
-            $summary['totals']['salary'] += $daySalary;
-            $summary['totals']['cash_to_bank'] += $dayCashToBank;
-
-            foreach (['daily_sales', 'advance', 'online_payment', 'cod', 'cod_due', 'cod_collected', 'cod_refunds', 'refunds'] as $key) {
-                $summary['online'][$key] += $online[$key] ?? 0;
-            }
-
-            $summary['disbursements']['sslzc_received'] += $sslzcReceived;
-            $summary['disbursements']['pathao_received'] += $pathaoReceived;
-
-            foreach (['cash_invest', 'bank_invest', 'cash_cost', 'bank_cost', 'total_cash', 'total_bank', 'cash_after_cost', 'bank_after_cost'] as $key) {
-                $summary['owner'][$key] += $owner[$key] ?? 0;
-            }
         }
-
-        $summary = $this->roundSummary($summary);
 
         return response()->json([
             'success' => true,
-            'month' => $month,
-            'timezone' => self::DHAKA_TZ,
-            'utc_offset_hours' => (int) env('CASH_SHEET_UTC_OFFSET_HOURS', 6),
+            'month'   => $month,
             'date_from' => $dateFrom,
-            'date_to' => $dateTo,
-            'stores' => $stores->map(fn ($s) => [
-                'id' => (int) $s->id,
-                'name' => (string) $s->name,
-                'is_active' => (bool) $s->is_active,
-                'is_online' => (bool) $s->is_online,
+            'date_to'   => $dateTo,
+            'timezone' => self::BUSINESS_TIMEZONE,
+            'utc_offset_hours' => (int) env('CASH_SHEET_UTC_OFFSET_HOURS', 6),
+            'stores'  => $stores->map(fn ($s) => [
+                'id'           => (int) $s->id,
+                'name'         => $s->name,
                 'is_warehouse' => (bool) $s->is_warehouse,
+                'is_online'    => (bool) ($s->is_online ?? false),
+                'is_active'    => (bool) ($s->is_active ?? false),
+                'deleted_at'   => $s->deleted_at ?? null,
             ])->values(),
-            'data' => $rows,
-            'summary' => $summary,
-            'rules' => [
-                'model' => 'live_aggregation',
-                'sales_date' => 'order_date > confirmed_at > created_at',
-                'payment_date' => 'payment_received_date > completed_at > processed_at > created_at',
-                'cash_can_be_negative' => true,
-                'cancelled_order_payments_stay_visible' => true,
-                'refunds_subtract_on_refund_date' => true,
-            ],
+            'data'    => $rows,
+            'summary' => $this->buildSummary($rows, $stores),
         ]);
     }
 
     public function entries(Request $request)
     {
         $request->validate(['date' => 'required|date']);
-        $date = Carbon::parse($request->date, self::DHAKA_TZ)->toDateString();
+        $date = Carbon::parse($request->date)->toDateString();
 
         return response()->json([
             'success'       => true,
@@ -263,10 +270,13 @@ class CashSheetController extends Controller
         $entry = DB::transaction(function () use ($v) {
             $entry = BranchCostEntry::create([
                 ...$v,
-                'entry_date' => Carbon::parse($v['entry_date'], self::DHAKA_TZ)->toDateString(),
                 'created_by' => Auth::guard('api')->id(),
             ]);
 
+            // Cash-sheet branch costs are no longer isolated rows. Mirror each entry
+            // into the Expense + ExpensePayment module so P&L, ledger, and cash sheet
+            // all reconcile from the same business event. The cash sheet still reads
+            // the branch_cost_entries row to preserve the existing UI/audit trail.
             $this->createAccountingExpenseForBranchCost($entry);
 
             return $entry;
@@ -306,7 +316,6 @@ class CashSheetController extends Controller
         $entry = DB::transaction(function () use ($v) {
             $entry = AdminEntry::create([
                 ...$v,
-                'entry_date' => Carbon::parse($v['entry_date'], self::DHAKA_TZ)->toDateString(),
                 'store_id'   => in_array($v['type'], ['sslzc', 'pathao'], true) ? null : $v['store_id'],
                 'created_by' => Auth::guard('api')->id(),
             ]);
@@ -345,7 +354,6 @@ class CashSheetController extends Controller
         $entry = DB::transaction(function () use ($v) {
             $entry = OwnerEntry::create([
                 ...$v,
-                'entry_date' => Carbon::parse($v['entry_date'], self::DHAKA_TZ)->toDateString(),
                 'created_by' => Auth::guard('api')->id(),
             ]);
 
@@ -371,606 +379,6 @@ class CashSheetController extends Controller
         return response()->json(['success' => true]);
     }
 
-    private function resolveMonthWindow(?string $month): array
-    {
-        if (!$month || !preg_match('/^\d{4}-\d{2}$/', $month)) {
-            $month = CarbonImmutable::now(self::DHAKA_TZ)->format('Y-m');
-        }
-
-        $start = CarbonImmutable::createFromFormat('Y-m-d H:i:s', $month . '-01 00:00:00', self::DHAKA_TZ)->startOfMonth();
-        $end = $start->endOfMonth();
-
-        $dates = [];
-        for ($d = $start; $d->lte($end); $d = $d->addDay()) {
-            $dates[] = $d->toDateString();
-        }
-
-        return [$start->format('Y-m'), $start->toDateString(), $end->toDateString(), $dates];
-    }
-
-    private function loadReportStores(array $activityStoreIds, ?int $requestedStoreId)
-    {
-        $query = Store::query()
-            ->select('id', 'name', 'is_active', 'is_online', 'is_warehouse')
-            ->where('is_warehouse', false)
-            ->where('is_online', false)
-            ->where(function ($q) use ($activityStoreIds) {
-                $q->where('is_active', true);
-                if (!empty($activityStoreIds)) {
-                    $q->orWhereIn('id', $activityStoreIds);
-                }
-            })
-            ->orderBy('name');
-
-        if ($requestedStoreId) {
-            $query->where('id', $requestedStoreId);
-        }
-
-        return $query->get();
-    }
-
-    private function loadBranchSales(string $from, string $to): array
-    {
-        $dateExpr = $this->businessDateSql('COALESCE(o.order_date, o.confirmed_at, o.created_at)');
-
-        $query = DB::table('orders as o')
-            ->select('o.store_id', DB::raw("{$dateExpr} as business_date"), DB::raw('SUM(o.total_amount) as total'))
-            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
-            ->whereNotIn('o.status', self::SALE_EXCLUDED_STATUSES)
-            ->whereNotNull('o.store_id')
-            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
-            ->groupBy('o.store_id', DB::raw($dateExpr));
-
-        $this->whereNotSoftDeleted($query, 'o');
-        $this->whereNotExchangeReplacement($query, 'o.metadata');
-
-        return $query->get()->reduce(function ($out, $row) {
-            $this->addAmount($out, (int) $row->store_id, $row->business_date, 'sale', (float) $row->total);
-            return $out;
-        }, []);
-    }
-
-    private function loadBranchPaymentMovements(string $from, string $to): array
-    {
-        $out = [];
-
-        foreach ($this->normalPaymentRows($from, $to, self::BRANCH_ORDER_TYPES) as $row) {
-            $storeId = (int) $row->store_id;
-            if ($storeId <= 0) {
-                continue;
-            }
-
-            $bucket = $this->isCashMethod($row) ? 'cash' : 'bank';
-            $this->addAmount($out, $storeId, $row->business_date, $bucket, (float) $row->amount);
-
-            if ((string) $row->payment_type === 'exchange_surplus') {
-                $this->addAmount($out, $storeId, $row->business_date, 'ex_on', (float) $row->amount);
-            }
-        }
-
-        foreach ($this->splitPaymentRows($from, $to, self::BRANCH_ORDER_TYPES) as $row) {
-            $storeId = (int) $row->store_id;
-            if ($storeId <= 0) {
-                continue;
-            }
-
-            $bucket = $this->isCashMethod($row) ? 'cash' : 'bank';
-            $this->addAmount($out, $storeId, $row->business_date, $bucket, (float) $row->amount);
-
-            if ((string) $row->payment_type === 'exchange_surplus') {
-                $this->addAmount($out, $storeId, $row->business_date, 'ex_on', (float) $row->amount);
-            }
-        }
-
-        return $out;
-    }
-
-    private function loadBranchRefundMovements(string $from, string $to): array
-    {
-        $dateExpr = $this->businessDateSql('COALESCE(r.completed_at, r.processed_at, r.created_at)');
-
-        $rows = DB::table('refunds as r')
-            ->join('orders as o', 'o.id', '=', 'r.order_id')
-            ->select(
-                'o.store_id',
-                'r.refund_method',
-                'r.refund_type',
-                DB::raw("{$dateExpr} as business_date"),
-                'r.refund_amount as amount'
-            )
-            ->where('r.status', 'completed')
-            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
-            ->whereNotNull('o.store_id')
-            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
-            ->get();
-
-        $out = [];
-        foreach ($rows as $row) {
-            $storeId = (int) $row->store_id;
-            $amount = (float) $row->amount;
-            $method = strtolower((string) ($row->refund_method ?? ''));
-
-            if (!in_array($method, self::NON_MONEY_REFUND_METHODS, true)) {
-                $bucket = $method === 'cash' ? 'cash' : 'bank';
-                $this->addAmount($out, $storeId, $row->business_date, $bucket, $amount);
-            }
-
-            if ((string) $row->refund_type === 'exchange_refund') {
-                $this->addAmount($out, $storeId, $row->business_date, 'ex_on', $amount);
-            }
-        }
-
-        return $out;
-    }
-
-    private function loadBranchCosts(string $from, string $to): array
-    {
-        $out = [];
-
-        $manualRows = DB::table('branch_cost_entries as bce')
-            ->select('bce.store_id', 'bce.entry_date as business_date', DB::raw('SUM(bce.amount) as amount'))
-            ->whereBetween('bce.entry_date', [$from, $to])
-            ->groupBy('bce.store_id', 'bce.entry_date')
-            ->get();
-
-        foreach ($manualRows as $row) {
-            $this->addAmount($out, (int) $row->store_id, $row->business_date, 'cash', (float) $row->amount);
-        }
-
-        $dateExpr = $this->businessDateSql('COALESCE(ep.completed_at, ep.processed_at, e.expense_date)');
-        $expenseQuery = DB::table('expense_payments as ep')
-            ->join('expenses as e', 'e.id', '=', 'ep.expense_id')
-            ->leftJoin('payment_methods as pm', 'pm.id', '=', 'ep.payment_method_id')
-            ->select(
-                DB::raw('COALESCE(ep.store_id, e.store_id) as store_id'),
-                DB::raw("{$dateExpr} as business_date"),
-                'pm.type as method_type',
-                'pm.code as method_code',
-                'pm.name as method_name',
-                DB::raw('SUM(ep.amount) as amount')
-            )
-            ->where('ep.status', 'completed')
-            ->whereNotIn('e.status', ['cancelled', 'rejected'])
-            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
-            ->whereRaw('COALESCE(ep.store_id, e.store_id) IS NOT NULL')
-            ->groupBy(DB::raw('COALESCE(ep.store_id, e.store_id)'), DB::raw($dateExpr), 'pm.type', 'pm.code', 'pm.name');
-
-        $this->whereNotCashSheetOrigin($expenseQuery, 'e');
-
-        foreach ($expenseQuery->get() as $row) {
-            $bucket = $this->isCashMethod($row) ? 'cash' : 'bank';
-            $this->addAmount($out, (int) $row->store_id, $row->business_date, $bucket, (float) $row->amount);
-        }
-
-        return $out;
-    }
-
-    private function loadAdminEntryBuckets(string $from, string $to): array
-    {
-        $rows = DB::table('admin_entries')
-            ->select('store_id', 'entry_date', 'type', DB::raw('SUM(amount) as amount'))
-            ->whereBetween('entry_date', [$from, $to])
-            ->groupBy('store_id', 'entry_date', 'type')
-            ->get();
-
-        $out = [];
-        foreach ($rows as $row) {
-            $storeKey = $row->store_id === null ? '_global' : (int) $row->store_id;
-            $this->addAmount($out, $storeKey, $row->entry_date, (string) $row->type, (float) $row->amount);
-        }
-
-        return $out;
-    }
-
-    private function loadOwnerEntryBuckets(string $from, string $to): array
-    {
-        $rows = DB::table('owner_entries')
-            ->select('entry_date', 'type', DB::raw('SUM(amount) as amount'))
-            ->whereBetween('entry_date', [$from, $to])
-            ->groupBy('entry_date', 'type')
-            ->get();
-
-        $out = [];
-        foreach ($rows as $row) {
-            $this->addAmount($out, 'owner', $row->entry_date, (string) $row->type, (float) $row->amount);
-        }
-
-        return $out;
-    }
-
-    private function loadOnlineBuckets(string $from, string $to): array
-    {
-        $out = [];
-        $orderDateExpr = $this->businessDateSql('COALESCE(o.order_date, o.confirmed_at, o.created_at)');
-
-        $orderQuery = DB::table('orders as o')
-            ->select(
-                'o.id',
-                'o.order_type',
-                'o.payment_method',
-                'o.intended_courier',
-                'o.carrier_name',
-                'o.metadata',
-                DB::raw("{$orderDateExpr} as business_date"),
-                'o.total_amount',
-                'o.paid_amount',
-                'o.outstanding_amount'
-            )
-            ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
-            ->whereNotIn('o.status', self::SALE_EXCLUDED_STATUSES)
-            ->whereRaw("{$orderDateExpr} BETWEEN ? AND ?", [$from, $to]);
-
-        $this->whereNotSoftDeleted($orderQuery, 'o');
-        $this->whereNotExchangeReplacement($orderQuery, 'o.metadata');
-
-        foreach ($orderQuery->get() as $row) {
-            $date = $row->business_date;
-            $total = (float) $row->total_amount;
-            $this->addOnline($out, $date, 'daily_sales', $total);
-
-            if ($this->isCodLikeOrder($row)) {
-                $due = (float) ($row->outstanding_amount ?? 0);
-                if ($due <= 0 && $total > 0) {
-                    $due = max(0, $total - (float) ($row->paid_amount ?? 0));
-                }
-                if ($due > 0) {
-                    $this->addOnline($out, $date, 'cod_due', $due);
-                    $this->addOnline($out, $date, 'cod', $due);
-                }
-            }
-        }
-
-        foreach ($this->normalPaymentRows($from, $to, self::ONLINE_ORDER_TYPES) as $row) {
-            $this->applyOnlinePaymentRow($out, $row);
-        }
-        foreach ($this->splitPaymentRows($from, $to, self::ONLINE_ORDER_TYPES) as $row) {
-            $this->applyOnlinePaymentRow($out, $row);
-        }
-
-        $this->applyOnlineRefundRows($out, $from, $to);
-
-        return $out;
-    }
-
-    private function normalPaymentRows(string $from, string $to, array $orderTypes)
-    {
-        $dateExpr = $this->businessDateSql('COALESCE(op.payment_received_date, op.completed_at, op.processed_at, op.created_at)');
-
-        return DB::table('order_payments as op')
-            ->join('orders as o', 'o.id', '=', 'op.order_id')
-            ->leftJoin('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
-            ->select(
-                DB::raw('COALESCE(op.store_id, o.store_id) as store_id'),
-                'o.order_type',
-                'o.payment_method as order_payment_method',
-                'o.intended_courier',
-                'o.carrier_name',
-                'o.metadata as order_metadata',
-                'op.payment_type',
-                'pm.type as method_type',
-                'pm.code as method_code',
-                'pm.name as method_name',
-                DB::raw("{$dateExpr} as business_date"),
-                'op.amount'
-            )
-            ->whereIn('o.order_type', $orderTypes)
-            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
-            ->whereNotIn('op.payment_type', self::VIRTUAL_PAYMENT_TYPES)
-            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
-            ->whereNotExists(function ($q) {
-                $q->select(DB::raw(1))
-                    ->from('payment_splits as psx')
-                    ->whereColumn('psx.order_payment_id', 'op.id');
-            })
-            ->get();
-    }
-
-    private function splitPaymentRows(string $from, string $to, array $orderTypes)
-    {
-        $dateExpr = $this->businessDateSql('COALESCE(op.payment_received_date, ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.created_at)');
-
-        return DB::table('payment_splits as ps')
-            ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
-            ->join('orders as o', 'o.id', '=', 'op.order_id')
-            ->leftJoin('payment_methods as pm', 'pm.id', '=', 'ps.payment_method_id')
-            ->select(
-                DB::raw('COALESCE(ps.store_id, op.store_id, o.store_id) as store_id'),
-                'o.order_type',
-                'o.payment_method as order_payment_method',
-                'o.intended_courier',
-                'o.carrier_name',
-                'o.metadata as order_metadata',
-                'op.payment_type',
-                'pm.type as method_type',
-                'pm.code as method_code',
-                'pm.name as method_name',
-                DB::raw("{$dateExpr} as business_date"),
-                'ps.amount'
-            )
-            ->whereIn('o.order_type', $orderTypes)
-            ->where('ps.status', 'completed')
-            ->whereNotIn('op.status', ['cancelled', 'failed'])
-            ->whereNotIn('op.payment_type', self::VIRTUAL_PAYMENT_TYPES)
-            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
-            ->get();
-    }
-
-    private function applyOnlinePaymentRow(array &$out, object $row): void
-    {
-        $amount = (float) $row->amount;
-        if ($amount == 0.0) {
-            return;
-        }
-
-        if ($this->isCodLikeOrder($row)) {
-            $this->addOnline($out, $row->business_date, 'cod_collected', $amount);
-            $this->addOnline($out, $row->business_date, 'cod', $amount);
-            return;
-        }
-
-        if ((string) $row->order_type === 'social_commerce') {
-            $this->addOnline($out, $row->business_date, 'advance', $amount);
-        } elseif ((string) $row->order_type === 'ecommerce') {
-            $this->addOnline($out, $row->business_date, 'online_payment', $amount);
-        }
-    }
-
-    private function applyOnlineRefundRows(array &$out, string $from, string $to): void
-    {
-        $dateExpr = $this->businessDateSql('COALESCE(r.completed_at, r.processed_at, r.created_at)');
-
-        $rows = DB::table('refunds as r')
-            ->join('orders as o', 'o.id', '=', 'r.order_id')
-            ->select(
-                'o.order_type',
-                'o.payment_method as order_payment_method',
-                'o.intended_courier',
-                'o.carrier_name',
-                'o.metadata as order_metadata',
-                'r.refund_method',
-                DB::raw("{$dateExpr} as business_date"),
-                'r.refund_amount as amount'
-            )
-            ->where('r.status', 'completed')
-            ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
-            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
-            ->get();
-
-        foreach ($rows as $row) {
-            $method = strtolower((string) ($row->refund_method ?? ''));
-            if (in_array($method, self::NON_MONEY_REFUND_METHODS, true)) {
-                continue;
-            }
-
-            $amount = (float) $row->amount;
-            $this->addOnline($out, $row->business_date, 'refunds', $amount);
-
-            if ($this->isCodLikeOrder($row)) {
-                $this->addOnline($out, $row->business_date, 'cod_refunds', $amount);
-                $this->addOnline($out, $row->business_date, 'cod', -$amount);
-            } elseif ((string) $row->order_type === 'social_commerce') {
-                $this->addOnline($out, $row->business_date, 'advance', -$amount);
-            } elseif ((string) $row->order_type === 'ecommerce') {
-                $this->addOnline($out, $row->business_date, 'online_payment', -$amount);
-            }
-        }
-    }
-
-    private function onlineForDate(array $onlineData, string $date): array
-    {
-        $base = [
-            'daily_sales' => 0.0,
-            'advance' => 0.0,
-            'online_payment' => 0.0,
-            'cod' => 0.0,
-            'cod_due' => 0.0,
-            'cod_collected' => 0.0,
-            'cod_refunds' => 0.0,
-            'refunds' => 0.0,
-        ];
-
-        foreach ($base as $key => $value) {
-            $base[$key] = $this->round((float) ($onlineData[$date][$key] ?? 0));
-        }
-
-        return $base;
-    }
-
-    private function ownerForDate(array $ownerData, string $date, float $branchCash, float $finalBank): array
-    {
-        $cashInvest = $this->amountAt($ownerData, 'owner', $date, 'cash_invest');
-        $bankInvest = $this->amountAt($ownerData, 'owner', $date, 'bank_invest');
-        $cashCost = $this->amountAt($ownerData, 'owner', $date, 'cash_cost');
-        $bankCost = $this->amountAt($ownerData, 'owner', $date, 'bank_cost');
-
-        $totalCash = $branchCash + $cashInvest;
-        $totalBank = $finalBank + $bankInvest;
-
-        return [
-            'cash_invest' => $this->round($cashInvest),
-            'bank_invest' => $this->round($bankInvest),
-            'cash_cost' => $this->round($cashCost),
-            'bank_cost' => $this->round($bankCost),
-            'total_cash' => $this->round($totalCash),
-            'total_bank' => $this->round($totalBank),
-            'cash_after_cost' => $this->round($totalCash - $cashCost),
-            'bank_after_cost' => $this->round($totalBank - $bankCost),
-        ];
-    }
-
-    private function emptySummary($stores): array
-    {
-        $summary = [
-            'totals' => [
-                'sale' => 0.0,
-                'branch_sale' => 0.0,
-                'cash' => 0.0,
-                'bank' => 0.0,
-                'final_bank' => 0.0,
-                'daily_cost' => 0.0,
-                'ex_on' => 0.0,
-                'salary' => 0.0,
-                'cash_to_bank' => 0.0,
-            ],
-            'online' => [
-                'daily_sales' => 0.0,
-                'advance' => 0.0,
-                'online_payment' => 0.0,
-                'cod' => 0.0,
-                'cod_due' => 0.0,
-                'cod_collected' => 0.0,
-                'cod_refunds' => 0.0,
-                'refunds' => 0.0,
-            ],
-            'disbursements' => [
-                'sslzc_received' => 0.0,
-                'pathao_received' => 0.0,
-            ],
-            'owner' => [
-                'cash_invest' => 0.0,
-                'bank_invest' => 0.0,
-                'cash_cost' => 0.0,
-                'bank_cost' => 0.0,
-                'total_cash' => 0.0,
-                'total_bank' => 0.0,
-                'cash_after_cost' => 0.0,
-                'bank_after_cost' => 0.0,
-            ],
-            'stores' => [],
-        ];
-
-        foreach ($stores as $store) {
-            $summary['stores'][(int) $store->id] = [
-                'store_id' => (int) $store->id,
-                'store_name' => (string) $store->name,
-                'daily_sale' => 0.0,
-                'cash' => 0.0,
-                'bank' => 0.0,
-                'ex_on' => 0.0,
-                'salary' => 0.0,
-                'daily_cost' => 0.0,
-                'cash_to_bank' => 0.0,
-                'raw_cash' => 0.0,
-                'raw_bank' => 0.0,
-            ];
-        }
-
-        return $summary;
-    }
-
-    private function roundSummary(array $summary): array
-    {
-        foreach (['totals', 'online', 'disbursements', 'owner'] as $section) {
-            foreach ($summary[$section] as $key => $value) {
-                $summary[$section][$key] = $this->round((float) $value);
-            }
-        }
-
-        foreach ($summary['stores'] as $sid => $storeSummary) {
-            foreach ($storeSummary as $key => $value) {
-                if (is_numeric($value)) {
-                    $summary['stores'][$sid][$key] = $key === 'store_id' ? (int) $value : $this->round((float) $value);
-                }
-            }
-        }
-
-        $summary['stores'] = array_values($summary['stores']);
-
-        return $summary;
-    }
-
-    private function collectActivityStoreIds(array ...$datasets): array
-    {
-        $ids = [];
-        foreach ($datasets as $dataset) {
-            foreach (array_keys($dataset) as $key) {
-                if (is_int($key) || ctype_digit((string) $key)) {
-                    $id = (int) $key;
-                    if ($id > 0) {
-                        $ids[$id] = $id;
-                    }
-                }
-            }
-        }
-        return array_values($ids);
-    }
-
-    private function addAmount(array &$out, int|string $storeKey, string $date, string $bucket, float $amount): void
-    {
-        if (!isset($out[$storeKey])) {
-            $out[$storeKey] = [];
-        }
-        if (!isset($out[$storeKey][$date])) {
-            $out[$storeKey][$date] = [];
-        }
-        $out[$storeKey][$date][$bucket] = ($out[$storeKey][$date][$bucket] ?? 0) + $amount;
-    }
-
-    private function addOnline(array &$out, string $date, string $bucket, float $amount): void
-    {
-        if (!isset($out[$date])) {
-            $out[$date] = [];
-        }
-        $out[$date][$bucket] = ($out[$date][$bucket] ?? 0) + $amount;
-    }
-
-    private function amountAt(array $out, int|string $storeKey, string $date, string $bucket): float
-    {
-        return (float) ($out[$storeKey][$date][$bucket] ?? 0);
-    }
-
-    private function isCashMethod(object $row): bool
-    {
-        $type = strtolower((string) ($row->method_type ?? ''));
-        $code = strtolower((string) ($row->method_code ?? ''));
-        $name = strtolower((string) ($row->method_name ?? ''));
-
-        return $type === 'cash' || $code === 'cash' || $name === 'cash' || str_contains($name, 'cash');
-    }
-
-    private function isCodLikeOrder(object $row): bool
-    {
-        $haystack = strtolower(implode(' ', array_filter([
-            (string) ($row->order_payment_method ?? ''),
-            (string) ($row->payment_method ?? ''),
-            (string) ($row->intended_courier ?? ''),
-            (string) ($row->carrier_name ?? ''),
-            $this->metadataToText($row->order_metadata ?? $row->metadata ?? null),
-        ])));
-
-        return str_contains($haystack, 'cod')
-            || str_contains($haystack, 'cash on delivery')
-            || str_contains($haystack, 'courier')
-            || str_contains($haystack, 'pathao')
-            || str_contains($haystack, 'steadfast')
-            || str_contains($haystack, 'delivery');
-    }
-
-    private function metadataToText(mixed $metadata): string
-    {
-        if ($metadata === null || $metadata === '') {
-            return '';
-        }
-        if (is_array($metadata)) {
-            return strtolower(json_encode($metadata));
-        }
-        if (is_object($metadata)) {
-            return strtolower(json_encode($metadata));
-        }
-        return strtolower((string) $metadata);
-    }
-
-    private function positiveInt(mixed $value): ?int
-    {
-        $int = (int) $value;
-        return $int > 0 ? $int : null;
-    }
-
-    private function round(float $value): float
-    {
-        return round($value, 2);
-    }
-
     private function createAccountingExpenseForBranchCost(BranchCostEntry $entry): void
     {
         if ($this->findLinkedExpenseForBranchCost($entry)) {
@@ -978,8 +386,8 @@ class CashSheetController extends Controller
         }
 
         $employeeId = $this->currentEmployeeId();
-        $entryDate = Carbon::parse($entry->entry_date, self::DHAKA_TZ)->toDateString();
-        $timestamp = Carbon::parse($entryDate, self::DHAKA_TZ)->endOfDay();
+        $entryDate = Carbon::parse($entry->entry_date)->toDateString();
+        $timestamp = Carbon::parse($entryDate)->endOfDay();
         $amount = (float) $entry->amount;
         $category = $this->resolveCashSheetExpenseCategory();
         $paymentMethod = $this->resolveCashPaymentMethod();
@@ -1002,7 +410,7 @@ class CashSheetController extends Controller
             'approved_at' => $timestamp,
             'processed_at' => $timestamp,
             'completed_at' => $timestamp,
-            'description' => $entry->details ?: 'Branch daily cost',
+            'description' => $entry->details ?: 'Cash sheet branch daily cost',
             'expense_type' => 'miscellaneous',
             'metadata' => [
                 'source' => 'cash_sheet_branch_cost',
@@ -1010,6 +418,8 @@ class CashSheetController extends Controller
             ],
         ]);
 
+        // Creating a completed ExpensePayment triggers ExpensePaymentObserver, which
+        // writes the balanced debit-expense / credit-cash ledger pair.
         ExpensePayment::create([
             'expense_id' => $expense->id,
             'payment_method_id' => $paymentMethod->id,
@@ -1048,13 +458,13 @@ class CashSheetController extends Controller
             'payment_status' => 'unpaid',
             'paid_amount' => 0,
             'outstanding_amount' => $expense->total_amount,
-            'notes' => trim(($expense->notes ? $expense->notes . "\n" : '') . 'Cancelled because linked branch cost entry was deleted.'),
+            'notes' => trim(($expense->notes ? $expense->notes . "\n" : '') . 'Cancelled because linked cash-sheet branch cost entry was deleted.'),
         ]);
     }
 
     private function findLinkedExpenseForBranchCost(BranchCostEntry $entry): ?Expense
     {
-        $json = "REPLACE(LOWER(COALESCE(" . $this->castToText('metadata') . ", '')), ' ', '')";
+        $json = "REPLACE(LOWER(COALESCE(metadata, '')), ' ', '')";
 
         return Expense::whereRaw("{$json} LIKE ?", ['%"source":"cash_sheet_branch_cost"%'])
             ->where(function ($q) use ($entry, $json) {
@@ -1069,8 +479,8 @@ class CashSheetController extends Controller
         return ExpenseCategory::firstOrCreate(
             ['code' => 'CSBR'],
             [
-                'name' => 'Branch Daily Cost',
-                'description' => 'Operational branch costs entered from the Branch Costs page.',
+                'name' => 'Cash Sheet Daily Cost',
+                'description' => 'Operational branch costs entered from the daily cash sheet.',
                 'type' => 'operational',
                 'requires_approval' => false,
                 'is_active' => true,
@@ -1103,7 +513,7 @@ class CashSheetController extends Controller
             return;
         }
 
-        $date = Carbon::parse($entry->entry_date, self::DHAKA_TZ)->toDateString();
+        $date = Carbon::parse($entry->entry_date)->toDateString();
         $storeId = $entry->store_id;
         $createdBy = $entry->created_by ?: $this->currentEmployeeId();
 
@@ -1115,7 +525,7 @@ class CashSheetController extends Controller
                 Transaction::getCashAccountId($storeId),
                 AdminEntry::class,
                 $entry->id,
-                'Admin Panel - Salary/Rent Set-aside',
+                'Cash Sheet - Salary/Rent Set-aside',
                 $storeId,
                 $createdBy,
                 ['cash_sheet_type' => $entry->type, 'details' => $entry->details]
@@ -1127,7 +537,7 @@ class CashSheetController extends Controller
                 Transaction::getCashAccountId($storeId),
                 AdminEntry::class,
                 $entry->id,
-                'Admin Panel - Cash to Bank Transfer',
+                'Cash Sheet - Cash to Bank Transfer',
                 $storeId,
                 $createdBy,
                 ['cash_sheet_type' => $entry->type, 'details' => $entry->details]
@@ -1139,7 +549,7 @@ class CashSheetController extends Controller
                 Transaction::getSSLCommerzReceivableAccountId(),
                 AdminEntry::class,
                 $entry->id,
-                'Admin Panel - SSLCommerz Disbursement Received',
+                'Cash Sheet - SSLCommerz Disbursement Received',
                 null,
                 $createdBy,
                 ['cash_sheet_type' => $entry->type, 'details' => $entry->details, 'source' => 'sslcommerz_settlement']
@@ -1151,7 +561,7 @@ class CashSheetController extends Controller
                 Transaction::getPathaoReceivableAccountId(),
                 AdminEntry::class,
                 $entry->id,
-                'Admin Panel - Pathao Disbursement Received',
+                'Cash Sheet - Pathao Disbursement Received',
                 null,
                 $createdBy,
                 ['cash_sheet_type' => $entry->type, 'details' => $entry->details, 'source' => 'pathao_disbursement']
@@ -1171,7 +581,7 @@ class CashSheetController extends Controller
             return;
         }
 
-        $date = Carbon::parse($entry->entry_date, self::DHAKA_TZ)->toDateString();
+        $date = Carbon::parse($entry->entry_date)->toDateString();
         $createdBy = $entry->created_by ?: $this->currentEmployeeId();
         $equityAccountId = Transaction::getOwnerEquityAccountId();
         $expenseAccountId = Transaction::getOperatingExpenseAccountId();
@@ -1184,7 +594,7 @@ class CashSheetController extends Controller
                 $equityAccountId,
                 OwnerEntry::class,
                 $entry->id,
-                'Owner Panel - Cash Investment',
+                'Cash Sheet - Owner Cash Investment',
                 null,
                 $createdBy,
                 ['cash_sheet_type' => $entry->type, 'details' => $entry->details]
@@ -1196,7 +606,7 @@ class CashSheetController extends Controller
                 $equityAccountId,
                 OwnerEntry::class,
                 $entry->id,
-                'Owner Panel - Bank Investment',
+                'Cash Sheet - Owner Bank Investment',
                 null,
                 $createdBy,
                 ['cash_sheet_type' => $entry->type, 'details' => $entry->details]
@@ -1208,7 +618,7 @@ class CashSheetController extends Controller
                 Transaction::getCashAccountId(),
                 OwnerEntry::class,
                 $entry->id,
-                'Owner Panel - Cash Cost',
+                'Cash Sheet - Owner Cash Cost',
                 null,
                 $createdBy,
                 ['cash_sheet_type' => $entry->type, 'details' => $entry->details]
@@ -1220,7 +630,7 @@ class CashSheetController extends Controller
                 Transaction::getBankAccountId(),
                 OwnerEntry::class,
                 $entry->id,
-                'Owner Panel - Bank Cost',
+                'Cash Sheet - Owner Bank Cost',
                 null,
                 $createdBy,
                 ['cash_sheet_type' => $entry->type, 'details' => $entry->details]
@@ -1277,7 +687,7 @@ class CashSheetController extends Controller
     private function whereNotCashSheetOrigin($query, string $alias): void
     {
         $metadata = $alias . '.metadata';
-        $json = "REPLACE(LOWER(COALESCE(" . $this->castToText($metadata) . ", '')), ' ', '')";
+        $json = "REPLACE(LOWER(COALESCE({$metadata}, '')), ' ', '')";
 
         $query->where(function ($q) use ($metadata, $json) {
             $q->whereNull($metadata)
@@ -1324,7 +734,7 @@ class CashSheetController extends Controller
                 'expense_id' => (int) $r->expense_id,
                 'payment_number' => $r->payment_number,
                 'expense_number' => $r->expense_number,
-                'amount' => $this->round((float) $r->amount),
+                'amount' => round((float) $r->amount, 2),
                 'completed_at' => $r->completed_at,
                 'description' => $r->description,
                 'category_name' => $r->category_name,
@@ -1346,31 +756,12 @@ class CashSheetController extends Controller
             ->all();
     }
 
-    private function whereNotSoftDeleted($query, string $alias): void
-    {
-        // Most deployments have orders.deleted_at because Order uses SoftDeletes.
-        // Keeping this isolated makes the report intent explicit.
-        $query->whereNull($alias . '.deleted_at');
-    }
-
-    private function whereNotExchangeReplacement($query, string $metadataColumn): void
-    {
-        $json = "LOWER(COALESCE(" . $this->castToText($metadataColumn) . ", ''))";
-        $query->where(function ($q) use ($metadataColumn, $json) {
-            $q->whereNull($metadataColumn)
-                ->orWhere(function ($qq) use ($json) {
-                    $qq->whereRaw("{$json} NOT LIKE ?", ['%is_exchange_replacement%'])
-                       ->whereRaw("{$json} NOT LIKE ?", ['%exchange_replacement%']);
-                });
-        });
-    }
-
     /**
-     * Convert DB datetime columns into Errum's Bangladesh business date.
+     * Convert UTC/DB datetime columns into Errum's Bangladesh business date.
      *
-     * Date-only fields (entry_date, payment_received_date) remain stable. Datetime
-     * fields can be shifted by CASH_SHEET_UTC_OFFSET_HOURS. If production saves
-     * local Bangladesh datetimes already, set CASH_SHEET_UTC_OFFSET_HOURS=0.
+     * The production DB stores timestamps as UTC. The canonical monthly cash-sheet
+     * report, so records at 19:xx UTC must hydrate the next Bangladesh day.
+     * Date-only columns such as entry_date are still handled as plain dates.
      */
     private function businessDateSql(string $expr): string
     {
@@ -1391,10 +782,817 @@ class CashSheetController extends Controller
         return "DATE(DATE_ADD({$expr}, INTERVAL {$offsetHours} HOUR))";
     }
 
-    private function castToText(string $column): string
+    private function whereBusinessDateBetween($query, string $expr, string $from, string $to): void
     {
-        return DB::connection()->getDriverName() === 'sqlite'
-            ? "CAST({$column} AS TEXT)"
-            : "CAST({$column} AS CHAR)";
+        $businessDate = $this->businessDateSql($expr);
+        $query->whereRaw("{$businessDate} >= ?", [$from])
+            ->whereRaw("{$businessDate} <= ?", [$to]);
+    }
+
+    /**
+     * Load all stores that should appear in the selected month.
+     *
+     * Active stores are always shown. Inactive stores are also shown when they
+     * have historical sale/payment/refund/cost/admin activity in the month, so
+     * old cash sheets do not lose branch columns after a branch is deactivated.
+     */
+    private function loadCashSheetStores(string $from, string $to)
+    {
+        // The cash sheet must render every current branch/warehouse even when it
+        // has no movement in the selected month. For historical months, it must
+        // also resurrect inactive or soft-deleted locations when source rows exist
+        // in that month, otherwise old sheets lose their original columns.
+        $ids = collect(Store::withTrashed()
+            ->where(function ($q) {
+                $q->where('is_active', true)
+                    ->orWhereNull('is_active'); // legacy rows created before the flag was enforced
+            })
+            ->pluck('id')
+            ->all());
+
+        $merge = function ($values) use (&$ids): void {
+            $ids = $ids->merge(
+                collect($values)
+                    ->filter(fn ($id) => $id !== null && (int) $id > 0)
+                    ->map(fn ($id) => (int) $id)
+            );
+        };
+
+        $orderAt = 'COALESCE(order_date, confirmed_at, created_at)';
+        $paymentAt = 'COALESCE(op.payment_received_date, op.completed_at, op.processed_at, op.created_at)';
+        $paymentStoreExpr = 'COALESCE(op.store_id, o.store_id)';
+        $splitPaymentAt = 'COALESCE(op.payment_received_date, ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.created_at)';
+        $splitStoreExpr = 'COALESCE(ps.store_id, op.store_id, o.store_id)';
+        $expenseAt = 'COALESCE(ep.completed_at, ep.processed_at, e.expense_date)';
+
+        $merge(DB::table('orders')
+            ->whereNull('deleted_at')
+            ->whereRaw($this->businessDateSql($orderAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($orderAt) . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('order_payments as op')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->selectRaw("{$paymentStoreExpr} as store_id")
+            ->whereNull('op.deleted_at')
+            ->whereRaw($this->businessDateSql($paymentAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($paymentAt) . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('payment_splits as ps')
+            ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->selectRaw("{$splitStoreExpr} as store_id")
+            ->whereRaw($this->businessDateSql($splitPaymentAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($splitPaymentAt) . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('refunds as r')
+            ->leftJoin('product_returns as pr', 'pr.id', '=', 'r.return_id')
+            ->leftJoin('orders as o', 'o.id', '=', 'r.order_id')
+            ->selectRaw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id) as store_id')
+            ->whereNotNull('r.completed_at')
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('branch_cost_entries')
+            ->whereBetween('entry_date', [$from, $to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('expense_payments as ep')
+            ->join('expenses as e', 'e.id', '=', 'ep.expense_id')
+            ->selectRaw('COALESCE(ep.store_id, e.store_id) as store_id')
+            ->whereRaw($this->businessDateSql($expenseAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($expenseAt) . ' <= ?', [$to])
+            ->pluck('store_id'));
+
+        $merge(DB::table('admin_entries')
+            ->whereNotNull('store_id')
+            ->whereBetween('entry_date', [$from, $to])
+            ->pluck('store_id'));
+
+        return Store::withTrashed()
+            ->whereIn('id', $ids->unique()->values()->all())
+            ->orderBy('id')
+            ->get(['id', 'name', 'is_warehouse', 'is_online', 'is_active', 'deleted_at']);
+    }
+
+    private function loadBranchSales(array $ids, string $from, string $to): array
+    {
+        $out = [];
+
+        // Sales are counted on the order business date, not on payment dates.
+        // The old payment join could count the same order multiple times when
+        // payments were added/updated on different dates. Payments are handled
+        // separately by loadBranchPayments().
+        $dateExpr = 'COALESCE(o.order_date, o.confirmed_at, o.created_at)';
+        $dayExpr = $this->businessDateSql($dateExpr);
+        $query = DB::table('orders as o')
+            ->select(
+                'o.store_id',
+                DB::raw("{$dayExpr} as day"),
+                DB::raw('SUM(o.total_amount) as total')
+            )
+            ->whereIn('o.store_id', $ids)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES);
+
+        $this->whereBusinessDateBetween($query, $dateExpr, $from, $to);
+
+        $this->applyCashSheetOrderScope($query, 'o', false);
+
+        $query
+            ->groupBy('o.store_id', 'day')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $out[(string) $r->store_id][$r->day] = round((float) $r->total, 2);
+            });
+
+        return $out;
+    }
+
+    private function loadBranchPayments(array $ids, string $from, string $to): array
+    {
+        $out = [];
+        $excludedPaymentTypes = self::INTERNAL_SETTLEMENT_PAYMENT_TYPES;
+
+        $addToBucket = function ($r, int $sign = 1) use (&$out) {
+            // In the cash sheet, every completed non-cash counter payment is treated
+            // as Bank. This intentionally includes card, bank transfer, online banking,
+            // digital wallet, and mobile banking/MFS such as bKash and Nagad.
+            $bucket = in_array($r->mt, self::CASH_TYPES, true) ? 'cash' : 'bank';
+            $storeKey = (string) $r->store_id;
+            $out[$storeKey][$r->day][$bucket] = ($out[$storeKey][$r->day][$bucket] ?? 0) + ($sign * (float) $r->total);
+        };
+
+        $normalPaymentAt = 'COALESCE(op.payment_received_date, op.completed_at, op.processed_at, op.created_at)';
+        $normalStoreExpr = 'COALESCE(op.store_id, o.store_id)';
+        $splitPaymentAt = 'COALESCE(op.payment_received_date, ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.created_at)';
+        $splitStoreExpr = 'COALESCE(ps.store_id, op.store_id, o.store_id)';
+
+        // 1) Normal single-method payments.
+        // Payment cash-flow is counted even if the order is later cancelled/refunded;
+        // the matching refund will subtract cash/bank on the refund date. This avoids
+        // the old double-negative problem where the payment disappeared but refund remained.
+        // Explicit payment_received_date is preferred so backdated POS/offline payments
+        // hydrate the intended business day instead of the processing day.
+        $normalPayments = DB::table('order_payments as op')
+            ->join('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->leftJoin('payment_splits as ps_probe', 'ps_probe.order_payment_id', '=', 'op.id')
+            ->select(
+                DB::raw("{$normalStoreExpr} as store_id"),
+                DB::raw($this->businessDateSql($normalPaymentAt) . ' as day'),
+                'pm.type as mt',
+                DB::raw('SUM(op.amount) as total')
+            )
+            ->whereIn(DB::raw($normalStoreExpr), $ids)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNull('op.deleted_at')
+            ->whereNull('ps_probe.id')
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+            ->where(function ($q) use ($excludedPaymentTypes) {
+                $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
+            })
+            ->whereRaw("{$normalPaymentAt} IS NOT NULL");
+
+        $this->whereBusinessDateBetween($normalPayments, $normalPaymentAt, $from, $to);
+
+        $this->applyCashFlowOrderScope($normalPayments, 'o', true, 'op');
+
+        $normalPayments
+            ->groupBy(DB::raw($normalStoreExpr), 'day', 'pm.type')
+            ->get()
+            ->each($addToBucket);
+
+        // 2) Split payments. The parent order_payments row has payment_method_id = null,
+        // so cash sheet must read payment_splits. Some legacy POS flows completed the
+        // parent payment but left split rows as pending/null. In that case we still count
+        // non-failed/non-cancelled split rows because the order is paid and the receipt
+        // was printed from these split amounts.
+        $splitPayments = DB::table('payment_splits as ps')
+            ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
+            ->join('payment_methods as pm', 'pm.id', '=', 'ps.payment_method_id')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->select(
+                DB::raw("{$splitStoreExpr} as store_id"),
+                DB::raw($this->businessDateSql($splitPaymentAt) . ' as day'),
+                'pm.type as mt',
+                DB::raw('SUM(ps.amount) as total')
+            )
+            ->whereIn(DB::raw($splitStoreExpr), $ids)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNull('op.deleted_at')
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+            ->where(function ($q) {
+                $q->where('ps.status', 'completed')
+                    ->orWhere(function ($qq) {
+                        $qq->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+                            ->where(function ($statusQ) {
+                                $statusQ->whereNull('ps.status')
+                                    ->orWhereNotIn('ps.status', self::NON_MONEY_SPLIT_STATUSES);
+                            });
+                    });
+            })
+            ->where(function ($q) use ($excludedPaymentTypes) {
+                $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
+            })
+            ->whereRaw("{$splitPaymentAt} IS NOT NULL");
+
+        $this->whereBusinessDateBetween($splitPayments, $splitPaymentAt, $from, $to);
+
+        $this->applyCashFlowOrderScope($splitPayments, 'o', true, 'op');
+
+        $splitPayments
+            ->groupBy(DB::raw($splitStoreExpr), 'day', 'pm.type')
+            ->get()
+            ->each($addToBucket);
+
+        // 3) Completed cash/bank refunds must reduce the branch's visible money.
+        // Store-credit and gift-card refunds do not move cash/bank immediately.
+        DB::table('refunds as r')
+            ->leftJoin('product_returns as pr', 'pr.id', '=', 'r.return_id')
+            ->join('orders as o', 'o.id', '=', 'r.order_id')
+            ->select(
+                DB::raw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id) as store_id'),
+                DB::raw($this->businessDateSql('r.completed_at') . ' as day'),
+                DB::raw("CASE WHEN LOWER(COALESCE(r.refund_method, '')) = 'cash' THEN 'cash' ELSE 'bank' END as mt"),
+                DB::raw('SUM(r.refund_amount) as total')
+            )
+            ->whereIn(DB::raw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id)'), $ids)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNull('o.deleted_at')
+            ->where('r.status', 'completed')
+            ->whereNotNull('r.completed_at')
+            ->where(function ($q) {
+                $q->whereNull('r.refund_method')->orWhereNotIn(DB::raw('LOWER(r.refund_method)'), ['store_credit', 'gift_card']);
+            })
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' <= ?', [$to])
+            ->groupBy(DB::raw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id)'), 'day', 'mt')
+            ->get()
+            ->each(fn ($r) => $addToBucket($r, -1));
+
+        return $out;
+    }
+
+    private function loadBranchExOn(array $ids, string $from, string $to): array
+    {
+        $out = [];
+
+        $add = function ($r, int $sign = 1) use (&$out) {
+            $storeKey = (string) $r->store_id;
+            $out[$storeKey][$r->day] = ($out[$storeKey][$r->day] ?? 0) + ($sign * (float) $r->total);
+        };
+
+        $normalExchangeAt = 'COALESCE(op.payment_received_date, op.completed_at, op.processed_at, op.created_at)';
+        $normalStoreExpr = 'COALESCE(op.store_id, o.store_id)';
+        $splitExchangeAt = 'COALESCE(op.payment_received_date, ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.created_at)';
+        $splitStoreExpr = 'COALESCE(ps.store_id, op.store_id, o.store_id)';
+
+        // Exchange upgrade/top-up: show the real extra customer-paid amount in Ex/On.
+        // Use the same date priority as raw payments so Ex/On cannot drift to a
+        // different day from cash/bank when users backdate the payment_received_date.
+        DB::table('order_payments as op')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->leftJoin('payment_splits as ps_probe', 'ps_probe.order_payment_id', '=', 'op.id')
+            ->select(
+                DB::raw("{$normalStoreExpr} as store_id"),
+                DB::raw($this->businessDateSql($normalExchangeAt) . ' as day'),
+                DB::raw('SUM(op.amount) as total')
+            )
+            ->whereIn(DB::raw($normalStoreExpr), $ids)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
+            ->whereNull('ps_probe.id')
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+            ->where('op.payment_type', 'exchange_surplus')
+            ->whereRaw("{$normalExchangeAt} IS NOT NULL")
+            ->whereRaw($this->businessDateSql($normalExchangeAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($normalExchangeAt) . ' <= ?', [$to])
+            ->groupBy(DB::raw($normalStoreExpr), 'day')
+            ->get()
+            ->each($add);
+
+        // Split exchange top-ups: parent order_payments is ignored when split rows
+        // exist, matching loadBranchPayments() and preventing double counting.
+        DB::table('payment_splits as ps')
+            ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->select(
+                DB::raw("{$splitStoreExpr} as store_id"),
+                DB::raw($this->businessDateSql($splitExchangeAt) . ' as day'),
+                DB::raw('SUM(ps.amount) as total')
+            )
+            ->whereIn(DB::raw($splitStoreExpr), $ids)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+            ->where('op.payment_type', 'exchange_surplus')
+            ->where(function ($q) {
+                $q->where('ps.status', 'completed')
+                    ->orWhere(function ($qq) {
+                        $qq->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+                            ->where(function ($statusQ) {
+                                $statusQ->whereNull('ps.status')
+                                    ->orWhereNotIn('ps.status', self::NON_MONEY_SPLIT_STATUSES);
+                            });
+                    });
+            })
+            ->whereRaw("{$splitExchangeAt} IS NOT NULL")
+            ->whereRaw($this->businessDateSql($splitExchangeAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($splitExchangeAt) . ' <= ?', [$to])
+            ->groupBy(DB::raw($splitStoreExpr), 'day')
+            ->get()
+            ->each($add);
+
+        // Exchange downgrade/refund: show as negative Ex/On because cash/bank went out.
+        DB::table('refunds as r')
+            ->leftJoin('product_returns as pr', 'pr.id', '=', 'r.return_id')
+            ->join('orders as o', 'o.id', '=', 'r.order_id')
+            ->select(
+                DB::raw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id) as store_id'),
+                DB::raw($this->businessDateSql('r.completed_at') . ' as day'),
+                DB::raw('SUM(r.refund_amount) as total')
+            )
+            ->whereIn(DB::raw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id)'), $ids)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNull('o.deleted_at')
+            ->where('r.status', 'completed')
+            ->where('r.refund_type', 'exchange_refund')
+            ->whereNotNull('r.completed_at')
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' <= ?', [$to])
+            ->groupBy(DB::raw('COALESCE(pr.received_at_store_id, pr.store_id, o.store_id)'), 'day')
+            ->get()
+            ->each(fn ($r) => $add($r, -1));
+
+        return $out;
+    }
+
+    private function loadBranchCosts(array $ids, string $from, string $to): array
+    {
+        $out = [];
+
+        $add = function ($storeId, string $day, float $amount, string $bucket = 'cash') use (&$out) {
+            $storeKey = (string) $storeId;
+            $bucket = $bucket === 'cash' ? 'cash' : 'bank';
+
+            $out[$storeKey][$day]['total'] = ($out[$storeKey][$day]['total'] ?? 0) + $amount;
+            $out[$storeKey][$day][$bucket] = ($out[$storeKey][$day][$bucket] ?? 0) + $amount;
+            $out[$storeKey][$day][$bucket === 'cash' ? 'bank' : 'cash'] = $out[$storeKey][$day][$bucket === 'cash' ? 'bank' : 'cash'] ?? 0;
+        };
+
+        // 1) Legacy/manual branch-cost entries from the cash sheet page.
+        // These are treated as cash costs because the existing form has no payment-method selector.
+        BranchCostEntry::select('store_id', DB::raw('DATE(entry_date) as day'), DB::raw('SUM(amount) as total'))
+            ->whereIn('store_id', $ids)
+            ->whereBetween('entry_date', [$from, $to])
+            ->groupBy('store_id', 'day')
+            ->get()
+            ->each(function ($r) use ($add) {
+                $add($r->store_id, $r->day, (float) $r->total, 'cash');
+            });
+
+        // 2) Accounting-module daily expenses. These are completed ExpensePayment rows
+        // that were entered from the main accounting/expense module, not from the
+        // cash-sheet branch-cost form. This lets expenses flow into the cash sheet.
+        $accountingExpenses = DB::table('expense_payments as ep')
+            ->join('expenses as e', 'e.id', '=', 'ep.expense_id')
+            ->join('payment_methods as pm', 'pm.id', '=', 'ep.payment_method_id')
+            ->select(
+                DB::raw('COALESCE(ep.store_id, e.store_id) as store_id'),
+                DB::raw($this->businessDateSql('COALESCE(ep.completed_at, ep.processed_at, e.expense_date)') . ' as day'),
+                'pm.type as payment_method_type',
+                DB::raw('SUM(ep.amount) as total')
+            )
+            ->whereIn(DB::raw('COALESCE(ep.store_id, e.store_id)'), $ids)
+            ->where('ep.status', 'completed')
+            ->whereNotIn('e.status', ['cancelled', 'rejected']);
+
+        $this->whereBusinessDateBetween($accountingExpenses, 'COALESCE(ep.completed_at, ep.processed_at, e.expense_date)', $from, $to);
+
+        $this->whereNotCashSheetOrigin($accountingExpenses, 'e');
+
+        $accountingExpenses
+            ->groupBy(DB::raw('COALESCE(ep.store_id, e.store_id)'), 'day', 'pm.type')
+            ->get()
+            ->each(function ($r) use ($add) {
+                $bucket = in_array($r->payment_method_type, self::CASH_TYPES, true) ? 'cash' : 'bank';
+                $add($r->store_id, $r->day, (float) $r->total, $bucket);
+            });
+
+        return $out;
+    }
+
+    /** Returns [store_id|'_global'][date][type] = sum */
+    private function loadAdminEntries(string $from, string $to): array
+    {
+        $out = [];
+
+        AdminEntry::select('store_id', 'type', DB::raw('DATE(entry_date) as day'), DB::raw('SUM(amount) as total'))
+            ->whereBetween('entry_date', [$from, $to])
+            ->groupBy('store_id', 'type', 'day')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $key = in_array($r->type, ['sslzc', 'pathao'], true) ? '_global' : (string) $r->store_id;
+                $out[$key][$r->day][$r->type] = ($out[$key][$r->day][$r->type] ?? 0) + (float) $r->total;
+            });
+
+        return $out;
+    }
+
+    private function loadOnlineData(string $from, string $to): array
+    {
+        $out = [];
+        $orderDateExpr = 'COALESCE(order_date, confirmed_at, created_at)';
+        $onlineOrderDayExpr = $this->businessDateSql($orderDateExpr);
+
+        $ensureOnlineDay = function (string $day) use (&$out): void {
+            $out[$day]['daily_sales'] = $out[$day]['daily_sales'] ?? 0;
+            $out[$day]['advance'] = $out[$day]['advance'] ?? 0;
+            $out[$day]['online_payment'] = $out[$day]['online_payment'] ?? 0;
+            $out[$day]['cod'] = $out[$day]['cod'] ?? 0;
+            $out[$day]['cod_due'] = $out[$day]['cod_due'] ?? 0;
+            $out[$day]['cod_collected'] = $out[$day]['cod_collected'] ?? 0;
+            $out[$day]['refunds'] = $out[$day]['refunds'] ?? 0;
+        };
+
+        $addOnline = function (string $day, string $field, float $amount) use (&$out, $ensureOnlineDay): void {
+            if ($amount == 0.0) {
+                return;
+            }
+            $ensureOnlineDay($day);
+            $out[$day][$field] = ($out[$day][$field] ?? 0) + $amount;
+        };
+
+        // 1) Online/social order value is counted on the order business date and
+        // is always recalculated live from orders.total_amount. Therefore edits,
+        // cancellations, soft deletes, and status changes are reflected as soon as
+        // this endpoint is reloaded.
+        DB::table('orders')
+            ->select(
+                DB::raw("{$onlineOrderDayExpr} as day"),
+                DB::raw('SUM(total_amount) as total_sales')
+            )
+            ->whereIn('order_type', self::ONLINE_ORDER_TYPES)
+            ->whereNull('deleted_at')
+            ->whereNotIn(DB::raw('LOWER(status)'), self::EXCLUDED_ORDER_STATUSES)
+            ->where(function ($q) {
+                $this->whereNotExchangeReplacement($q, 'orders');
+            })
+            ->whereRaw($this->businessDateSql($orderDateExpr) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($orderDateExpr) . ' <= ?', [$to])
+            ->groupBy('day')
+            ->get()
+            ->each(function ($r) use ($addOnline) {
+                $addOnline($r->day, 'daily_sales', (float) $r->total_sales);
+            });
+
+        // 2) Open COD/due is a receivable bucket, not bank. It is counted on the
+        // order business date while still outstanding. When delivery/payment makes
+        // outstanding_amount zero, this due disappears automatically and the actual
+        // delivery collection is handled below on the payment completion date.
+        DB::table('orders')
+            ->select(
+                DB::raw("{$onlineOrderDayExpr} as day"),
+                DB::raw('SUM(outstanding_amount) as total_due')
+            )
+            ->whereIn('order_type', self::ONLINE_ORDER_TYPES)
+            ->whereNull('deleted_at')
+            ->whereNotIn(DB::raw('LOWER(status)'), self::EXCLUDED_ORDER_STATUSES)
+            ->where(function ($q) {
+                $this->whereNotExchangeReplacement($q, 'orders');
+            })
+            ->where('outstanding_amount', '>', 0)
+            ->where(function ($q) {
+                $q->whereIn(DB::raw("LOWER(COALESCE(payment_method, ''))"), ['cod', 'cash_on_delivery'])
+                    ->orWhereIn(DB::raw("LOWER(COALESCE(intended_courier, ''))"), ['pathao', 'steadfast', 'redx', 'paperfly'])
+                    ->orWhereRaw("LOWER(COALESCE(metadata, '')) LIKE ?", ['%cod%']);
+            })
+            ->whereRaw($this->businessDateSql($orderDateExpr) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($orderDateExpr) . ' <= ?', [$to])
+            ->groupBy('day')
+            ->get()
+            ->each(function ($r) use ($addOnline) {
+                $amount = (float) $r->total_due;
+                $addOnline($r->day, 'cod_due', $amount);
+                $addOnline($r->day, 'cod', $amount);
+            });
+
+        $excludedPaymentTypes = self::INTERNAL_SETTLEMENT_PAYMENT_TYPES;
+
+        $classifyOnlinePayment = function ($r) use ($addOnline): void {
+            $amount = (float) $r->total;
+            if ($amount == 0.0) {
+                return;
+            }
+
+            $orderType = (string) $r->order_type;
+            $isCodCollection = (int) ($r->is_cod_collection ?? 0) === 1;
+
+            if ($isCodCollection) {
+                $addOnline($r->day, 'cod_collected', $amount);
+                $addOnline($r->day, 'cod', $amount);
+                return;
+            }
+
+            if ($orderType === 'social_commerce') {
+                $addOnline($r->day, 'advance', $amount);
+            } elseif ($orderType === 'ecommerce') {
+                $addOnline($r->day, 'online_payment', $amount);
+            }
+        };
+
+        // Delivery COD detector: cash/COD payment posted at/after delivery or created
+        // by settleDeliveredOrderPayment() should not be mixed into Advance. It is a
+        // COD/Pathao receivable tracking item until Pathao/COD disbursement is entered.
+        $codCollectionExprForOp = "CASE WHEN (" .
+            "LOWER(COALESCE(pm.code, '')) IN ('cod', 'cash_on_delivery') " .
+            "OR LOWER(COALESCE(o.payment_method, '')) IN ('cod', 'cash_on_delivery') " .
+            "OR LOWER(COALESCE(op.metadata, '')) LIKE '%auto_settled_on_delivery%'" .
+            ") AND (" .
+            "LOWER(COALESCE(op.metadata, '')) LIKE '%auto_settled_on_delivery%' " .
+            "OR (o.delivered_at IS NOT NULL AND op.completed_at IS NOT NULL AND op.completed_at >= o.delivered_at)" .
+            ") THEN 1 ELSE 0 END";
+
+        $normalOnlinePaymentAt = 'COALESCE(op.payment_received_date, op.completed_at, op.processed_at, op.created_at)';
+        $splitOnlinePaymentAt = 'COALESCE(op.payment_received_date, ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.created_at)';
+
+        DB::table('order_payments as op')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->join('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
+            ->leftJoin('payment_splits as ps_probe', 'ps_probe.order_payment_id', '=', 'op.id')
+            ->select(
+                DB::raw($this->businessDateSql($normalOnlinePaymentAt) . ' as day'),
+                'o.order_type',
+                DB::raw($codCollectionExprForOp . ' as is_cod_collection'),
+                DB::raw('SUM(op.amount) as total')
+            )
+            ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
+            ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+            ->whereNull('ps_probe.id')
+            ->whereRaw("{$normalOnlinePaymentAt} IS NOT NULL")
+            ->where(function ($q) use ($excludedPaymentTypes) {
+                $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
+            })
+            ->where(function ($q) {
+                $this->whereNotExchangeReplacement($q, 'o');
+            })
+            ->whereRaw($this->businessDateSql($normalOnlinePaymentAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($normalOnlinePaymentAt) . ' <= ?', [$to])
+            ->groupBy('day', 'o.order_type', 'is_cod_collection')
+            ->get()
+            ->each($classifyOnlinePayment);
+
+        $codCollectionExprForSplit = "CASE WHEN (" .
+            "LOWER(COALESCE(pm.code, '')) IN ('cod', 'cash_on_delivery') " .
+            "OR LOWER(COALESCE(o.payment_method, '')) IN ('cod', 'cash_on_delivery') " .
+            "OR LOWER(COALESCE(op.metadata, '')) LIKE '%auto_settled_on_delivery%'" .
+            ") AND (" .
+            "LOWER(COALESCE(op.metadata, '')) LIKE '%auto_settled_on_delivery%' " .
+            "OR (o.delivered_at IS NOT NULL AND COALESCE(ps.completed_at, op.completed_at) IS NOT NULL AND COALESCE(ps.completed_at, op.completed_at) >= o.delivered_at)" .
+            ") THEN 1 ELSE 0 END";
+
+        DB::table('payment_splits as ps')
+            ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
+            ->join('orders as o', 'o.id', '=', 'op.order_id')
+            ->join('payment_methods as pm', 'pm.id', '=', 'ps.payment_method_id')
+            ->select(
+                DB::raw($this->businessDateSql($splitOnlinePaymentAt) . ' as day'),
+                'o.order_type',
+                DB::raw($codCollectionExprForSplit . ' as is_cod_collection'),
+                DB::raw('SUM(ps.amount) as total')
+            )
+            ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
+            ->whereNull('o.deleted_at')
+            ->whereNull('op.deleted_at')
+            ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+            ->where(function ($q) {
+                $q->where('ps.status', 'completed')
+                    ->orWhere(function ($qq) {
+                        $qq->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
+                            ->where(function ($statusQ) {
+                                $statusQ->whereNull('ps.status')
+                                    ->orWhereNotIn('ps.status', self::NON_MONEY_SPLIT_STATUSES);
+                            });
+                    });
+            })
+            ->whereRaw("{$splitOnlinePaymentAt} IS NOT NULL")
+            ->where(function ($q) use ($excludedPaymentTypes) {
+                $q->whereNull('op.payment_type')->orWhereNotIn('op.payment_type', $excludedPaymentTypes);
+            })
+            ->where(function ($q) {
+                $this->whereNotExchangeReplacement($q, 'o');
+            })
+            ->whereRaw($this->businessDateSql($splitOnlinePaymentAt) . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql($splitOnlinePaymentAt) . ' <= ?', [$to])
+            ->groupBy('day', 'o.order_type', 'is_cod_collection')
+            ->get()
+            ->each($classifyOnlinePayment);
+
+        // 3) Completed online/social refunds reduce the same bucket they originally
+        // affected. They are counted on refund completion date, so return/exchange
+        // cash movements appear on the day money actually moved.
+        $classifyOnlineRefund = function ($r) use ($addOnline): void {
+            $amount = (float) $r->total;
+            if ($amount == 0.0) {
+                return;
+            }
+
+            $addOnline($r->day, 'refunds', $amount);
+
+            if ((int) ($r->is_cod_refund ?? 0) === 1) {
+                $addOnline($r->day, 'cod_collected', -$amount);
+                $addOnline($r->day, 'cod', -$amount);
+                return;
+            }
+
+            if ($r->order_type === 'social_commerce') {
+                $addOnline($r->day, 'advance', -$amount);
+            } elseif ($r->order_type === 'ecommerce') {
+                $addOnline($r->day, 'online_payment', -$amount);
+            }
+        };
+
+        $codRefundExpr = "CASE WHEN " .
+            "LOWER(COALESCE(r.refund_method, '')) IN ('cash', 'cod', 'cash_on_delivery') " .
+            "AND LOWER(COALESCE(o.payment_method, '')) IN ('cod', 'cash_on_delivery') " .
+            "THEN 1 ELSE 0 END";
+
+        DB::table('refunds as r')
+            ->join('orders as o', 'o.id', '=', 'r.order_id')
+            ->select(
+                DB::raw($this->businessDateSql('r.completed_at') . ' as day'),
+                'o.order_type',
+                DB::raw($codRefundExpr . ' as is_cod_refund'),
+                DB::raw('SUM(r.refund_amount) as total')
+            )
+            ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
+            ->whereNull('o.deleted_at')
+            ->where('r.status', 'completed')
+            ->whereNotNull('r.completed_at')
+            ->where(function ($q) {
+                $q->whereNull('r.refund_method')->orWhereNotIn(DB::raw('LOWER(r.refund_method)'), ['store_credit', 'gift_card']);
+            })
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' >= ?', [$from])
+            ->whereRaw($this->businessDateSql('r.completed_at') . ' <= ?', [$to])
+            ->groupBy('day', 'o.order_type', 'is_cod_refund')
+            ->get()
+            ->each($classifyOnlineRefund);
+
+        return $out;
+    }
+
+    private function loadOwnerEntries(string $from, string $to): array
+    {
+        $out = [];
+
+        DB::table('owner_entries')
+            ->selectRaw('DATE(entry_date) as day, type, SUM(amount) as total')
+            ->whereDate('entry_date', '>=', $from)
+            ->whereDate('entry_date', '<=', $to)
+            ->groupBy('day', 'type')
+            ->get()
+            ->each(function ($r) use (&$out) {
+                $day = Carbon::parse($r->day)->toDateString();
+                $out[$day][$r->type] = ($out[$day][$r->type] ?? 0) + (float) $r->total;
+            });
+
+        return $out;
+    }
+
+    private function applyCashSheetOrderScope($query, string $orderAlias = 'o', bool $allowExchangeSurplusPayment = false, string $paymentAlias = 'op'): void
+    {
+        $query->whereNull($orderAlias . '.deleted_at')
+            ->whereNotIn(DB::raw('LOWER(' . $orderAlias . '.status)'), self::EXCLUDED_ORDER_STATUSES);
+
+        if ($allowExchangeSurplusPayment) {
+            $query->where(function ($q) use ($orderAlias, $paymentAlias) {
+                $this->whereNotExchangeReplacement($q, $orderAlias);
+                $q->orWhere($paymentAlias . '.payment_type', 'exchange_surplus');
+            });
+            return;
+        }
+
+        $this->whereNotExchangeReplacement($query, $orderAlias);
+    }
+
+    /**
+     * Cash movements should survive later order status changes.
+     *
+     * Sales columns exclude cancelled/refunded orders. Cash/bank columns are
+     * different: once a completed payment exists, it was a real cash-flow event.
+     * If the order is later cancelled or refunded, the completed refund row creates
+     * the opposite cash-flow event. Therefore payment loaders must not filter out
+     * completed payments only because the parent order status changed.
+     */
+    private function applyCashFlowOrderScope($query, string $orderAlias = 'o', bool $allowExchangeSurplusPayment = false, string $paymentAlias = 'op'): void
+    {
+        $query->whereNull($orderAlias . '.deleted_at');
+
+        if ($allowExchangeSurplusPayment) {
+            $query->where(function ($q) use ($orderAlias, $paymentAlias) {
+                $this->whereNotExchangeReplacement($q, $orderAlias);
+                $q->orWhere($paymentAlias . '.payment_type', 'exchange_surplus');
+            });
+            return;
+        }
+
+        $this->whereNotExchangeReplacement($query, $orderAlias);
+    }
+
+    private function whereNotExchangeReplacement($query, string $orderAlias = 'o'): void
+    {
+        // Keep this database-portable: MySQL JSON_UNQUOTE() is not available in SQLite,
+        // while this project ships a SQLite dev DB. Normalise the JSON string and reject
+        // both boolean true and string "true" values.
+        $metadata = $orderAlias . '.metadata';
+        $json = "REPLACE(LOWER(COALESCE({$metadata}, '')), ' ', '')";
+
+        $query->where(function ($q) use ($metadata, $json) {
+            $q->whereNull($metadata)
+                ->orWhere(function ($qq) use ($json) {
+                    $qq->whereRaw("{$json} NOT LIKE ?", ['%"is_exchange_replacement":true%'])
+                        ->whereRaw("{$json} NOT LIKE ?", ['%"is_exchange_replacement":"true"%']);
+                });
+        });
+    }
+
+    private function buildSummary(array $rows, $stores): array
+    {
+        $summary = [
+            'branches'      => [],
+            'online'        => ['daily_sales' => 0, 'advance' => 0, 'online_payment' => 0, 'cod' => 0, 'cod_due' => 0, 'cod_collected' => 0, 'refunds' => 0],
+            'disbursements' => ['sslzc_received' => 0, 'pathao_received' => 0],
+            'totals'        => ['sale' => 0, 'total_sale' => 0, 'branch_sale' => 0, 'cash' => 0, 'bank' => 0, 'final_bank' => 0, 'daily_cost' => 0, 'ex_on' => 0, 'salary' => 0, 'cash_to_bank' => 0],
+            'owner'         => [
+                'cash_invest' => 0,
+                'bank_invest' => 0,
+                'total_cash' => 0,
+                'total_bank' => 0,
+                'cash_cost' => 0,
+                'bank_cost' => 0,
+                'cash_after_cost' => 0,
+                'bank_after_cost' => 0,
+            ],
+        ];
+
+        foreach ($stores as $st) {
+            $summary['branches'][$st->id] = [
+                'store_id'     => (int) $st->id,
+                'store_name'   => $st->name,
+                'is_warehouse' => (bool) $st->is_warehouse,
+                'daily_sale'   => 0,
+                'raw_cash'     => 0,
+                'raw_bank'     => 0,
+                'cash'         => 0,
+                'bank'         => 0,
+                'ex_on'        => 0,
+                'salary'       => 0,
+                'cash_to_bank' => 0,
+                'daily_cost'   => 0,
+                'cash_cost'    => 0,
+                'bank_cost'    => 0,
+            ];
+        }
+
+        foreach ($rows as $row) {
+            foreach ($row['branches'] as $b) {
+                foreach (['daily_sale', 'raw_cash', 'raw_bank', 'cash', 'bank', 'ex_on', 'salary', 'cash_to_bank', 'daily_cost', 'cash_cost', 'bank_cost'] as $field) {
+                    $summary['branches'][$b['store_id']][$field] += (float) $b[$field];
+                }
+            }
+
+            foreach (['daily_sales', 'advance', 'online_payment', 'cod', 'cod_due', 'cod_collected', 'refunds'] as $field) {
+                $summary['online'][$field] += (float) $row['online'][$field];
+            }
+
+            $summary['disbursements']['sslzc_received'] += (float) $row['disbursements']['sslzc_received'];
+            $summary['disbursements']['pathao_received'] += (float) $row['disbursements']['pathao_received'];
+
+            foreach (['sale', 'total_sale', 'branch_sale', 'cash', 'bank', 'final_bank', 'daily_cost', 'ex_on', 'salary', 'cash_to_bank'] as $field) {
+                $summary['totals'][$field] += (float) ($row['totals'][$field] ?? 0);
+            }
+
+            foreach (['cash_invest', 'bank_invest', 'total_cash', 'total_bank', 'cash_cost', 'bank_cost', 'cash_after_cost', 'bank_after_cost'] as $field) {
+                $summary['owner'][$field] += (float) $row['owner'][$field];
+            }
+        }
+
+        array_walk_recursive($summary, function (&$value) {
+            if (is_float($value) || is_int($value)) {
+                $value = round((float) $value, 2);
+            }
+        });
+
+        $summary['branches'] = array_values($summary['branches']);
+        $summary['stores'] = $summary['branches']; // frontend-friendly alias
+
+        return $summary;
     }
 }

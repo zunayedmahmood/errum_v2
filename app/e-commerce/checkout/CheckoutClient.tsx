@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Package, MapPin, CreditCard, ShoppingBag, AlertCircle, Loader2, ChevronRight, Plus, Edit2, Trash2, CheckCircle, Lock } from 'lucide-react';
 import Navigation from '@/components/ecommerce/Navigation';
 import SSLCommerzPayment from '@/components/ecommerce/SSLCommerzPayment';
-import checkoutService, { Address, OrderItem, PaymentMethod } from '@/services/checkoutService';
+import checkoutService, { Address, OrderItem, PaymentMethod, DeliveryChargeSetting } from '@/services/checkoutService';
 import cartService from '@/services/cartService';
 import guestCheckoutService, { GuestPaymentMethod } from '@/services/guestCheckoutService';
 import campaignService, { CouponValidationResult, CouponErrorCode } from '@/services/campaignService';
@@ -59,7 +59,8 @@ export default function CheckoutClient() {
   const [couponApplyLoading, setCouponApplyLoading] = useState(false);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
-  const [shippingCharge, setShippingCharge] = useState(60);
+  const [deliveryChargeSettings, setDeliveryChargeSettings] = useState<DeliveryChargeSetting | null>(null);
+  const [shippingCharge, setShippingCharge] = useState(0);
 
   // Guest checkout state
   const [guestPhone, setGuestPhone] = useState('');
@@ -283,23 +284,34 @@ export default function CheckoutClient() {
     fetchPaymentMethods();
   }, []);
 
-  // Update shipping charge based on selected address
+  // Load ecommerce delivery charge settings from backend.
   useEffect(() => {
-    if (selectedShippingAddressId) {
-      const address = addresses.find(a => a.id === selectedShippingAddressId);
-      if (address) {
-        const charge = checkoutService.calculateDeliveryCharge(address.city);
-        setShippingCharge(charge);
-      }
-    }
-  }, [selectedShippingAddressId, addresses]);
+    let isMounted = true;
 
-  // Guest shipping charge (based on typed city)
+    const fetchDeliveryChargeSettings = async () => {
+      const settings = await checkoutService.getDeliveryChargeSetting('Dhaka');
+      if (isMounted) {
+        setDeliveryChargeSettings(settings);
+      }
+    };
+
+    fetchDeliveryChargeSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const selectedShippingAddress = addresses.find((address) => address.id === selectedShippingAddressId);
+  const checkoutCity = isGuestCheckout()
+    ? (guestAddress.city || 'Dhaka')
+    : (selectedShippingAddress?.city || addressForm.city || 'Dhaka');
+  const checkoutDeliveryZone = checkoutService.isDhakaCity(checkoutCity) ? 'Inside Dhaka' : 'Outside Dhaka';
+
+  // Changing the checkout city immediately updates the displayed delivery charge.
   useEffect(() => {
-    if (isGuestCheckout()) {
-      setShippingCharge(checkoutService.calculateDeliveryCharge(guestAddress.city || 'Dhaka'));
-    }
-  }, [guestAddress.city]);
+    setShippingCharge(checkoutService.calculateDeliveryCharge(checkoutCity, deliveryChargeSettings || undefined));
+  }, [deliveryChargeSettings, checkoutCity]);
 
   // Calculate totals
   const orderItems: OrderItem[] = selectedItems.map(item => {
@@ -555,7 +567,7 @@ export default function CheckoutClient() {
         try {
           const orderNo = resp?.data?.order_number || resp?.data?.order?.order_number;
           const txn = resp?.data?.transaction_id;
-          const amt = resp?.data?.total_amount ?? summary.total_amount;
+          const amt = resp?.data?.order_summary?.total_amount ?? resp?.data?.total_amount ?? summary.total_amount;
           if (orderNo) {
             localStorage.setItem(
               'ec_last_order',
@@ -563,7 +575,7 @@ export default function CheckoutClient() {
                 order_number: orderNo,
                 payment_method: 'sslcommerz',
                 total_amount: typeof amt === 'number' ? amt : Number(amt),
-                shipping_charge: shippingCharge,
+                shipping_charge: Number(resp?.data?.order_summary?.shipping ?? shippingCharge),
                 discount: couponDiscount,
                 created_at: Date.now(),
                 customer: { phone: cleanPhone(formatBDPhone(guestPhone)), name: guestName || undefined, email: guestEmail || undefined },
@@ -613,8 +625,8 @@ export default function CheckoutClient() {
           JSON.stringify({
             order_number: orderNumber,
             payment_method: guestPaymentMethod,
-            total_amount: summary.total_amount,
-            shipping_charge: shippingCharge,
+            total_amount: Number(resp?.data?.order_summary?.total_amount ?? resp?.data?.order?.total_amount ?? summary.total_amount),
+            shipping_charge: Number(resp?.data?.order_summary?.shipping ?? shippingCharge),
             discount: couponDiscount,
             created_at: Date.now(),
             customer: { phone: cleanPhone(formatBDPhone(guestPhone)), name: guestName || undefined, email: guestEmail || undefined },
@@ -961,10 +973,13 @@ export default function CheckoutClient() {
                       autoComplete="address-level2"
                       placeholder="Dhaka"
                       value={guestAddress.city}
-                      onChange={(e) => setGuestAddress({ ...guestAddress, city: e.target.value })}
+                      onChange={(e) => setGuestAddress({ ...guestAddress, city: e.target.value || 'Dhaka' })}
                       className="ec-input"
                       aria-invalid={!guestAddress.city && isProcessing}
                     />
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      {checkoutDeliveryZone}: ৳{shippingCharge.toLocaleString()} delivery charge
+                    </p>
                   </div>
 
                   <div>
@@ -1404,6 +1419,9 @@ export default function CheckoutClient() {
                               <option value="Gazipur">Gazipur</option>
                               <option value="Narayanganj">Narayanganj</option>
                             </select>
+                            <p className="text-[11px] text-neutral-500 mt-1">
+                              {checkoutService.isDhakaCity(addressForm.city) ? 'Inside Dhaka' : 'Outside Dhaka'} delivery preview: ৳{checkoutService.calculateDeliveryCharge(addressForm.city, deliveryChargeSettings || undefined).toLocaleString()}
+                            </p>
                           </div>
 
                           <div>
@@ -1867,7 +1885,7 @@ export default function CheckoutClient() {
                         <span className="text-[var(--text-primary)] font-medium">৳{summary.subtotal.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-[var(--text-secondary)]">Delivery</span>
+                        <span className="text-[var(--text-secondary)]">Delivery ({checkoutDeliveryZone})</span>
                         <span className="text-[var(--text-primary)] font-medium">+ ৳{shippingCharge.toLocaleString()}</span>
                       </div>
                       {summary.discount_amount > 0 && (
