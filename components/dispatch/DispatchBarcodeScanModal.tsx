@@ -34,7 +34,9 @@ function fmtTime(iso: string) {
 }
 
 function toNum(v: any): number {
-  const n = Number(v);
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const normalized = String(v ?? '').replace(/[^0-9.-]/g, '');
+  const n = Number(normalized);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -92,13 +94,17 @@ export default function DispatchBarcodeScanModal({
   const [checkingOverall, setCheckingOverall] = useState(false);
 
   const items = dispatch?.items || [];
-  const money = (value: any) => `৳${(Number(value) || 0).toLocaleString('en-BD', { maximumFractionDigits: 2 })}`;
+  const money = (value: any) => `৳${toNum(value).toLocaleString('en-BD', { maximumFractionDigits: 2 })}`;
   const plannedSubtotal = useMemo(
-    () => items.reduce((sum, item) => sum + (Number(item.total_value) || (Number(item.unit_price) || 0) * (Number(item.quantity) || 0)), 0),
+    () => items.reduce((sum, item) => {
+      const savedLineValue = toNum(item.total_value);
+      if (savedLineValue > 0) return sum + savedLineValue;
+      return sum + (toNum(item.unit_price) * toNum(item.quantity));
+    }, 0),
     [items]
   );
   const receivedSubtotal = useMemo(
-    () => items.reduce((sum, item) => sum + (Number(item.unit_price) || 0) * (Number(item.received_quantity ?? 0) || 0), 0),
+    () => items.reduce((sum, item) => sum + (toNum(item.unit_price) * toNum(item.received_quantity ?? 0)), 0),
     [items]
   );
 
@@ -444,7 +450,7 @@ export default function DispatchBarcodeScanModal({
                               SKU: {it.product.sku} • Qty: {it.quantity}
                             </div>
                             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                              Value: {money(Number(it.total_value) || (Number(it.unit_price) || 0) * (Number(it.quantity) || 0))}
+                              Value: {money(toNum(it.total_value) || toNum(it.unit_price) * toNum(it.quantity))}
                             </div>
                           </div>
                           <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap mt-0.5">

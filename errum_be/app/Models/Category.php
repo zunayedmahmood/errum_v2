@@ -88,7 +88,7 @@ class Category extends Model
     public function allChildren()
     {
         return $this->children()
-            ->withCount(static::skuGroupCountRelations())
+            ->withSkuGroupCounts()
             ->with('allChildren');
     }
 
@@ -179,16 +179,36 @@ class Category extends Model
      * sellable SKU groups, not variant/product rows. Multiple Product rows
      * can share one SKU because Errum stores variations as rows under the
      * same SKU group.
+     *
+     * Do not use Eloquent withCount() for this. withCount() forces a normal
+     * COUNT(*) relation aggregate, so a closure with COUNT(DISTINCT sku) can
+     * still come back as the variant-row count. These explicit subselects keep
+     * the existing response keys while counting distinct SKU groups.
+     */
+    public function scopeWithSkuGroupCounts($query)
+    {
+        $skuGroupExpression = "COALESCE(NULLIF(TRIM(products.sku), ''), CAST(products.id AS CHAR))";
+
+        return $query->addSelect([
+            'products_count' => Product::query()
+                ->selectRaw("COUNT(DISTINCT {$skuGroupExpression})")
+                ->whereColumn('products.category_id', 'categories.id'),
+            'active_products_count' => Product::query()
+                ->selectRaw("COUNT(DISTINCT {$skuGroupExpression})")
+                ->whereColumn('products.category_id', 'categories.id')
+                ->where('products.is_archived', false),
+        ]);
+    }
+
+    /**
+     * Kept for older call-sites, but new category admin listing code should use
+     * withSkuGroupCounts() so the count cannot fall back to COUNT(*).
      */
     public static function skuGroupCountRelations(): array
     {
         return [
-            'products as products_count' => function ($query) {
-                $query->selectRaw('COUNT(DISTINCT products.sku)');
-            },
-            'activeProducts as active_products_count' => function ($query) {
-                $query->selectRaw('COUNT(DISTINCT products.sku)');
-            },
+            'products as products_count',
+            'activeProducts as active_products_count',
         ];
     }
 

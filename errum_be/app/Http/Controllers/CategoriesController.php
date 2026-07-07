@@ -67,9 +67,8 @@ class CategoriesController extends Controller
 
         $category = Category::create($validated);
 
-        // Load relationships
-        $category->load('parent', 'children');
-        $category->loadCount(Category::skuGroupCountRelations());
+        // Load relationships and SKU-group counters
+        $category = Category::withSkuGroupCounts()->with('parent', 'children')->findOrFail($category->id);
 
         return response()->json([
             'success' => true,
@@ -170,9 +169,8 @@ class CategoriesController extends Controller
 
         $category->update($validated);
 
-        // Load relationships
-        $category->load('parent', 'children');
-        $category->loadCount(Category::skuGroupCountRelations());
+        // Load relationships and SKU-group counters
+        $category = Category::withSkuGroupCounts()->with('parent', 'children')->findOrFail($category->id);
 
         return response()->json([
             'success' => true,
@@ -245,7 +243,7 @@ class CategoriesController extends Controller
 
     public function getCategories(Request $request)
     {
-        $query = Category::query()->withCount(Category::skuGroupCountRelations());
+        $query = Category::query()->withSkuGroupCounts();
 
         // Filters
         if ($request->has('is_active')) {
@@ -303,7 +301,7 @@ class CategoriesController extends Controller
 
     public function getCategory($id)
     {
-        $category = Category::withCount(Category::skuGroupCountRelations())->with([
+        $category = Category::withSkuGroupCounts()->with([
             'parent',
             'children.children',
             'activeProducts' => function($query) {
@@ -333,9 +331,7 @@ class CategoriesController extends Controller
             'categories_with_products' => Category::whereHas('products')->count(),
             'total_products_by_category' => Category::query()
                 ->select('id', 'title')
-                ->withCount(['products as products_count' => function ($query) {
-                    $query->selectRaw('COUNT(DISTINCT products.sku)');
-                }])
+                ->withSkuGroupCounts()
                 ->where('is_active', true)
                 ->orderBy('products_count', 'desc')
                 ->take(10)
@@ -406,7 +402,7 @@ class CategoriesController extends Controller
 
     public function getCategoryTree(Request $request)
     {
-        $query = Category::query()->withCount(Category::skuGroupCountRelations());
+        $query = Category::query()->withSkuGroupCounts();
 
         // Filter by active status
         if ($request->has('is_active')) {
@@ -424,7 +420,7 @@ class CategoriesController extends Controller
 
     public function getRootCategories(Request $request)
     {
-        $query = Category::rootCategories()->withCount(Category::skuGroupCountRelations());
+        $query = Category::rootCategories()->withSkuGroupCounts();
 
         if ($request->has('is_active')) {
             $query->where('is_active', $request->boolean('is_active'));
@@ -442,14 +438,12 @@ class CategoriesController extends Controller
 
     public function getSubcategories($parentId)
     {
-        $parent = Category::findOrFail($parentId);
-
-        $parent->loadCount(Category::skuGroupCountRelations());
+        $parent = Category::withSkuGroupCounts()->findOrFail($parentId);
 
         $subcategories = $parent->children()
-            ->withCount(Category::skuGroupCountRelations())
+            ->withSkuGroupCounts()
             ->with(['children' => function ($q) {
-                $q->withCount(Category::skuGroupCountRelations());
+                $q->withSkuGroupCounts();
             }])
             ->orderBy('order')
             ->get();

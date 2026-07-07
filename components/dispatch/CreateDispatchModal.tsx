@@ -79,9 +79,20 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
   const scanQueueProcessingRef = useRef(false);
   const [queuedScanCount, setQueuedScanCount] = useState(0);
 
-  const money = (value: any) => `৳${(Number(value) || 0).toLocaleString('en-BD', { maximumFractionDigits: 2 })}`;
+  const parseMoney = (value: any): number => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    const normalized = String(value ?? '').replace(/[^0-9.-]/g, '');
+    const amount = Number(normalized);
+    return Number.isFinite(amount) ? amount : 0;
+  };
+
+  const money = (value: any) => `৳${parseMoney(value).toLocaleString('en-BD', { maximumFractionDigits: 2 })}`;
   const dispatchSubtotal = useMemo(
-    () => items.reduce((sum, item) => sum + (Number(item.line_value) || (Number(item.unit_price) || 0) * (Number(item.quantity) || 0)), 0),
+    () => items.reduce((sum, item) => {
+      const savedLineValue = parseMoney(item.line_value);
+      if (savedLineValue > 0) return sum + savedLineValue;
+      return sum + (parseMoney(item.unit_price) * parseMoney(item.quantity));
+    }, 0),
     [items]
   );
 
@@ -238,7 +249,7 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
       updatedItems[existingItemIndex] = {
         ...existingItem,
         quantity: newQuantity.toString(),
-        line_value: (Number(existingItem.unit_price) || Number(batchData.sell_price) || 0) * newQuantity,
+        line_value: (parseMoney(existingItem.unit_price) || parseMoney(batchData.sell_price) || 0) * newQuantity,
       };
       setItems(updatedItems);
     } else {
@@ -254,8 +265,8 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
         product_name: batchData.product.name,
         quantity: currentItem.quantity,
         available_quantity: batchData.quantity,
-        unit_price: Number(batchData.sell_price || batchData.unit_price || 0),
-        line_value: (Number(batchData.sell_price || batchData.unit_price || 0) * quantityToAdd),
+        unit_price: parseMoney(batchData.sell_price ?? batchData.unit_price ?? 0),
+        line_value: (parseMoney(batchData.sell_price ?? batchData.unit_price ?? 0) * quantityToAdd),
       };
 
       setItems([...items, newItem]);
@@ -311,12 +322,12 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
       const batchId = String(data.current_batch.id);
       const batchNumber = data.current_batch.batch_number;
       const productName = data.product?.name || 'Unknown Product';
-      const unitPrice = Number(data.current_batch?.sell_price || data.current_batch?.unit_price || data.current_batch?.price || 0);
+      const unitPrice = parseMoney(data.current_batch?.sell_price ?? data.current_batch?.unit_price ?? data.current_batch?.price ?? 0);
 
       const availableQty = Number(
         typeof data.quantity_available === 'number'
           ? data.quantity_available
-          : data.current_batch.quantity_available ?? 0
+          : parseMoney(data.current_batch.quantity_available ?? data.current_batch.quantity ?? 0)
       );
 
       setItems((prev) => {
@@ -352,8 +363,8 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
           ...existing,
           quantity: String(nextQty),
           available_quantity: maxAllowed,
-          unit_price: Number(existing.unit_price || unitPrice || 0),
-          line_value: Number(existing.unit_price || unitPrice || 0) * nextQty,
+          unit_price: parseMoney(existing.unit_price || unitPrice || 0),
+          line_value: parseMoney(existing.unit_price || unitPrice || 0) * nextQty,
         };
         return next;
       });
@@ -458,7 +469,7 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
         next[idx] = {
           ...item,
           quantity: String(nextQty),
-          line_value: (Number(item.unit_price) || 0) * nextQty,
+          line_value: parseMoney(item.unit_price) * nextQty,
         };
       }
       return next;
@@ -914,7 +925,7 @@ const CreateDispatchModal: React.FC<CreateDispatchModalProps> = ({
                           {money(item.unit_price || 0)}
                         </td>
                         <td className="px-3 py-2 text-right font-semibold text-gray-900 dark:text-white">
-                          {money(item.line_value || (Number(item.unit_price) || 0) * (Number(item.quantity) || 0))}
+                          {money(parseMoney(item.line_value) || parseMoney(item.unit_price) * parseMoney(item.quantity))}
                         </td>
                         <td className="px-3 py-2">
                           <button
