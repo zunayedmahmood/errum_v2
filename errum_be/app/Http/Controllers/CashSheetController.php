@@ -34,6 +34,7 @@ class CashSheetController extends Controller
 
     private const BRANCH_ORDER_TYPES = ['counter', 'pos', 'offline'];
     private const ONLINE_ORDER_TYPES = ['social_commerce', 'ecommerce'];
+    private const ALL_ORDER_TYPES = ['counter', 'pos', 'offline', 'social_commerce', 'ecommerce'];
     private const SALE_EXCLUDED_STATUSES = ['cancelled', 'canceled', 'refunded', 'void', 'deleted'];
     private const MONEY_PAYMENT_STATUSES = ['completed'];
     private const VIRTUAL_PAYMENT_TYPES = ['exchange_balance', 'store_credit', 'balance_carryover'];
@@ -392,8 +393,6 @@ class CashSheetController extends Controller
     {
         $query = Store::query()
             ->select('id', 'name', 'is_active', 'is_online', 'is_warehouse')
-            ->where('is_warehouse', false)
-            ->where('is_online', false)
             ->where(function ($q) use ($activityStoreIds) {
                 $q->where('is_active', true);
                 if (!empty($activityStoreIds)) {
@@ -415,7 +414,7 @@ class CashSheetController extends Controller
 
         $query = DB::table('orders as o')
             ->select('o.store_id', DB::raw("{$dateExpr} as business_date"), DB::raw('SUM(o.total_amount) as total'))
-            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereIn('o.order_type', self::ALL_ORDER_TYPES)
             ->whereNotIn('o.status', self::SALE_EXCLUDED_STATUSES)
             ->whereNotNull('o.store_id')
             ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
@@ -434,7 +433,7 @@ class CashSheetController extends Controller
     {
         $out = [];
 
-        foreach ($this->normalPaymentRows($from, $to, self::BRANCH_ORDER_TYPES) as $row) {
+        foreach ($this->normalPaymentRows($from, $to, self::ALL_ORDER_TYPES) as $row) {
             $storeId = (int) $row->store_id;
             if ($storeId <= 0) {
                 continue;
@@ -448,7 +447,7 @@ class CashSheetController extends Controller
             }
         }
 
-        foreach ($this->splitPaymentRows($from, $to, self::BRANCH_ORDER_TYPES) as $row) {
+        foreach ($this->splitPaymentRows($from, $to, self::ALL_ORDER_TYPES) as $row) {
             $storeId = (int) $row->store_id;
             if ($storeId <= 0) {
                 continue;
@@ -475,11 +474,12 @@ class CashSheetController extends Controller
                 'o.store_id',
                 'r.refund_method',
                 'r.refund_type',
+                'r.refund_method_details',
                 DB::raw("{$dateExpr} as business_date"),
                 'r.refund_amount as amount'
             )
             ->where('r.status', 'completed')
-            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereIn('o.order_type', self::ALL_ORDER_TYPES)
             ->whereNotNull('o.store_id')
             ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
             ->get();
@@ -490,9 +490,55 @@ class CashSheetController extends Controller
             $amount = (float) $row->amount;
             $method = strtolower((string) ($row->refund_method ?? ''));
 
-            if (!in_array($method, self::NON_MONEY_REFUND_METHODS, true)) {
-                $bucket = $method === 'cash' ? 'cash' : 'bank';
-                $this->addAmount($out, $storeId, $row->business_date, $bucket, $amount);
+            if (in_array($method, self::NON_MONEY_REFUND_METHODS, true)) {
+                continue;
+            }
+
+            // Decode refund split details if present
+            $cashAmount = 0.0;
+            $bankAmount = 0.0;
+            $details = null;
+
+            if (!empty($row->refund_method_details)) {
+                $details = is_string($row->refund_method_details)
+                    ? json_decode($row->refund_method_details, true)
+                    : (array) $row->refund_method_details;
+            }
+
+            if (is_array($details) && (
+                isset($details['cash']) || isset($details['card']) || isset($details['bkash']) || isset($details['nagad']) || isset($details['rocket']) || isset($details['bank'])
+            )) {
+                $cashAmount = (float) ($details['cash'] ?? 0);
+                $bankAmount = (float) (
+                    ($details['card'] ?? 0) + 
+                    ($details['bkash'] ?? 0) + 
+                    ($details['nagad'] ?? 0) + 
+                    ($details['rocket'] ?? 0) + 
+                    ($details['bank'] ?? 0) +
+                    ($details['bank_transfer'] ?? 0)
+                );
+                
+                // Fallback if details keys are present but sum to 0
+                if ($cashAmount == 0.0 && $bankAmount == 0.0) {
+                    if ($method === 'cash') {
+                        $cashAmount = $amount;
+                    } else {
+                        $bankAmount = $amount;
+                    }
+                }
+            } else {
+                if ($method === 'cash') {
+                    $cashAmount = $amount;
+                } else {
+                    $bankAmount = $amount;
+                }
+            }
+
+            if ($cashAmount > 0.0) {
+                $this->addAmount($out, $storeId, $row->business_date, 'cash', $cashAmount);
+            }
+            if ($bankAmount > 0.0) {
+                $this->addAmount($out, $storeId, $row->business_date, 'bank', $bankAmount);
             }
 
             if ((string) $row->refund_type === 'exchange_refund') {

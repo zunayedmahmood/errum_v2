@@ -34,12 +34,12 @@ function money(value: number) {
   return `৳${rounded.toLocaleString('en-BD')}`;
 }
 
-function MoneyCell({ value, bold = false }: { value: number; bold?: boolean }) {
+function MoneyCell({ value, bold = false, showZero = false }: { value: number; bold?: boolean; showZero?: boolean }) {
   const negative = Number(value) < 0;
   const zero = Number(value) === 0;
   return (
     <td className={`whitespace-nowrap px-2 py-2 text-right text-xs ${bold ? 'font-semibold' : ''} ${negative ? 'text-rose-600 dark:text-rose-400' : zero ? 'text-gray-400 dark:text-gray-600' : 'text-gray-800 dark:text-gray-100'}`}>
-      {zero ? '—' : money(value)}
+      {zero ? (showZero ? '৳0' : '—') : money(value)}
     </td>
   );
 }
@@ -73,6 +73,84 @@ function branchForStore(branches: CashSheetBranchDay[], storeId: number): CashSh
     cash_refunds: 0,
     bank_refunds: 0,
   };
+}
+
+function dayHasCashActivity(row: any): boolean {
+  return (row.branches || []).some((b: any) => 
+    Number(b.raw_cash || 0) !== 0 || 
+    Number(b.cash_refunds || 0) !== 0 || 
+    Number(b.salary || 0) !== 0 || 
+    Number(b.cash_cost || 0) !== 0 || 
+    Number(b.cash_to_bank || 0) !== 0
+  ) || Number(row.totals.cash || 0) !== 0;
+}
+
+function dayHasBankActivity(row: any): boolean {
+  return (row.branches || []).some((b: any) => 
+    Number(b.raw_bank || 0) !== 0 || 
+    Number(b.bank_refunds || 0) !== 0 || 
+    Number(b.bank_cost || 0) !== 0 || 
+    Number(b.cash_to_bank || 0) !== 0
+  ) || Number(row.totals.bank || 0) !== 0;
+}
+
+function dayHasFinalBankActivity(row: any): boolean {
+  return dayHasBankActivity(row) || 
+    Number(row.online.online_payment || 0) !== 0 || 
+    Number(row.online.advance || 0) !== 0 || 
+    Number(row.disbursements.sslzc_received || 0) !== 0 || 
+    Number(row.disbursements.pathao_received || 0) !== 0;
+}
+
+function dayHasOwnerCashActivity(row: any): boolean {
+  return Number(row.owner.cash_invest || 0) !== 0 || 
+    Number(row.owner.cash_cost || 0) !== 0 || 
+    dayHasCashActivity(row);
+}
+
+function dayHasOwnerBankActivity(row: any): boolean {
+  return Number(row.owner.bank_invest || 0) !== 0 || 
+    Number(row.owner.bank_cost || 0) !== 0 || 
+    dayHasBankActivity(row);
+}
+
+function summaryHasCashActivity(summary: any): boolean {
+  return (summary.stores || []).some((s: any) => 
+    Number(s.raw_cash || 0) !== 0 || 
+    Number(s.cash_refunds || 0) !== 0 || 
+    Number(s.salary || 0) !== 0 || 
+    Number(s.cash_cost || 0) !== 0 || 
+    Number(s.cash_to_bank || 0) !== 0
+  ) || Number(summary.totals.cash || 0) !== 0;
+}
+
+function summaryHasBankActivity(summary: any): boolean {
+  return (summary.stores || []).some((s: any) => 
+    Number(s.raw_bank || 0) !== 0 || 
+    Number(s.bank_refunds || 0) !== 0 || 
+    Number(s.bank_cost || 0) !== 0 || 
+    Number(s.cash_to_bank || 0) !== 0
+  ) || Number(summary.totals.bank || 0) !== 0;
+}
+
+function summaryHasFinalBankActivity(summary: any): boolean {
+  return summaryHasBankActivity(summary) || 
+    Number(summary.online.online_payment || 0) !== 0 || 
+    Number(summary.online.advance || 0) !== 0 || 
+    Number(summary.disbursements.sslzc_received || 0) !== 0 || 
+    Number(summary.disbursements.pathao_received || 0) !== 0;
+}
+
+function summaryHasOwnerCashActivity(summary: any): boolean {
+  return Number(summary.owner.cash_invest || 0) !== 0 || 
+    Number(summary.owner.cash_cost || 0) !== 0 || 
+    summaryHasCashActivity(summary);
+}
+
+function summaryHasOwnerBankActivity(summary: any): boolean {
+  return Number(summary.owner.bank_invest || 0) !== 0 || 
+    Number(summary.owner.bank_cost || 0) !== 0 || 
+    summaryHasBankActivity(summary);
 }
 
 export default function MonthlyCashSheetPage() {
@@ -223,18 +301,18 @@ export default function MonthlyCashSheetPage() {
                               <FragmentCells key={`${row.date}-${store.id}`} b={b} />
                             );
                           })}
-                          <MoneyCell value={row.online.daily_sales} />
-                          <MoneyCell value={row.online.advance} />
-                          <MoneyCell value={row.online.online_payment} />
-                          <MoneyCell value={row.online.cod} />
-                          <MoneyCell value={row.disbursements.sslzc_received} />
-                          <MoneyCell value={row.disbursements.pathao_received} />
-                          <MoneyCell value={row.totals.sale} bold />
-                          <MoneyCell value={row.totals.cash} bold />
-                          <MoneyCell value={row.totals.bank} bold />
-                          <MoneyCell value={row.totals.final_bank} bold />
-                          <MoneyCell value={row.owner.cash_after_cost} />
-                          <MoneyCell value={row.owner.bank_after_cost} />
+                          <MoneyCell value={row.online.daily_sales} showZero={row.online.daily_sales !== 0} />
+                          <MoneyCell value={row.online.advance} showZero={row.online.advance !== 0} />
+                          <MoneyCell value={row.online.online_payment} showZero={row.online.online_payment !== 0} />
+                          <MoneyCell value={row.online.cod} showZero={row.online.cod !== 0} />
+                          <MoneyCell value={row.disbursements.sslzc_received} showZero={row.disbursements.sslzc_received !== 0} />
+                          <MoneyCell value={row.disbursements.pathao_received} showZero={row.disbursements.pathao_received !== 0} />
+                          <MoneyCell value={row.totals.sale} bold showZero={row.totals.sale !== 0} />
+                          <MoneyCell value={row.totals.cash} bold showZero={dayHasCashActivity(row)} />
+                          <MoneyCell value={row.totals.bank} bold showZero={dayHasBankActivity(row)} />
+                          <MoneyCell value={row.totals.final_bank} bold showZero={dayHasFinalBankActivity(row)} />
+                          <MoneyCell value={row.owner.cash_after_cost} showZero={dayHasOwnerCashActivity(row)} />
+                          <MoneyCell value={row.owner.bank_after_cost} showZero={dayHasOwnerBankActivity(row)} />
                         </tr>
                       ))}
                     </tbody>
@@ -245,18 +323,18 @@ export default function MonthlyCashSheetPage() {
                           const b = sheet.summary.stores.find((s) => s.store_id === store.id);
                           return <FragmentCells key={`sum-${store.id}`} b={b || branchForStore([], store.id)} />;
                         })}
-                        <MoneyCell value={sheet.summary.online.daily_sales} bold />
-                        <MoneyCell value={sheet.summary.online.advance} bold />
-                        <MoneyCell value={sheet.summary.online.online_payment} bold />
-                        <MoneyCell value={sheet.summary.online.cod} bold />
-                        <MoneyCell value={sheet.summary.disbursements.sslzc_received} bold />
-                        <MoneyCell value={sheet.summary.disbursements.pathao_received} bold />
-                        <MoneyCell value={sheet.summary.totals.sale} bold />
-                        <MoneyCell value={sheet.summary.totals.cash} bold />
-                        <MoneyCell value={sheet.summary.totals.bank} bold />
-                        <MoneyCell value={sheet.summary.totals.final_bank} bold />
-                        <MoneyCell value={sheet.summary.owner.cash_after_cost} bold />
-                        <MoneyCell value={sheet.summary.owner.bank_after_cost} bold />
+                        <MoneyCell value={sheet.summary.online.daily_sales} bold showZero={sheet.summary.online.daily_sales !== 0} />
+                        <MoneyCell value={sheet.summary.online.advance} bold showZero={sheet.summary.online.advance !== 0} />
+                        <MoneyCell value={sheet.summary.online.online_payment} bold showZero={sheet.summary.online.online_payment !== 0} />
+                        <MoneyCell value={sheet.summary.online.cod} bold showZero={sheet.summary.online.cod !== 0} />
+                        <MoneyCell value={sheet.summary.disbursements.sslzc_received} bold showZero={sheet.summary.disbursements.sslzc_received !== 0} />
+                        <MoneyCell value={sheet.summary.disbursements.pathao_received} bold showZero={sheet.summary.disbursements.pathao_received !== 0} />
+                        <MoneyCell value={sheet.summary.totals.sale} bold showZero={sheet.summary.totals.sale !== 0} />
+                        <MoneyCell value={sheet.summary.totals.cash} bold showZero={summaryHasCashActivity(sheet.summary)} />
+                        <MoneyCell value={sheet.summary.totals.bank} bold showZero={summaryHasBankActivity(sheet.summary)} />
+                        <MoneyCell value={sheet.summary.totals.final_bank} bold showZero={summaryHasFinalBankActivity(sheet.summary)} />
+                        <MoneyCell value={sheet.summary.owner.cash_after_cost} bold showZero={summaryHasOwnerCashActivity(sheet.summary)} />
+                        <MoneyCell value={sheet.summary.owner.bank_after_cost} bold showZero={summaryHasOwnerBankActivity(sheet.summary)} />
                       </tr>
                     </tfoot>
                   </table>
@@ -300,15 +378,33 @@ function FragmentHeader() {
 }
 
 function FragmentCells({ b }: { b: Partial<CashSheetBranchDay> }) {
+  const hasSaleActivity = Number(b.daily_sale || 0) !== 0;
+
+  const hasCashActivity = Number(b.raw_cash || 0) !== 0 || 
+    Number(b.cash_refunds || 0) !== 0 || 
+    Number(b.salary || 0) !== 0 || 
+    Number(b.cash_cost || 0) !== 0 || 
+    Number(b.cash_to_bank || 0) !== 0;
+
+  const hasBankActivity = Number(b.raw_bank || 0) !== 0 || 
+    Number(b.bank_refunds || 0) !== 0 || 
+    Number(b.bank_cost || 0) !== 0 || 
+    Number(b.cash_to_bank || 0) !== 0;
+
+  const hasExOnActivity = Number(b.ex_on || 0) !== 0;
+  const hasSalaryActivity = Number(b.salary || 0) !== 0;
+  const hasCostActivity = Number(b.cash_cost || 0) !== 0 || Number(b.bank_cost || 0) !== 0;
+  const hasCashToBankActivity = Number(b.cash_to_bank || 0) !== 0;
+
   return (
     <>
-      <MoneyCell value={Number(b.daily_sale || 0)} />
-      <MoneyCell value={Number(b.cash || 0)} />
-      <MoneyCell value={Number(b.bank || 0)} />
-      <MoneyCell value={Number(b.ex_on || 0)} />
-      <MoneyCell value={Number(b.salary || 0)} />
-      <MoneyCell value={Number(b.daily_cost || 0)} />
-      <MoneyCell value={Number(b.cash_to_bank || 0)} />
+      <MoneyCell value={Number(b.daily_sale || 0)} showZero={hasSaleActivity} />
+      <MoneyCell value={Number(b.cash || 0)} showZero={hasCashActivity} />
+      <MoneyCell value={Number(b.bank || 0)} showZero={hasBankActivity} />
+      <MoneyCell value={Number(b.ex_on || 0)} showZero={hasExOnActivity} />
+      <MoneyCell value={Number(b.salary || 0)} showZero={hasSalaryActivity} />
+      <MoneyCell value={Number(b.daily_cost || 0)} showZero={hasCostActivity} />
+      <MoneyCell value={Number(b.cash_to_bank || 0)} showZero={hasCashToBankActivity} />
     </>
   );
 }
