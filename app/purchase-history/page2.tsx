@@ -615,6 +615,15 @@ export default function PurchaseHistoryPage() {
     return store ? `${store.name} - ${store.location}` : 'Unknown Store';
   };
 
+  const isDeletedOrVoidedSale = (order: any) => {
+    const status = String(order?.status || '').toLowerCase();
+    return Boolean(order?.is_deleted_offline_sale || order?.offline_sale_deleted) ||
+      ['cancelled', 'canceled', 'void', 'deleted', 'refunded'].includes(status);
+  };
+
+  const activeCommercialOrders = (sourceOrders: any[]) =>
+    sourceOrders.filter((order) => !isDeletedOrVoidedSale(order));
+
   const filteredOrders = orders.filter(order => {
     const matchesSearch = 
       order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -630,15 +639,15 @@ export default function PurchaseHistoryPage() {
     return matchesSearch && matchesStore && matchesStartDate && matchesEndDate;
   });
 
-  const totalSalesAmount = filteredOrders.reduce((sum, order) => {
-    const amount = parseFloat(order.total_amount.replace(/,/g, ''));
+  const totalSalesAmount = activeCommercialOrders(filteredOrders).reduce((sum, order) => {
+    const amount = Number(String(order.total_amount || '0').replace(/[^0-9.-]/g, ''));
     return sum + (isNaN(amount) ? 0 : amount);
   }, 0);
   
   const totalOrders = filteredOrders.length;
   
-  const totalDue = filteredOrders.reduce((sum, order) => {
-    const amount = parseFloat(order.outstanding_amount.replace(/,/g, ''));
+  const totalDue = activeCommercialOrders(filteredOrders).reduce((sum, order) => {
+    const amount = Number(String(order.outstanding_amount || '0').replace(/[^0-9.-]/g, ''));
     return sum + (isNaN(amount) ? 0 : amount);
   }, 0);
 

@@ -71,7 +71,7 @@ export default function StoreFulfillmentPage() {
   const [assignedOrders, setAssignedOrders] = useState<AssignedOrder[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('assigned_to_store,picking');
+  const [statusFilter, setStatusFilter] = useState<string>('assigned_to_store');
 
   // Lightweight preview of primary products per order card (loaded lazily)
   const [orderPreviews, setOrderPreviews] = useState<Record<number, string[]>>({});
@@ -479,34 +479,14 @@ export default function StoreFulfillmentPage() {
                 {/* Status Filter Tabs */}
                 <div className="mb-6 flex gap-2 overflow-x-auto pb-2">
                   <button
-                    onClick={() => setStatusFilter('assigned_to_store,picking')}
+                    onClick={() => setStatusFilter('assigned_to_store')}
                     className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors ${
-                      statusFilter === 'assigned_to_store,picking'
+                      statusFilter === 'assigned_to_store'
                         ? 'bg-blue-600 text-white'
                         : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >
-                    Active Orders
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('assigned_to_store')}
-                    className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors ${
-                      statusFilter === 'assigned_to_store'
-                        ? 'bg-yellow-600 text-white'
-                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    New Assignments
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('picking')}
-                    className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors ${
-                      statusFilter === 'picking'
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    In Progress
+                    Orders Needing Scan
                   </button>
                 </div>
 

@@ -872,6 +872,21 @@ export default function PurchaseHistoryPage() {
     return store ? `${store.name} - ${store.location}` : 'Unknown Store';
   };
 
+  const isDeletedOrVoidedSale = (order: any) => {
+    const status = String(order?.status || '').toLowerCase();
+    return Boolean(order?.is_deleted_offline_sale || order?.offline_sale_deleted) ||
+      ['cancelled', 'canceled', 'void', 'deleted', 'refunded'].includes(status);
+  };
+
+  const activeCommercialOrders = (sourceOrders: any[]) =>
+    sourceOrders.filter((order) => !isDeletedOrVoidedSale(order));
+
+  const sumCommercialSales = (sourceOrders: any[]) =>
+    activeCommercialOrders(sourceOrders).reduce((sum, order) => {
+      const amount = Number(String(order?.total_amount ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+      return sum + amount;
+    }, 0);
+
   const filteredOrders = orders.filter(order => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const matchesSearch =
@@ -892,15 +907,12 @@ export default function PurchaseHistoryPage() {
     return matchesSearch && matchesStore && matchesStartDate && matchesEndDate;
   });
 
-  const totalSalesAmount = filteredOrders.reduce((sum, order) => {
-    const amount = parseFloat(order.total_amount.replace(/,/g, ''));
-    return sum + (isNaN(amount) ? 0 : amount);
-  }, 0);
+  const totalSalesAmount = sumCommercialSales(filteredOrders);
 
   const totalOrders = filteredOrders.length;
 
-  const totalDue = filteredOrders.reduce((sum, order) => {
-    const amount = parseFloat(order.outstanding_amount.replace(/,/g, ''));
+  const totalDue = activeCommercialOrders(filteredOrders).reduce((sum, order) => {
+    const amount = Number(String(order.outstanding_amount || '0').replace(/[^0-9.-]/g, ''));
     return sum + (isNaN(amount) ? 0 : amount);
   }, 0);
 
@@ -1136,12 +1148,12 @@ export default function PurchaseHistoryPage() {
   `;
 
   const buildSummaryReportHtml = (sourceOrders: any[], rows: Record<string, any>[], autoPrint = false) => {
-    const totalExportSalesAmount = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
+    const totalExportSalesAmount = sumCommercialSales(sourceOrders);
     return `<!doctype html><html><head><meta charset="utf-8" /><title>Offline Sale History</title><style>${buildReportStyles()}</style></head><body><div class="sheet">${autoPrint ? '<div class="no-print" style="text-align:right;margin-bottom:12px"><button onclick="window.print()">Save / Download PDF</button></div>' : ''}<h1>Offline Sale History</h1><p class="muted">Exported from Errum admin. ${escapeHtml(getExportFilterLabel())}</p><div class="summary"><div class="card"><div class="label">Rows</div><div class="value">${rows.length}</div></div><div class="card"><div class="label">Total Sales Amount</div><div class="value">৳${totalExportSalesAmount.toFixed(2)}</div></div><div class="card"><div class="label">Mode</div><div class="value">Summary</div></div></div><table><thead><tr>${exportColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${['Subtotal','Order Discount','Shipping','Total','Paid','Due'].includes(col) ? 'money' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${autoPrint ? '<script>setTimeout(() => window.print(), 250);</script>' : ''}</body></html>`;
   };
 
   const buildDetailedReportHtml = (sourceOrders: any[], autoPrint = false) => {
-    const totalExportSalesAmount = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
+    const totalExportSalesAmount = sumCommercialSales(sourceOrders);
 
     const orderBlocks = sourceOrders.map((order, index) => {
       const items = getOrderItems(order);
@@ -1177,7 +1189,7 @@ export default function PurchaseHistoryPage() {
   const buildExcelReportHtml = (sourceOrders: any[], rows: Record<string, any>[]) => {
     const moneyCols = new Set(['Subtotal', 'Order Discount', 'Shipping', 'Total', 'Paid', 'Due', 'Payment Amount', 'Line Total']);
     const tableRows = rows.map((row) => `<tr>${exportColumns.map((col) => `<td class="${moneyCols.has(col) ? 'num' : ''}">${escapeHtml((row as any)[col])}</td>`).join('')}</tr>`).join('');
-    const totalExportSalesAmount = sourceOrders.reduce((sum, order) => sum + parseMoney(order.total_amount), 0);
+    const totalExportSalesAmount = sumCommercialSales(sourceOrders);
 
     const detailTables = sourceOrders.map((order, index) => {
       const items = getOrderItems(order);

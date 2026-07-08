@@ -1064,17 +1064,30 @@ function ViewInventoryPageContent() {
                 </div>
 
                 <div className="lg:col-span-2">
-                  <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Size / Variation</label>
-                  <input
-                    value={sizeFilter}
-                    onChange={(e) => { setSizeFilter(e.target.value); resetToFirstPage(); }}
-                    placeholder="e.g. XL, 42, 6 Yards"
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                  />
+                  <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Exact Size / Variation</label>
+                  <div className="relative">
+                    <input
+                      value={sizeFilter}
+                      onChange={(e) => { setSizeFilter(e.target.value); resetToFirstPage(); }}
+                      placeholder="Exact size: L, XL, 42, US-42"
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 pr-8 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    />
+                    {sizeFilter && (
+                      <button
+                        type="button"
+                        onClick={() => { setSizeFilter(''); resetToFirstPage(); }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-600 dark:hover:text-gray-200"
+                        title="Clear size filter"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <p className="mt-1 text-[10px] font-semibold text-gray-400">Exact token only: L does not match XL, M, or US-42.</p>
                 </div>
 
                 <div className="lg:col-span-3">
-                  <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Search</label>
+                  <label className="mb-1 block text-xs font-black uppercase tracking-wide text-gray-500 dark:text-gray-400">Product / SKU Search</label>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     <input
@@ -1086,7 +1099,7 @@ function ViewInventoryPageContent() {
                           resetToFirstPage();
                         }
                       }}
-                      placeholder="Product, SKU, variation"
+                      placeholder="Product name or SKU. Use the size box for L/XL/42."
                       className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     />
                   </div>
@@ -1129,7 +1142,7 @@ function ViewInventoryPageContent() {
                 <div>
                   <p className="text-sm font-black text-gray-900 dark:text-white">Inventory sheet</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Branch/store columns are grouped by branch. Each branch is collapsed by default; open only the branches you need. CSV export respects the current branch/date/category/subcategory/size/search filters.
+                    Branch/store columns are grouped by branch. Each branch is collapsed by default; open only the branches you need. CSV export respects the current branch/date/category/subcategory/exact-size/product-search filters.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

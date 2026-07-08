@@ -381,13 +381,24 @@ export default function WarehouseFulfillmentPage() {
       setOrderDetails(order);
       console.log('✅ Order details loaded:', order);
 
-      // Initialize scanned items tracking
+      // Initialize scanned items tracking. Confirmed online orders can be reopened
+      // only for newly-added rows; already-scanned rows must count as complete so
+      // the packer only scans the new product(s).
       const initialScanned: Record<number, ScannedItemTracking> = {};
       order.items?.forEach((item: any) => {
+        const required = Number(item.quantity || 0);
+        const existingBarcode = String(
+          (typeof item?.barcode === 'string' ? item.barcode : item?.barcode?.barcode) ||
+          item?.scanned_barcode?.barcode ||
+          item?.product_barcode?.barcode ||
+          ''
+        ).trim();
+        const hasAttachedBarcode = Boolean(item?.product_barcode_id || item?.barcode_id || existingBarcode);
+        const alreadyScanned = hasAttachedBarcode ? required : 0;
         initialScanned[item.id] = {
-          required: item.quantity,
-          scanned: [],
-          barcodes: [],
+          required,
+          scanned: alreadyScanned > 0 ? Array.from({ length: alreadyScanned }, () => item.product_name || 'Already scanned') : [],
+          barcodes: existingBarcode ? [existingBarcode] : [],
         };
       });
       setScannedItems(initialScanned);
@@ -606,11 +617,15 @@ export default function WarehouseFulfillmentPage() {
     setIsProcessing(true);
 
     try {
-      // Prepare fulfillment payload
-      const fulfillments = orderDetails.items.map((item: any) => ({
-        order_item_id: item.id,
-        barcodes: scannedItems[item.id]?.barcodes || [],
-      }));
+      // Prepare fulfillment payload for rows that still need scanning only.
+      // Already-scanned rows from the original confirmed order stay attached and
+      // must not be submitted/re-scanned/re-deducted.
+      const fulfillments = orderDetails.items
+        .filter((item: any) => !(item?.product_barcode_id || item?.barcode_id || item?.barcode) || isDefectiveResaleOrderItem(item))
+        .map((item: any) => ({
+          order_item_id: item.id,
+          barcodes: scannedItems[item.id]?.barcodes || [],
+        }));
 
       console.log('📦 Fulfilling order:', orderDetails.order_number);
       console.log('Fulfillments:', fulfillments);

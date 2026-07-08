@@ -92,7 +92,7 @@ class StoreFulfillmentService {
    * Get orders assigned to employee's store
    */
   async getAssignedOrders(params?: {
-    status?: string; // 'assigned_to_store,picking' by default
+    status?: string; // 'assigned_to_store' by default
     per_page?: number;
   }): Promise<{
     store: {
@@ -118,7 +118,7 @@ class StoreFulfillmentService {
       console.log('📦 Fetching assigned orders for store...');
       
       const response = await axiosInstance.get('/store/fulfillment/orders/assigned', {
-        params: params || { status: 'assigned_to_store,picking', per_page: 15 }
+        params: params || { status: 'assigned_to_store', per_page: 15 }
       });
 
       console.log('✅ Assigned orders loaded:', response.data.data);

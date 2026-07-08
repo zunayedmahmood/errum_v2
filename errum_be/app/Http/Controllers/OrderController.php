@@ -1085,6 +1085,8 @@ class OrderController extends Controller
             ], 422);
         }
 
+        $fulfillmentStructureChanged = false;
+
         DB::beginTransaction();
         try {
             // Update customer information if provided
@@ -1119,6 +1121,7 @@ class OrderController extends Controller
                 $oldStoreId = $order->store_id ? (int) $order->store_id : null;
                 if ($newStoreId !== $oldStoreId) {
                     $this->clearOnlineOrderScans($order, 'store_changed_during_order_edit', true);
+                    $fulfillmentStructureChanged = true;
                     $order->store_id = $newStoreId;
                     $order->fulfillment_status = $newStoreId ? 'pending_fulfillment' : null;
                     $order->status = $newStoreId ? 'assigned_to_store' : 'pending_assignment';
@@ -1177,7 +1180,12 @@ class OrderController extends Controller
             
             $order->save();
             $order->updatePaymentStatus();
-            $this->refreshOnlineOrderFulfillmentState($order);
+
+            // Customer/detail-only edits must not reopen or change a confirmed online order.
+            // Only store reassignment changes the packing lifecycle from this endpoint.
+            if (!empty($fulfillmentStructureChanged)) {
+                $this->refreshOnlineOrderFulfillmentState($order);
+            }
 
             DB::commit();
 
@@ -1777,6 +1785,27 @@ class OrderController extends Controller
                     || str_contains(strtolower((string) $item->product_name), '[defective/used resale]')
                     || str_contains(strtolower((string) $item->product_name), '[defective]');
 
+                $barcodeMetadata = ($item->product_barcode_id && $item->barcode && is_array($item->barcode->location_metadata))
+                    ? $item->barcode->location_metadata
+                    : [];
+                $alreadyCompletedForThisOrder = $item->product_barcode_id
+                    && $item->barcode
+                    && in_array((string) $item->barcode->current_status, ['sold', 'with_customer'], true)
+                    && (
+                        (int) ($barcodeMetadata['order_id'] ?? 0) === (int) $order->id
+                        || (string) ($barcodeMetadata['order_number'] ?? '') === (string) $order->order_number
+                    );
+
+                if ($alreadyCompletedForThisOrder) {
+                    Log::info('Skipping already completed online order item during incremental completion', [
+                        'order_id' => $order->id,
+                        'order_item_id' => $item->id,
+                        'barcode' => $item->barcode->barcode,
+                        'status' => $item->barcode->current_status,
+                    ]);
+                    continue;
+                }
+
                 if (!$batch && !$isDefectiveResale) {
                     throw new \Exception("Batch not found for item {$item->product_name}");
                 }
@@ -2082,6 +2111,11 @@ class OrderController extends Controller
 
 
 
+    private function availableBarcodeStatusForStore(?Store $store): string
+    {
+        return $store && (bool) $store->is_warehouse ? 'in_warehouse' : 'in_shop';
+    }
+
     private function releaseScannedBarcodeFromItem(OrderItem $item, string $reason = 'order_edit', bool $clearBatch = false): void
     {
         $barcode = $item->product_barcode_id
@@ -2089,17 +2123,76 @@ class OrderController extends Controller
             : null;
 
         if ($barcode) {
+            $oldStatus = (string) ($barcode->current_status ?? '');
+            $oldMetadata = is_array($barcode->location_metadata) ? $barcode->location_metadata : [];
+            $batch = $item->product_batch_id
+                ? ProductBatch::whereKey($item->product_batch_id)->lockForUpdate()->first()
+                : null;
+
+            if (!$batch && $barcode->batch_id) {
+                $batch = ProductBatch::whereKey($barcode->batch_id)->lockForUpdate()->first();
+            }
+
+            $stockWasDeducted = in_array($oldStatus, ['sold', 'with_customer'], true)
+                || (($oldMetadata['sold_via'] ?? null) === 'order')
+                || ((int) ($oldMetadata['order_id'] ?? 0) === (int) $item->order_id && !empty($oldMetadata['sale_date']));
+
+            if ($stockWasDeducted && $batch) {
+                $batch->quantity = max(0, (int) $batch->quantity) + (int) $item->quantity;
+                $batch->availability = true;
+                $batch->notes = trim(($batch->notes ? $batch->notes . "\n" : '') . sprintf(
+                    '[%s] Restocked %d unit(s) after confirmed online order edit. Order item #%d was removed/released.',
+                    now()->format('Y-m-d H:i:s'),
+                    (int) $item->quantity,
+                    (int) $item->id
+                ));
+                $batch->save();
+
+                ProductMovement::create([
+                    'product_batch_id' => $batch->id,
+                    'product_barcode_id' => $barcode->id,
+                    'from_store_id' => null,
+                    'to_store_id' => $batch->store_id,
+                    'movement_type' => 'return',
+                    'quantity' => (int) $item->quantity,
+                    'unit_cost' => $batch->cost_price ?? 0,
+                    'unit_price' => $batch->sell_price ?? $item->unit_price ?? 0,
+                    'reference_type' => 'online_order_edit',
+                    'reference_id' => $item->order_id,
+                    'status_before' => $oldStatus,
+                    'status_after' => $this->availableBarcodeStatusForStore($batch->store),
+                    'notes' => 'Barcode released/restocked because an already-scanned online order item was removed or store reassigned.',
+                    'performed_by' => auth()->id(),
+                ]);
+
+                $this->syncReservedProductSnapshot((int) $item->product_id, false);
+            }
+
+            $store = $batch?->store ?: ($barcode->currentStore ?? null);
+            $availableStatus = $this->availableBarcodeStatusForStore($store);
+            $availableStoreId = $batch?->store_id ?: ($barcode->current_store_id ?: $store?->id);
+            $cleanMetadata = $oldMetadata;
+            foreach ([
+                'sold_via', 'order_number', 'order_id', 'sale_date', 'sold_by',
+                'reserved_for_order_id', 'reserved_for_order_number', 'reserved_order_item_id',
+                'reserved_by', 'reserved_at', 'stock_deducted_on_scan', 'packing_lifecycle_status',
+                'packing_batch_quantity_before',
+            ] as $key) {
+                unset($cleanMetadata[$key]);
+            }
+
             $barcode->update([
                 'is_active' => true,
-                'current_status' => 'in_shop',
-                'current_store_id' => $barcode->current_store_id ?: ($barcode->batch?->store_id),
+                'current_status' => $availableStatus,
+                'current_store_id' => $availableStoreId,
                 'location_updated_at' => now(),
-                'location_metadata' => array_merge($barcode->location_metadata ?? [], [
+                'location_metadata' => array_merge($cleanMetadata, [
                     'released_from_order_id' => $item->order_id,
                     'released_order_item_id' => $item->id,
                     'released_reason' => $reason,
                     'released_at' => now()->toDateTimeString(),
                     'released_by' => auth()->id(),
+                    'restocked_batch_quantity' => $stockWasDeducted,
                 ]),
             ]);
         }
@@ -2126,44 +2219,54 @@ class OrderController extends Controller
         return $released;
     }
 
+    private function orderItemNeedsOnlineBarcodeScan(OrderItem $item): bool
+    {
+        $name = strtolower((string) $item->product_name);
+        $isDefectiveResale = str_contains($name, '[defective/used resale]') || str_contains($name, '[defective]');
+
+        return empty($item->product_barcode_id) && !$isDefectiveResale;
+    }
+
     private function refreshOnlineOrderFulfillmentState(Order $order): void
     {
-        if (!$order->needsFulfillment() || in_array($order->status, ['cancelled', 'delivered'], true)) {
+        if (!$order->needsFulfillment() || in_array($order->status, ['cancelled', 'delivered', 'shipped'], true)) {
             return;
         }
 
         $order->refresh();
         $items = $order->items()->get();
         $totalQty = (int) $items->sum('quantity');
-        $scannedQty = (int) $items->filter(fn ($item) => !empty($item->product_barcode_id))->sum('quantity');
+        $pendingScanQty = (int) $items->filter(fn ($item) => $this->orderItemNeedsOnlineBarcodeScan($item))->sum('quantity');
+        $scannedQty = max(0, $totalQty - $pendingScanQty);
 
-        if (!$order->store_id) {
-            $order->status = 'pending_assignment';
-            $order->fulfillment_status = null;
-            $order->fulfilled_at = null;
-            $order->fulfilled_by = null;
-        } elseif ($totalQty > 0 && $scannedQty >= $totalQty) {
-            $order->status = 'ready_for_shipment';
-            $order->fulfillment_status = 'fulfilled';
-            $order->fulfilled_at = $order->fulfilled_at ?: now();
-            $order->fulfilled_by = $order->fulfilled_by ?: auth()->id();
-        } elseif ($scannedQty > 0) {
-            $order->status = 'picking';
-            $order->fulfillment_status = 'pending_fulfillment';
+        if ($pendingScanQty > 0) {
+            if (!$order->store_id) {
+                $order->status = 'pending_assignment';
+                $order->fulfillment_status = null;
+            } else {
+                // Reopen confirmed online orders only to the existing enum-safe store assignment state.
+                // We intentionally do NOT write transient statuses like "picking" or "ready_for_shipment"
+                // into orders.status; production DBs may not support them and business wants confirmed
+                // orders to return to confirmed after the new scan/stock deduction is complete.
+                $order->status = 'assigned_to_store';
+                $order->fulfillment_status = 'pending_fulfillment';
+            }
             $order->fulfilled_at = null;
             $order->fulfilled_by = null;
         } else {
-            $order->status = 'assigned_to_store';
-            $order->fulfillment_status = 'pending_fulfillment';
-            $order->fulfilled_at = null;
-            $order->fulfilled_by = null;
+            $order->status = 'confirmed';
+            $order->fulfillment_status = 'fulfilled';
+            $order->fulfilled_at = $order->fulfilled_at ?: now();
+            $order->fulfilled_by = $order->fulfilled_by ?: auth()->id();
         }
 
         $order->metadata = array_merge($order->metadata ?? [], [
             'fulfillment_reconciled_at' => now()->toISOString(),
             'fulfillment_reconciled_by' => auth()->id(),
             'scanned_units' => $scannedQty,
+            'pending_scan_units' => $pendingScanQty,
             'total_units' => $totalQty,
+            'status_policy' => 'confirmed_order_reopens_as_assigned_to_store_only_for_new_unscanned_items',
         ]);
         $order->save();
     }
@@ -3332,6 +3435,19 @@ class OrderController extends Controller
 
                 if (!$orderItem) {
                     throw new \Exception("Order item {$fulfillment['order_item_id']} not found in this order");
+                }
+
+                // Confirmed online orders may be reopened only for newly-added rows.
+                // Existing rows already have sold/packed barcodes attached; do not ask
+                // the packer to scan those again and do not reprocess them.
+                if (!empty($orderItem->product_barcode_id)) {
+                    $fulfilledItems[] = [
+                        'item_id' => $orderItem->id,
+                        'product_name' => $orderItem->product_name,
+                        'barcodes' => array_values(array_filter([(string) ($orderItem->barcode?->barcode ?? '')])),
+                        'note' => 'Already scanned before this edit; skipped during incremental packing',
+                    ];
+                    continue;
                 }
 
                 $barcodes = array_values(array_filter(array_map(

@@ -510,31 +510,18 @@ class StockIntelligenceController extends Controller
 
             $size = trim((string) $request->query('size', ''));
             if ($size !== '') {
-                $sizeLike = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $size) . '%';
-                $productQuery->where(function ($q) use ($sizeLike) {
-                    $q->where('p.variation_suffix', 'like', $sizeLike)
-                        ->orWhere('p.name', 'like', $sizeLike)
-                        ->orWhere('p.base_name', 'like', $sizeLike);
-                });
+                // Size/variation filtering is intentionally strict. A short size like
+                // "L" must match the real variation token "L" only; it must not
+                // match product names, "XL", "M", "US-42", etc.
+                $this->applyExactVariationFilter($productQuery, $size);
             }
 
             if ($search !== '') {
                 $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
-                $exactSizeToken = $this->isStrictVariationSearch($search);
 
-                $productQuery->where(function ($q) use ($search, $like, $exactSizeToken) {
-                    if ($exactSizeToken) {
-                        $normalized = strtolower(trim($search));
-                        $tokenLike = '% ' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $normalized) . ' %';
-                        $q->whereRaw('LOWER(TRIM(COALESCE(p.variation_suffix, ""))) = ?', [$normalized])
-                            ->orWhereRaw("LOWER(CONCAT(' ', REPLACE(REPLACE(REPLACE(COALESCE(p.variation_suffix, ''), '/', ' '), '-', ' '), ',', ' '), ' ')) LIKE ?", [$tokenLike])
-                            ->orWhere('p.sku', 'like', $like);
-                        return;
-                    }
-
+                $productQuery->where(function ($q) use ($like) {
                     $q->where('p.name', 'like', $like)
                         ->orWhere('p.base_name', 'like', $like)
-                        ->orWhere('p.variation_suffix', 'like', $like)
                         ->orWhere('p.sku', 'like', $like);
                 });
             }
@@ -889,24 +876,35 @@ class StockIntelligenceController extends Controller
      * separate SKUs, so we prefer the shared base_name/category/brand family.
      */
     /**
-     * Inventory View search is used for exact variant/size lookups. A short token
-     * like "L" should not match product names such as "40" or random text via
-     * broad LIKE search. Treat common size tokens as strict variation searches.
+     * Apply the dedicated Inventory View size filter against variation_suffix only.
+     *
+     * The old broad LIKE filter looked at product/base names, so typing a tiny size
+     * such as "L" could return unrelated variants like "M" or "US-42" simply
+     * because the product name contained the letter l. This filter treats size as a
+     * real variation token: full normalized match (US-42 == US42) or separated token
+     * match (42 inside US-42, L inside L / XL), never substring match (L != XL).
      */
-    private function isStrictVariationSearch(string $search): bool
+    private function applyExactVariationFilter($productQuery, string $size): void
     {
-        $token = strtolower(trim($search));
-        if ($token === '') {
-            return false;
+        $raw = trim($size);
+        if ($raw === '') {
+            return;
         }
 
-        $token = preg_replace('/\s+/', '', $token);
-        $knownSizes = [
-            'xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl',
-            '2xl', '3xl', '4xl', '5xl', 'free', 'freesize', 'onesize',
-        ];
+        $normalizedFull = strtolower(preg_replace('/[^a-z0-9]+/i', '', $raw));
+        $normalizedToken = strtolower(trim($raw));
+        $normalizedToken = preg_replace('/\s+/', ' ', $normalizedToken);
 
-        return in_array($token, $knownSizes, true);
+        $tokenNeedle = '% ' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $normalizedToken) . ' %';
+        $normalizedNeedle = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $normalizedFull);
+
+        $productQuery->where(function ($q) use ($normalizedNeedle, $tokenNeedle) {
+            $normalizedVariationSql = "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(p.variation_suffix, '')), ' ', ''), '-', ''), '/', ''), '_', ''), '.', ''), ',', ''))";
+            $tokenizedVariationSql = "LOWER(CONCAT(' ', REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(p.variation_suffix, ''), '/', ' '), '-', ' '), '_', ' '), ',', ' '), '.', ' '), '(', ' '), ')', ' '), ' '))";
+
+            $q->whereRaw("{$normalizedVariationSql} = ?", [$normalizedNeedle])
+                ->orWhereRaw("{$tokenizedVariationSql} LIKE ?", [$tokenNeedle]);
+        });
     }
 
     private function overviewProductFamilyKey($product): string

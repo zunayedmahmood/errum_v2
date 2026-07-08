@@ -37,7 +37,7 @@ class StoreFulfillmentController extends Controller
                 ], 400);
             }
 
-            $status = $request->query('status', 'assigned_to_store,picking');
+            $status = $request->query('status', 'assigned_to_store');
             $perPage = $request->query('per_page', 15);
 
             // Convert comma-separated statuses to array
@@ -100,12 +100,11 @@ class StoreFulfillmentController extends Controller
                         'assigned_to_store_count' => Order::where('store_id', $employee->store_id)
                             ->where('status', 'assigned_to_store')
                             ->count(),
-                        'picking_count' => Order::where('store_id', $employee->store_id)
-                            ->where('status', 'picking')
-                            ->count(),
-                        'ready_for_shipment_count' => Order::where('store_id', $employee->store_id)
-                            ->where('status', 'ready_for_shipment')
-                            ->count(),
+                        // Kept for frontend compatibility, but the confirmed-order edit flow no longer writes
+                        // transient enum-unsafe statuses into orders.status. Newly added items reopen as
+                        // assigned_to_store, and after the required new scan the order returns to confirmed.
+                        'picking_count' => 0,
+                        'ready_for_shipment_count' => 0,
                     ],
                 ],
             ]);
@@ -198,7 +197,7 @@ class StoreFulfillmentController extends Controller
 
             $order = Order::where('id', $orderId)
                 ->where('store_id', $employee->store_id)
-                ->whereIn('status', ['assigned_to_store', 'picking', 'confirmed'])
+                ->whereIn('status', ['assigned_to_store', 'confirmed'])
 
                 ->firstOrFail();
 
@@ -341,17 +340,15 @@ class StoreFulfillmentController extends Controller
                     ]),
                 ]);
 
-                // Update order status to picking if this is first scan
-                if (in_array($order->status, ['assigned_to_store', 'confirmed'])) {
-                    $order->update(['status' => 'picking']);
-                }
+                // Keep the order in assigned_to_store while scanning. Do not write transient
+                // statuses like picking into orders.status; production status enum may not allow them.
 
                 // Check if all items are scanned
                 $allItemsScanned = $order->items()->whereNull('product_barcode_id')->count() === 0;
                 
                 if ($allItemsScanned) {
                     $order->update([
-                        'status' => 'ready_for_shipment',
+                        'status' => 'confirmed',
                         'fulfillment_status' => 'fulfilled',
                         'fulfilled_at' => now(),
                         'fulfilled_by' => $employeeId,
@@ -416,12 +413,12 @@ class StoreFulfillmentController extends Controller
                 $unscannedItems = $order->items()->whereNull('product_barcode_id')->get();
 
                 // Stock deduction and reservation release moved to OrderController@complete
-                Log::info("Order status update to ready_for_shipment, deduction deferred to completion", [
+                Log::info("Order marked fulfilled from store packing without transient status", [
                     'order_number' => $order->order_number
                 ]);
 
                 $order->update([
-                    'status' => 'ready_for_shipment',
+                    'status' => 'confirmed',
                     'fulfillment_status' => 'fulfilled',
                     'fulfilled_at' => now(),
                     'fulfilled_by' => $employeeId,
