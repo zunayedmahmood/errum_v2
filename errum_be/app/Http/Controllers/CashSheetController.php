@@ -53,13 +53,11 @@ class CashSheetController extends Controller
         $onlineData = $this->loadOnlineBuckets($dateFrom, $dateTo);
         $ownerData = $this->loadOwnerEntryBuckets($dateFrom, $dateTo);
 
-        $activityStoreIds = $this->collectActivityStoreIds(
-            $branchSales,
-            $branchPayments,
-            $branchRefunds,
-            $branchCosts,
-            $adminData
-        );
+        // Store visibility is intentionally independent from the branch money
+        // buckets. Branch buckets only track POS/offline money, but the report
+        // selector must still show active stores/warehouses/online stores and
+        // inactive locations that had any historical activity in this month.
+        $activityStoreIds = $this->loadReportStoreActivityIds($dateFrom, $dateTo);
 
         $stores = $this->loadReportStores($activityStoreIds, $requestedStoreId);
         $storeIds = $stores->pluck('id')->map(fn ($id) => (int) $id)->all();
@@ -223,6 +221,10 @@ class CashSheetController extends Controller
                 'payment_date' => 'payment_received_date > completed_at > processed_at > created_at',
                 'cash_can_be_negative' => true,
                 'cancelled_order_payments_stay_visible' => true,
+                'offline_sale_delete_cancels_payments' => true,
+                'stores_include_warehouses_online_and_inactive_with_activity' => true,
+                'branch_order_types' => self::BRANCH_ORDER_TYPES,
+                'online_order_types' => self::ONLINE_ORDER_TYPES,
                 'refunds_subtract_on_refund_date' => true,
             ],
         ]);
@@ -391,21 +393,95 @@ class CashSheetController extends Controller
 
     private function loadReportStores(array $activityStoreIds, ?int $requestedStoreId)
     {
+        // Do not filter out warehouses or online stores here. The cash sheet
+        // should display every active location, plus inactive historical
+        // locations that had any relevant source-table movement in the month.
         $query = Store::query()
             ->select('id', 'name', 'is_active', 'is_online', 'is_warehouse')
+            ->orderBy('name');
+
+        if ($requestedStoreId) {
+            return $query->where('id', $requestedStoreId)->get();
+        }
+
+        return $query
             ->where(function ($q) use ($activityStoreIds) {
                 $q->where('is_active', true);
                 if (!empty($activityStoreIds)) {
                     $q->orWhereIn('id', $activityStoreIds);
                 }
             })
-            ->orderBy('name');
+            ->get();
+    }
 
-        if ($requestedStoreId) {
-            $query->where('id', $requestedStoreId);
-        }
+    private function loadReportStoreActivityIds(string $from, string $to): array
+    {
+        $ids = [];
+        $remember = function ($value) use (&$ids): void {
+            $id = (int) $value;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        };
 
-        return $query->get();
+        $orderDateExpr = $this->businessDateSql('COALESCE(o.order_date, o.confirmed_at, o.created_at)');
+        DB::table('orders as o')
+            ->whereNotNull('o.store_id')
+            ->whereRaw("{$orderDateExpr} BETWEEN ? AND ?", [$from, $to])
+            ->pluck('o.store_id')
+            ->each($remember);
+
+        $paymentDateExpr = $this->businessDateSql('COALESCE(op.payment_received_date, op.completed_at, op.processed_at, op.created_at)');
+        DB::table('order_payments as op')
+            ->leftJoin('orders as o', 'o.id', '=', 'op.order_id')
+            ->whereRaw("{$paymentDateExpr} BETWEEN ? AND ?", [$from, $to])
+            ->whereRaw('COALESCE(op.store_id, o.store_id) IS NOT NULL')
+            ->selectRaw('COALESCE(op.store_id, o.store_id) as activity_store_id')
+            ->pluck('activity_store_id')
+            ->each($remember);
+
+        $splitDateExpr = $this->businessDateSql('COALESCE(op.payment_received_date, ps.completed_at, op.completed_at, ps.processed_at, op.processed_at, op.created_at)');
+        DB::table('payment_splits as ps')
+            ->join('order_payments as op', 'op.id', '=', 'ps.order_payment_id')
+            ->leftJoin('orders as o', 'o.id', '=', 'op.order_id')
+            ->whereRaw("{$splitDateExpr} BETWEEN ? AND ?", [$from, $to])
+            ->whereRaw('COALESCE(ps.store_id, op.store_id, o.store_id) IS NOT NULL')
+            ->selectRaw('COALESCE(ps.store_id, op.store_id, o.store_id) as activity_store_id')
+            ->pluck('activity_store_id')
+            ->each($remember);
+
+        $refundDateExpr = $this->businessDateSql('COALESCE(r.completed_at, r.processed_at, r.created_at)');
+        DB::table('refunds as r')
+            ->join('orders as o', 'o.id', '=', 'r.order_id')
+            ->whereNotNull('o.store_id')
+            ->whereRaw("{$refundDateExpr} BETWEEN ? AND ?", [$from, $to])
+            ->pluck('o.store_id')
+            ->each($remember);
+
+        DB::table('branch_cost_entries')
+            ->whereBetween('entry_date', [$from, $to])
+            ->whereNotNull('store_id')
+            ->pluck('store_id')
+            ->each($remember);
+
+        DB::table('admin_entries')
+            ->whereBetween('entry_date', [$from, $to])
+            ->whereNotNull('store_id')
+            ->pluck('store_id')
+            ->each($remember);
+
+        $expenseDateExpr = $this->businessDateSql('COALESCE(ep.completed_at, ep.processed_at, e.expense_date)');
+        $expenseActivity = DB::table('expense_payments as ep')
+            ->join('expenses as e', 'e.id', '=', 'ep.expense_id')
+            ->whereRaw("{$expenseDateExpr} BETWEEN ? AND ?", [$from, $to])
+            ->whereRaw('COALESCE(ep.store_id, e.store_id) IS NOT NULL');
+        $this->whereNotCashSheetOrigin($expenseActivity, 'e');
+        $expenseActivity
+            ->selectRaw('COALESCE(ep.store_id, e.store_id) as activity_store_id')
+            ->pluck('activity_store_id')
+            ->each($remember);
+
+        return array_values($ids);
     }
 
     private function loadBranchSales(string $from, string $to): array
@@ -414,7 +490,7 @@ class CashSheetController extends Controller
 
         $query = DB::table('orders as o')
             ->select('o.store_id', DB::raw("{$dateExpr} as business_date"), DB::raw('SUM(o.total_amount) as total'))
-            ->whereIn('o.order_type', self::ALL_ORDER_TYPES)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereNotIn('o.status', self::SALE_EXCLUDED_STATUSES)
             ->whereNotNull('o.store_id')
             ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
@@ -433,7 +509,7 @@ class CashSheetController extends Controller
     {
         $out = [];
 
-        foreach ($this->normalPaymentRows($from, $to, self::ALL_ORDER_TYPES) as $row) {
+        foreach ($this->normalPaymentRows($from, $to, self::BRANCH_ORDER_TYPES) as $row) {
             $storeId = (int) $row->store_id;
             if ($storeId <= 0) {
                 continue;
@@ -447,7 +523,7 @@ class CashSheetController extends Controller
             }
         }
 
-        foreach ($this->splitPaymentRows($from, $to, self::ALL_ORDER_TYPES) as $row) {
+        foreach ($this->splitPaymentRows($from, $to, self::BRANCH_ORDER_TYPES) as $row) {
             $storeId = (int) $row->store_id;
             if ($storeId <= 0) {
                 continue;
@@ -479,7 +555,7 @@ class CashSheetController extends Controller
                 'r.refund_amount as amount'
             )
             ->where('r.status', 'completed')
-            ->whereIn('o.order_type', self::ALL_ORDER_TYPES)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereNotNull('o.store_id')
             ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
             ->get();
@@ -701,7 +777,10 @@ class CashSheetController extends Controller
             )
             ->whereIn('o.order_type', $orderTypes)
             ->whereIn('op.status', self::MONEY_PAYMENT_STATUSES)
-            ->whereNotIn('op.payment_type', self::VIRTUAL_PAYMENT_TYPES)
+            ->where(function ($q) {
+                $q->whereNull('op.payment_type')
+                    ->orWhereNotIn('op.payment_type', self::VIRTUAL_PAYMENT_TYPES);
+            })
             ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
             ->whereNotExists(function ($q) {
                 $q->select(DB::raw(1))
@@ -736,7 +815,10 @@ class CashSheetController extends Controller
             ->whereIn('o.order_type', $orderTypes)
             ->where('ps.status', 'completed')
             ->whereNotIn('op.status', ['cancelled', 'failed'])
-            ->whereNotIn('op.payment_type', self::VIRTUAL_PAYMENT_TYPES)
+            ->where(function ($q) {
+                $q->whereNull('op.payment_type')
+                    ->orWhereNotIn('op.payment_type', self::VIRTUAL_PAYMENT_TYPES);
+            })
             ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
             ->get();
     }

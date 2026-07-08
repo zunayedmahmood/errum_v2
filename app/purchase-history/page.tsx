@@ -340,8 +340,12 @@ export default function PurchaseHistoryPage() {
 
   const buildPaymentRowsForEdit = (order: any) => {
     const rows: any[] = [];
-    (order?.payments || []).forEach((payment: any) => {
-      const splits = Array.isArray(payment.splits) ? payment.splits : [];
+    (order?.payments || [])
+      .filter((payment: any) => !['cancelled', 'failed', 'refunded'].includes(String(payment?.status || '').toLowerCase()))
+      .forEach((payment: any) => {
+      const splits = Array.isArray(payment.splits)
+        ? payment.splits.filter((split: any) => !['cancelled', 'failed', 'refunded'].includes(String(split?.status || '').toLowerCase()))
+        : [];
       if (splits.length > 0) {
         splits.forEach((split: any) => {
           const methodLabel = split.payment_method || '';
@@ -402,7 +406,9 @@ export default function PurchaseHistoryPage() {
 
   const saveOfflineEdit = async () => {
     if (!editingOfflineOrder) return;
-    const paidTotal = parseMoney(editingOfflineOrder.paid_amount);
+    const orderTotal = parseMoney(editingOfflineOrder.total_amount);
+    const rawPaidTotal = parseMoney(editingOfflineOrder.paid_amount);
+    const paidTotal = orderTotal > 0 && rawPaidTotal > orderTotal ? orderTotal : rawPaidTotal;
     const breakdownTotal = (offlineEditForm.payment_breakdown || []).reduce((sum: number, row: any) => sum + parseMoney(row.amount), 0);
     if (Math.abs(breakdownTotal - paidTotal) > 0.01) {
       alert(`Payment breakdown total must stay ৳${paidTotal.toFixed(2)}. Current total is ৳${breakdownTotal.toFixed(2)}.`);
@@ -1897,7 +1903,7 @@ export default function PurchaseHistoryPage() {
                 <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
                   <div>
                     <div className="text-sm font-bold text-gray-900 dark:text-white">Payment Breakdown</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Total must remain {money(editingOfflineOrder.paid_amount)}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Total must remain {money(Math.min(parseMoney(editingOfflineOrder.paid_amount), parseMoney(editingOfflineOrder.total_amount) || parseMoney(editingOfflineOrder.paid_amount)))}</div>
                   </div>
                   <button
                     type="button"

@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\OrderItem;
 use App\Models\ReservedProduct;
+use App\Models\ProductBatch;
 use Illuminate\Support\Facades\Log;
 
 class OrderItemObserver
@@ -132,27 +133,43 @@ class OrderItemObserver
 
     private function incrementReservation($productId, $quantity): void
     {
-        if ($reservedRecord = ReservedProduct::where('product_id', $productId)->first()) {
-            $reservedRecord->increment('reserved_inventory', $quantity);
-            $reservedRecord->decrement('available_inventory', $quantity);
-            Log::info("Incremented reservation for product {$productId} by {$quantity}");
-        } else {
-            ReservedProduct::create([
-                'product_id' => $productId,
-                'total_inventory' => 0, // Will be corrected by ProductBatchObserver if batches exist
-                'reserved_inventory' => $quantity,
-                'available_inventory' => -$quantity,
-            ]);
-            Log::info("Created new reservation record for product {$productId} with {$quantity} reserved");
-        }
+        $reservedRecord = $this->syncReservedProductSnapshot((int) $productId);
+        $reservedRecord->reserved_inventory = max(0, (int) $reservedRecord->reserved_inventory) + (int) $quantity;
+        $reservedRecord->available_inventory = max(0, (int) $reservedRecord->total_inventory - (int) $reservedRecord->reserved_inventory);
+        $reservedRecord->save();
+
+        Log::info("Incremented reservation for product {$productId} by {$quantity}", [
+            'reserved_inventory' => (int) $reservedRecord->reserved_inventory,
+            'available_inventory' => (int) $reservedRecord->available_inventory,
+        ]);
     }
 
     private function decrementReservation($productId, $quantity): void
     {
-        if ($reservedRecord = ReservedProduct::where('product_id', $productId)->first()) {
-            $reservedRecord->decrement('reserved_inventory', $quantity);
-            $reservedRecord->increment('available_inventory', $quantity);
-            Log::info("Decremented reservation for product {$productId} by {$quantity}");
-        }
+        $reservedRecord = $this->syncReservedProductSnapshot((int) $productId);
+        $reservedRecord->reserved_inventory = max(0, (int) $reservedRecord->reserved_inventory - (int) $quantity);
+        $reservedRecord->available_inventory = max(0, (int) $reservedRecord->total_inventory - (int) $reservedRecord->reserved_inventory);
+        $reservedRecord->save();
+
+        Log::info("Decremented reservation for product {$productId} by {$quantity}", [
+            'reserved_inventory' => (int) $reservedRecord->reserved_inventory,
+            'available_inventory' => (int) $reservedRecord->available_inventory,
+        ]);
+    }
+
+    private function syncReservedProductSnapshot(int $productId): ReservedProduct
+    {
+        $reservedRecord = ReservedProduct::firstOrCreate(
+            ['product_id' => $productId],
+            ['total_inventory' => 0, 'reserved_inventory' => 0, 'available_inventory' => 0]
+        );
+
+        $totalInventory = (int) ProductBatch::where('product_id', $productId)->sum('quantity');
+        $reservedRecord->total_inventory = $totalInventory;
+        $reservedRecord->reserved_inventory = max(0, (int) $reservedRecord->reserved_inventory);
+        $reservedRecord->available_inventory = max(0, $totalInventory - (int) $reservedRecord->reserved_inventory);
+        $reservedRecord->save();
+
+        return $reservedRecord;
     }
 }

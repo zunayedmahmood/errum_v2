@@ -67,6 +67,34 @@ const normalizeShippingPayload = (addr: any) => {
   return normalized;
 };
 
+const buildAddItemPayload = (item: any) => {
+  const productId = Number(item?.product_id ?? item?.productId ?? 0);
+  if (!productId) {
+    const label = item?.productName || item?.product_name || item?.sku || 'selected product';
+    throw new Error(`Cannot add ${label}: product id is missing.`);
+  }
+
+  const batchId = Number(item?.batch_id ?? item?.batchId ?? 0) || null;
+  return {
+    product_id: productId,
+    ...(batchId ? { batch_id: batchId } : {}),
+    quantity: Math.max(1, Number(item?.quantity) || 1),
+    unit_price: Math.max(0, Number(item?.unit_price) || 0),
+    discount_amount: Math.max(0, Number(item?.discount_amount) || 0),
+  };
+};
+
+const extractApiErrorMessage = (error: any, fallback = 'Error placing order. Please try again.') => {
+  const data = error?.response?.data;
+  if (!data) return error?.message || fallback;
+
+  const details = data?.errors && typeof data.errors === 'object'
+    ? Object.values(data.errors).flat().join(' ')
+    : '';
+
+  return data?.message || data?.error || details || error?.message || fallback;
+};
+
 export default function AmountDetailsPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -486,23 +514,11 @@ export default function AmountDetailsPage() {
         }
 
         for (const [, desiredItem] of desiredById) {
-          await axios.post(`/orders/${targetOrderId}/items`, {
-            product_id: desiredItem.product_id,
-            batch_id: desiredItem.batch_id,
-            quantity: desiredItem.quantity,
-            unit_price: desiredItem.unit_price,
-            discount_amount: desiredItem.discount_amount,
-          });
+          await axios.post(`/orders/${targetOrderId}/items`, buildAddItemPayload(desiredItem));
         }
 
         for (const desiredItem of desiredUnmatched) {
-          await axios.post(`/orders/${targetOrderId}/items`, {
-            product_id: desiredItem.product_id,
-            batch_id: desiredItem.batch_id,
-            quantity: desiredItem.quantity,
-            unit_price: desiredItem.unit_price,
-            discount_amount: desiredItem.discount_amount,
-          });
+          await axios.post(`/orders/${targetOrderId}/items`, buildAddItemPayload(desiredItem));
         }
 
         const refreshedResponse = await axios.get(`/orders/${targetOrderId}`);
@@ -765,8 +781,8 @@ export default function AmountDetailsPage() {
         window.location.href = '/orders';
       }, 2000);
     } catch (error: any) {
-      console.error('❌ Order placement failed:', error);
-      const errMsg = error.response?.data?.message || error.message || 'Error placing order. Please try again.';
+      console.error('❌ Order placement failed:', error?.response?.data || error);
+      const errMsg = extractApiErrorMessage(error);
       displayToast(errMsg, 'error');
     } finally {
       setIsProcessing(false);

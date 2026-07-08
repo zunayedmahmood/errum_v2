@@ -238,7 +238,7 @@ export default function MonthlyCashSheetPage() {
           {sheet && (
             <>
               <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
-                <StatCard label="Total Sale" value={sheet.summary.totals.sale} hint="Branch + online order value" />
+                <StatCard label="Total Sale" value={sheet.summary.totals.sale} hint="Store/warehouse + online order value" />
                 <StatCard label="Branch Cash" value={sheet.summary.totals.cash} hint="Can be negative" />
                 <StatCard label="Bank" value={sheet.summary.totals.bank} hint="Branch bank + online advance" />
                 <StatCard label="Final Bank" value={sheet.summary.totals.final_bank} hint="Bank + SSLZC + Pathao" />
@@ -250,7 +250,7 @@ export default function MonthlyCashSheetPage() {
                 <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"><Info size={13} /> Timezone: {sheet.timezone}</span>
                 <span className="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-900">Range: {sheet.date_from} → {sheet.date_to}</span>
                 <span className="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-900">UTC offset env: {sheet.utc_offset_hours}</span>
-                {!isAdminLike && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">Branch view: own store only</span>}
+                {!isAdminLike && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">Scoped view: own store/warehouse only</span>}
               </div>
 
               <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -261,7 +261,12 @@ export default function MonthlyCashSheetPage() {
                         <th className="sticky left-0 z-30 border-b border-r border-gray-200 bg-gray-100 px-3 py-3 text-left dark:border-gray-800 dark:bg-gray-900">Date</th>
                         {visibleStores.map((store) => (
                           <th key={store.id} colSpan={7} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">
-                            {store.name}
+                            <div className="flex items-center justify-center gap-1.5">
+                              <span>{store.name}</span>
+                              {store.is_warehouse && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">Warehouse</span>}
+                              {store.is_online && <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">Online</span>}
+                              {store.is_active === false && <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[9px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">Inactive</span>}
+                            </div>
                           </th>
                         ))}
                         <th colSpan={4} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">Online / Ecommerce</th>

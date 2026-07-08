@@ -873,7 +873,15 @@ export default function LookupPage() {
 
   const isSoldFromCurrentLocation = (loc: any, history?: any[]) => {
     const key = normalizeStatusKey(loc?.current_status ?? loc?.status ?? loc?.status_key ?? loc?.status_label);
-    if (key === 'sold') return true;
+    if (key === 'sold' || key === 'with_customer') return true;
+
+    // Current physical state must win over old sale metadata/history. After an
+    // offline sale is deleted, the same barcode has historic sale movements, but
+    // its current status becomes available/in_shop/in_warehouse again.
+    const availableCurrentStatuses = ['available', 'available_for_sale', 'in_shop', 'in_warehouse', 'on_display'];
+    if (availableCurrentStatuses.includes(key) && loc?.is_active !== false) return false;
+    if (loc?.is_available_for_sale === true && loc?.is_active !== false) return false;
+
     const meta = readMeta(loc);
     if (String(loc?.status_label || '').toLowerCase().includes('sold')) return true;
     if (String(loc?.current_status || '').toLowerCase() === 'sold') return true;

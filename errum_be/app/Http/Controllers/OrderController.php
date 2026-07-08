@@ -29,6 +29,16 @@ class OrderController extends Controller
 {
     use DatabaseAgnosticSearch;
 
+    private const ONLINE_RESERVATION_STATUSES = [
+        'pending_assignment',
+        'pending',
+        'assigned_to_store',
+        'picking',
+        'processing',
+        'ready_for_pickup',
+        'ready_for_shipment',
+    ];
+
     /**
      * POS/offline sale date selected in the frontend is the source of truth.
      * Date-only inputs keep the selected day but use the current clock time.
@@ -919,20 +929,83 @@ class OrderController extends Controller
     }
 
     /**
-     * POS/counter order creation only needs a non-blocking snapshot of global
-     * available stock. It should not lock reserved_products because the POS sale
-     * is completed immediately in the next call and does not create a reservation.
-     * Online orders still lock this row because they actually reserve stock.
+     * Return a fresh reserved_products snapshot before stock validation.
+     *
+     * The edit-order screens depend on reserved_products.available_inventory, but
+     * older rows can be missing/stale when products were created before the observer
+     * existed, when batches were imported, or after manual stock corrections. A stale
+     * row made /orders/{id}/items return 422 even though sellable batch stock existed.
      */
-    private function reservedProductForAvailabilityCheck(int $productId, string $orderType): ?ReservedProduct
+    private function reservedProductForAvailabilityCheck(int $productId, string $orderType): ReservedProduct
+    {
+        return $this->syncReservedProductSnapshot($productId, $orderType !== 'counter');
+    }
+
+    private function syncReservedProductSnapshot(int $productId, bool $lock = true): ReservedProduct
     {
         $query = ReservedProduct::where('product_id', $productId);
-
-        if ($orderType === 'counter') {
-            return $query->first();
+        if ($lock) {
+            $query->lockForUpdate();
         }
 
-        return $query->lockForUpdate()->first();
+        $reservedProduct = $query->first();
+        if (!$reservedProduct) {
+            $reservedProduct = new ReservedProduct([
+                'product_id' => $productId,
+                'total_inventory' => 0,
+                'reserved_inventory' => 0,
+                'available_inventory' => 0,
+            ]);
+        }
+
+        $totalInventory = (int) ProductBatch::where('product_id', $productId)->sum('quantity');
+        $reservedInventory = max(0, (int) ($reservedProduct->reserved_inventory ?? 0));
+
+        $reservedProduct->total_inventory = $totalInventory;
+        $reservedProduct->reserved_inventory = $reservedInventory;
+        $reservedProduct->available_inventory = max(0, $totalInventory - $reservedInventory);
+        $reservedProduct->save();
+
+        return $reservedProduct;
+    }
+
+    private function reserveOnlineQuantityIfObserverWillNot(Order $order, int $productId, int $quantity, string $productName = ''): void
+    {
+        if ($quantity <= 0 || !$order->needsFulfillment()) {
+            return;
+        }
+
+        if (in_array($order->status, self::ONLINE_RESERVATION_STATUSES, true)) {
+            return;
+        }
+
+        // Confirmed online orders are editable in this ERP. When a new unscanned
+        // item is added to one, refreshOnlineOrderFulfillmentState() reopens the
+        // order for picking, but the OrderItem observer has already missed the
+        // reservation because the row was created while status=confirmed. Reserve
+        // the added quantity explicitly so stock cannot be oversold.
+        if ($order->status !== 'confirmed') {
+            return;
+        }
+
+        $reservedProduct = $this->syncReservedProductSnapshot($productId, true);
+        $available = (int) $reservedProduct->available_inventory;
+        if ($available < $quantity) {
+            $label = $productName ?: 'product #' . $productId;
+            throw new \Exception("Insufficient global stock to reserve added item '{$label}'. Available: {$available}, requested: {$quantity}");
+        }
+
+        $reservedProduct->reserved_inventory = max(0, (int) $reservedProduct->reserved_inventory) + $quantity;
+        $reservedProduct->available_inventory = max(0, (int) $reservedProduct->total_inventory - (int) $reservedProduct->reserved_inventory);
+        $reservedProduct->save();
+
+        Log::info('Reserved added quantity for confirmed online order edit', [
+            'order_id' => $order->id,
+            'order_number' => $order->order_number,
+            'product_id' => $productId,
+            'quantity' => $quantity,
+            'available_after' => (int) $reservedProduct->available_inventory,
+        ]);
     }
 
     /**
@@ -1296,9 +1369,11 @@ class OrderController extends Controller
                 $product = Product::findOrFail($request->product_id);
                 $quantity = $request->quantity;
                 
-                // 1. ALWAYS verify global available inventory first
-                $reserved = \App\Models\ReservedProduct::where('product_id', $product->id)->first();
-                $availableGlobal = $reserved ? $reserved->available_inventory : 0;
+                // 1. ALWAYS verify global available inventory first, using a freshly
+                // synced reserved_products snapshot so older/stale rows do not create
+                // false 422 failures while editing confirmed online orders.
+                $reserved = $this->reservedProductForAvailabilityCheck($product->id, $order->order_type);
+                $availableGlobal = (int) $reserved->available_inventory;
                 
                 if ($availableGlobal < $quantity) {
                     throw new \Exception("Insufficient global stock for product '{$product->name}'. Available: {$availableGlobal}, requested: {$quantity}");
@@ -1359,6 +1434,7 @@ class OrderController extends Controller
                     $existingItem->total_amount = ($existingItem->unit_price * $existingItem->quantity) - $existingItem->discount_amount + $existingItem->tax_amount;
                     $existingItem->cogs = $batch ? round(($batch->cost_price ?? 0) * $existingItem->quantity, 2) : 0;
                     $existingItem->save();
+                    $this->reserveOnlineQuantityIfObserverWillNot($order, (int) $existingItem->product_id, (int) $quantity, (string) $existingItem->product_name);
                     
                     $orderItem = $existingItem;
                 } else {
@@ -1377,6 +1453,7 @@ class OrderController extends Controller
                         'cogs' => $batch ? round(($batch->cost_price ?? 0) * $quantity, 2) : 0,
                         'total_amount' => ($unitPrice * $quantity) - $discount + $taxCalculation['total_tax'],
                     ]);
+                    $this->reserveOnlineQuantityIfObserverWillNot($order, (int) $product->id, (int) $quantity, (string) $product->name);
                 }
                 
                 $addedItems[] = $orderItem;
@@ -1476,13 +1553,13 @@ class OrderController extends Controller
                 if ($order->needsFulfillment() && $item->product_barcode_id) {
                     if ($newQuantity > $oldQuantity) {
                         $extraQty = $newQuantity - $oldQuantity;
-                        $reserved = \App\Models\ReservedProduct::where('product_id', $item->product_id)->lockForUpdate()->first();
-                        $available = $reserved ? $reserved->available_inventory : 0;
+                        $reserved = $this->reservedProductForAvailabilityCheck((int) $item->product_id, $order->order_type);
+                        $available = (int) $reserved->available_inventory;
                         if ($available < $extraQty) {
                             throw new \Exception("Insufficient global stock to increase quantity for '{$item->product_name}'. Available: {$available}, needed: {$extraQty}");
                         }
 
-                        OrderItem::create([
+                        $extraItem = OrderItem::create([
                             'order_id' => $order->id,
                             'product_id' => $item->product_id,
                             'product_batch_id' => null,
@@ -1497,6 +1574,7 @@ class OrderController extends Controller
                             'cogs' => 0,
                             'total_amount' => ((float) ($request->unit_price ?? $item->unit_price)) * $extraQty,
                         ]);
+                        $this->reserveOnlineQuantityIfObserverWillNot($order, (int) $extraItem->product_id, (int) $extraQty, (string) $extraItem->product_name);
                         $newQuantity = $oldQuantity;
                     } elseif ($newQuantity < $oldQuantity) {
                         throw new \Exception('Cannot reduce quantity on a scanned barcode row. Remove the scanned row to release that barcode.');
@@ -1504,8 +1582,8 @@ class OrderController extends Controller
                 } else {
                     // For increases, validate global available inventory
                     if ($diff > 0) {
-                        $reserved = \App\Models\ReservedProduct::where('product_id', $item->product_id)->lockForUpdate()->first();
-                        $available = $reserved ? $reserved->available_inventory : 0;
+                        $reserved = $this->reservedProductForAvailabilityCheck((int) $item->product_id, $order->order_type);
+                        $available = (int) $reserved->available_inventory;
                         
                         if ($available < $diff) {
                             throw new \Exception("Insufficient global stock to increase quantity for '{$item->product_name}'. Available: {$available}, needed: {$diff}");
@@ -1519,6 +1597,9 @@ class OrderController extends Controller
                     $item->tax_amount = $this->calculateTax($unitPrice, $newQuantity, $taxPercentage)['total_tax'];
                     
                     $item->updateQuantity($newQuantity);
+                    if ($diff > 0) {
+                        $this->reserveOnlineQuantityIfObserverWillNot($order, (int) $item->product_id, (int) $diff, (string) $item->product_name);
+                    }
                 }
             }
 
@@ -2205,8 +2286,17 @@ class OrderController extends Controller
 
     private function replaceOfflineSalePaymentBreakdown(Order $order, array $breakdown, Carbon $paymentAt): void
     {
+        $orderTotal = round((float) $order->total_amount, 2);
         $targetPaid = round((float) $order->paid_amount, 2);
-        if ($targetPaid <= 0 && (float) $order->total_amount <= 0) {
+
+        // Previous buggy edits could leave both the old and new payments completed,
+        // making paid_amount larger than the actual sale. Editing the breakdown should
+        // repair that state, so clamp the replace target to the sale total.
+        if ($orderTotal > 0 && $targetPaid > $orderTotal) {
+            $targetPaid = $orderTotal;
+        }
+
+        if ($targetPaid <= 0 && $orderTotal <= 0) {
             $targetPaid = 0.0;
         }
 
@@ -2228,13 +2318,38 @@ class OrderController extends Controller
             throw new \Exception("Payment breakdown total must remain ৳" . number_format($targetPaid, 2) . ". Current breakdown total is ৳" . number_format($newTotal, 2) . ".");
         }
 
-        foreach ($order->payments as $payment) {
+        $oldPaymentIds = $order->payments()->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        if (!empty($oldPaymentIds)) {
+            // Hard-cancel through direct queries first so stale/partially-loaded relations
+            // cannot leave the old cash/card rows active. This prevents edited payments
+            // from being counted as old method + new method on the cash sheet/history.
+            \App\Models\PaymentSplit::whereIn('order_payment_id', $oldPaymentIds)
+                ->whereNotIn('status', ['cancelled', 'failed', 'refunded'])
+                ->update([
+                    'status' => 'cancelled',
+                    'updated_at' => now(),
+                ]);
+
+            \App\Models\OrderPayment::whereIn('id', $oldPaymentIds)
+                ->whereNotIn('status', ['cancelled', 'failed', 'refunded'])
+                ->update([
+                    'status' => 'cancelled',
+                    'updated_at' => now(),
+                ]);
+        }
+
+        foreach ($order->payments()->with('paymentSplits')->get() as $payment) {
             \App\Models\Transaction::where('reference_type', \App\Models\OrderPayment::class)
                 ->where('reference_id', $payment->id)
                 ->update(['status' => 'cancelled']);
 
             foreach ($payment->paymentSplits as $split) {
                 $split->status = 'cancelled';
+                $split->metadata = array_merge($split->metadata ?? [], [
+                    'replaced_by_offline_sale_edit_at' => now()->toISOString(),
+                    'replacement_order_date' => $paymentAt->toDateTimeString(),
+                ]);
                 $split->save();
             }
 
@@ -2533,24 +2648,70 @@ class OrderController extends Controller
             $restoreBatch = $this->resolveDeletedSaleRestoreBatch($originalBatch, $order);
             $quantity = max(1, (int) $item->quantity);
             $restoreBatch->increment('quantity', $quantity);
+            $restoreBatch->forceFill([
+                'availability' => true,
+                'is_active' => true,
+            ])->save();
 
             $barcode = $item->barcode ?: ($item->product_barcode_id ? ProductBarcode::whereKey($item->product_barcode_id)->lockForUpdate()->first() : null);
             if ($barcode) {
-                $barcode->update([
+                $previousStatus = (string) ($barcode->current_status ?: 'sold');
+                $previousBatchId = $barcode->batch_id;
+                $restockStatus = $this->deletedSaleRestockBarcodeStatus($restoreBatch);
+                $barcodeMetadata = is_array($barcode->location_metadata ?? null) ? $barcode->location_metadata : [];
+
+                // Remove old sale markers. The lookup UI treats sold_via/order metadata
+                // as a sold signal, so keeping these keys makes a physically-restocked
+                // barcode still appear as Sold.
+                foreach ([
+                    'sold_via', 'soldVia', 'sold_at', 'sale_date', 'order_id',
+                    'order_number', 'customer_id', 'customer', 'sold_by',
+                ] as $saleMetaKey) {
+                    unset($barcodeMetadata[$saleMetaKey]);
+                }
+
+                // Use forceFill so the physical unit is definitely moved from the
+                // depleted/sold sale batch into the newly-created deleted-sale batch.
+                $barcode->forceFill([
                     'batch_id' => $restoreBatch->id,
                     'current_store_id' => $restoreBatch->store_id,
-                    'current_status' => 'in_shop',
+                    'current_status' => $restockStatus,
                     'is_active' => true,
                     'is_defective' => false,
                     'location_updated_at' => now(),
-                    'location_metadata' => array_merge($barcode->location_metadata ?? [], [
+                    'location_metadata' => array_merge($barcodeMetadata, [
                         'restocked_from_deleted_offline_sale_at' => now()->toDateTimeString(),
                         'deleted_order_id' => $order->id,
                         'deleted_order_number' => $order->order_number,
                         'original_batch_id' => $originalBatch->id,
+                        'previous_batch_id' => $previousBatchId,
                         'restock_batch_id' => $restoreBatch->id,
+                        'previous_status' => $previousStatus,
                     ]),
-                ]);
+                ])->save();
+
+                if (!$restoreBatch->barcode_id) {
+                    $restoreBatch->forceFill(['barcode_id' => $barcode->id])->save();
+                }
+
+                // If the sold unit was a Display/Faulty/Used resale unit, deleting the
+                // offline sale must also reopen that unit for resale instead of leaving
+                // the extra-item record as sold.
+                DefectiveProduct::where('product_barcode_id', $barcode->id)
+                    ->where('status', 'sold')
+                    ->where(function ($q) use ($order) {
+                        $q->where('order_id', $order->id)->orWhereNull('order_id');
+                    })
+                    ->get()
+                    ->each(function (DefectiveProduct $defectiveProduct) {
+                        $defectiveProduct->forceFill([
+                            'status' => 'available_for_sale',
+                            'sold_by' => null,
+                            'sold_at' => null,
+                            'order_id' => null,
+                            'sale_notes' => trim(($defectiveProduct->sale_notes ? $defectiveProduct->sale_notes . "\n" : '') . 'Sale deleted; item reopened for resale.'),
+                        ])->save();
+                    });
 
                 ProductMovement::create([
                     'product_batch_id' => $restoreBatch->id,
@@ -2566,10 +2727,10 @@ class OrderController extends Controller
                     'reference_number' => 'DEL-' . $order->order_number,
                     'reference_type' => 'offline_sale_delete',
                     'reference_id' => $order->id,
-                    'status_before' => 'with_customer',
-                    'status_after' => 'in_shop',
+                    'status_before' => in_array($previousStatus, ['sold', 'with_customer'], true) ? $previousStatus : 'with_customer',
+                    'status_after' => $restockStatus,
                     'notes' => 'Offline sale deleted; barcode restocked into new batch instead of original sale batch.',
-                    'performed_by' => auth()->id(),
+                    'performed_by' => auth()->id() ?: $order->created_by ?: $order->salesman_id ?: Employee::query()->value('id'),
                 ]);
             }
 
@@ -2595,12 +2756,18 @@ class OrderController extends Controller
         $base = 'DEL-' . $order->id . '-' . $originalBatch->id;
         $existing = ProductBatch::where('batch_number', $base)->lockForUpdate()->first();
         if ($existing) {
+            $existing->forceFill([
+                'availability' => true,
+                'is_active' => true,
+            ])->save();
             return $existing;
         }
 
+        $storeId = $order->store_id ?: $originalBatch->store_id;
+
         return ProductBatch::create([
             'product_id' => $originalBatch->product_id,
-            'store_id' => $originalBatch->store_id,
+            'store_id' => $storeId,
             'batch_number' => $base,
             'quantity' => 0,
             'cost_price' => $originalBatch->cost_price ?? 0,
@@ -2612,6 +2779,13 @@ class OrderController extends Controller
             'is_active' => true,
             'notes' => 'Auto-created batch for deleted offline sale ' . $order->order_number . ' from original batch ' . $originalBatch->batch_number,
         ]);
+    }
+
+    private function deletedSaleRestockBarcodeStatus(ProductBatch $restoreBatch): string
+    {
+        $store = $restoreBatch->relationLoaded('store') ? $restoreBatch->store : Store::find($restoreBatch->store_id);
+
+        return $store && $store->is_warehouse ? 'in_warehouse' : 'in_shop';
     }
 
     private function cancelOfflineSaleFinance(Order $order): void
@@ -2852,7 +3026,14 @@ class OrderController extends Controller
         ];
 
         if ($splits->isNotEmpty()) {
-            $sortedSplits = $splits->sortBy('split_sequence')->values();
+            $sortedSplits = $splits
+                ->filter(fn ($split) => !in_array((string) $split->status, ['cancelled', 'failed', 'refunded'], true))
+                ->sortBy('split_sequence')
+                ->values();
+
+            if ($sortedSplits->isEmpty()) {
+                return $paymentData;
+            }
             $mobileWithoutWallet = 0;
             $mobileTotal = $sortedSplits->filter(fn ($split) => $this->isMobileBankingMethod($split->paymentMethod ?? null))->count();
 
@@ -3002,7 +3183,11 @@ class OrderController extends Controller
 
         // Always include payment breakdowns so list pages, expanded details, and exports
         // can show split-payment methods and amounts instead of only "Split Payment".
-        $response['payments'] = $order->payments->map(fn ($payment) => $this->formatOrderPaymentResponse($payment));
+        $activePayments = $order->payments
+            ->filter(fn ($payment) => !in_array((string) $payment->status, ['cancelled', 'failed', 'refunded'], true))
+            ->values();
+
+        $response['payments'] = $activePayments->map(fn ($payment) => $this->formatOrderPaymentResponse($payment));
         $response['payment_method_summary'] = $response['payments']
             ->flatMap(function ($payment) {
                 $splits = collect($payment['splits'] ?? []);

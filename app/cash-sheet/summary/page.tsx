@@ -124,7 +124,7 @@ export default function CashSheetSummaryPage() {
           {sheet && (
             <>
               <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <Card label="Total Sale" value={sheet.summary.totals.sale} sub="Branch + online order value" />
+                <Card label="Total Sale" value={sheet.summary.totals.sale} sub="Store/warehouse + online order value" />
                 <Card label="Cash Remain" value={sheet.summary.totals.cash} sub="After salary, costs, cash-to-bank" />
                 <Card label="Final Bank" value={sheet.summary.totals.final_bank} sub="Bank + SSLZC + Pathao received" />
                 <Card label="Owner Bank After Cost" value={sheet.summary.owner.bank_after_cost} sub="Final bank + owner bank invest - owner bank cost" />
@@ -133,9 +133,9 @@ export default function CashSheetSummaryPage() {
               <div className="grid gap-4 xl:grid-cols-3">
                 <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
                   <h2 className="mb-3 font-semibold text-gray-900 dark:text-white">Business Movement</h2>
-                  <Row label="Branch Sale" value={sheet.summary.totals.branch_sale} />
+                  <Row label="Store Sale" value={sheet.summary.totals.branch_sale} />
                   <Row label="Online Sale" value={sheet.summary.online.daily_sales} />
-                  <Row label="Branch Cash" value={sheet.summary.totals.cash} note="Negative means visible shortage" />
+                  <Row label="Store Cash" value={sheet.summary.totals.cash} note="Negative means visible shortage" />
                   <Row label="Bank Before Disbursement" value={sheet.summary.totals.bank} />
                   <Row label="Final Bank" value={sheet.summary.totals.final_bank} />
                   <Row label="Daily Cost" value={sheet.summary.totals.daily_cost} />
@@ -165,12 +165,12 @@ export default function CashSheetSummaryPage() {
               </div>
 
               <section className="mt-5 rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-                <h2 className="mb-4 font-semibold text-gray-900 dark:text-white">Branch Summary</h2>
+                <h2 className="mb-4 font-semibold text-gray-900 dark:text-white">Store / Warehouse Summary</h2>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-gray-950 dark:text-gray-400">
                       <tr>
-                        <th className="px-3 py-2 text-left">Branch</th>
+                        <th className="px-3 py-2 text-left">Store / Warehouse</th>
                         <th className="px-3 py-2 text-right">Sale</th>
                         <th className="px-3 py-2 text-right">Raw Cash</th>
                         <th className="px-3 py-2 text-right">Cash</th>
