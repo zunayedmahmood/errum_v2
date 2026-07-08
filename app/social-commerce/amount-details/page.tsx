@@ -67,7 +67,7 @@ const normalizeShippingPayload = (addr: any) => {
   return normalized;
 };
 
-const buildAddItemPayload = (item: any) => {
+const buildAddItemPayload = (item: any, options: { includeBatch?: boolean } = {}) => {
   const productId = Number(item?.product_id ?? item?.productId ?? 0);
   if (!productId) {
     const label = item?.productName || item?.product_name || item?.sku || 'selected product';
@@ -77,7 +77,10 @@ const buildAddItemPayload = (item: any) => {
   const batchId = Number(item?.batch_id ?? item?.batchId ?? 0) || null;
   return {
     product_id: productId,
-    ...(batchId ? { batch_id: batchId } : {}),
+    // For confirmed online order edits, new product additions must stay batchless:
+    // stock is reserved at product level, and packing scan chooses any available
+    // barcode of this product from the assigned store.
+    ...(options.includeBatch && batchId ? { batch_id: batchId } : {}),
     quantity: Math.max(1, Number(item?.quantity) || 1),
     unit_price: Math.max(0, Number(item?.unit_price) || 0),
     discount_amount: Math.max(0, Number(item?.discount_amount) || 0),

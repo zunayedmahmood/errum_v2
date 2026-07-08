@@ -283,13 +283,13 @@ class StoreFulfillmentController extends Controller
                     $originalDiscount = (float) $orderItem->discount_amount;
                     $originalTax = (float) $orderItem->tax_amount;
                     $originalCogs = (float) ($orderItem->cogs ?? 0);
+                    $scannedUnitCogs = round(($barcode->batch?->cost_price ?? 0) * 1, 2);
                     $discountPerUnit = round($originalDiscount / max(1, $originalQuantity), 2);
                     $taxPerUnit = round($originalTax / max(1, $originalQuantity), 2);
-                    $cogsPerUnit = round($originalCogs / max(1, $originalQuantity), 2);
                     $remainingQuantity = $originalQuantity - 1;
                     $remainingDiscount = max(0, round($originalDiscount - $discountPerUnit, 2));
                     $remainingTax = max(0, round($originalTax - $taxPerUnit, 2));
-                    $remainingCogs = max(0, round($originalCogs - $cogsPerUnit, 2));
+                    $remainingCogs = max(0, round($originalCogs - $scannedUnitCogs, 2));
 
                     $orderItem->update([
                         'quantity' => 1,
@@ -297,7 +297,7 @@ class StoreFulfillmentController extends Controller
                         'product_batch_id' => $barcode->batch_id,
                         'discount_amount' => $discountPerUnit,
                         'tax_amount' => $taxPerUnit,
-                        'cogs' => $cogsPerUnit,
+                        'cogs' => $scannedUnitCogs,
                         'total_amount' => round($unitPrice - $discountPerUnit + $taxPerUnit, 2),
                     ]);
 
@@ -319,7 +319,8 @@ class StoreFulfillmentController extends Controller
                 } else {
                     $orderItem->update([
                         'product_barcode_id' => $barcode->id,
-                        'product_batch_id' => $barcode->batch_id, // Sync with the actual physical batch
+                        'product_batch_id' => $barcode->batch_id, // Sync with the actual physical batch chosen at scan time
+                        'cogs' => round(($barcode->batch?->cost_price ?? 0) * 1, 2),
                     ]);
                 }
 
