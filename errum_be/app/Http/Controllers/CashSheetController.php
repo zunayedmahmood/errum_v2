@@ -486,7 +486,7 @@ class CashSheetController extends Controller
 
     private function loadBranchSales(string $from, string $to): array
     {
-        $dateExpr = $this->businessDateSql('COALESCE(o.order_date, o.confirmed_at, o.created_at)');
+        $dateExpr = $this->businessDateSql('o.order_date');
 
         $query = DB::table('orders as o')
             ->select('o.store_id', DB::raw("{$dateExpr} as business_date"), DB::raw('SUM(o.total_amount) as total'))

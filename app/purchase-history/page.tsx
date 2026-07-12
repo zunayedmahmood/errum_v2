@@ -119,8 +119,8 @@ export default function PurchaseHistoryPage() {
   const [exactDate, setExactDate] = useState(() => todayIso());
   const [startDate, setStartDate] = useState(() => todayIso());
   const [endDate, setEndDate] = useState(() => todayIso());
-  const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
-  const [loadingDetails, setLoadingDetails] = useState<number | null>(null);
+  const [expandedOrders, setExpandedOrders] = useState<Set<number>>(() => new Set());
+  const [loadingDetails, setLoadingDetails] = useState<Set<number>>(() => new Set());
   const [errorDetails, setErrorDetails] = useState<{ [key: number]: string }>({});
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -263,29 +263,37 @@ export default function PurchaseHistoryPage() {
   };
 
   const handleExpandOrder = async (orderId: number) => {
-    if (expandedOrder === orderId) {
-      setExpandedOrder(null);
+    if (expandedOrders.has(orderId)) {
+      setExpandedOrders(prev => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
       return;
     }
 
-    setExpandedOrder(orderId);
+    setExpandedOrders(prev => new Set(prev).add(orderId));
     const order = orders.find(o => o.id === orderId);
 
     if (order?.items && order.items.length > 0) {
       return;
     }
 
-    setLoadingDetails(orderId);
+    setLoadingDetails(prev => new Set(prev).add(orderId));
     setErrorDetails(prev => ({ ...prev, [orderId]: '' }));
 
     try {
       const fullOrder = await orderService.getById(orderId);
-      setOrders(orders.map(o => o.id === orderId ? fullOrder : o));
+      setOrders(prev => prev.map(o => o.id === orderId ? fullOrder : o));
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || error.message || 'Failed to load order details';
       setErrorDetails(prev => ({ ...prev, [orderId]: errorMessage }));
     } finally {
-      setLoadingDetails(null);
+      setLoadingDetails(prev => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
     }
   };
 
@@ -907,6 +915,47 @@ export default function PurchaseHistoryPage() {
     return matchesSearch && matchesStore && matchesStartDate && matchesEndDate;
   });
 
+  const allVisibleOrdersOpen =
+    filteredOrders.length > 0 && filteredOrders.every(order => expandedOrders.has(order.id));
+
+  const handleToggleAllOrders = async () => {
+    if (allVisibleOrdersOpen) {
+      setExpandedOrders(new Set());
+      return;
+    }
+
+    setExpandedOrders(prev => {
+      const next = new Set(prev);
+      filteredOrders.forEach(order => next.add(order.id));
+      return next;
+    });
+
+    await Promise.all(
+      filteredOrders.map(async (order) => {
+        if ((order?.items && order.items.length > 0) || loadingDetails.has(order.id)) {
+          return;
+        }
+
+        setLoadingDetails(prev => new Set(prev).add(order.id));
+        setErrorDetails(prev => ({ ...prev, [order.id]: '' }));
+
+        try {
+          const fullOrder = await orderService.getById(order.id);
+          setOrders(prev => prev.map(existing => existing.id === order.id ? fullOrder : existing));
+        } catch (error: any) {
+          const errorMessage = error.response?.data?.message || error.message || 'Failed to load order details';
+          setErrorDetails(prev => ({ ...prev, [order.id]: errorMessage }));
+        } finally {
+          setLoadingDetails(prev => {
+            const next = new Set(prev);
+            next.delete(order.id);
+            return next;
+          });
+        }
+      })
+    );
+  };
+
   const totalSalesAmount = sumCommercialSales(filteredOrders);
 
   const totalOrders = filteredOrders.length;
@@ -1523,6 +1572,15 @@ export default function PurchaseHistoryPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleToggleAllOrders}
+                      className="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      {allVisibleOrdersOpen ? 'Close all' : 'Open all'}
+                    </button>
+                  </div>
                   {filteredOrders.map((order) => (
                     <div
                       key={order.id}
@@ -1668,7 +1726,7 @@ export default function PurchaseHistoryPage() {
                               onClick={() => handleExpandOrder(order.id)}
                               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
                             >
-                              {expandedOrder === order.id ? (
+                              {expandedOrders.has(order.id) ? (
                                 <ChevronUp className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                               ) : (
                                 <ChevronDown className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -1688,12 +1746,12 @@ export default function PurchaseHistoryPage() {
                         </div>
                       </div>
 
-                      {expandedOrder === order.id && (
+                      {expandedOrders.has(order.id) && (
                         <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
                           <div className="p-4 space-y-4">
                             <div>
                               <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Order Items</h3>
-                              {loadingDetails === order.id ? (
+                              {loadingDetails.has(order.id) ? (
                                 <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-8 text-center">
                                   <div className="text-gray-500 dark:text-gray-400">Loading items...</div>
                                 </div>
