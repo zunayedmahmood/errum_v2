@@ -1388,67 +1388,36 @@ class OrderController extends Controller
                 }
 
                 $batch = null;
-                $isConfirmedOnlineEditAddition = $order->needsFulfillment()
-                    && $order->status === 'confirmed'
-                    && in_array($order->order_type, ['social_commerce', 'ecommerce'], true);
-
-                if ($isConfirmedOnlineEditAddition) {
-                    // Critical workflow rule: when adding a product to an already-confirmed
-                    // online order, reserve only product-level stock. Do NOT pre-assign a
-                    // batch here, otherwise the packer is forced to scan a barcode from that
-                    // exact batch. The real batch/barcode is chosen later in online packing
-                    // from any available unit of this product in the assigned store.
-                    if ($order->store_id) {
-                        $assignedStoreStock = (int) ProductBatch::where('product_id', $product->id)
-                            ->where('store_id', $order->store_id)
-                            ->where('quantity', '>', 0)
-                            ->where('availability', true)
-                            ->where(function ($q) {
-                                $q->whereNull('expiry_date')->orWhere('expiry_date', '>', now());
-                            })
-                            ->sum('quantity');
-
-                        if ($assignedStoreStock < $quantity) {
-                            throw new \Exception("Insufficient stock for '{$product->name}' at assigned store. Available in store: {$assignedStoreStock}, requested: {$quantity}");
-                        }
+                // 2. Optional: Select a batch if possible (prioritize the order's store if set, else any batch)
+                // This is a "soft" selection - even if no batch is found here, we allow adding the item
+                // because fulfillment scanning will eventually pick a batch at the branch.
+                if ($request->filled('batch_id')) {
+                    $batch = ProductBatch::find($request->batch_id);
+                    // Use it even if it's from another store, but respect its quantity if selected explicitly
+                    if ($batch && $batch->quantity < $quantity) {
+                        Log::warning("Manually selected batch {$batch->id} has less stock than requested. Proceeding as global assignment.");
                     }
-
-                    Log::info("Adding batchless reserved item to confirmed online order {$order->id}; batch will be selected by barcode scan.", [
-                        'product_id' => $product->id,
-                        'requested_batch_id_ignored' => $request->batch_id,
-                        'assigned_store_id' => $order->store_id,
-                    ]);
                 } else {
-                    // 2. Optional: Select a batch if possible for non-confirmed edit flows.
-                    // Confirmed online edit additions intentionally stay batchless.
-                    if ($request->filled('batch_id')) {
-                        $batch = ProductBatch::find($request->batch_id);
-                        // Use it even if it's from another store, but respect its quantity if selected explicitly
-                        if ($batch && $batch->quantity < $quantity) {
-                            Log::warning("Manually selected batch {$batch->id} has less stock than requested. Proceeding as global assignment.");
-                        }
+                    // Optimized batch selection: try current store first (FIFO), else any store (FIFO)
+                    $batchQuery = ProductBatch::where('product_id', $product->id)
+                        ->where('quantity', '>=', $quantity)
+                        ->where('availability', true)
+                        ->where(function($q) {
+                            $q->whereNull('expiry_date')->orWhere('expiry_date', '>', now());
+                        })
+                        ->orderBy('expiry_date', 'asc');
+                    
+                    if ($order->store_id) {
+                        $batch = (clone $batchQuery)->where('store_id', $order->store_id)->first() ?: $batchQuery->first();
                     } else {
-                        // Optimized batch selection: try current store first (FIFO), else any store (FIFO)
-                        $batchQuery = ProductBatch::where('product_id', $product->id)
-                            ->where('quantity', '>=', $quantity)
-                            ->where('availability', true)
-                            ->where(function($q) {
-                                $q->whereNull('expiry_date')->orWhere('expiry_date', '>', now());
-                            })
-                            ->orderBy('expiry_date', 'asc');
-                        
-                        if ($order->store_id) {
-                            $batch = (clone $batchQuery)->where('store_id', $order->store_id)->first() ?: $batchQuery->first();
-                        } else {
-                            $batch = $batchQuery->first();
-                        }
+                        $batch = $batchQuery->first();
                     }
+                }
 
-                    if ($batch) {
-                        Log::info("Auto-selected batch {$batch->id} for added item in order {$order->id}");
-                    } else {
-                        Log::info("Adding item to order {$order->id} without pre-assigned batch (will be assigned at fulfillment)");
-                    }
+                if ($batch) {
+                    Log::info("Auto-selected batch {$batch->id} for added item in order {$order->id}");
+                } else {
+                    Log::info("Adding item to order {$order->id} without pre-assigned batch (will be assigned at fulfillment)");
                 }
                 
                 // Use provided price or batch price or product base price
@@ -3550,11 +3519,9 @@ class OrderController extends Controller
                         throw new \Exception("Barcode {$barcodeValue} is marked as defective");
                     }
 
-                    // Verify barcode belongs to the assigned store. Prefer the barcode's
-                    // current physical store, and fall back to its batch store for older data.
-                    $barcodeStoreId = $barcode->current_store_id ?: ($barcode->batch?->store_id);
-                    if ($barcodeStoreId && $order->store_id && (int) $barcodeStoreId !== (int) $order->store_id) {
-                        throw new \Exception("Barcode {$barcodeValue} belongs to Store " . ($barcodeStoreId ?? 'Unknown') . ". This order must be fulfilled from Store " . $order->store_id);
+                    // Verify barcode belongs to correct store
+                    if ($barcode->batch && $barcode->batch->store_id != $order->store_id) {
+                        throw new \Exception("Barcode {$barcodeValue} belongs to Store " . ($barcode->batch->store_id ?? 'Unknown') . ". This order must be fulfilled from Store " . $order->store_id);
                     }
 
                     $barcodeModels[] = $barcode;
@@ -3564,8 +3531,7 @@ class OrderController extends Controller
                 if ($orderItem->quantity == 1) {
                     $orderItem->update([
                         'product_barcode_id' => $barcodeModels[0]->id,
-                        'product_batch_id' => $barcodeModels[0]->batch_id, // Sync batch ID with physical unit chosen at scan time
-                        'cogs' => round(($barcodeModels[0]->batch?->cost_price ?? 0) * 1, 2),
+                        'product_batch_id' => $barcodeModels[0]->batch_id // Sync batch ID with physical unit
                     ]);
 
                     $barcodeModels[0]->update([
@@ -3599,14 +3565,14 @@ class OrderController extends Controller
                     $taxPerUnit = $orderItem->tax_amount / $originalQuantity;
                     $cogsPerUnit = ($orderItem->cogs ?? 0) / $originalQuantity;
 
-                    // Update first item with first barcode and its actual scanned batch
+                    // Update first item with first barcode and its batch
                     $orderItem->update([
                         'quantity' => 1,
                         'product_barcode_id' => $barcodeModels[0]->id,
-                        'product_batch_id' => $barcodeModels[0]->batch_id, // Actual physical batch chosen by scan
+                        'product_batch_id' => $barcodeModels[0]->batch_id, // Sync batch ID
                         'discount_amount' => round($discountPerUnit, 2),
                         'tax_amount' => round($taxPerUnit, 2),
-                        'cogs' => round(($barcodeModels[0]->batch?->cost_price ?? 0) * 1, 2),
+                        'cogs' => round($cogsPerUnit, 2),
                         'total_amount' => round($unitPrice - $discountPerUnit + $taxPerUnit, 2),
                     ]);
 
@@ -3642,7 +3608,7 @@ class OrderController extends Controller
                             'unit_price' => $unitPrice,
                             'discount_amount' => round($discountPerUnit, 2),
                             'tax_amount' => round($taxPerUnit, 2),
-                            'cogs' => round(($barcodeModels[$i]->batch?->cost_price ?? 0) * 1, 2),
+                            'cogs' => round($cogsPerUnit, 2),
                             'total_amount' => round($unitPrice - $discountPerUnit + $taxPerUnit, 2),
                         ]);
 
