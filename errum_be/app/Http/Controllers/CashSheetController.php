@@ -46,11 +46,13 @@ class CashSheetController extends Controller
         $requestedStoreId = $this->positiveInt($request->query('store_id'));
 
         $branchSales = $this->loadBranchSales($dateFrom, $dateTo);
+        $branchSalePresence = $this->loadBranchSalePresence($dateFrom, $dateTo);
         $branchPayments = $this->loadBranchPaymentMovements($dateFrom, $dateTo);
         $branchRefunds = $this->loadBranchRefundMovements($dateFrom, $dateTo);
         $branchCosts = $this->loadBranchCosts($dateFrom, $dateTo);
         $adminData = $this->loadAdminEntryBuckets($dateFrom, $dateTo);
         $onlineData = $this->loadOnlineBuckets($dateFrom, $dateTo);
+        $onlineSalePresence = $this->loadOnlineSalePresence($dateFrom, $dateTo);
         $ownerData = $this->loadOwnerEntryBuckets($dateFrom, $dateTo);
 
         // Store visibility is intentionally independent from the branch money
@@ -74,6 +76,13 @@ class CashSheetController extends Controller
             $dayExOn = 0.0;
             $daySalary = 0.0;
             $dayCashToBank = 0.0;
+            $dayHasBranchSaleData = false;
+            $dayHasCashData = false;
+            $dayHasBankData = false;
+            $dayHasExOnData = false;
+            $dayHasSalaryData = false;
+            $dayHasCostData = false;
+            $dayHasCashToBankData = false;
 
             foreach ($stores as $store) {
                 $sid = (int) $store->id;
@@ -98,6 +107,26 @@ class CashSheetController extends Controller
                 $salary = $this->amountAt($adminData, $sid, $date, 'salary_setaside');
                 $cashToBank = $this->amountAt($adminData, $sid, $date, 'cash_to_bank');
 
+                // Presence is tracked separately from the resulting amount. This lets
+                // the UI show 0 when records existed but netted to zero (or an order was
+                // later cancelled/soft-deleted), while keeping — for truly empty cells.
+                $hasSaleData = $this->hasAmountAt($branchSalePresence, $sid, $date, 'sale');
+                $hasCashData = $this->hasAmountAt($branchPayments, $sid, $date, 'cash')
+                    || $this->hasAmountAt($branchRefunds, $sid, $date, 'cash')
+                    || $this->hasAmountAt($branchCosts, $sid, $date, 'cash')
+                    || $this->hasAmountAt($adminData, $sid, $date, 'salary_setaside')
+                    || $this->hasAmountAt($adminData, $sid, $date, 'cash_to_bank');
+                $hasBankData = $this->hasAmountAt($branchPayments, $sid, $date, 'bank')
+                    || $this->hasAmountAt($branchRefunds, $sid, $date, 'bank')
+                    || $this->hasAmountAt($branchCosts, $sid, $date, 'bank')
+                    || $this->hasAmountAt($adminData, $sid, $date, 'cash_to_bank');
+                $hasExOnData = $this->hasAmountAt($branchPayments, $sid, $date, 'ex_on')
+                    || $this->hasAmountAt($branchRefunds, $sid, $date, 'ex_on');
+                $hasSalaryData = $this->hasAmountAt($adminData, $sid, $date, 'salary_setaside');
+                $hasCostData = $this->hasAmountAt($branchCosts, $sid, $date, 'cash')
+                    || $this->hasAmountAt($branchCosts, $sid, $date, 'bank');
+                $hasCashToBankData = $this->hasAmountAt($adminData, $sid, $date, 'cash_to_bank');
+
                 // Never clamp to zero. A negative value is a real branch cash shortage.
                 $cash = $rawCash - $salary - $cashCost - $cashToBank;
                 $bank = $rawBank - $bankCost + $cashToBank;
@@ -118,6 +147,15 @@ class CashSheetController extends Controller
                     'bank_cost' => $this->round($bankCost),
                     'cash_refunds' => $this->round($refundCash),
                     'bank_refunds' => $this->round($refundBank),
+                    'has_data' => [
+                        'daily_sale' => $hasSaleData,
+                        'cash' => $hasCashData,
+                        'bank' => $hasBankData,
+                        'ex_on' => $hasExOnData,
+                        'salary' => $hasSalaryData,
+                        'daily_cost' => $hasCostData,
+                        'cash_to_bank' => $hasCashToBankData,
+                    ],
                 ];
 
                 $branches[] = $branch;
@@ -129,6 +167,13 @@ class CashSheetController extends Controller
                 $dayExOn += $exOn;
                 $daySalary += $salary;
                 $dayCashToBank += $cashToBank;
+                $dayHasBranchSaleData = $dayHasBranchSaleData || $hasSaleData;
+                $dayHasCashData = $dayHasCashData || $hasCashData;
+                $dayHasBankData = $dayHasBankData || $hasBankData;
+                $dayHasExOnData = $dayHasExOnData || $hasExOnData;
+                $dayHasSalaryData = $dayHasSalaryData || $hasSalaryData;
+                $dayHasCostData = $dayHasCostData || $hasCostData;
+                $dayHasCashToBankData = $dayHasCashToBankData || $hasCashToBankData;
 
                 $summary['stores'][$sid]['daily_sale'] += $sale;
                 $summary['stores'][$sid]['cash'] += $cash;
@@ -139,9 +184,12 @@ class CashSheetController extends Controller
                 $summary['stores'][$sid]['cash_to_bank'] += $cashToBank;
                 $summary['stores'][$sid]['raw_cash'] += $rawCash;
                 $summary['stores'][$sid]['raw_bank'] += $rawBank;
+                foreach ($branch['has_data'] as $key => $present) {
+                    $summary['stores'][$sid]['has_data'][$key] = $summary['stores'][$sid]['has_data'][$key] || $present;
+                }
             }
 
-            $online = $this->onlineForDate($onlineData, $date);
+            $online = $this->onlineForDate($onlineData, $onlineSalePresence, $date);
             $sslzcReceived = $this->amountAt($adminData, '_global', $date, 'sslzc');
             $pathaoReceived = $this->amountAt($adminData, '_global', $date, 'pathao');
 
@@ -149,7 +197,20 @@ class CashSheetController extends Controller
             $finalBank = $bankBeforeDisbursement + $sslzcReceived + $pathaoReceived;
             $totalSale = $dayBranchSale + $online['daily_sales'];
 
-            $owner = $this->ownerForDate($ownerData, $date, $dayCash, $finalBank);
+            $hasSslzcData = $this->hasAmountAt($adminData, '_global', $date, 'sslzc');
+            $hasPathaoData = $this->hasAmountAt($adminData, '_global', $date, 'pathao');
+            $hasTotalSaleData = $dayHasBranchSaleData || ($online['has_data']['daily_sales'] ?? false);
+            $hasTotalBankData = $dayHasBankData || ($online['has_data']['advance'] ?? false);
+            $hasFinalBankData = $hasTotalBankData || $hasSslzcData || $hasPathaoData;
+
+            $owner = $this->ownerForDate(
+                $ownerData,
+                $date,
+                $dayCash,
+                $finalBank,
+                $dayHasCashData,
+                $hasFinalBankData
+            );
 
             $row = [
                 'date' => $date,
@@ -158,6 +219,10 @@ class CashSheetController extends Controller
                 'disbursements' => [
                     'sslzc_received' => $this->round($sslzcReceived),
                     'pathao_received' => $this->round($pathaoReceived),
+                    'has_data' => [
+                        'sslzc_received' => $hasSslzcData,
+                        'pathao_received' => $hasPathaoData,
+                    ],
                 ],
                 'totals' => [
                     'sale' => $this->round($totalSale),
@@ -169,6 +234,17 @@ class CashSheetController extends Controller
                     'ex_on' => $this->round($dayExOn),
                     'salary' => $this->round($daySalary),
                     'cash_to_bank' => $this->round($dayCashToBank),
+                    'has_data' => [
+                        'sale' => $hasTotalSaleData,
+                        'branch_sale' => $dayHasBranchSaleData,
+                        'cash' => $dayHasCashData,
+                        'bank' => $hasTotalBankData,
+                        'final_bank' => $hasFinalBankData,
+                        'daily_cost' => $dayHasCostData,
+                        'ex_on' => $dayHasExOnData,
+                        'salary' => $dayHasSalaryData,
+                        'cash_to_bank' => $dayHasCashToBankData,
+                    ],
                 ],
                 'owner' => $owner,
             ];
@@ -187,13 +263,21 @@ class CashSheetController extends Controller
 
             foreach (['daily_sales', 'advance', 'online_payment', 'cod', 'cod_due', 'cod_collected', 'cod_refunds', 'refunds'] as $key) {
                 $summary['online'][$key] += $online[$key] ?? 0;
+                $summary['online']['has_data'][$key] = $summary['online']['has_data'][$key] || ($online['has_data'][$key] ?? false);
             }
 
             $summary['disbursements']['sslzc_received'] += $sslzcReceived;
             $summary['disbursements']['pathao_received'] += $pathaoReceived;
+            $summary['disbursements']['has_data']['sslzc_received'] = $summary['disbursements']['has_data']['sslzc_received'] || $hasSslzcData;
+            $summary['disbursements']['has_data']['pathao_received'] = $summary['disbursements']['has_data']['pathao_received'] || $hasPathaoData;
+
+            foreach (['sale', 'branch_sale', 'cash', 'bank', 'final_bank', 'daily_cost', 'ex_on', 'salary', 'cash_to_bank'] as $key) {
+                $summary['totals']['has_data'][$key] = $summary['totals']['has_data'][$key] || ($row['totals']['has_data'][$key] ?? false);
+            }
 
             foreach (['cash_invest', 'bank_invest', 'cash_cost', 'bank_cost', 'total_cash', 'total_bank', 'cash_after_cost', 'bank_after_cost'] as $key) {
                 $summary['owner'][$key] += $owner[$key] ?? 0;
+                $summary['owner']['has_data'][$key] = $summary['owner']['has_data'][$key] || ($owner['has_data'][$key] ?? false);
             }
         }
 
@@ -509,6 +593,25 @@ class CashSheetController extends Controller
         }, []);
     }
 
+    private function loadBranchSalePresence(string $from, string $to): array
+    {
+        $dateExpr = 'DATE(o.order_date)';
+        $query = DB::table('orders as o')
+            ->select('o.store_id', DB::raw("{$dateExpr} as business_date"))
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNotNull('o.store_id')
+            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to]);
+
+        // Deliberately do not filter status or deleted_at: these rows establish
+        // that the cell had historical data even when the live sale is now zero.
+        $this->whereNotExchangeReplacement($query, 'o.metadata');
+
+        return $query->get()->reduce(function ($out, $row) {
+            $this->addAmount($out, (int) $row->store_id, $row->business_date, 'sale', 0.0);
+            return $out;
+        }, []);
+    }
+
     private function loadBranchPaymentMovements(string $from, string $to): array
     {
         $out = [];
@@ -758,6 +861,24 @@ class CashSheetController extends Controller
         return $out;
     }
 
+    private function loadOnlineSalePresence(string $from, string $to): array
+    {
+        $dateExpr = $this->businessDateSql('COALESCE(o.order_date, o.confirmed_at, o.created_at)');
+        $query = DB::table('orders as o')
+            ->select(DB::raw("{$dateExpr} as business_date"))
+            ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
+            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to]);
+
+        // As above, cancelled/refunded/soft-deleted orders still count as prior
+        // data for display purposes, without contributing to the live amount.
+        $this->whereNotExchangeReplacement($query, 'o.metadata');
+
+        return $query->get()->reduce(function ($out, $row) {
+            $this->addOnline($out, $row->business_date, 'daily_sales', 0.0);
+            return $out;
+        }, []);
+    }
+
     private function normalPaymentRows(string $from, string $to, array $orderTypes)
     {
         $dateExpr = $this->businessDateSql('COALESCE(op.payment_received_date, op.completed_at, op.processed_at, op.created_at)');
@@ -888,7 +1009,7 @@ class CashSheetController extends Controller
         }
     }
 
-    private function onlineForDate(array $onlineData, string $date): array
+    private function onlineForDate(array $onlineData, array $onlineSalePresence, string $date): array
     {
         $base = [
             'daily_sales' => 0.0,
@@ -905,10 +1026,27 @@ class CashSheetController extends Controller
             $base[$key] = $this->round((float) ($onlineData[$date][$key] ?? 0));
         }
 
+        $base['has_data'] = [];
+        foreach (array_keys($base) as $key) {
+            if ($key === 'has_data') {
+                continue;
+            }
+            $base['has_data'][$key] = $key === 'daily_sales'
+                ? $this->hasOnlineAmountAt($onlineSalePresence, $date, $key)
+                : $this->hasOnlineAmountAt($onlineData, $date, $key);
+        }
+
         return $base;
     }
 
-    private function ownerForDate(array $ownerData, string $date, float $branchCash, float $finalBank): array
+    private function ownerForDate(
+        array $ownerData,
+        string $date,
+        float $branchCash,
+        float $finalBank,
+        bool $hasBranchCashData,
+        bool $hasFinalBankData
+    ): array
     {
         $cashInvest = $this->amountAt($ownerData, 'owner', $date, 'cash_invest');
         $bankInvest = $this->amountAt($ownerData, 'owner', $date, 'bank_invest');
@@ -917,6 +1055,13 @@ class CashSheetController extends Controller
 
         $totalCash = $branchCash + $cashInvest;
         $totalBank = $finalBank + $bankInvest;
+
+        $hasCashInvestData = $this->hasAmountAt($ownerData, 'owner', $date, 'cash_invest');
+        $hasBankInvestData = $this->hasAmountAt($ownerData, 'owner', $date, 'bank_invest');
+        $hasCashCostData = $this->hasAmountAt($ownerData, 'owner', $date, 'cash_cost');
+        $hasBankCostData = $this->hasAmountAt($ownerData, 'owner', $date, 'bank_cost');
+        $hasTotalCashData = $hasBranchCashData || $hasCashInvestData;
+        $hasTotalBankData = $hasFinalBankData || $hasBankInvestData;
 
         return [
             'cash_invest' => $this->round($cashInvest),
@@ -927,6 +1072,16 @@ class CashSheetController extends Controller
             'total_bank' => $this->round($totalBank),
             'cash_after_cost' => $this->round($totalCash - $cashCost),
             'bank_after_cost' => $this->round($totalBank - $bankCost),
+            'has_data' => [
+                'cash_invest' => $hasCashInvestData,
+                'bank_invest' => $hasBankInvestData,
+                'cash_cost' => $hasCashCostData,
+                'bank_cost' => $hasBankCostData,
+                'total_cash' => $hasTotalCashData,
+                'total_bank' => $hasTotalBankData,
+                'cash_after_cost' => $hasTotalCashData || $hasCashCostData,
+                'bank_after_cost' => $hasTotalBankData || $hasBankCostData,
+            ],
         ];
     }
 
@@ -943,6 +1098,17 @@ class CashSheetController extends Controller
                 'ex_on' => 0.0,
                 'salary' => 0.0,
                 'cash_to_bank' => 0.0,
+                'has_data' => [
+                    'sale' => false,
+                    'branch_sale' => false,
+                    'cash' => false,
+                    'bank' => false,
+                    'final_bank' => false,
+                    'daily_cost' => false,
+                    'ex_on' => false,
+                    'salary' => false,
+                    'cash_to_bank' => false,
+                ],
             ],
             'online' => [
                 'daily_sales' => 0.0,
@@ -953,10 +1119,24 @@ class CashSheetController extends Controller
                 'cod_collected' => 0.0,
                 'cod_refunds' => 0.0,
                 'refunds' => 0.0,
+                'has_data' => [
+                    'daily_sales' => false,
+                    'advance' => false,
+                    'online_payment' => false,
+                    'cod' => false,
+                    'cod_due' => false,
+                    'cod_collected' => false,
+                    'cod_refunds' => false,
+                    'refunds' => false,
+                ],
             ],
             'disbursements' => [
                 'sslzc_received' => 0.0,
                 'pathao_received' => 0.0,
+                'has_data' => [
+                    'sslzc_received' => false,
+                    'pathao_received' => false,
+                ],
             ],
             'owner' => [
                 'cash_invest' => 0.0,
@@ -967,6 +1147,16 @@ class CashSheetController extends Controller
                 'total_bank' => 0.0,
                 'cash_after_cost' => 0.0,
                 'bank_after_cost' => 0.0,
+                'has_data' => [
+                    'cash_invest' => false,
+                    'bank_invest' => false,
+                    'cash_cost' => false,
+                    'bank_cost' => false,
+                    'total_cash' => false,
+                    'total_bank' => false,
+                    'cash_after_cost' => false,
+                    'bank_after_cost' => false,
+                ],
             ],
             'stores' => [],
         ];
@@ -984,6 +1174,15 @@ class CashSheetController extends Controller
                 'cash_to_bank' => 0.0,
                 'raw_cash' => 0.0,
                 'raw_bank' => 0.0,
+                'has_data' => [
+                    'daily_sale' => false,
+                    'cash' => false,
+                    'bank' => false,
+                    'ex_on' => false,
+                    'salary' => false,
+                    'daily_cost' => false,
+                    'cash_to_bank' => false,
+                ],
             ];
         }
 
@@ -994,7 +1193,9 @@ class CashSheetController extends Controller
     {
         foreach (['totals', 'online', 'disbursements', 'owner'] as $section) {
             foreach ($summary[$section] as $key => $value) {
-                $summary[$section][$key] = $this->round((float) $value);
+                if (is_numeric($value)) {
+                    $summary[$section][$key] = $this->round((float) $value);
+                }
             }
         }
 
@@ -1049,6 +1250,17 @@ class CashSheetController extends Controller
     private function amountAt(array $out, int|string $storeKey, string $date, string $bucket): float
     {
         return (float) ($out[$storeKey][$date][$bucket] ?? 0);
+    }
+
+    private function hasAmountAt(array $out, int|string $storeKey, string $date, string $bucket): bool
+    {
+        return isset($out[$storeKey][$date])
+            && array_key_exists($bucket, $out[$storeKey][$date]);
+    }
+
+    private function hasOnlineAmountAt(array $out, string $date, string $bucket): bool
+    {
+        return isset($out[$date]) && array_key_exists($bucket, $out[$date]);
     }
 
     private function isCashMethod(object $row): bool

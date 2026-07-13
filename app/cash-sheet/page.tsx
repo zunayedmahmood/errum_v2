@@ -72,85 +72,101 @@ function branchForStore(branches: CashSheetBranchDay[], storeId: number): CashSh
     bank_cost: 0,
     cash_refunds: 0,
     bank_refunds: 0,
+    has_data: {},
   };
 }
 
+function hasData(section: any, key: string, fallback = false): boolean {
+  const value = section?.has_data?.[key];
+  return typeof value === 'boolean' ? value : fallback;
+}
+
 function dayHasCashActivity(row: any): boolean {
-  return (row.branches || []).some((b: any) => 
+  const legacy = (row.branches || []).some((b: any) => 
     Number(b.raw_cash || 0) !== 0 || 
     Number(b.cash_refunds || 0) !== 0 || 
     Number(b.salary || 0) !== 0 || 
     Number(b.cash_cost || 0) !== 0 || 
     Number(b.cash_to_bank || 0) !== 0
   ) || Number(row.totals.cash || 0) !== 0;
+  return hasData(row.totals, 'cash', legacy);
 }
 
 function dayHasBankActivity(row: any): boolean {
-  return (row.branches || []).some((b: any) => 
+  const legacy = (row.branches || []).some((b: any) => 
     Number(b.raw_bank || 0) !== 0 || 
     Number(b.bank_refunds || 0) !== 0 || 
     Number(b.bank_cost || 0) !== 0 || 
     Number(b.cash_to_bank || 0) !== 0
   ) || Number(row.totals.bank || 0) !== 0;
+  return hasData(row.totals, 'bank', legacy);
 }
 
 function dayHasFinalBankActivity(row: any): boolean {
-  return dayHasBankActivity(row) || 
+  const legacy = dayHasBankActivity(row) || 
     Number(row.online.online_payment || 0) !== 0 || 
     Number(row.online.advance || 0) !== 0 || 
     Number(row.disbursements.sslzc_received || 0) !== 0 || 
     Number(row.disbursements.pathao_received || 0) !== 0;
+  return hasData(row.totals, 'final_bank', legacy);
 }
 
 function dayHasOwnerCashActivity(row: any): boolean {
-  return Number(row.owner.cash_invest || 0) !== 0 || 
+  const legacy = Number(row.owner.cash_invest || 0) !== 0 || 
     Number(row.owner.cash_cost || 0) !== 0 || 
     dayHasCashActivity(row);
+  return hasData(row.owner, 'cash_after_cost', legacy);
 }
 
 function dayHasOwnerBankActivity(row: any): boolean {
-  return Number(row.owner.bank_invest || 0) !== 0 || 
+  const legacy = Number(row.owner.bank_invest || 0) !== 0 || 
     Number(row.owner.bank_cost || 0) !== 0 || 
     dayHasBankActivity(row);
+  return hasData(row.owner, 'bank_after_cost', legacy);
 }
 
 function summaryHasCashActivity(summary: any): boolean {
-  return (summary.stores || []).some((s: any) => 
+  const legacy = (summary.stores || []).some((s: any) => 
     Number(s.raw_cash || 0) !== 0 || 
     Number(s.cash_refunds || 0) !== 0 || 
     Number(s.salary || 0) !== 0 || 
     Number(s.cash_cost || 0) !== 0 || 
     Number(s.cash_to_bank || 0) !== 0
   ) || Number(summary.totals.cash || 0) !== 0;
+  return hasData(summary.totals, 'cash', legacy);
 }
 
 function summaryHasBankActivity(summary: any): boolean {
-  return (summary.stores || []).some((s: any) => 
+  const legacy = (summary.stores || []).some((s: any) => 
     Number(s.raw_bank || 0) !== 0 || 
     Number(s.bank_refunds || 0) !== 0 || 
     Number(s.bank_cost || 0) !== 0 || 
     Number(s.cash_to_bank || 0) !== 0
   ) || Number(summary.totals.bank || 0) !== 0;
+  return hasData(summary.totals, 'bank', legacy);
 }
 
 function summaryHasFinalBankActivity(summary: any): boolean {
-  return summaryHasBankActivity(summary) || 
+  const legacy = summaryHasBankActivity(summary) || 
     Number(summary.online.online_payment || 0) !== 0 || 
     Number(summary.online.advance || 0) !== 0 || 
     Number(summary.disbursements.sslzc_received || 0) !== 0 || 
     Number(summary.disbursements.pathao_received || 0) !== 0;
+  return hasData(summary.totals, 'final_bank', legacy);
 }
 
 function summaryHasOwnerCashActivity(summary: any): boolean {
-  return Number(summary.owner.cash_invest || 0) !== 0 || 
+  const legacy = Number(summary.owner.cash_invest || 0) !== 0 || 
     Number(summary.owner.cash_cost || 0) !== 0 || 
     summaryHasCashActivity(summary);
+  return hasData(summary.owner, 'cash_after_cost', legacy);
 }
 
 function summaryHasOwnerBankActivity(summary: any): boolean {
-  return Number(summary.owner.bank_invest || 0) !== 0 || 
+  const legacy = Number(summary.owner.bank_invest || 0) !== 0 || 
     Number(summary.owner.bank_cost || 0) !== 0 || 
     summaryHasBankActivity(summary);
+  return hasData(summary.owner, 'bank_after_cost', legacy);
 }
 
 export default function MonthlyCashSheetPage() {
@@ -306,13 +322,13 @@ export default function MonthlyCashSheetPage() {
                               <FragmentCells key={`${row.date}-${store.id}`} b={b} />
                             );
                           })}
-                          <MoneyCell value={row.online.daily_sales} showZero={row.online.daily_sales !== 0} />
-                          <MoneyCell value={row.online.advance} showZero={row.online.advance !== 0} />
-                          <MoneyCell value={row.online.online_payment} showZero={row.online.online_payment !== 0} />
-                          <MoneyCell value={row.online.cod} showZero={row.online.cod !== 0} />
-                          <MoneyCell value={row.disbursements.sslzc_received} showZero={row.disbursements.sslzc_received !== 0} />
-                          <MoneyCell value={row.disbursements.pathao_received} showZero={row.disbursements.pathao_received !== 0} />
-                          <MoneyCell value={row.totals.sale} bold showZero={row.totals.sale !== 0} />
+                          <MoneyCell value={row.online.daily_sales} showZero={hasData(row.online, 'daily_sales', row.online.daily_sales !== 0)} />
+                          <MoneyCell value={row.online.advance} showZero={hasData(row.online, 'advance', row.online.advance !== 0)} />
+                          <MoneyCell value={row.online.online_payment} showZero={hasData(row.online, 'online_payment', row.online.online_payment !== 0)} />
+                          <MoneyCell value={row.online.cod} showZero={hasData(row.online, 'cod', row.online.cod !== 0)} />
+                          <MoneyCell value={row.disbursements.sslzc_received} showZero={hasData(row.disbursements, 'sslzc_received', row.disbursements.sslzc_received !== 0)} />
+                          <MoneyCell value={row.disbursements.pathao_received} showZero={hasData(row.disbursements, 'pathao_received', row.disbursements.pathao_received !== 0)} />
+                          <MoneyCell value={row.totals.sale} bold showZero={hasData(row.totals, 'sale', row.totals.sale !== 0)} />
                           <MoneyCell value={row.totals.cash} bold showZero={dayHasCashActivity(row)} />
                           <MoneyCell value={row.totals.bank} bold showZero={dayHasBankActivity(row)} />
                           <MoneyCell value={row.totals.final_bank} bold showZero={dayHasFinalBankActivity(row)} />
@@ -328,13 +344,13 @@ export default function MonthlyCashSheetPage() {
                           const b = sheet.summary.stores.find((s) => s.store_id === store.id);
                           return <FragmentCells key={`sum-${store.id}`} b={b || branchForStore([], store.id)} />;
                         })}
-                        <MoneyCell value={sheet.summary.online.daily_sales} bold showZero={sheet.summary.online.daily_sales !== 0} />
-                        <MoneyCell value={sheet.summary.online.advance} bold showZero={sheet.summary.online.advance !== 0} />
-                        <MoneyCell value={sheet.summary.online.online_payment} bold showZero={sheet.summary.online.online_payment !== 0} />
-                        <MoneyCell value={sheet.summary.online.cod} bold showZero={sheet.summary.online.cod !== 0} />
-                        <MoneyCell value={sheet.summary.disbursements.sslzc_received} bold showZero={sheet.summary.disbursements.sslzc_received !== 0} />
-                        <MoneyCell value={sheet.summary.disbursements.pathao_received} bold showZero={sheet.summary.disbursements.pathao_received !== 0} />
-                        <MoneyCell value={sheet.summary.totals.sale} bold showZero={sheet.summary.totals.sale !== 0} />
+                        <MoneyCell value={sheet.summary.online.daily_sales} bold showZero={hasData(sheet.summary.online, 'daily_sales', sheet.summary.online.daily_sales !== 0)} />
+                        <MoneyCell value={sheet.summary.online.advance} bold showZero={hasData(sheet.summary.online, 'advance', sheet.summary.online.advance !== 0)} />
+                        <MoneyCell value={sheet.summary.online.online_payment} bold showZero={hasData(sheet.summary.online, 'online_payment', sheet.summary.online.online_payment !== 0)} />
+                        <MoneyCell value={sheet.summary.online.cod} bold showZero={hasData(sheet.summary.online, 'cod', sheet.summary.online.cod !== 0)} />
+                        <MoneyCell value={sheet.summary.disbursements.sslzc_received} bold showZero={hasData(sheet.summary.disbursements, 'sslzc_received', sheet.summary.disbursements.sslzc_received !== 0)} />
+                        <MoneyCell value={sheet.summary.disbursements.pathao_received} bold showZero={hasData(sheet.summary.disbursements, 'pathao_received', sheet.summary.disbursements.pathao_received !== 0)} />
+                        <MoneyCell value={sheet.summary.totals.sale} bold showZero={hasData(sheet.summary.totals, 'sale', sheet.summary.totals.sale !== 0)} />
                         <MoneyCell value={sheet.summary.totals.cash} bold showZero={summaryHasCashActivity(sheet.summary)} />
                         <MoneyCell value={sheet.summary.totals.bank} bold showZero={summaryHasBankActivity(sheet.summary)} />
                         <MoneyCell value={sheet.summary.totals.final_bank} bold showZero={summaryHasFinalBankActivity(sheet.summary)} />
@@ -383,23 +399,25 @@ function FragmentHeader() {
 }
 
 function FragmentCells({ b }: { b: Partial<CashSheetBranchDay> }) {
-  const hasSaleActivity = Number(b.daily_sale || 0) !== 0;
+  const hasSaleActivity = hasData(b, 'daily_sale', Number(b.daily_sale || 0) !== 0);
 
-  const hasCashActivity = Number(b.raw_cash || 0) !== 0 || 
+  const legacyCashActivity = Number(b.raw_cash || 0) !== 0 || 
     Number(b.cash_refunds || 0) !== 0 || 
     Number(b.salary || 0) !== 0 || 
     Number(b.cash_cost || 0) !== 0 || 
     Number(b.cash_to_bank || 0) !== 0;
+  const hasCashActivity = hasData(b, 'cash', legacyCashActivity);
 
-  const hasBankActivity = Number(b.raw_bank || 0) !== 0 || 
+  const legacyBankActivity = Number(b.raw_bank || 0) !== 0 || 
     Number(b.bank_refunds || 0) !== 0 || 
     Number(b.bank_cost || 0) !== 0 || 
     Number(b.cash_to_bank || 0) !== 0;
+  const hasBankActivity = hasData(b, 'bank', legacyBankActivity);
 
-  const hasExOnActivity = Number(b.ex_on || 0) !== 0;
-  const hasSalaryActivity = Number(b.salary || 0) !== 0;
-  const hasCostActivity = Number(b.cash_cost || 0) !== 0 || Number(b.bank_cost || 0) !== 0;
-  const hasCashToBankActivity = Number(b.cash_to_bank || 0) !== 0;
+  const hasExOnActivity = hasData(b, 'ex_on', Number(b.ex_on || 0) !== 0);
+  const hasSalaryActivity = hasData(b, 'salary', Number(b.salary || 0) !== 0);
+  const hasCostActivity = hasData(b, 'daily_cost', Number(b.cash_cost || 0) !== 0 || Number(b.bank_cost || 0) !== 0);
+  const hasCashToBankActivity = hasData(b, 'cash_to_bank', Number(b.cash_to_bank || 0) !== 0);
 
   return (
     <>

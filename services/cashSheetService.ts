@@ -13,6 +13,8 @@ export interface EmployeeLite {
   name: string;
 }
 
+export type CashSheetPresence = Record<string, boolean>;
+
 export interface CashSheetBranchDay {
   store_id: number;
   store_name: string;
@@ -29,6 +31,7 @@ export interface CashSheetBranchDay {
   bank_cost: number;
   cash_refunds: number;
   bank_refunds: number;
+  has_data: CashSheetPresence;
 }
 
 export interface CashSheetOnlineDay {
@@ -40,11 +43,13 @@ export interface CashSheetOnlineDay {
   cod_collected: number;
   cod_refunds: number;
   refunds: number;
+  has_data: CashSheetPresence;
 }
 
 export interface CashSheetDisbursementDay {
   sslzc_received: number;
   pathao_received: number;
+  has_data: CashSheetPresence;
 }
 
 export interface CashSheetTotalsDay {
@@ -57,6 +62,7 @@ export interface CashSheetTotalsDay {
   ex_on: number;
   salary: number;
   cash_to_bank: number;
+  has_data: CashSheetPresence;
 }
 
 export interface CashSheetOwnerDay {
@@ -68,6 +74,7 @@ export interface CashSheetOwnerDay {
   total_bank: number;
   cash_after_cost: number;
   bank_after_cost: number;
+  has_data: CashSheetPresence;
 }
 
 export interface CashSheetDayRow {
@@ -165,6 +172,13 @@ export interface DayEntries {
 
 const num = (value: unknown): number => Number(value ?? 0) || 0;
 
+function normalizePresence(value: any): CashSheetPresence {
+  if (!value || typeof value !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(value).map(([key, present]) => [key, Boolean(present)])
+  );
+}
+
 function normalizeStore(store: any): StoreLite | undefined {
   if (!store) return undefined;
   return {
@@ -201,6 +215,7 @@ function normalizeBranchDay(row: any): CashSheetBranchDay {
     bank_cost: num(row?.bank_cost),
     cash_refunds: num(row?.cash_refunds),
     bank_refunds: num(row?.bank_refunds),
+    has_data: normalizePresence(row?.has_data),
   };
 }
 
@@ -214,6 +229,7 @@ function normalizeOnline(row: any): CashSheetOnlineDay {
     cod_collected: num(row?.cod_collected),
     cod_refunds: num(row?.cod_refunds),
     refunds: num(row?.refunds),
+    has_data: normalizePresence(row?.has_data),
   };
 }
 
@@ -221,6 +237,7 @@ function normalizeDisbursements(row: any): CashSheetDisbursementDay {
   return {
     sslzc_received: num(row?.sslzc_received),
     pathao_received: num(row?.pathao_received),
+    has_data: normalizePresence(row?.has_data),
   };
 }
 
@@ -235,6 +252,7 @@ function normalizeTotals(row: any): CashSheetTotalsDay {
     ex_on: num(row?.ex_on),
     salary: num(row?.salary),
     cash_to_bank: num(row?.cash_to_bank),
+    has_data: normalizePresence(row?.has_data),
   };
 }
 
@@ -248,6 +266,7 @@ function normalizeOwner(row: any): CashSheetOwnerDay {
     total_bank: num(row?.total_bank),
     cash_after_cost: num(row?.cash_after_cost),
     bank_after_cost: num(row?.bank_after_cost),
+    has_data: normalizePresence(row?.has_data),
   };
 }
 
