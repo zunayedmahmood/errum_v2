@@ -14,19 +14,33 @@ import Toast from '@/components/Toast';
 type UserOption = { id: number; name: string; email?: string };
 
 const CATEGORY_OPTIONS: Array<{ value: BusinessHistoryCategory; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'orders', label: 'Orders' },
-  { value: 'product-dispatches', label: 'Product Dispatches' },
+  { value: 'all', label: 'All Activities' },
+  { value: 'orders', label: 'All Order Types' },
   { value: 'purchase-orders', label: 'Purchase Orders' },
+  { value: 'product-dispatches', label: 'Product Dispatches' },
+  { value: 'returns-exchanges', label: 'Returns & Exchanges' },
+  { value: 'service-orders', label: 'Service Orders' },
+  { value: 'shipments', label: 'Shipments' },
   { value: 'store-assignments', label: 'Store Assignments' },
-  { value: 'products', label: 'Products' },
+  { value: 'products', label: 'Products & Inventory' },
+  { value: 'other', label: 'Other Activities' },
 ];
 
 const EVENT_OPTIONS = [
-  { value: '', label: 'Any' },
+  { value: '', label: 'Any Action' },
   { value: 'created', label: 'Created' },
-  { value: 'updated', label: 'Updated' },
+  { value: 'updated', label: 'Edited (record)' },
   { value: 'deleted', label: 'Deleted' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'received', label: 'Received' },
+  { value: 'dispatched', label: 'Dispatched' },
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'returned', label: 'Returned' },
+  { value: 'exchanged', label: 'Exchanged' },
+  { value: 'fulfilled', label: 'Fulfilled' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'assigned', label: 'Assigned' },
 ];
 
 function toYmd(d: Date) {
@@ -119,9 +133,13 @@ export default function ActivityLogsClient() {
         e.what?.description,
         e.what?.action,
         e.subject?.type,
+        e.subject?.label,
+        e.subject?.identifier,
         e.category,
         e.who?.name,
         e.who?.email,
+        JSON.stringify(e.what?.changes || {}),
+        JSON.stringify(e.what?.request_data || {}),
       ]
         .filter(Boolean)
         .join(' ')

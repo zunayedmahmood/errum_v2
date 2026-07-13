@@ -217,7 +217,7 @@ class CashSheetController extends Controller
             'summary' => $summary,
             'rules' => [
                 'model' => 'live_aggregation',
-                'sales_date' => 'order_date > confirmed_at > created_at',
+                'sales_date' => 'branch Sale uses the exact order_date day without created_at fallback or timezone shifting',
                 'payment_date' => 'payment_received_date > completed_at > processed_at > created_at',
                 'cash_can_be_negative' => true,
                 'cancelled_order_payments_stay_visible' => true,
@@ -486,7 +486,11 @@ class CashSheetController extends Controller
 
     private function loadBranchSales(string $from, string $to): array
     {
-        $dateExpr = $this->businessDateSql('o.order_date');
+        // The branch Sale column must follow the exact order-selected business day.
+        // order_date is already stored as the trusted POS/offline sale datetime, so
+        // applying the cash-sheet UTC offset here can incorrectly move late orders
+        // into the following date.
+        $dateExpr = 'DATE(o.order_date)';
 
         $query = DB::table('orders as o')
             ->select('o.store_id', DB::raw("{$dateExpr} as business_date"), DB::raw('SUM(o.total_amount) as total'))

@@ -57,7 +57,7 @@ export default function ActivityLogPanel({
     // otherwise older orders will appear to have “no activity”.
     start.setDate(start.getDate() - 7);
     // Map legacy "module" to a business-history category. If it doesn't match, fall back to 'all'.
-    const cat = (['product-dispatches','orders','purchase-orders','store-assignments','products'] as const).includes(module as any)
+    const cat = (['product-dispatches','orders','purchase-orders','store-assignments','products','returns-exchanges','service-orders','shipments'] as const).includes(module as any)
       ? (module as BusinessHistoryCategory)
       : 'all';
 

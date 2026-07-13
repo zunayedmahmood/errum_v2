@@ -95,6 +95,26 @@ class ActivityLogController extends Controller
             $query->where('log_name', $request->log_name);
         }
 
+        // Business category filter. New logs carry properties.category; the
+        // subject type fallback keeps historical logs visible as well.
+        if ($request->filled('category') && $request->category !== 'all') {
+            $category = $request->category;
+            $subjectTypes = $this->subjectTypesForCategory($category);
+            $query->where(function ($q) use ($category, $subjectTypes) {
+                $q->whereJsonContains('properties->category', $category);
+
+                if ($category === 'store-assignments') {
+                    $q->orWhere(function ($assignmentQ) {
+                        $assignmentQ->where('subject_type', 'App\Models\Order')
+                            ->where('event', 'updated')
+                            ->whereRaw("JSON_EXTRACT(properties, '$.attributes.store_id') IS NOT NULL");
+                    });
+                } elseif ($subjectTypes) {
+                    $q->orWhereIn('subject_type', $subjectTypes);
+                }
+            });
+        }
+
         // Date range filter
         if ($request->filled('date_from')) {
             $query->whereDate('created_at', '>=', $request->date_from);
@@ -124,65 +144,10 @@ class ActivityLogController extends Controller
         $perPage = $request->get('per_page', 50);
         $paginatedLogs = $query->paginate($perPage);
 
-        // Transform data for better FE consumption
+        // Transform data into a human-readable, stable frontend contract.
         $transformedItems = collect($paginatedLogs->items())->map(function ($log) {
-            // Safely get properties (handle null/empty cases)
-            $properties = $log->properties ?? collect([]);
-                
-                return [
-                    'id' => $log->id,
-                    'event' => $log->event,
-                    'description' => $log->description,
-                    'log_name' => $log->log_name,
-                    
-                    // Subject (WHAT was changed)
-                    'subject' => [
-                        'type' => $log->subject_type ? class_basename($log->subject_type) : null,
-                        'full_type' => $log->subject_type,
-                        'id' => $log->subject_id,
-                        'data' => $log->subject,  // The actual model instance (if not deleted)
-                    ],
-                    
-                    // Causer (WHO made the change)
-                    'causer' => [
-                        'type' => $log->causer_type ? class_basename($log->causer_type) : null,
-                        'full_type' => $log->causer_type,
-                        'id' => $log->causer_id,
-                        'name' => $log->causer ? ($log->causer->name ?? $log->causer->email ?? 'Unknown') : 'System',
-                    ],
-                    
-                    // Changes (WHAT changed)
-                    'changes' => [
-                        'attributes' => $properties instanceof \Illuminate\Support\Collection 
-                            ? $properties->get('attributes', []) 
-                            : ($properties['attributes'] ?? []),
-                        'old' => $properties instanceof \Illuminate\Support\Collection 
-                            ? $properties->get('old', []) 
-                            : ($properties['old'] ?? []),
-                    ],
-                    
-                    // Metadata
-                    'metadata' => [
-                        'ip_address' => $properties instanceof \Illuminate\Support\Collection 
-                            ? $properties->get('ip_address') 
-                            : ($properties['ip_address'] ?? null),
-                        'user_agent' => $properties instanceof \Illuminate\Support\Collection 
-                            ? $properties->get('user_agent') 
-                            : ($properties['user_agent'] ?? null),
-                        'url' => $properties instanceof \Illuminate\Support\Collection 
-                            ? $properties->get('url') 
-                            : ($properties['url'] ?? null),
-                        'method' => $properties instanceof \Illuminate\Support\Collection 
-                            ? $properties->get('method') 
-                            : ($properties['method'] ?? null),
-                    ],
-                    
-                    // WHEN
-                    'created_at' => $log->created_at ? $log->created_at->toIso8601String() : null,
-                    'created_at_human' => $log->created_at ? $log->created_at->diffForHumans() : null,
-                    'created_at_formatted' => $log->created_at ? $log->created_at->format('Y-m-d H:i:s') : null,
-                ];
-            });
+            return $this->formatForFrontend($log);
+        });
 
         // Rebuild pagination with transformed items
         $logs = new \Illuminate\Pagination\LengthAwarePaginator(
@@ -564,6 +529,284 @@ class ActivityLogController extends Controller
     }
 
     /**
+     * Convert an activity row into a readable audit record.
+     */
+    private function formatForFrontend(Activity $log): array
+    {
+        $properties = $this->propertiesToArray($log->properties);
+        $old = $this->arrayValue($properties, 'old');
+        $attributes = $this->arrayValue($properties, 'attributes');
+        $fieldChanges = $log->event === 'updated'
+            ? $this->buildFieldChanges($old, $attributes)
+            : [];
+        $subjectType = $log->subject_type ? class_basename($log->subject_type) : null;
+        $category = $properties['category'] ?? $this->categoryFromSubject($subjectType, $log->log_name);
+        $identifier = $properties['subject_identifier'] ?? $this->subjectIdentifier($log->subject, $log->subject_id);
+        $action = $properties['business_action'] ?? $this->deriveBusinessAction($log->event, $old, $attributes);
+        $subjectLabel = $properties['subject_label'] ?? $this->humanize($subjectType ?: $log->log_name ?: 'Record');
+        $description = $this->readableDescription($log->description, $action, $subjectLabel, $identifier, $old, $attributes);
+
+        return [
+            'id' => $log->id,
+            'event' => $log->event,
+            'description' => $description,
+            'log_name' => $log->log_name,
+            'category' => $category,
+
+            'subject' => [
+                'type' => $subjectType,
+                'full_type' => $log->subject_type,
+                'id' => $log->subject_id,
+                'label' => $subjectLabel,
+                'identifier' => $identifier,
+                'data' => $this->subjectSnapshot($log->subject),
+            ],
+
+            'causer' => [
+                'type' => $log->causer_type ? class_basename($log->causer_type) : null,
+                'full_type' => $log->causer_type,
+                'id' => $log->causer_id,
+                'name' => $log->causer ? ($log->causer->name ?? $log->causer->email ?? 'Unknown') : 'System',
+                'email' => $log->causer->email ?? null,
+            ],
+
+            'changes' => [
+                'attributes' => $attributes,
+                'old' => $old,
+                'field_changes' => $fieldChanges,
+            ],
+
+            'presentation' => [
+                'action' => $action,
+                'action_label' => $this->humanize($action),
+                'summary' => $description,
+                'subject_label' => $subjectLabel,
+                'identifier' => $identifier,
+                'fields_changed' => array_keys($fieldChanges),
+                'field_changes' => $fieldChanges,
+            ],
+
+            'details' => [
+                'request_data' => $properties['request_data'] ?? [],
+                'route_parameters' => $properties['route_parameters'] ?? [],
+                'response_status' => $properties['response_status'] ?? null,
+                'successful' => $properties['successful'] ?? null,
+                'duration_ms' => $properties['duration_ms'] ?? null,
+                'controller' => $properties['controller'] ?? null,
+                'controller_action' => $properties['controller_action'] ?? null,
+            ],
+
+            'metadata' => [
+                'ip_address' => $properties['ip_address'] ?? null,
+                'user_agent' => $properties['user_agent'] ?? null,
+                'url' => $properties['url'] ?? null,
+                'method' => $properties['method'] ?? null,
+                'route' => $properties['route'] ?? null,
+                'route_name' => $properties['route_name'] ?? null,
+            ],
+
+            'created_at' => $log->created_at?->toIso8601String(),
+            'created_at_human' => $log->created_at?->diffForHumans(),
+            'created_at_formatted' => $log->created_at?->format('Y-m-d H:i:s'),
+        ];
+    }
+
+    private function propertiesToArray($properties): array
+    {
+        if ($properties instanceof \Illuminate\Support\Collection) {
+            return $properties->toArray();
+        }
+        if (is_array($properties)) {
+            return $properties;
+        }
+        if ($properties instanceof \JsonSerializable) {
+            $value = $properties->jsonSerialize();
+            return is_array($value) ? $value : [];
+        }
+        return [];
+    }
+
+    private function arrayValue(array $properties, string $key): array
+    {
+        $value = $properties[$key] ?? [];
+        if ($value instanceof \Illuminate\Support\Collection) {
+            return $value->toArray();
+        }
+        return is_array($value) ? $value : (array) $value;
+    }
+
+    private function buildFieldChanges(array $old, array $attributes): array
+    {
+        $changes = [];
+        foreach (array_unique(array_merge(array_keys($old), array_keys($attributes))) as $field) {
+            $from = $old[$field] ?? null;
+            $to = $attributes[$field] ?? null;
+            if ($this->normalizeComparable($from) !== $this->normalizeComparable($to)) {
+                $changes[$field] = ['from' => $from, 'to' => $to];
+            }
+        }
+        return $changes;
+    }
+
+    private function normalizeComparable($value): string
+    {
+        if (is_array($value)) {
+            ksort($value);
+            return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+        if ($value === null) {
+            return 'null';
+        }
+        return (string) $value;
+    }
+
+    private function deriveBusinessAction(?string $event, array $old, array $attributes): string
+    {
+        if ($event === 'updated' && array_key_exists('status', $attributes)) {
+            $status = strtolower((string) $attributes['status']);
+            return match ($status) {
+                'approved' => 'approved',
+                'received', 'fully_received', 'partially_received' => 'received',
+                'dispatched', 'shipped', 'in_transit' => 'dispatched',
+                'delivered' => 'delivered',
+                'cancelled', 'canceled' => 'cancelled',
+                'rejected' => 'rejected',
+                'returned' => 'returned',
+                'exchanged', 'exchange_completed' => 'exchanged',
+                'completed' => 'completed',
+                'fulfilled' => 'fulfilled',
+                'refunded' => 'refunded',
+                default => 'status_changed',
+            };
+        }
+
+        if ($event === 'updated' && array_key_exists('store_id', $attributes)) {
+            return 'assigned';
+        }
+
+        return match ($event) {
+            'created' => 'created',
+            'updated' => 'edited',
+            'deleted' => 'deleted',
+            'restored' => 'restored',
+            default => $event ?: 'changed',
+        };
+    }
+
+    private function readableDescription(?string $stored, string $action, string $subjectLabel, ?string $identifier, array $old, array $attributes): string
+    {
+        $stored = trim((string) $stored);
+        $isGeneric = $stored === '' || preg_match('/^(Created|Updated|Deleted) [A-Za-z ]+(?:\:|$)/', $stored);
+        if (!$isGeneric && !str_contains($stored, '{') && !str_contains($stored, '[')) {
+            return $stored;
+        }
+
+        $verb = match ($action) {
+            'created' => 'Created',
+            'edited' => 'Edited',
+            'deleted' => 'Deleted',
+            'approved' => 'Approved',
+            'received' => 'Received',
+            'dispatched' => 'Dispatched',
+            'delivered' => 'Delivered',
+            'cancelled' => 'Cancelled',
+            'rejected' => 'Rejected',
+            'returned' => 'Returned',
+            'exchanged' => 'Processed exchange for',
+            'completed' => 'Completed',
+            'fulfilled' => 'Fulfilled',
+            'refunded' => 'Refunded',
+            'assigned' => 'Assigned',
+            'status_changed' => 'Changed status for',
+            default => $this->humanize($action),
+        };
+
+        $description = trim($verb . ' ' . $subjectLabel . ($identifier ? ': ' . $identifier : ''));
+        if (isset($old['status'], $attributes['status']) && $old['status'] !== $attributes['status']) {
+            $description .= ' (' . $this->humanize($old['status']) . ' → ' . $this->humanize($attributes['status']) . ')';
+        }
+        return $description;
+    }
+
+    private function subjectIdentifier($subject, $subjectId): ?string
+    {
+        if ($subject) {
+            foreach (['order_number', 'po_number', 'dispatch_number', 'return_number', 'service_order_number', 'shipment_number', 'invoice_number', 'barcode', 'sku', 'name', 'title'] as $field) {
+                $value = $subject->{$field} ?? null;
+                if ($value !== null && $value !== '') {
+                    return (string) $value;
+                }
+            }
+        }
+        return $subjectId ? '#' . $subjectId : null;
+    }
+
+    private function subjectSnapshot($subject): array
+    {
+        if (!$subject) {
+            return [];
+        }
+
+        $data = method_exists($subject, 'toArray') ? $subject->toArray() : (array) $subject;
+        $hidden = ['password', 'remember_token', 'api_token', 'access_token', 'pathao_response', 'metadata', 'status_history', 'payment_history'];
+        $snapshot = [];
+        foreach ($data as $key => $value) {
+            if (in_array($key, $hidden, true)) {
+                continue;
+            }
+            if (count($snapshot) >= 35) {
+                break;
+            }
+            $snapshot[$key] = $value;
+        }
+        return $snapshot;
+    }
+
+    private function categoryFromSubject(?string $subjectType, ?string $logName): string
+    {
+        $name = strtolower(($subjectType ?? '') . ' ' . ($logName ?? ''));
+        return match (true) {
+            str_contains($name, 'purchaseorder'), str_contains($name, 'purchase_order'), str_contains($name, 'vendorpayment') => 'purchase-orders',
+            str_contains($name, 'productdispatch'), str_contains($name, 'product_dispatch') => 'product-dispatches',
+            str_contains($name, 'productreturn'), str_contains($name, 'refund'), str_contains($name, 'exchange') => 'returns-exchanges',
+            str_contains($name, 'serviceorder'), str_contains($name, 'service_order') => 'service-orders',
+            str_contains($name, 'shipment') => 'shipments',
+            str_contains($name, 'order') => 'orders',
+            str_contains($name, 'product'), str_contains($name, 'inventory'), str_contains($name, 'barcode'), str_contains($name, 'batch') => 'products',
+            default => 'other',
+        };
+    }
+
+    private function subjectTypesForCategory(string $category): array
+    {
+        $models = match ($category) {
+            'orders' => ['Order', 'OrderItem', 'OrderPayment', 'Customer'],
+            'purchase-orders' => ['PurchaseOrder', 'PurchaseOrderItem', 'VendorPayment', 'VendorPaymentItem'],
+            'product-dispatches' => ['ProductDispatch', 'ProductDispatchItem'],
+            'returns-exchanges' => ['ProductReturn', 'Refund'],
+            'service-orders' => ['ServiceOrder', 'ServiceOrderItem', 'ServiceOrderPayment'],
+            'shipments' => ['Shipment'],
+            'store-assignments' => [],
+            'products' => ['Product', 'ProductBatch', 'ProductBarcode', 'ProductMovement', 'MasterInventory', 'DefectiveProduct'],
+            default => [],
+        };
+
+        return array_map(fn ($model) => "App\\Models\\{$model}", $models);
+    }
+
+    private function humanize($value): string
+    {
+        if ($value === null || $value === '') {
+            return 'Not set';
+        }
+        $value = preg_replace('/(?<!^)[A-Z]/', ' $0', (string) $value);
+        return ucwords(str_replace(['_', '-'], ' ', $value));
+    }
+
+    /**
      * Apply filters to query (reusable for export)
      */
     private function applyFilters($query, Request $request)
@@ -598,6 +841,24 @@ class ActivityLogController extends Controller
 
         if ($request->filled('log_name')) {
             $query->where('log_name', $request->log_name);
+        }
+
+        if ($request->filled('category') && $request->category !== 'all') {
+            $category = $request->category;
+            $subjectTypes = $this->subjectTypesForCategory($category);
+            $query->where(function ($q) use ($category, $subjectTypes) {
+                $q->whereJsonContains('properties->category', $category);
+
+                if ($category === 'store-assignments') {
+                    $q->orWhere(function ($assignmentQ) {
+                        $assignmentQ->where('subject_type', 'App\Models\Order')
+                            ->where('event', 'updated')
+                            ->whereRaw("JSON_EXTRACT(properties, '$.attributes.store_id') IS NOT NULL");
+                    });
+                } elseif ($subjectTypes) {
+                    $q->orWhereIn('subject_type', $subjectTypes);
+                }
+            });
         }
 
         if ($request->filled('date_from')) {

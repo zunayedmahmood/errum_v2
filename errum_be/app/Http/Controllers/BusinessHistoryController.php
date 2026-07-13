@@ -31,13 +31,27 @@ class BusinessHistoryController extends Controller
         $startDate = $request->get('start_date');
         $endDate = $request->get('end_date');
 
-        $query = Activity::where('subject_type', 'App\\Models\\ProductDispatch')
+        $query = Activity::whereIn('subject_type', [
+            'App\\Models\\ProductDispatch',
+            'App\\Models\\ProductDispatchItem',
+        ])
             ->with(['causer', 'subject'])
             ->orderBy('created_at', 'desc');
 
-        // Filter by specific dispatch
+        // Filter by specific dispatch, including its item scans and receipts.
         if ($dispatchId) {
-            $query->where('subject_id', $dispatchId);
+            $query->where(function ($q) use ($dispatchId) {
+                $q->where(function ($subQ) use ($dispatchId) {
+                    $subQ->where('subject_type', 'App\\Models\\ProductDispatch')
+                        ->where('subject_id', $dispatchId);
+                })->orWhere(function ($subQ) use ($dispatchId) {
+                    $subQ->where('subject_type', 'App\\Models\\ProductDispatchItem')
+                        ->where(function ($itemQ) use ($dispatchId) {
+                            $itemQ->whereJsonContains('properties->attributes->product_dispatch_id', (int) $dispatchId)
+                                ->orWhereJsonContains('properties->old->product_dispatch_id', (int) $dispatchId);
+                        });
+                });
+            });
         }
 
         // Filter by date range
@@ -116,6 +130,10 @@ class BusinessHistoryController extends Controller
         $query = Activity::whereIn('subject_type', [
             'App\\Models\\Order',
             'App\\Models\\OrderItem',
+            'App\\Models\\OrderPayment',
+            'App\\Models\\Shipment',
+            'App\\Models\\ProductReturn',
+            'App\\Models\\Refund',
             'App\\Models\\Customer',
         ])
             ->with(['causer', 'subject'])
@@ -130,7 +148,21 @@ class BusinessHistoryController extends Controller
                 })
                     ->orWhere(function ($subQ) use ($orderId) {
                         $subQ->where('subject_type', 'App\\Models\\OrderItem')
-                            ->whereJsonContains('properties->attributes->order_id', (int) $orderId);
+                            ->where(function ($itemQ) use ($orderId) {
+                                $itemQ->whereJsonContains('properties->attributes->order_id', (int) $orderId)
+                                    ->orWhereJsonContains('properties->old->order_id', (int) $orderId);
+                            });
+                    })
+                    ->orWhere(function ($subQ) use ($orderId) {
+                        $subQ->whereIn('subject_type', [
+                            'App\\Models\\OrderPayment',
+                            'App\\Models\\Shipment',
+                            'App\\Models\\ProductReturn',
+                            'App\\Models\\Refund',
+                        ])->where(function ($relatedQ) use ($orderId) {
+                            $relatedQ->whereJsonContains('properties->attributes->order_id', (int) $orderId)
+                                ->orWhereJsonContains('properties->old->order_id', (int) $orderId);
+                        });
                     })
                     ->orWhere(function ($subQ) use ($orderId) {
                         // Include customer changes during order timeline
@@ -208,13 +240,30 @@ class BusinessHistoryController extends Controller
         $startDate = $request->get('start_date');
         $endDate = $request->get('end_date');
 
-        $query = Activity::where('subject_type', 'App\\Models\\PurchaseOrder')
+        $query = Activity::whereIn('subject_type', [
+            'App\\Models\\PurchaseOrder',
+            'App\\Models\\PurchaseOrderItem',
+            'App\\Models\\VendorPaymentItem',
+        ])
             ->with(['causer', 'subject'])
             ->orderBy('created_at', 'desc');
 
-        // Filter by specific PO
+        // Filter by specific PO, including item receiving and payment allocation.
         if ($purchaseOrderId) {
-            $query->where('subject_id', $purchaseOrderId);
+            $query->where(function ($q) use ($purchaseOrderId) {
+                $q->where(function ($subQ) use ($purchaseOrderId) {
+                    $subQ->where('subject_type', 'App\\Models\\PurchaseOrder')
+                        ->where('subject_id', $purchaseOrderId);
+                })->orWhere(function ($subQ) use ($purchaseOrderId) {
+                    $subQ->whereIn('subject_type', [
+                        'App\\Models\\PurchaseOrderItem',
+                        'App\\Models\\VendorPaymentItem',
+                    ])->where(function ($relatedQ) use ($purchaseOrderId) {
+                        $relatedQ->whereJsonContains('properties->attributes->purchase_order_id', (int) $purchaseOrderId)
+                            ->orWhereJsonContains('properties->old->purchase_order_id', (int) $purchaseOrderId);
+                    });
+                });
+            });
         }
 
         // Filter by PO number
@@ -497,7 +546,20 @@ class BusinessHistoryController extends Controller
                 ->orWhere(function ($subQ) use ($orderId) {
                     // Shipments
                     $subQ->where('subject_type', 'App\\Models\\Shipment')
-                        ->whereJsonContains('properties->attributes->order_id', (int) $orderId);
+                        ->where(function ($relatedQ) use ($orderId) {
+                            $relatedQ->whereJsonContains('properties->attributes->order_id', (int) $orderId)
+                                ->orWhereJsonContains('properties->old->order_id', (int) $orderId);
+                        });
+                })
+                ->orWhere(function ($subQ) use ($orderId) {
+                    // Returns, exchanges and refunds
+                    $subQ->whereIn('subject_type', [
+                        'App\\Models\\ProductReturn',
+                        'App\\Models\\Refund',
+                    ])->where(function ($relatedQ) use ($orderId) {
+                        $relatedQ->whereJsonContains('properties->attributes->order_id', (int) $orderId)
+                            ->orWhereJsonContains('properties->old->order_id', (int) $orderId);
+                    });
                 })
                 ->orWhere(function ($subQ) use ($order) {
                     // Customer changes during order period
