@@ -156,9 +156,9 @@ export default function ResellReportsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <div className={`${darkMode ? 'dark' : ''} flex min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100`}>
       <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
-      <div className={`transition-all ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'}`}>
+      <div className="flex-1 flex flex-col min-w-0 transition-colors">
         <Header
           darkMode={darkMode}
           setDarkMode={setDarkMode}
