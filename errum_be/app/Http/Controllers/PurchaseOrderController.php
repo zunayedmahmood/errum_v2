@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\Product;
+use App\Models\ResellVendor;
 use App\Models\Store;
 use App\Traits\DatabaseAgnosticSearch;
 use Illuminate\Http\Request;
@@ -37,6 +38,13 @@ class PurchaseOrderController extends Controller
             'items.*.discount_amount' => 'nullable|numeric|min:0',
             'items.*.notes' => 'nullable|string',
         ]);
+
+        if (ResellVendor::active()->where('vendor_id', $validated['vendor_id'])->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This vendor is marked as a resell vendor. Create its PO from the Resell Items panel.',
+            ], 422);
+        }
 
         // Verify store is a warehouse
         $store = Store::findOrFail($validated['store_id']);
@@ -115,6 +123,8 @@ class PurchaseOrderController extends Controller
     {
         $query = PurchaseOrder::with(['vendor', 'store', 'createdBy', 'items.product.category']);
 
+        $this->applyResellPurchaseOrderVisibility($query, $request);
+
         $this->applyPurchaseOrderListFilters($query, $request);
 
         // Sorting - whitelist so query params cannot break the SQL.
@@ -177,6 +187,13 @@ class PurchaseOrderController extends Controller
     {
         $po = PurchaseOrder::findOrFail($id);
 
+        if ($this->isResellPurchaseOrder($po)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resell purchase orders are protected from the regular PO editor. Manage them from the Resell Items panel.',
+            ], 422);
+        }
+
         if ($po->status !== 'draft') {
             return response()->json([
                 'success' => false,
@@ -211,6 +228,13 @@ class PurchaseOrderController extends Controller
     public function bulkUpdate(Request $request, $id)
     {
         $po = PurchaseOrder::findOrFail($id);
+
+        if ($this->isResellPurchaseOrder($po)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resell purchase orders are protected from the regular PO editor. Manage them from the Resell Items panel.',
+            ], 422);
+        }
 
         if ($po->status !== 'draft') {
             return response()->json([
@@ -334,6 +358,13 @@ class PurchaseOrderController extends Controller
     {
         $po = PurchaseOrder::findOrFail($id);
 
+        if ($this->isResellPurchaseOrder($po)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resell purchase orders are protected from the regular PO editor. Manage them from the Resell Items panel.',
+            ], 422);
+        }
+
         if ($po->status !== 'draft') {
             return response()->json([
                 'success' => false,
@@ -382,6 +413,13 @@ class PurchaseOrderController extends Controller
     public function updateItem(Request $request, $id, $itemId)
     {
         $po = PurchaseOrder::findOrFail($id);
+
+        if ($this->isResellPurchaseOrder($po)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resell purchase orders are protected from the regular PO editor. Manage them from the Resell Items panel.',
+            ], 422);
+        }
         $item = PurchaseOrderItem::where('purchase_order_id', $id)
             ->findOrFail($itemId);
 
@@ -418,6 +456,13 @@ class PurchaseOrderController extends Controller
     public function removeItem($id, $itemId)
     {
         $po = PurchaseOrder::findOrFail($id);
+
+        if ($this->isResellPurchaseOrder($po)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resell purchase orders are protected from the regular PO editor. Manage them from the Resell Items panel.',
+            ], 422);
+        }
         $item = PurchaseOrderItem::where('purchase_order_id', $id)
             ->findOrFail($itemId);
 
@@ -548,6 +593,8 @@ class PurchaseOrderController extends Controller
     {
         $query = PurchaseOrder::query();
 
+        $this->applyResellPurchaseOrderVisibility($query, $request);
+
         // Date range filter
         if ($request->has('from_date') && $request->has('to_date')) {
             $query->whereBetween('created_at', [$request->from_date, $request->to_date]);
@@ -564,8 +611,8 @@ class PurchaseOrderController extends Controller
             'total_amount' => (clone $query)->sum('total_amount'),
             'total_paid' => (clone $query)->sum('paid_amount'),
             'total_outstanding' => (clone $query)->sum('outstanding_amount'),
-            'overdue_orders' => PurchaseOrder::overdue()->count(),
-            'recent_orders' => PurchaseOrder::with('vendor')
+            'overdue_orders' => (clone $query)->overdue()->count(),
+            'recent_orders' => (clone $query)->with('vendor')
                 ->orderBy('created_at', 'desc')
                 ->limit(5)
                 ->get(),
@@ -799,6 +846,15 @@ class PurchaseOrderController extends Controller
                 MAX(po.created_at) as last_po_at
             ")
             ->whereNotNull('purchase_order_items.product_id')
+            ->when(!$request->boolean('include_resell') && !$request->boolean('resell_only'), function ($builder) {
+                $builder->where(function ($visibilityQuery) {
+                    $visibilityQuery->whereNull('po.metadata->resell')
+                        ->orWhere('po.metadata->resell', false);
+                });
+            })
+            ->when($request->boolean('resell_only'), function ($builder) {
+                $builder->where('po.metadata->resell', true);
+            })
             ->groupBy('purchase_order_items.product_id');
 
         $this->applyPurchaseOrderJoinFilters($query, $request);
@@ -873,6 +929,26 @@ class PurchaseOrderController extends Controller
         if ($request->filled('category_id')) {
             $query->where('p.category_id', (int) $request->category_id);
         }
+    }
+
+    private function applyResellPurchaseOrderVisibility($query, Request $request): void
+    {
+        if ($request->boolean('resell_only')) {
+            $query->where('metadata->resell', true);
+            return;
+        }
+
+        if (!$request->boolean('include_resell')) {
+            $query->where(function ($visibilityQuery) {
+                $visibilityQuery->whereNull('metadata->resell')
+                    ->orWhere('metadata->resell', false);
+            });
+        }
+    }
+
+    private function isResellPurchaseOrder(PurchaseOrder $purchaseOrder): bool
+    {
+        return (bool) data_get($purchaseOrder->metadata, 'resell', false);
     }
 
     /**

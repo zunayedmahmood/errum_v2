@@ -42,6 +42,10 @@ class Customer extends Authenticatable implements JWTSubject
         'tags',
         'created_by',
         'assigned_employee_id',
+        'has_loyalty_card',
+        'loyalty_points_balance',
+        'loyalty_card_activated_at',
+        'loyalty_card_activated_by',
     ];
 
     protected $hidden = [
@@ -59,6 +63,9 @@ class Customer extends Authenticatable implements JWTSubject
         'preferences' => 'array',
         'social_profiles' => 'array',
         'tags' => 'array',
+        'has_loyalty_card' => 'boolean',
+        'loyalty_points_balance' => 'integer',
+        'loyalty_card_activated_at' => 'datetime',
     ];
 
     protected static function boot()
@@ -80,6 +87,16 @@ class Customer extends Authenticatable implements JWTSubject
     public function assignedEmployee(): BelongsTo
     {
         return $this->belongsTo(Employee::class, 'assigned_employee_id');
+    }
+
+    public function loyaltyCardActivatedBy(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'loyalty_card_activated_by');
+    }
+
+    public function loyaltyTransactions(): HasMany
+    {
+        return $this->hasMany(LoyaltyPointTransaction::class);
     }
 
     public function orders(): HasMany
@@ -295,19 +312,44 @@ class Customer extends Authenticatable implements JWTSubject
      * Find or create a customer by phone number (for guest checkout)
      * Creates customer with default password if phone doesn't exist
      */
+    public static function normalizePhoneNumber(?string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $phone) ?? '';
+        if (str_starts_with($digits, '00880')) $digits = substr($digits, 5);
+        elseif (str_starts_with($digits, '880')) $digits = substr($digits, 3);
+        elseif (str_starts_with($digits, '88') && strlen($digits) === 13) $digits = substr($digits, 2);
+        if (strlen($digits) === 10 && str_starts_with($digits, '1')) $digits = '0' . $digits;
+        return $digits;
+    }
+
+    public static function phoneCandidates(?string $phone): array
+    {
+        $normalized = static::normalizePhoneNumber($phone);
+        if ($normalized === '') return [];
+        return array_values(array_unique([$normalized, '+88' . $normalized, '88' . $normalized, '+880' . ltrim($normalized, '0')]));
+    }
+
     public static function findOrCreateByPhone(string $phone, array $additionalData = []): self
     {
-        // Clean phone number (remove spaces, dashes, etc.)
-        $cleanPhone = preg_replace('/[^0-9+]/', '', $phone);
-        
-        // Try to find existing customer by phone
-        $customer = static::where('phone', $cleanPhone)->first();
+        $cleanPhone = static::normalizePhoneNumber($phone);
+        $phoneCandidates = static::phoneCandidates($phone);
+        $digitCandidates = array_values(array_unique([
+            $cleanPhone,
+            '88' . $cleanPhone,
+            '880' . ltrim($cleanPhone, '0'),
+            '00880' . ltrim($cleanPhone, '0'),
+        ]));
+        $digitsExpression = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')";
+        $customer = static::where(function ($query) use ($phoneCandidates, $digitCandidates, $digitsExpression) {
+            $query->whereIn('phone', $phoneCandidates)
+                ->orWhereIn(\Illuminate\Support\Facades\DB::raw($digitsExpression), $digitCandidates);
+        })->orderByDesc('has_loyalty_card')->first();
         
         if ($customer) {
             return $customer;
         }
         
-        // Create new guest customer
+        // Create new guest customer using one canonical Bangladesh phone representation.
         return static::create([
             'customer_type' => 'ecommerce',
             'phone' => $cleanPhone,
@@ -531,7 +573,24 @@ class Customer extends Authenticatable implements JWTSubject
 
     public static function findByPhone($phone)
     {
-        return static::where('phone', $phone)->first();
+        $normalized = static::normalizePhoneNumber($phone);
+        $candidates = static::phoneCandidates($phone);
+        if ($normalized === '' || empty($candidates)) {
+            return null;
+        }
+
+        $digitCandidates = array_values(array_unique([
+            $normalized,
+            '88' . $normalized,
+            '880' . ltrim($normalized, '0'),
+            '00880' . ltrim($normalized, '0'),
+        ]));
+        $digitsExpression = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')";
+
+        return static::where(function ($query) use ($candidates, $digitCandidates, $digitsExpression) {
+            $query->whereIn('phone', $candidates)
+                ->orWhereIn(\Illuminate\Support\Facades\DB::raw($digitsExpression), $digitCandidates);
+        })->orderByDesc('has_loyalty_card')->first();
     }
 
     public static function findByEmail($email)

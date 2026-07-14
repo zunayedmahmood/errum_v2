@@ -48,6 +48,8 @@ import CustomerFormModal from '@/components/pos/CustomerFormModal';
 import { useCustomerLookup } from '@/lib/hooks/useCustomerLookup';
 import { checkQZStatus, printReceipt } from '@/lib/qz-tray';
 import DailyCashReportModal from '@/components/pos/DailyCashReportModal';
+import LoyaltyRedeemToggle from '@/components/loyalty/LoyaltyRedeemToggle';
+import type { LoyaltyPreview } from '@/services/loyaltyCardService';
 
 interface Store {
   id: number;
@@ -269,6 +271,8 @@ export default function POSPage() {
   const [cardPaid, setCardPaid] = useState(0);
   const [bkashPaid, setBkashPaid] = useState(0);
   const [nagadPaid, setNagadPaid] = useState(0);
+  const [useLoyaltyPoints, setUseLoyaltyPoints] = useState(false);
+  const [loyaltyPreview, setLoyaltyPreview] = useState<LoyaltyPreview | null>(null);
 
   // Installment / EMI (POS + Social Commerce only)
   const [isInstallment, setIsInstallment] = useState(false);
@@ -736,7 +740,12 @@ export default function POSPage() {
     return Math.min(Math.max(raw, 0), subtotal);
   }, [orderDiscountAmount, subtotal]);
   const totalDiscount = useMemo(() => itemDiscountTotal + orderLevelDiscount, [itemDiscountTotal, orderLevelDiscount]);
-  const total = useMemo(() => Math.max(0, subtotal - orderLevelDiscount + transportCost), [subtotal, orderLevelDiscount, transportCost]);
+  const loyaltyEligibleAmount = useMemo(() => Math.max(0, subtotal - orderLevelDiscount), [subtotal, orderLevelDiscount]);
+  const loyaltyDiscount = useMemo(
+    () => useLoyaltyPoints ? Math.min(loyaltyEligibleAmount, Number(loyaltyPreview?.redeemable_taka || 0)) : 0,
+    [useLoyaltyPoints, loyaltyPreview, loyaltyEligibleAmount]
+  );
+  const total = useMemo(() => Math.max(0, loyaltyEligibleAmount - loyaltyDiscount + transportCost), [loyaltyEligibleAmount, loyaltyDiscount, transportCost]);
 
   // Installment amount (ceil to 2 decimals so collected amount is not less than required per installment)
   const installmentAmount = useMemo(() => {
@@ -934,9 +943,14 @@ export default function POSPage() {
         // ✅ Add totals correctly. Order-level discount only; item discounts stay on each item.
         discount_amount: orderLevelDiscount,
         shipping_amount: transportCost,
+        use_loyalty_points: useLoyaltyPoints,
+        ...(useLoyaltyPoints && loyaltyPreview ? {
+          loyalty_expected_points: Number(loyaltyPreview.points_to_redeem || 0),
+          loyalty_expected_discount: Number(loyaltyPreview.redeemable_taka || 0),
+        } : {}),
 
         // ✅ FIXED: start_date should be undefined instead of null
-        ...(isInstallment
+        ...(isInstallment && total > 0
           ? {
             installment_plan: {
               total_installments: Math.max(2, Math.min(24, Number(installmentCount) || 2)),
@@ -1311,6 +1325,8 @@ export default function POSPage() {
     setBkashPaid(0);
     setNagadPaid(0);
     setTransportCost(0);
+    setUseLoyaltyPoints(false);
+    setLoyaltyPreview(null);
     setAutoCustomerId(null);
 
     // ✅ Clear lookup input + last order UI as well
@@ -2191,6 +2207,24 @@ export default function POSPage() {
                         className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                       />
                     </div>
+
+                    <LoyaltyRedeemToggle
+                      phone={customerLookup.phone || mobileNo}
+                      eligibleAmount={loyaltyEligibleAmount}
+                      checked={useLoyaltyPoints}
+                      onChange={(checked, preview) => {
+                        setUseLoyaltyPoints(checked);
+                        setLoyaltyPreview(preview);
+                      }}
+                      disabled={isInstallment}
+                    />
+
+                    {loyaltyDiscount > 0 && (
+                      <div className="flex justify-between text-sm text-violet-700 dark:text-violet-300">
+                        <span>Loyalty Discount</span>
+                        <span className="font-semibold">-৳{loyaltyDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
 
                     <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-between text-base mb-2">

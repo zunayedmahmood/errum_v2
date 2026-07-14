@@ -137,6 +137,8 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
       subMenu: [
         { label: 'Vendor Payment', href: '/vendor' },
         { label: 'Purchase Order', href: '/purchase-order' },
+        { label: 'Resell Items', href: '/resell' },
+        { label: 'Resell Reports', href: '/resell/reports' },
       ],
     },
     { icon: Store, label: 'Store', href: '/store' },
@@ -178,7 +180,14 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
     { icon: Package, label: 'PreOrders', href: '/preorders' },
     { icon: AlertTriangle, label: 'Extra-Item Management', href: '/extra' },
     { icon: RotateCcw, label: 'Returns & Exchanges', href: '/returns' },
-    { icon: Tag, label: 'Sale Campaigns', href: '/campaigns' },
+    {
+      icon: Tag,
+      label: 'Sales & Campaign',
+      subMenu: [
+        { label: 'Campaigns', href: '/campaigns' },
+        { label: 'Loyalty Card Tracker', href: '/loyalty-card-tracker' },
+      ],
+    },
     { icon: Search, label: 'Lookup', href: '/lookup' },
     { icon: History, label: 'Activity Log', href: '/activity-logs' },
     { icon: CreditCard, label: 'Transaction', href: '/transaction' },

@@ -51,6 +51,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\VendorController;
 use App\Http\Controllers\StoreController;
+use App\Http\Controllers\ResellController;
 use App\Http\Controllers\CategoriesController;
 use App\Http\Controllers\SslcommerzController;
 /*
@@ -288,6 +289,9 @@ Route::prefix('customer/orders')->group(function () {
     Route::get('/{orderNumber}/track', [\App\Http\Controllers\EcommerceOrderController::class, 'track']);
 });
 
+// Public loyalty-card preview used by POS, social commerce, and guest/customer e-commerce checkout.
+Route::post('/loyalty-card/checkout-preview', [\App\Http\Controllers\LoyaltyProgramController::class, 'checkoutPreview']);
+
 // Public API for payment methods (no auth required for POS/Social Commerce)
 Route::get('/payment-methods', [PaymentController::class, 'getMethodsByCustomerType']);
 
@@ -303,6 +307,17 @@ Route::middleware('auth:api')->group(function () {
 
 // Protected routes
 Route::middleware('auth:api')->group(function () {
+    Route::prefix('loyalty-card')->group(function () {
+        Route::get('/customers', [\App\Http\Controllers\LoyaltyProgramController::class, 'index']);
+        Route::get('/customers/{id}', [\App\Http\Controllers\LoyaltyProgramController::class, 'show']);
+        Route::post('/lookup', [\App\Http\Controllers\LoyaltyProgramController::class, 'lookup']);
+        Route::post('/activate', [\App\Http\Controllers\LoyaltyProgramController::class, 'activate']);
+        Route::post('/customers/{id}/deactivate', [\App\Http\Controllers\LoyaltyProgramController::class, 'deactivate']);
+        Route::get('/customers/{id}/transactions', [\App\Http\Controllers\LoyaltyProgramController::class, 'transactions']);
+        Route::get('/settings', [\App\Http\Controllers\LoyaltyProgramController::class, 'settings']);
+        Route::put('/settings', [\App\Http\Controllers\LoyaltyProgramController::class, 'updateSettings']);
+    });
+
     Route::get('/inventory/reserve-check/{productId}', [InventoryController::class, 'reserveCheck']);
 
     Route::prefix('settings')->group(function () {
@@ -603,6 +618,24 @@ Route::middleware('auth:api')->group(function () {
             Route::post('/cancel', [VendorPaymentController::class, 'cancel']);
             Route::post('/refund', [VendorPaymentController::class, 'refund']);
         });
+    });
+
+
+    // Resell Items: classification layer over regular vendors, products, POs, inventory and sales.
+    Route::prefix('resell')->group(function () {
+        Route::get('/summary', [ResellController::class, 'summary']);
+        Route::get('/vendor-candidates', [ResellController::class, 'vendorCandidates']);
+        Route::get('/vendors', [ResellController::class, 'vendors']);
+        Route::post('/vendors', [ResellController::class, 'markVendor']);
+        Route::delete('/vendors/{id}', [ResellController::class, 'unmarkVendor']);
+        Route::get('/products', [ResellController::class, 'products']);
+        Route::post('/products', [ResellController::class, 'markProduct']);
+        Route::delete('/products/{id}', [ResellController::class, 'unmarkProduct']);
+        Route::get('/purchase-orders', [ResellController::class, 'purchaseOrders']);
+        Route::post('/purchase-orders', [ResellController::class, 'createPurchaseOrder']);
+        Route::get('/payments', [ResellController::class, 'payments']);
+        Route::post('/payments', [ResellController::class, 'createPayment']);
+        Route::get('/report', [ResellController::class, 'report']);
     });
 
     // Store management routes

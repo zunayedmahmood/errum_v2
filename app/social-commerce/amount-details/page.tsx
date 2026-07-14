@@ -7,6 +7,8 @@ import Sidebar from '@/components/Sidebar';
 import axios from '@/lib/axios';
 import defectIntegrationService from '@/services/defectIntegrationService';
 import Toast from '@/components/Toast';
+import LoyaltyRedeemToggle from '@/components/loyalty/LoyaltyRedeemToggle';
+import type { LoyaltyPreview } from '@/services/loyaltyCardService';
 
 const SC_EDIT_CONTEXT_KEY = 'socialCommerceEditContextV1';
 
@@ -107,6 +109,8 @@ export default function AmountDetailsPage() {
   // VAT is inclusive in product prices; do not add extra VAT here
   const [transportCost, setTransportCost] = useState('0');
   const [orderDiscountAmount, setOrderDiscountAmount] = useState('0');
+  const [useLoyaltyPoints, setUseLoyaltyPoints] = useState(false);
+  const [loyaltyPreview, setLoyaltyPreview] = useState<LoyaltyPreview | null>(null);
 
   // Advanced payment options
   // Default to full Cash on Delivery (no advance)
@@ -262,9 +266,14 @@ export default function AmountDetailsPage() {
   }, [orderData]);
 
   const subtotal = useMemo(() => Math.max(0, grossSubtotal - itemDiscountTotal), [grossSubtotal, itemDiscountTotal]);
-  const orderDiscount = useMemo(() => Math.max(0, parseNumber(orderDiscountAmount)), [orderDiscountAmount]);
+  const orderDiscount = useMemo(() => Math.min(subtotal, Math.max(0, parseNumber(orderDiscountAmount))), [orderDiscountAmount, subtotal]);
   const transport = useMemo(() => parseNumber(transportCost), [transportCost]);
-  const total = useMemo(() => Math.max(0, subtotal - orderDiscount + transport), [subtotal, orderDiscount, transport]);
+  const loyaltyEligibleAmount = useMemo(() => Math.max(0, subtotal - orderDiscount), [subtotal, orderDiscount]);
+  const loyaltyDiscount = useMemo(
+    () => useLoyaltyPoints ? Math.min(loyaltyEligibleAmount, Number(loyaltyPreview?.redeemable_taka || 0)) : 0,
+    [useLoyaltyPoints, loyaltyPreview, loyaltyEligibleAmount]
+  );
+  const total = useMemo(() => Math.max(0, loyaltyEligibleAmount - loyaltyDiscount + transport), [loyaltyEligibleAmount, loyaltyDiscount, transport]);
   
   const isEditMode = useMemo(() => !!(orderData?.editOrderId), [orderData]);
 
@@ -362,8 +371,10 @@ export default function AmountDetailsPage() {
       return;
     }
 
-    // Validation: payment methods
-    if (paymentOption === 'full' || paymentOption === 'partial' || paymentOption === 'installment') {
+    const hasPayableAmount = total > 0.00001;
+
+    // A fully loyalty-covered order must not require a payment method.
+    if (hasPayableAmount && (paymentOption === 'full' || paymentOption === 'partial' || paymentOption === 'installment')) {
       if (!selectedPaymentMethod) {
         displayToast('Please select a payment method', 'error');
         return;
@@ -372,7 +383,7 @@ export default function AmountDetailsPage() {
     }
 
     // Installment validation
-    if (paymentOption === 'installment') {
+    if (hasPayableAmount && paymentOption === 'installment') {
       const n = Math.max(2, Math.min(24, Number(installmentCount) || 2));
       if (n < 2) {
         displayToast('Total installments must be at least 2', 'error');
@@ -384,7 +395,7 @@ export default function AmountDetailsPage() {
       }
     }
 
-    if (paymentOption === 'partial') {
+    if (hasPayableAmount && paymentOption === 'partial') {
       if (!advanceAmount || advance <= 0 || advance >= total) {
         displayToast('Please enter a valid advance amount (between 0 and total)', 'error');
         return;
@@ -395,7 +406,7 @@ export default function AmountDetailsPage() {
       }
     }
 
-    if (paymentOption === 'none') {
+    if (hasPayableAmount && paymentOption === 'none') {
       if (!codPaymentMethod) {
         displayToast('Please select a COD payment method', 'error');
         return;
@@ -564,7 +575,12 @@ export default function AmountDetailsPage() {
             : {}),
           discount_amount: orderDiscount,
           shipping_amount: transport,
-          ...(paymentOption === 'installment'
+          use_loyalty_points: useLoyaltyPoints,
+          ...(useLoyaltyPoints && loyaltyPreview ? {
+            loyalty_expected_points: Number(loyaltyPreview.points_to_redeem || 0),
+            loyalty_expected_discount: Number(loyaltyPreview.redeemable_taka || 0),
+          } : {}),
+          ...(paymentOption === 'installment' && total > 0
             ? {
                 installment_plan: {
                   total_installments: Math.max(2, Math.min(24, Number(installmentCount) || 2)),
@@ -593,6 +609,15 @@ export default function AmountDetailsPage() {
       if (!createdOrder?.id) {
         throw new Error('Order save failed (missing order id)');
       }
+
+      // Loyalty is revalidated and deducted under a backend transaction. Always use the
+      // saved order total for payments so a concurrent balance change cannot over/under-pay.
+      const authoritativeTotal = Math.max(0, parseNumber(createdOrder.total_amount ?? total));
+      const authoritativeRemaining = Math.max(0, authoritativeTotal - alreadyPaid);
+      const effectiveAdvance = Math.min(Math.max(0, advance), authoritativeRemaining);
+      const authoritativeCod = paymentOption === 'partial' || paymentOption === 'none'
+        ? Math.max(0, authoritativeRemaining - (paymentOption === 'partial' ? effectiveAdvance : 0))
+        : 0;
 
       // 2) Set intended courier marker (optional)
       if (intendedCourier && intendedCourier.trim()) {
@@ -626,10 +651,10 @@ export default function AmountDetailsPage() {
       }
 
       // 4) Payments
-      if (paymentOption === 'full' && (total - alreadyPaid) > 0) {
+      if (paymentOption === 'full' && authoritativeRemaining > 0) {
         const paymentData: any = {
           payment_method_id: parseInt(selectedPaymentMethod, 10),
-          amount: total - alreadyPaid,
+          amount: authoritativeRemaining,
           payment_type: 'full',
           auto_complete: true,
           notes: paymentNotes || `Social Commerce full payment via ${selectedMethod?.name}`,
@@ -669,13 +694,13 @@ export default function AmountDetailsPage() {
         }
       }
 
-      if (paymentOption === 'partial' && advance > 0) {
+      if (paymentOption === 'partial' && effectiveAdvance > 0) {
         const advancePaymentData: any = {
           payment_method_id: parseInt(selectedPaymentMethod, 10),
-          amount: advance,
+          amount: effectiveAdvance,
           payment_type: 'partial',
           auto_complete: true,
-          notes: paymentNotes || `Advance via ${selectedMethod?.name}. COD remaining: ৳${(total - alreadyPaid - advance).toFixed(2)}`,
+          notes: paymentNotes || `Advance via ${selectedMethod?.name}. COD remaining: ৳${authoritativeCod.toFixed(2)}`,
           payment_data: {},
         };
 
@@ -705,7 +730,7 @@ export default function AmountDetailsPage() {
           };
         } else {
           advancePaymentData.payment_data = {
-            notes: `Advance payment - COD remaining: ৳${codAmount.toFixed(2)}`,
+            notes: `Advance payment - COD remaining: ৳${authoritativeCod.toFixed(2)}`,
             payment_stage: 'advance',
           };
         }
@@ -717,10 +742,10 @@ export default function AmountDetailsPage() {
       }
 
 
-      if (paymentOption === 'installment' && advance > 0) {
+      if (paymentOption === 'installment' && effectiveAdvance > 0) {
         const firstPayment: any = {
           payment_method_id: parseInt(selectedPaymentMethod, 10),
-          amount: advance,
+          amount: effectiveAdvance,
           auto_complete: true,
           notes: paymentNotes || `Installment/EMI - 1st installment of ${installmentCount} via ${selectedMethod?.name}`,
           payment_data: {},
@@ -766,14 +791,15 @@ export default function AmountDetailsPage() {
       // paymentOption === 'none' => no payment now
 
       const actionWord = isEditMode ? 'updated' : 'placed';
-      const msg =
-        paymentOption === 'full'
+      const msg = authoritativeTotal <= 0
+        ? `Order ${createdOrder.order_number} ${actionWord} with full loyalty discount.`
+        : paymentOption === 'full'
           ? `Order ${createdOrder.order_number} ${actionWord} with full payment.`
           : paymentOption === 'partial'
-            ? `Order ${createdOrder.order_number} ${actionWord}. Advance ৳${advance.toFixed(2)}, COD ৳${codAmount.toFixed(2)}.`
+            ? `Order ${createdOrder.order_number} ${actionWord}. Advance ৳${effectiveAdvance.toFixed(2)}, COD ৳${authoritativeCod.toFixed(2)}.`
             : paymentOption === 'installment'
-              ? `Order ${createdOrder.order_number} ${actionWord} on EMI. ${installmentCount} installments × ৳${suggestedInstallmentAmount.toFixed(2)} suggested (1st paid ৳${advance.toFixed(2)}).`
-              : `Order ${createdOrder.order_number} ${actionWord}. Cash on delivery ৳${codAmount.toFixed(2)}.`;
+              ? `Order ${createdOrder.order_number} ${actionWord} on EMI. ${installmentCount} installments × ৳${suggestedInstallmentAmount.toFixed(2)} suggested (1st paid ৳${effectiveAdvance.toFixed(2)}).`
+              : `Order ${createdOrder.order_number} ${actionWord}. Cash on delivery ৳${authoritativeCod.toFixed(2)}.`;
 
       displayToast(msg, 'success');
       sessionStorage.removeItem('pendingOrder');
@@ -944,6 +970,12 @@ export default function AmountDetailsPage() {
                       <span className="text-gray-700 dark:text-gray-300">Order Discount</span>
                       <span className="text-red-600 dark:text-red-400">-৳{orderDiscount.toFixed(2)}</span>
                     </div>
+                    {loyaltyDiscount > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-violet-700 dark:text-violet-300">Loyalty Discount</span>
+                        <span className="font-medium text-violet-700 dark:text-violet-300">-৳{loyaltyDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-700 dark:text-gray-300">Shipping Cost</span>
                       <span className="text-gray-900 dark:text-white">৳{transport.toFixed(2)}</span>
@@ -993,6 +1025,20 @@ export default function AmountDetailsPage() {
                       This discount applies to the full order after item prices are set.
                     </p>
                   </div>
+
+                  {!isEditMode && (
+                    <div className="mb-4">
+                      <LoyaltyRedeemToggle
+                        phone={orderData.customer?.phone}
+                        eligibleAmount={loyaltyEligibleAmount}
+                        checked={useLoyaltyPoints}
+                        onChange={(checked, preview) => {
+                          setUseLoyaltyPoints(checked);
+                          setLoyaltyPreview(preview);
+                        }}
+                      />
+                    </div>
+                  )}
 
                   {/* Intended Courier Marker */}
                   <div className="mb-4">
@@ -1212,6 +1258,12 @@ export default function AmountDetailsPage() {
                           <span>Order Discount</span>
                           <span className="font-medium text-red-600 dark:text-red-400">-৳{orderDiscount.toFixed(2)}</span>
                         </div>
+                        {loyaltyDiscount > 0 && (
+                          <div className="flex justify-between text-violet-700 dark:text-violet-300">
+                            <span>Loyalty Discount</span>
+                            <span className="font-medium">-৳{loyaltyDiscount.toFixed(2)}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span>Shipping</span>
                           <span className="font-medium">৳{transport.toFixed(2)}</span>

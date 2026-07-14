@@ -45,6 +45,25 @@ class Vendor extends Model
         return $this->hasMany(Product::class);
     }
 
+    public function resellProfile()
+    {
+        return $this->hasOne(ResellVendor::class);
+    }
+
+    public function scopeNonResell($query)
+    {
+        return $query->whereDoesntHave('resellProfile', function ($resellQuery) {
+            $resellQuery->where('is_active', true);
+        });
+    }
+
+    public function getIsResellAttribute(): bool
+    {
+        return $this->relationLoaded('resellProfile')
+            ? (bool) optional($this->resellProfile)->is_active
+            : $this->resellProfile()->where('is_active', true)->exists();
+    }
+
     public function activeProducts()
     {
         return $this->products()->active();

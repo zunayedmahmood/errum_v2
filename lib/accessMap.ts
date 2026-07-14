@@ -18,6 +18,8 @@ export const PAGE_ACCESS: Record<string, RoleSlug[]> = {
   // Vendor Management
   '/vendor': ['super-admin', 'admin', 'online-moderator'],
   '/purchase-order': ['super-admin', 'admin', 'online-moderator'],
+  '/resell': ['super-admin', 'admin', 'online-moderator'],
+  '/resell/reports': ['super-admin', 'admin'],
 
   // Basic Setup
   '/store': ['super-admin', 'admin'],
@@ -64,6 +66,7 @@ export const PAGE_ACCESS: Record<string, RoleSlug[]> = {
 
   // Marketing
   '/campaigns': ['super-admin', 'admin'],
+  '/loyalty-card-tracker': ['super-admin', 'admin', 'branch-manager', 'online-moderator', 'pos-salesman', 'employee'],
 
   // System & Utilities
   '/extra': ['super-admin', 'admin', 'branch-manager', 'online-moderator', 'pos-salesman'],

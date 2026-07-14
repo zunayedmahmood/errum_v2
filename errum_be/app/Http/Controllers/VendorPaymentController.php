@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\VendorPayment;
 use App\Models\VendorPaymentItem;
 use App\Models\PurchaseOrder;
+use App\Models\ResellVendor;
 use App\Traits\DatabaseAgnosticSearch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +37,13 @@ class VendorPaymentController extends Controller
             'allocations.*.amount' => 'required|numeric|min:0.01',
             'allocations.*.notes' => 'nullable|string',
         ]);
+
+        if (ResellVendor::active()->where('vendor_id', $validated['vendor_id'])->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This vendor is marked as a resell vendor. Record its payments from the Resell Items panel.',
+            ], 422);
+        }
 
         DB::beginTransaction();
         try {
@@ -101,6 +109,7 @@ class VendorPaymentController extends Controller
     public function index(Request $request)
     {
         $query = VendorPayment::with(['vendor', 'paymentMethod', 'employee']);
+        $this->applyResellPaymentVisibility($query, $request);
 
         // Filters
         if ($request->has('vendor_id')) {
@@ -306,6 +315,7 @@ class VendorPaymentController extends Controller
     public function statistics(Request $request)
     {
         $query = VendorPayment::query();
+        $this->applyResellPaymentVisibility($query, $request);
 
         // Date range filter
         if ($request->has('from_date') && $request->has('to_date')) {
@@ -325,8 +335,8 @@ class VendorPaymentController extends Controller
             'by_payment_type' => (clone $query)->selectRaw('payment_type, COUNT(*) as count, SUM(amount) as total')
                 ->groupBy('payment_type')
                 ->get(),
-            'advance_payments' => VendorPayment::advancePayments()->sum('unallocated_amount'),
-            'recent_payments' => VendorPayment::with('vendor')
+            'advance_payments' => (clone $query)->advancePayments()->sum('unallocated_amount'),
+            'recent_payments' => (clone $query)->with('vendor')
                 ->where('status', 'completed')
                 ->orderBy('payment_date', 'desc')
                 ->limit(10)
@@ -344,6 +354,13 @@ class VendorPaymentController extends Controller
      */
     public function getOutstanding($vendorId)
     {
+        if (ResellVendor::active()->where('vendor_id', $vendorId)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This is a resell vendor. View outstanding POs and record payments from the Resell Items panel.',
+            ], 422);
+        }
+
         $purchaseOrders = PurchaseOrder::where('vendor_id', $vendorId)
             ->whereIn('payment_status', ['unpaid', 'partial'])
             ->with('items')
@@ -363,5 +380,20 @@ class VendorPaymentController extends Controller
                 'purchase_orders' => $purchaseOrders
             ]
         ]);
+    }
+
+    private function applyResellPaymentVisibility($query, Request $request): void
+    {
+        if ($request->boolean('resell_only')) {
+            $query->where('metadata->resell', true);
+            return;
+        }
+
+        if (!$request->boolean('include_resell')) {
+            $query->where(function ($visibilityQuery) {
+                $visibilityQuery->whereNull('metadata->resell')
+                    ->orWhere('metadata->resell', false);
+            });
+        }
     }
 }

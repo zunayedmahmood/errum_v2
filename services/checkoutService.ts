@@ -59,6 +59,9 @@ export interface CreateOrderRequest {
   coupon_code?: string;
   delivery_preference?: 'standard' | 'express' | 'scheduled';
   scheduled_delivery_date?: string;
+  use_loyalty_points?: boolean;
+  loyalty_expected_points?: number;
+  loyalty_expected_discount?: number;
   // Keep unassigned so warehouse/store-assignment can assign later
   store_id?: number | null;
 

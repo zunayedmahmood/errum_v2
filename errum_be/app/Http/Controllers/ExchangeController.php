@@ -345,6 +345,15 @@ class ExchangeController extends Controller
                 'confirmed_at' => $effectiveExchangeDate,
             ]);
 
+            // Exchange replacements never redeem points. Eligibility/rate are snapshotted now,
+            // and earning is explicitly limited to the actual extra amount collected below.
+            $replacementOrder = app(\App\Services\LoyaltyCardService::class)->initializeOrder(
+                $replacementOrder,
+                $replacementOrder->customer,
+                false,
+                $employee?->id
+            );
+
             // --- 3. FINANCIAL SETTLEMENT ---
             $exchangeBalanceUsed = min($totalReturnValue, $totalAmount);
             $difference = round($totalAmount - $totalReturnValue, 2);
@@ -483,6 +492,14 @@ class ExchangeController extends Controller
             $productReturn->save();
 
             Transaction::createFromExchange($productReturn, $replacementOrder);
+
+            // Award only on the exchange surplus actually paid. A zero-surplus exchange records
+            // an idempotent zero-point earning event so it cannot earn later by accident.
+            app(\App\Services\LoyaltyCardService::class)->awardForOrder(
+                $replacementOrder,
+                $surplusPaid,
+                $employee?->id
+            );
 
             DB::commit();
 

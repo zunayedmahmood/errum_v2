@@ -27,6 +27,9 @@ export type GuestCheckoutRequest = {
   customer_name?: string;
   customer_email?: string;
   notes?: string;
+  use_loyalty_points?: boolean;
+  loyalty_expected_points?: number;
+  loyalty_expected_discount?: number;
 
   // Keep guest e-commerce orders unassigned initially
   store_id?: number | null;

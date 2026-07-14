@@ -21,9 +21,18 @@ class ProductReturnObserver
             $this->createCOGSReversalIfNeeded($productReturn);
         }
 
-        // Also trigger if status changes to 'completed' (another indicator of restocking)
+        // Also trigger if status changes to 'completed' (another indicator of restocking).
         if ($productReturn->wasChanged('status') && $productReturn->status === 'completed') {
             $this->createCOGSReversalIfNeeded($productReturn);
+        }
+
+        // A completed/refunded return reverses only points that were earned from the returned
+        // value. Points previously redeemed on the order are intentionally never restored.
+        if ($productReturn->wasChanged('status') && in_array($productReturn->status, ['completed', 'refunded'], true)) {
+            app(\App\Services\LoyaltyCardService::class)->reverseEarnedForReturn(
+                $productReturn,
+                auth()->id()
+            );
         }
     }
 

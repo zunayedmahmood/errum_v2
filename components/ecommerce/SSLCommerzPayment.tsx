@@ -13,6 +13,9 @@ interface SSLCommerzPaymentProps {
   items?: any[];
   shippingCharge?: number;
   discount?: number;
+  useLoyaltyPoints?: boolean;
+  loyaltyExpectedPoints?: number;
+  loyaltyExpectedDiscount?: number;
   onError?: (error: string) => void;
   onCancel?: () => void;
 }
@@ -26,6 +29,9 @@ export default function SSLCommerzPayment({
   items,
   shippingCharge,
   discount,
+  useLoyaltyPoints = false,
+  loyaltyExpectedPoints,
+  loyaltyExpectedDiscount,
   onError,
   onCancel,
 }: SSLCommerzPaymentProps) {
@@ -48,6 +54,9 @@ export default function SSLCommerzPayment({
         billing_address_id: billingAddressId || shippingAddressId,
         notes: orderNotes || '',
         ...(couponCode && { coupon_code: couponCode }),
+        use_loyalty_points: useLoyaltyPoints,
+        ...(useLoyaltyPoints && loyaltyExpectedPoints !== undefined ? { loyalty_expected_points: loyaltyExpectedPoints } : {}),
+        ...(useLoyaltyPoints && loyaltyExpectedDiscount !== undefined ? { loyalty_expected_discount: loyaltyExpectedDiscount } : {}),
       };
 
       const response = await sslcommerzService.initializePayment(orderData);

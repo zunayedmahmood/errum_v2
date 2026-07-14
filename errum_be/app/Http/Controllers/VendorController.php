@@ -103,6 +103,10 @@ class VendorController extends Controller
     {
         $query = Vendor::query();
 
+        if (!$request->boolean('include_resell')) {
+            $query->nonResell();
+        }
+
         // Filters
         if ($request->has('type') && $request->type) {
             $query->where('type', $request->type);
@@ -148,7 +152,8 @@ class VendorController extends Controller
 
     public function getVendorsByType($type)
     {
-        $vendors = Vendor::where('type', $type)
+        $vendors = Vendor::nonResell()
+            ->where('type', $type)
             ->where('is_active', true)
             ->orderBy('name')
             ->get();
@@ -162,16 +167,17 @@ class VendorController extends Controller
 
     public function getVendorStats()
     {
+        $baseQuery = Vendor::nonResell();
         $stats = [
-            'total_vendors' => Vendor::count(),
-            'active_vendors' => Vendor::where('is_active', true)->count(),
-            'inactive_vendors' => Vendor::where('is_active', false)->count(),
-            'by_type' => Vendor::where('is_active', true)
+            'total_vendors' => (clone $baseQuery)->count(),
+            'active_vendors' => (clone $baseQuery)->where('is_active', true)->count(),
+            'inactive_vendors' => (clone $baseQuery)->where('is_active', false)->count(),
+            'by_type' => (clone $baseQuery)->where('is_active', true)
                 ->selectRaw('type, COUNT(*) as count')
                 ->groupBy('type')
                 ->get(),
-            'total_credit_limit' => Vendor::where('is_active', true)->sum('credit_limit'),
-            'recent_vendors' => Vendor::orderBy('created_at', 'desc')
+            'total_credit_limit' => (clone $baseQuery)->where('is_active', true)->sum('credit_limit'),
+            'recent_vendors' => (clone $baseQuery)->orderBy('created_at', 'desc')
                 ->limit(5)
                 ->get(['name', 'type', 'created_at'])
         ];
@@ -330,7 +336,7 @@ class VendorController extends Controller
      */
     public function getAllVendorsAnalytics(Request $request)
     {
-        $query = Vendor::with(['purchaseOrders', 'payments']);
+        $query = Vendor::with(['purchaseOrders', 'payments'])->nonResell();
 
         if ($request->has('is_active')) {
             $query->where('is_active', $request->boolean('is_active'));

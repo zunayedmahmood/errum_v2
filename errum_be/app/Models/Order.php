@@ -59,6 +59,15 @@ class Order extends Model
         'payment_schedule',
         'payment_history',
         'salesman_id',
+        'loyalty_card_eligible',
+        'loyalty_points_redeemed',
+        'loyalty_discount_amount',
+        'loyalty_points_earned',
+        'loyalty_earning_basis',
+        'loyalty_points_per_thousand_snapshot',
+        'loyalty_points_per_taka_snapshot',
+        'loyalty_redeemed_at',
+        'loyalty_earned_at',
     ];
 
     protected $casts = [
@@ -86,6 +95,15 @@ class Order extends Model
         'metadata' => 'array',
         'payment_schedule' => 'array',
         'payment_history' => 'array',
+        'loyalty_card_eligible' => 'boolean',
+        'loyalty_points_redeemed' => 'integer',
+        'loyalty_discount_amount' => 'decimal:2',
+        'loyalty_points_earned' => 'integer',
+        'loyalty_earning_basis' => 'decimal:2',
+        'loyalty_points_per_thousand_snapshot' => 'decimal:4',
+        'loyalty_points_per_taka_snapshot' => 'integer',
+        'loyalty_redeemed_at' => 'datetime',
+        'loyalty_earned_at' => 'datetime',
     ];
 
     protected static function boot()
@@ -134,6 +152,11 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(OrderPayment::class);
+    }
+
+    public function loyaltyTransactions(): HasMany
+    {
+        return $this->hasMany(LoyaltyPointTransaction::class);
     }
 
     public function completedPayments()

@@ -28,6 +28,36 @@ class OrderObserver
         }
 
         if ($order->wasChanged('status')) {
+            if (in_array($order->status, ['delivered', 'completed'], true)) {
+                try {
+                    app(\App\Services\LoyaltyCardService::class)->awardForOrder($order->fresh(['payments']) ?: $order);
+                } catch (\Throwable $e) {
+                    Log::error('Order loyalty awarding failed', [
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'status' => $order->status,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            if (in_array($order->status, ['cancelled', 'refunded'], true)) {
+                try {
+                    app(\App\Services\LoyaltyCardService::class)->reverseAllEarnedForOrder(
+                        $order,
+                        (string) $order->status,
+                        auth()->id()
+                    );
+                } catch (\Throwable $e) {
+                    Log::error('Order loyalty reversal failed', [
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'status' => $order->status,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             try {
                 $posting = app(AccountingPostingService::class);
 
@@ -58,6 +88,23 @@ class OrderObserver
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
+    }
+
+    public function deleting(Order $order): void
+    {
+        try {
+            app(\App\Services\LoyaltyCardService::class)->reverseAllEarnedForOrder(
+                $order,
+                'deleted',
+                auth()->id()
+            );
+        } catch (\Throwable $e) {
+            Log::error('Deleted order loyalty reversal failed', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

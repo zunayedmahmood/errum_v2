@@ -32,6 +32,9 @@ class GuestCheckoutController extends Controller
                 'items.*.quantity' => 'required|integer|min:1',
                 'items.*.variant_options' => 'nullable|array',
                 'payment_method' => 'required|string|in:cod,sslcommerz,cash',
+                'use_loyalty_points' => 'nullable|boolean',
+                'loyalty_expected_points' => 'nullable|integer|min:0',
+                'loyalty_expected_discount' => 'nullable|numeric|min:0',
                 
                 // Delivery address (embedded)
                 'delivery_address.full_name' => 'required|string|max:255',
@@ -287,6 +290,16 @@ class GuestCheckoutController extends Controller
                     ],
                 ]);
 
+                $order = app(\App\Services\LoyaltyCardService::class)->initializeOrder(
+                    $order,
+                    $customer,
+                    $request->boolean('use_loyalty_points'),
+                    null,
+                    $request->has('loyalty_expected_points') ? (int) $request->input('loyalty_expected_points') : null,
+                    $request->has('loyalty_expected_discount') ? (float) $request->input('loyalty_expected_discount') : null
+                );
+                $totalAmount = (float) $order->total_amount;
+
                 // Step 6: Create order items
                 foreach ($orderItems as $itemData) {
                     OrderItem::create([
@@ -311,7 +324,7 @@ class GuestCheckoutController extends Controller
                 }
 
                 // Step 7: Handle payment method
-                if ($request->payment_method === 'sslcommerz') {
+                if ($request->payment_method === 'sslcommerz' && $totalAmount > 0) {
                     $transactionId = 'TXN-' . $order->id . '-' . time();
                     $paymentNumber = 'PAY-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -8));
                     

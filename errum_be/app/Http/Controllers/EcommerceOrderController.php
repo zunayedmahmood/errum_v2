@@ -171,6 +171,9 @@ class EcommerceOrderController extends Controller
                 'coupon_code' => 'nullable|string',
                 'delivery_preference' => 'nullable|in:standard,express,scheduled',
                 'scheduled_delivery_date' => 'nullable|date|after:today',
+                'use_loyalty_points' => 'nullable|boolean',
+                'loyalty_expected_points' => 'nullable|integer|min:0',
+                'loyalty_expected_discount' => 'nullable|numeric|min:0',
             ]);
 
             if ($validator->fails()) {
@@ -302,6 +305,17 @@ class EcommerceOrderController extends Controller
                     ],
                 ]);
 
+                $customer = Customer::findOrFail($customerId);
+                $order = app(\App\Services\LoyaltyCardService::class)->initializeOrder(
+                    $order,
+                    $customer,
+                    $request->boolean('use_loyalty_points'),
+                    null,
+                    $request->has('loyalty_expected_points') ? (int) $request->input('loyalty_expected_points') : null,
+                    $request->has('loyalty_expected_discount') ? (float) $request->input('loyalty_expected_discount') : null
+                );
+                $totalAmount = (float) $order->total_amount;
+
                 // Create order items without batch/barcode (will be assigned during fulfillment)
                 foreach ($cartItems as $cartItem) {
                     // Calculate tax for this item
@@ -334,7 +348,7 @@ class EcommerceOrderController extends Controller
                     ->delete();
 
                 // Handle payment based on method
-                if ($request->payment_method === 'sslcommerz') {
+                if ($request->payment_method === 'sslcommerz' && $totalAmount > 0) {
                     // Initiate SSLCommerz payment
                     $transactionId = 'TXN-' . $order->id . '-' . time();
                     $paymentNumber = 'PAY-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));

@@ -156,6 +156,16 @@ class Product extends Model
         return $this->belongsTo(Vendor::class);
     }
 
+    public function resellTag()
+    {
+        return $this->hasOne(ResellProduct::class);
+    }
+
+    public function activeResellTag()
+    {
+        return $this->resellTag()->where('is_active', true);
+    }
+
     public function productFields(): HasMany
     {
         return $this->hasMany(ProductField::class);

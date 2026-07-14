@@ -308,6 +308,9 @@ class OrderController extends Controller
             'items.*.discount_amount' => 'nullable|numeric|min:0',
             'discount_amount' => 'nullable|numeric|min:0',
             'shipping_amount' => 'nullable|numeric|min:0',
+            'use_loyalty_points' => 'nullable|boolean',
+            'loyalty_expected_points' => 'nullable|integer|min:0',
+            'loyalty_expected_discount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
             'shipping_address' => 'nullable|array',
             'payment' => 'nullable|array',
@@ -376,7 +379,7 @@ class OrderController extends Controller
                 $customerData['created_by'] = Auth::id();
                 
                 // Check if customer exists by phone
-                $existing = Customer::where('phone', $customerData['phone'])->first();
+                $existing = Customer::findByPhone($customerData['phone']);
                 if ($existing) {
                     $updates = [];
                     if (!empty($customerData['name']) && $customerData['name'] !== $existing->name) {
@@ -396,7 +399,7 @@ class OrderController extends Controller
                     if ($request->order_type === 'counter') {
                         $customer = Customer::create([
                             'name' => $customerData['name'],
-                            'phone' => $customerData['phone'],
+                            'phone' => Customer::normalizePhoneNumber($customerData['phone']),
                             'email' => $customerData['email'] ?? null,
                             'address' => $customerData['address'] ?? null,
                             'customer_type' => 'counter',
@@ -406,7 +409,7 @@ class OrderController extends Controller
                     } elseif ($request->order_type === 'social_commerce') {
                         $customer = Customer::create([
                             'name' => $customerData['name'],
-                            'phone' => $customerData['phone'],
+                            'phone' => Customer::normalizePhoneNumber($customerData['phone']),
                             'email' => $customerData['email'] ?? null,
                             'address' => $customerData['address'] ?? null,
                             'customer_type' => 'social_commerce',
@@ -416,7 +419,7 @@ class OrderController extends Controller
                     } else {
                         $customer = Customer::create([
                             'name' => $customerData['name'],
-                            'phone' => $customerData['phone'],
+                            'phone' => Customer::normalizePhoneNumber($customerData['phone']),
                             'email' => $customerData['email'] ?? null,
                             'address' => $customerData['address'] ?? null,
                             'customer_type' => 'ecommerce',
@@ -854,6 +857,18 @@ class OrderController extends Controller
                 'updated_at' => $orderDate,
             ])->saveQuietly();
 
+            // Snapshot loyalty eligibility/rates at purchase time and deduct any requested points once.
+            // Redeemed points are intentionally non-refundable for later cancellation, return, or deletion.
+            $order = app(\App\Services\LoyaltyCardService::class)->initializeOrder(
+                $order->fresh(),
+                $customer,
+                $request->boolean('use_loyalty_points'),
+                Auth::id(),
+                $request->has('loyalty_expected_points') ? (int) $request->input('loyalty_expected_points') : null,
+                $request->has('loyalty_expected_discount') ? (float) $request->input('loyalty_expected_discount') : null
+            );
+            $totalAmount = (float) $order->total_amount;
+
             // Setup installment plan if requested
             if ($request->filled('installment_plan')) {
                 $plan = $request->installment_plan;
@@ -865,11 +880,12 @@ class OrderController extends Controller
             }
 
             // Process immediate payment if provided
-            if ($request->filled('payment')) {
+            if ($request->filled('payment') && (float) $order->total_amount > 0) {
                 $paymentMethod = PaymentMethod::findOrFail($request->payment['payment_method_id']);
+                $paymentAmount = min((float) $request->payment['amount'], (float) $order->total_amount);
                 $payment = $order->addPayment(
                     $paymentMethod,
-                    $request->payment['amount'],
+                    $paymentAmount,
                     array_merge($request->payment['payment_data'] ?? [], [
                         'payment_date' => $orderDate->toDateTimeString(),
                     ]),
@@ -1979,6 +1995,14 @@ class OrderController extends Controller
 
             // Update customer purchase stats
             $order->customer->recordPurchase($order->total_amount, $order->id);
+
+            // For POS/counter sales, this completion endpoint is the final sale event even though
+            // the historical order status remains `confirmed`. Award loyalty points here once.
+            app(\App\Services\LoyaltyCardService::class)->awardForOrder(
+                $order,
+                null,
+                auth()->id()
+            );
 
             // Create COGS accounting transactions
             // This posts the Cost of Goods Sold to the accounting system:
@@ -3254,6 +3278,8 @@ class OrderController extends Controller
                 'email' => $order->customer->email,
                 'address' => $order->customer->address,
                 'customer_code' => $order->customer->customer_code,
+                'has_loyalty_card' => (bool) $order->customer->has_loyalty_card,
+                'loyalty_points_balance' => (int) $order->customer->loyalty_points_balance,
             ],
             'store' => $order->store ? [
                 'id' => $order->store->id,
@@ -3273,6 +3299,11 @@ class OrderController extends Controller
             'tax_amount' => number_format((float)$order->tax_amount, 2),
             'discount_amount' => number_format((float)$order->discount_amount, 2),
             'shipping_amount' => number_format((float)$order->shipping_amount, 2),
+            'loyalty_card_eligible' => (bool) $order->loyalty_card_eligible,
+            'loyalty_points_redeemed' => (int) $order->loyalty_points_redeemed,
+            'loyalty_discount_amount' => number_format((float)$order->loyalty_discount_amount, 2),
+            'loyalty_points_earned' => (int) $order->loyalty_points_earned,
+            'loyalty_earning_basis' => number_format((float)$order->loyalty_earning_basis, 2),
             'total_amount' => number_format((float)$order->total_amount, 2),
             'paid_amount' => number_format((float)$order->paid_amount, 2),
             'outstanding_amount' => number_format((float)$order->outstanding_amount, 2),
