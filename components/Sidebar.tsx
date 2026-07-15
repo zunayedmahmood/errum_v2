@@ -230,18 +230,6 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
 
   ];
 
-  // Auto-expand active submenu on mount or pathname change
-  useEffect(() => {
-    const hrefPath = (href: string) => href.split('?')[0];
-    const activeItem = menuItems.find(
-      (item) => 'subMenu' in item && item.subMenu.some((sub) => hrefPath(sub.href) === pathname)
-    );
-    if (activeItem) {
-      setOpenMenu(activeItem.label);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
-
   // Filter menu items based on permissions
   const filteredMenuItems: MenuItem[] = menuItems
     .map((item) => {

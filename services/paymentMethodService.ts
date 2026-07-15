@@ -55,8 +55,10 @@ class PaymentMethodService {
     page?: number;
   }): Promise<PaymentMethod[]> {
     try {
+      // `/payment-methods` is the public checkout endpoint and requires
+      // `customer_type`. Internal/vendor-style screens must use `/all`.
       const response = await axiosInstance.get<any>(
-        this.baseURL,
+        `${this.baseURL}/all`,
         { params }
       );
       

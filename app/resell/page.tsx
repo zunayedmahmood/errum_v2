@@ -125,7 +125,7 @@ export default function ResellItemsPage() {
         resellService.getPurchaseOrders({ per_page: 200 }),
         resellService.getPayments({ per_page: 200 }),
         storeService.getStores({ is_warehouse: true, is_active: true, per_page: 1000 }),
-        paymentMethodService.getAll({ is_active: true, per_page: 1000 }),
+        paymentMethodService.getAll(),
       ]);
       setSummary(summaryData);
       setVendors(Array.isArray(vendorData) ? vendorData : []);
@@ -278,9 +278,9 @@ export default function ResellItemsPage() {
   ];
 
   return (
-    <div className={`${darkMode ? 'dark' : ''} flex min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100`}>
+    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
-      <div className="flex-1 flex flex-col min-w-0 transition-colors">
+      <div className={`transition-all ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'}`}>
         <Header darkMode={darkMode} setDarkMode={setDarkMode} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
         <main className="p-4 md:p-7">
           {notice && <div className={`mb-5 rounded-xl border px-4 py-3 text-sm ${notice.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200'}`}>{notice.text}</div>}
