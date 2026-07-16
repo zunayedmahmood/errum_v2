@@ -769,6 +769,10 @@ export default function SocialCommercePage() {
           q: searchQuery,
           per_page: 50,
           group_by_sku: true,
+          // ERP search must still return stock-out / fully-reserved products so the
+          // user can identify the product and see Availability: 0. Selection is
+          // blocked below when sellable availability is zero.
+          in_stock: 'all',
         });
 
         if (active && response && response.grouped_products) {
@@ -833,7 +837,16 @@ export default function SocialCommercePage() {
     }
   };
 
+  const getSellableAvailability = (variant: Product | null | undefined): number =>
+    Math.max(0, Number(variant?.available_inventory ?? variant?.stock_quantity ?? 0));
+
   const handleVariantSelect = async (variant: Product, group: CatalogGroupedProduct) => {
+    const available = getSellableAvailability(variant);
+    if (available <= 0) {
+      fireToast('This variant is out of stock or fully reserved and cannot be selected.', 'error');
+      return;
+    }
+
     const price = variant.selling_price;
 
     // Add to cart directly or set as "selected" for qty adjustment
@@ -872,7 +885,12 @@ export default function SocialCommercePage() {
     const discPer = parseFloat(discountPercent) || 0;
     const discTk = parseFloat(discountTk || '0');
 
-    const avail = selectedProduct.available_inventory ?? selectedProduct.stock_quantity ?? 0;
+    const avail = selectedProduct.isDefective ? 1 : getSellableAvailability(selectedProduct);
+    if (!selectedProduct.isDefective && avail <= 0) {
+      fireToast('This product is out of stock or fully reserved and cannot be added.', 'error');
+      setSelectedProduct(null);
+      return;
+    }
     if (qty > avail && !selectedProduct.isDefective) {
       fireToast(`Only ${avail} units available`, 'error');
       return;
@@ -1310,7 +1328,13 @@ export default function SocialCommercePage() {
               <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Disc ৳</label>
               <input type="number" value={discountTk} onChange={(e) => { setDiscountTk(e.target.value); setDiscountPercent(''); }} className="w-full p-2 text-sm border rounded-lg bg-white dark:bg-gray-800" placeholder="0" />
             </div>
-            <button onClick={addToCart} className="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 rounded-lg text-sm">Add to Cart</button>
+            <button
+              onClick={addToCart}
+              disabled={!selectedProduct.isDefective && getSellableAvailability(selectedProduct) <= 0}
+              className="bg-teal-600 hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-gray-400 text-white font-bold py-2 rounded-lg text-sm"
+            >
+              Add to Cart
+            </button>
           </div>
         </div>
       )}
@@ -1345,26 +1369,44 @@ export default function SocialCommercePage() {
 
             {expandedGroupId === group.base_name && (
               <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/20">
-                {[group.main_variant, ...group.variants].map((variant) => (
-                  <div
-                    key={variant.id}
-                    onClick={() => handleVariantSelect(variant, group)}
-                    className="p-3 flex items-center justify-between border-b last:border-0 border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-white dark:hover:bg-gray-800"
-                  >
-                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{variant.variation_suffix || 'Standard'}</span>
-                    <div className="flex items-center gap-4 text-xs">
-                      <span className="font-bold">{variant.selling_price} ৳</span>
-                      <span className="text-gray-400">|</span>
-                      <span className={(variant.available_inventory ?? variant.stock_quantity) > 0 ? 'text-green-600' : 'text-red-500'}>
-                        Avail: {variant.available_inventory ?? variant.stock_quantity}
-                      </span>
-                      {variant.reserved_inventory ? (
-                        <span className="text-blue-500 font-medium">({variant.reserved_inventory} Res)</span>
-                      ) : null}
-                      <Plus size={14} className="text-teal-600" />
+                {[group.main_variant, ...group.variants].map((variant) => {
+                  const available = getSellableAvailability(variant);
+                  const selectable = available > 0;
+
+                  return (
+                    <div
+                      key={variant.id}
+                      role="button"
+                      tabIndex={selectable ? 0 : -1}
+                      aria-disabled={!selectable}
+                      onClick={() => selectable && handleVariantSelect(variant, group)}
+                      onKeyDown={(event) => {
+                        if (selectable && (event.key === 'Enter' || event.key === ' ')) {
+                          event.preventDefault();
+                          handleVariantSelect(variant, group);
+                        }
+                      }}
+                      className={`p-3 flex items-center justify-between border-b last:border-0 border-gray-100 dark:border-gray-700 transition-colors ${
+                        selectable
+                          ? 'cursor-pointer hover:bg-white dark:hover:bg-gray-800'
+                          : 'cursor-not-allowed bg-gray-100/70 opacity-60 dark:bg-gray-900/60'
+                      }`}
+                    >
+                      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{variant.variation_suffix || 'Standard'}</span>
+                      <div className="flex items-center gap-4 text-xs">
+                        <span className="font-bold">{variant.selling_price} ৳</span>
+                        <span className="text-gray-400">|</span>
+                        <span className={selectable ? 'text-green-600' : 'font-semibold text-red-500'}>
+                          Avail: {available}
+                        </span>
+                        {Number(variant.reserved_inventory || 0) > 0 ? (
+                          <span className="text-blue-500 font-medium">({variant.reserved_inventory} Res)</span>
+                        ) : null}
+                        {selectable ? <Plus size={14} className="text-teal-600" /> : <span className="font-semibold text-red-500">Unavailable</span>}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

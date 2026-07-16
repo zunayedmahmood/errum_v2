@@ -882,12 +882,22 @@ class EcommerceCatalogController extends Controller
                 ], 400);
             }
 
+            $stockMode = strtolower((string) $request->get('in_stock', 'true'));
+            $includeUnavailable = $stockMode === 'all' || $request->boolean('include_out_of_stock');
+
             $products = Product::with(['images', 'category', 'batches' => function ($q) {
-                    $q->orderBy('sell_price', 'asc');
+                    $q->where('is_active', true)
+                      ->where('availability', true)
+                      ->orderBy('sell_price', 'asc');
                 }])
                 ->where('is_archived', false)
-                ->whereHas('batches', function ($q) {
-                    $q->where('quantity', '>', 0);
+                ->whereNull('deleted_at')
+                ->when(!$includeUnavailable, function ($query) {
+                    $query->whereHas('batches', function ($batchQuery) {
+                        $batchQuery->where('is_active', true)
+                            ->where('availability', true)
+                            ->where('quantity', '>', 0);
+                    });
                 })
                 ->where(function ($query) use ($searchQuery) {
                     $this->whereAnyLike($query, ['name', 'sku'], $searchQuery);
@@ -908,17 +918,28 @@ class EcommerceCatalogController extends Controller
 
             $transformedProducts = collect($products->items())->map(function ($product) {
                 $lowestBatch = $product->batches->sortBy('sell_price')->first();
-                $totalStock = $product->batches->sum('quantity');
+                $totalStock = (int) $product->batches->sum('quantity');
+                $reservedRow = ReservedProduct::where('product_id', $product->id)->first();
+                $reservedInventory = $reservedRow ? max(0, (int) $reservedRow->reserved_inventory) : 0;
+                $availableInventory = $reservedRow
+                    ? max(0, (int) $reservedRow->available_inventory)
+                    : max(0, $totalStock - $reservedInventory);
                 
                 return [
                     'id' => $product->id,
                     'name' => $product->name,
+                    'base_name' => $product->base_name,
+                    'variation_suffix' => $product->variation_suffix,
                     'brand' => $product->brand,
                     'sku' => $product->sku,
-                    'selling_price' => $lowestBatch ? $lowestBatch->sell_price : 0,
+                    'selling_price' => $lowestBatch ? (float) $lowestBatch->sell_price : 0,
+                    'price' => $lowestBatch ? (float) $lowestBatch->sell_price : 0,
+                    'stock_quantity' => $totalStock,
+                    'available_inventory' => $availableInventory,
+                    'reserved_inventory' => $reservedInventory,
                     'images' => $product->images->where('is_active', true)->take(1),
                     'category' => $product->category->title ?? null,
-                    'in_stock' => $totalStock > 0,
+                    'in_stock' => $availableInventory > 0,
                 ];
             });
 

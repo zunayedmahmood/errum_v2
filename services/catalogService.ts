@@ -205,6 +205,12 @@ export interface SearchProductsParams {
   per_page?: number;
   page?: number;
   group_by_sku?: boolean;
+  /**
+   * true  = only sellable products (catalog default)
+   * false = only unavailable products
+   * all   = include both; useful for ERP search screens that must show stock as 0
+   */
+  in_stock?: boolean | 'all';
 }
 
 export interface Category {
@@ -1111,6 +1117,7 @@ const catalogService = {
       per_page: params.per_page,
       page: params.page,
       group_by_sku: params.group_by_sku,
+      in_stock: params.in_stock,
     };
 
     try {
