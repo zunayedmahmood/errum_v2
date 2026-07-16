@@ -69,7 +69,7 @@ export default function MyHRMPage() {
           </div>
           <div>
             <p className="text-muted text-xs uppercase tracking-widest font-600 mb-0.5">Welcome back</p>
-            <h2 className="text-white text-xl font-700 leading-tight" style={{ fontFamily: 'Syne, sans-serif' }}>{user?.name}</h2>
+            <h2 className="text-main text-xl font-700 leading-tight" style={{ fontFamily: 'Syne, sans-serif' }}>{user?.name}</h2>
             <p className="text-muted text-xs mt-0.5">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
           </div>
           <div className="ml-auto text-right hidden md:block">
@@ -98,7 +98,7 @@ export default function MyHRMPage() {
         {/* Today Clock Card */}
         <div className="hrm-card rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white font-700 text-sm flex items-center gap-2" style={{ fontFamily: 'Syne, sans-serif' }}>
+            <h3 className="text-main font-700 text-sm flex items-center gap-2" style={{ fontFamily: 'Syne, sans-serif' }}>
               <Clock className="w-4 h-4" style={{ color: '#818cf8' }} /> Today
             </h3>
           </div>
@@ -127,7 +127,7 @@ export default function MyHRMPage() {
         {/* Sales Target Card */}
         <div className="hrm-card rounded-2xl p-5 md:col-span-1 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white font-700 text-sm flex items-center gap-2" style={{ fontFamily: 'Syne, sans-serif' }}>
+            <h3 className="text-main font-700 text-sm flex items-center gap-2" style={{ fontFamily: 'Syne, sans-serif' }}>
               <TrendingUp className="w-4 h-4" style={{ color: '#34d399' }} /> Sales Target
             </h3>
             <span className="text-muted text-[10px] font-500">{format(new Date(), 'MMMM yyyy')}</span>
@@ -147,7 +147,7 @@ export default function MyHRMPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-muted text-[10px] mb-1">Target</p>
-                  <p className="text-white text-lg font-700">৳{(performance?.target || 0).toLocaleString()}</p>
+                  <p className="text-main text-lg font-700">৳{(performance?.target || 0).toLocaleString()}</p>
                 </div>
               </div>
               <div className="progress-track h-2 mb-3">
@@ -155,7 +155,7 @@ export default function MyHRMPage() {
                   style={{ width: `${Math.min(percent, 100)}%` }} />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-muted text-xs">Achieved: <span className="text-white font-600">৳{(performance?.achieved || 0).toLocaleString()}</span></span>
+                <span className="text-muted text-xs">Achieved: <span className="text-main font-600">৳{(performance?.achieved || 0).toLocaleString()}</span></span>
                 <span className="text-muted text-xs">Gap: <span className="font-600" style={{ color: '#f87171' }}>৳{Math.max(0, (performance?.target || 0) - (performance?.achieved || 0)).toLocaleString()}</span></span>
               </div>
             </>
@@ -168,7 +168,7 @@ export default function MyHRMPage() {
         {/* Attendance History */}
         <div className="hrm-card rounded-2xl overflow-hidden">
           <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
-            <h3 className="text-white font-700 text-sm" style={{ fontFamily: 'Syne, sans-serif' }}>Attendance History</h3>
+            <h3 className="text-main font-700 text-sm" style={{ fontFamily: 'Syne, sans-serif' }}>Attendance History</h3>
             <span className="text-muted text-[10px]">{attendance.length} records</span>
           </div>
           {attendance.length === 0 ? (
@@ -189,7 +189,7 @@ export default function MyHRMPage() {
                           : <Clock className="w-3.5 h-3.5" style={{ color: '#fbbf24' }} />}
                       </div>
                       <div>
-                        <p className="text-white text-xs font-600">{format(new Date(record.attendance_date), 'EEE, MMM d')}</p>
+                        <p className="text-main text-xs font-600">{format(new Date(record.attendance_date), 'EEE, MMM d')}</p>
                         <p className="text-muted text-[10px]">{record.status?.replace(/_/g,' ') || 'Unknown'}{record.is_late ? ' · Late' : ''}</p>
                       </div>
                     </div>
@@ -206,7 +206,7 @@ export default function MyHRMPage() {
 
         {/* Insights */}
         <div className="hrm-card rounded-2xl p-5">
-          <h3 className="text-white font-700 text-sm mb-4" style={{ fontFamily: 'Syne, sans-serif' }}>Performance Insights</h3>
+          <h3 className="text-main font-700 text-sm mb-4" style={{ fontFamily: 'Syne, sans-serif' }}>Performance Insights</h3>
           <div className="space-y-3">
             {lateCount > 0 && (
               <div className="flex items-start gap-3 p-3.5 rounded-xl" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.12)' }}>
@@ -249,7 +249,7 @@ export default function MyHRMPage() {
             onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(148,163,184,0.20)')}>
             <div className="flex items-center gap-2">
               <Award className="w-4 h-4" style={{ color: '#a78bfa' }} />
-              <span className="text-xs font-600 text-white">Reward / Fine History</span>
+              <span className="text-xs font-600 text-main">Reward / Fine History</span>
             </div>
             <ChevronRight className={`w-4 h-4 text-muted transition-transform ${isHistoryOpen ? 'rotate-90' : ''}`} />
           </button>
@@ -262,7 +262,7 @@ export default function MyHRMPage() {
                 <div key={entry.id} className="flex justify-between items-center p-2.5 rounded-lg"
                   style={{ background: 'rgba(148,163,184,0.10)', border: '1px solid rgba(148,163,184,0.18)' }}>
                   <div>
-                    <p className="text-white text-xs font-600">{entry.title}</p>
+                    <p className="text-main text-xs font-600">{entry.title}</p>
                     <p className="text-muted text-[10px]">{format(new Date(entry.entry_date), 'MMM dd, yyyy')}</p>
                   </div>
                   <span className="text-xs font-700" style={{ color: entry.entry_type === 'reward' ? '#34d399' : '#f87171' }}>

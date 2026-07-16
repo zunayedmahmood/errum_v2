@@ -100,7 +100,7 @@ export default function PayrollPage() {
     return (
       <div className="flex flex-col items-center justify-center h-96 rounded-2xl" style={{ border: '1px dashed rgba(148,163,184,0.28)' }}>
         <CreditCard className="w-14 h-14 mb-4" style={{ color: 'rgba(59,130,246,0.35)' }} />
-        <h3 className="text-lg font-700 text-white mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>No Store Selected</h3>
+        <h3 className="text-lg font-700 text-main mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>No Store Selected</h3>
         <p className="text-muted text-sm">Select a store to manage payroll</p>
       </div>
     );
@@ -110,7 +110,7 @@ export default function PayrollPage() {
     <div className="space-y-5">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-white text-xl font-700" style={{ fontFamily: 'Syne, sans-serif' }}>Payroll</h2>
+          <h2 className="text-main text-xl font-700" style={{ fontFamily: 'Syne, sans-serif' }}>Payroll</h2>
           <p className="text-muted text-xs mt-0.5">{format(new Date(`${selectedMonth}-01`), 'MMMM yyyy')} salary sheet with accounting sync</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -175,7 +175,7 @@ export default function PayrollPage() {
               ) : filteredSheet.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-5 py-12 text-center">
-                    <FileText className="w-10 h-10 mx-auto mb-2 opacity-10 text-white" />
+                    <FileText className="w-10 h-10 mx-auto mb-2 opacity-10 text-main" />
                     <p className="text-muted text-sm">No employees found for this month</p>
                   </td>
                 </tr>
@@ -193,7 +193,7 @@ export default function PayrollPage() {
                           </div>
                         </div>
                         <div>
-                          <p className="text-white text-xs font-600">{row.employee.name}</p>
+                          <p className="text-main text-xs font-600">{row.employee.name}</p>
                           <p className="text-muted text-[10px]">{row.employee.employee_code}</p>
                         </div>
                       </div>

@@ -378,7 +378,7 @@ export default function AttendanceManagerPage() {
     return (
       <div className="flex h-96 flex-col items-center justify-center rounded-2xl" style={{ border: '1px dashed rgba(148,163,184,0.28)' }}>
         <CalendarDays className="mb-4 h-14 w-14" style={{ color: 'rgba(59,130,246,0.35)' }} />
-        <h3 className="mb-1 text-lg font-700 text-white" style={{ fontFamily: 'Syne, sans-serif' }}>No store selected</h3>
+        <h3 className="mb-1 text-lg font-700 text-main" style={{ fontFamily: 'Syne, sans-serif' }}>No store selected</h3>
         <p className="text-sm text-muted">Choose a branch to open attendance manager</p>
       </div>
     );
@@ -391,7 +391,7 @@ export default function AttendanceManagerPage() {
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-600 uppercase tracking-widest text-muted">Branch attendance mode</p>
-              <h2 className="mt-1 text-lg font-700 text-white" style={{ fontFamily: 'Syne, sans-serif' }}>Policy setup</h2>
+              <h2 className="mt-1 text-lg font-700 text-main" style={{ fontFamily: 'Syne, sans-serif' }}>Policy setup</h2>
             </div>
             <div className="rounded-xl p-2" style={{ background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.18)' }}>
               <Settings2 className="h-4 w-4" style={{ color: 'var(--hrm-accent)' }} />
@@ -409,7 +409,7 @@ export default function AttendanceManagerPage() {
                   border: policyForm.mode === 'fixed_day_off' ? '1px solid rgba(59,130,246,0.35)' : '1px solid rgba(148,163,184,0.22)',
                 }}
               >
-                <p className="text-sm font-700 text-white">Weekly holiday</p>
+                <p className="text-sm font-700 text-main">Weekly holiday</p>
                 <p className="mt-1 text-[11px] text-muted">Same weekly off-day rules for the branch.</p>
               </button>
               <button
@@ -421,7 +421,7 @@ export default function AttendanceManagerPage() {
                   border: policyForm.mode === 'always_on_duty' ? '1px solid rgba(99,102,241,0.28)' : '1px solid rgba(148,163,184,0.22)',
                 }}
               >
-                <p className="text-sm font-700 text-white">Roster duty</p>
+                <p className="text-sm font-700 text-main">Roster duty</p>
                 <p className="mt-1 text-[11px] text-muted">Choose duty dates employee by employee.</p>
               </button>
             </div>
@@ -494,7 +494,7 @@ export default function AttendanceManagerPage() {
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-600 uppercase tracking-widest text-muted">Monthly duty planner</p>
-              <h2 className="mt-1 text-lg font-700 text-white" style={{ fontFamily: 'Syne, sans-serif' }}>Roster builder</h2>
+              <h2 className="mt-1 text-lg font-700 text-main" style={{ fontFamily: 'Syne, sans-serif' }}>Roster builder</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="input-dark rounded-xl px-3 py-2 text-sm" />
@@ -572,7 +572,7 @@ export default function AttendanceManagerPage() {
         <div className="flex flex-col gap-4 px-5 py-4 md:flex-row md:items-center md:justify-between" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
           <div>
             <p className="text-xs font-600 uppercase tracking-widest text-muted">Daily control</p>
-            <h3 className="mt-1 text-lg font-700 text-white" style={{ fontFamily: 'Syne, sans-serif' }}>Clock in / out manager</h3>
+            <h3 className="mt-1 text-lg font-700 text-main" style={{ fontFamily: 'Syne, sans-serif' }}>Clock in / out manager</h3>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="input-dark rounded-xl px-3 py-2 text-sm" />
@@ -617,12 +617,12 @@ export default function AttendanceManagerPage() {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div className="avatar-ring h-9 w-9 shrink-0">
-                          <div className="flex h-full w-full items-center justify-center rounded-full bg-[#09090f] text-sm font-700 text-[var(--hrm-accent)]">
+                          <div className="flex h-full w-full items-center justify-center rounded-full bg-[var(--hrm-bg-soft)] text-sm font-700 text-[var(--hrm-accent)]">
                             {employee.name.charAt(0)}
                           </div>
                         </div>
                         <div>
-                          <p className="text-sm font-700 text-white">{employee.name}</p>
+                          <p className="text-sm font-700 text-main">{employee.name}</p>
                           <p className="text-[11px] text-muted">{employee.phone || employee.email || 'No contact'}</p>
                         </div>
                       </div>
@@ -653,7 +653,7 @@ export default function AttendanceManagerPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-sm text-white">
+                    <td className="px-5 py-4 text-sm text-main">
                       <div className="space-y-1">
                         <p><span className="text-muted">IN:</span> {dayRow?.in_time || '--:--'}</p>
                         <p><span className="text-muted">OUT:</span> {dayRow?.out_time || '--:--'}</p>
@@ -711,7 +711,7 @@ export default function AttendanceManagerPage() {
             <div className="rounded-xl p-2" style={{ background: 'rgba(52,211,153,0.12)' }}><CheckCircle2 className="h-4 w-4 text-emerald-400" /></div>
             <div>
               <p className="text-xs uppercase tracking-widest text-muted">Planned duty days</p>
-              <p className="text-2xl font-800 text-white">{rosterForm.duty_dates.length}</p>
+              <p className="text-2xl font-800 text-main">{rosterForm.duty_dates.length}</p>
             </div>
           </div>
           <p className="text-xs text-sub">Useful for those branches where each employee has a monthly roster instead of a fixed weekly holiday.</p>
@@ -721,7 +721,7 @@ export default function AttendanceManagerPage() {
             <div className="rounded-xl p-2" style={{ background: 'rgba(99,102,241,0.12)' }}><Users className="h-4 w-4 text-indigo-300" /></div>
             <div>
               <p className="text-xs uppercase tracking-widest text-muted">Total staff</p>
-              <p className="text-2xl font-800 text-white">{employees.length}</p>
+              <p className="text-2xl font-800 text-main">{employees.length}</p>
             </div>
           </div>
           <p className="text-xs text-sub">The daily control table includes all active staff in the selected branch.</p>
@@ -731,7 +731,7 @@ export default function AttendanceManagerPage() {
             <div className="rounded-xl p-2" style={{ background: 'rgba(245,158,11,0.12)' }}><Clock3 className="h-4 w-4 text-amber-300" /></div>
             <div>
               <p className="text-xs uppercase tracking-widest text-muted">Monthly overtime</p>
-              <p className="text-2xl font-800 text-white">{minutesToHhmm(attendanceTotals.overtimeMinutes)}</p>
+              <p className="text-2xl font-800 text-main">{minutesToHhmm(attendanceTotals.overtimeMinutes)}</p>
             </div>
           </div>
           <p className="text-xs text-sub">Auto-calculated from actual clock in and clock out against the assigned duty time.</p>
@@ -741,7 +741,7 @@ export default function AttendanceManagerPage() {
             <div className="rounded-xl p-2" style={{ background: 'rgba(59,130,246,0.14)' }}><ShieldCheck className="h-4 w-4" style={{ color: 'var(--hrm-accent)' }} /></div>
             <div>
               <p className="text-xs uppercase tracking-widest text-muted">Manual clock time</p>
-              <p className="text-lg font-800 text-white">{manualClockTime}</p>
+              <p className="text-lg font-800 text-main">{manualClockTime}</p>
             </div>
           </div>
           <p className="text-xs text-sub">This time is used when the manager presses clock in or clock out.</p>
@@ -752,7 +752,7 @@ export default function AttendanceManagerPage() {
         <div className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
           <div>
             <p className="text-xs uppercase tracking-widest text-muted">Monthly report</p>
-            <h3 className="mt-1 text-lg font-700 text-white" style={{ fontFamily: 'Syne, sans-serif' }}>Attendance matrix</h3>
+            <h3 className="mt-1 text-lg font-700 text-main" style={{ fontFamily: 'Syne, sans-serif' }}>Attendance matrix</h3>
           </div>
           <div className="rounded-xl px-3 py-2 text-xs font-700" style={{ background: 'rgba(148,163,184,0.18)', border: '1px solid rgba(148,163,184,0.22)', color: 'var(--hrm-text-main)' }}>
             {selectedMonth}
@@ -762,7 +762,7 @@ export default function AttendanceManagerPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr style={{ background: 'rgba(148,163,184,0.10)', borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
-                <th className="min-w-[180px] px-5 py-3 text-[10px] font-700 uppercase tracking-widest text-muted" style={{ position: 'sticky', left: 0, zIndex: 10, background: '#0e0e18', borderRight: '1px solid rgba(148,163,184,0.22)' }}>Employee</th>
+                <th className="min-w-[180px] px-5 py-3 text-[10px] font-700 uppercase tracking-widest text-muted" style={{ position: 'sticky', left: 0, zIndex: 10, background: 'var(--hrm-bg-soft)', borderRight: '1px solid rgba(148,163,184,0.22)' }}>Employee</th>
                 <th className="min-w-[88px] px-4 py-3 text-center text-[10px] font-700 uppercase tracking-widest text-muted" style={{ borderRight: '1px solid rgba(148,163,184,0.22)' }}>Duty days</th>
                 <th className="min-w-[88px] px-4 py-3 text-center text-[10px] font-700 uppercase tracking-widest text-muted" style={{ borderRight: '1px solid rgba(148,163,184,0.22)' }}>Month OT</th>
                 {monthDates.map((day) => (
@@ -786,9 +786,9 @@ export default function AttendanceManagerPage() {
 
                 return (
                   <tr key={row.employee.id} className="table-row-hover" style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
-                    <td className="px-5 py-3" style={{ position: 'sticky', left: 0, zIndex: 5, background: '#0d0d17', borderRight: '1px solid rgba(148,163,184,0.22)' }}>
+                    <td className="px-5 py-3" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--hrm-card-bg)', borderRight: '1px solid rgba(148,163,184,0.22)' }}>
                       <div>
-                        <p className="text-sm font-700 text-white">{row.employee.name}</p>
+                        <p className="text-sm font-700 text-main">{row.employee.name}</p>
                         <p className="text-[10px] text-muted">{row.employee.employee_code || 'No code'}</p>
                       </div>
                     </td>

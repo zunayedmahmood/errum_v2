@@ -104,16 +104,15 @@ function HRMLayoutContent({ children }: { children: React.ReactNode }) {
 
           <main className="hrm-root flex-1 overflow-y-auto bg-gray-50 p-6 dark:bg-gray-900">
             <style>{`
-              .hrm-root { --hrm-text-main: rgb(17 24 39); --hrm-text-muted: rgb(107 114 128); --hrm-border-soft: rgb(229 231 235); --hrm-bg-soft: rgb(249 250 251); --hrm-accent: rgb(37 99 235); }
-              .dark .hrm-root { --hrm-text-main: rgb(255 255 255); --hrm-text-muted: rgb(156 163 175); --hrm-border-soft: rgb(55 65 81); --hrm-bg-soft: rgb(31 41 55); --hrm-accent: rgb(96 165 250); }
-              .hrm-root .hrm-card { background: #ffffff; border: 1px solid rgb(229 231 235); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-              .dark .hrm-root .hrm-card { background: rgb(31 41 55); border-color: rgb(55 65 81); box-shadow: none; }
+              .hrm-root { --hrm-text-main: rgb(17 24 39); --hrm-text-muted: rgb(107 114 128); --hrm-border-soft: rgb(229 231 235); --hrm-bg-soft: rgb(249 250 251); --hrm-card-bg: #ffffff; --hrm-accent: rgb(37 99 235); }
+              .dark .hrm-root { --hrm-text-main: rgb(255 255 255); --hrm-text-muted: rgb(156 163 175); --hrm-border-soft: rgb(55 65 81); --hrm-bg-soft: rgb(31 41 55); --hrm-card-bg: rgb(31 41 55); --hrm-accent: rgb(96 165 250); }
+              .hrm-root .hrm-card { background: var(--hrm-card-bg); border: 1px solid var(--hrm-border-soft); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+              .dark .hrm-root .hrm-card { box-shadow: none; }
               .hrm-root .text-muted { color: rgb(107 114 128) !important; }
               .dark .hrm-root .text-muted { color: rgb(156 163 175) !important; }
               .hrm-root .text-sub { color: rgb(75 85 99) !important; }
               .dark .hrm-root .text-sub { color: rgb(209 213 219) !important; }
-              .hrm-root .text-main, .hrm-root .text-white { color: rgb(17 24 39) !important; }
-              .dark .hrm-root .text-main, .dark .hrm-root .text-white { color: rgb(255 255 255) !important; }
+              .hrm-root .text-main { color: var(--hrm-text-main) !important; }
               .hrm-root .divider { border-color: rgb(229 231 235) !important; }
               .dark .hrm-root .divider { border-color: rgb(55 65 81) !important; }
               .hrm-root .input-dark, .hrm-root .select-dark { width: 100%; background: #ffffff; border: 1px solid rgb(209 213 219); color: rgb(17 24 39); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }

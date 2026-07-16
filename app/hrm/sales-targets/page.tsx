@@ -79,7 +79,7 @@ export default function SalesTargetsPage() {
     return (
       <div className="flex flex-col items-center justify-center h-96 rounded-2xl" style={{ border: '1px dashed rgba(148,163,184,0.28)' }}>
         <Target className="w-14 h-14 mb-4" style={{ color: 'rgba(59,130,246,0.35)' }} />
-        <h3 className="text-lg font-700 text-white mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>No Store Selected</h3>
+        <h3 className="text-lg font-700 text-main mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>No Store Selected</h3>
         <p className="text-muted text-sm">Select a store to manage sales targets</p>
       </div>
     );
@@ -89,7 +89,7 @@ export default function SalesTargetsPage() {
     <div className="space-y-5">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-white text-xl font-700" style={{ fontFamily: 'Syne, sans-serif' }}>Sales Targets</h2>
+          <h2 className="text-main text-xl font-700" style={{ fontFamily: 'Syne, sans-serif' }}>Sales Targets</h2>
           <p className="text-muted text-xs mt-0.5">Branch managers set employee-wise monthly targets. Progress is pulled from POS counter sales.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -108,7 +108,7 @@ export default function SalesTargetsPage() {
               type="month"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-transparent text-white text-xs font-600 border-none outline-none"
+              className="bg-transparent text-main text-xs font-600 border-none outline-none"
             />
           </div>
         </div>
@@ -122,12 +122,12 @@ export default function SalesTargetsPage() {
         </div>
         <div className="hrm-card rounded-2xl p-5">
           <p className="text-muted text-[10px] uppercase tracking-widest font-600 mb-2">POS Sales Achieved</p>
-          <p className="text-3xl font-800 text-white" style={{ fontFamily: 'Syne, sans-serif' }}>৳{(report?.total_sales || 0).toLocaleString()}</p>
+          <p className="text-3xl font-800 text-main" style={{ fontFamily: 'Syne, sans-serif' }}>৳{(report?.total_sales || 0).toLocaleString()}</p>
           <p className="text-muted text-[10px] mt-2 flex items-center gap-1"><ShoppingBag className="w-3 h-3" /> {report?.branch_order_count || 0} billed orders</p>
         </div>
         <div className="hrm-card rounded-2xl p-5">
           <p className="text-muted text-[10px] uppercase tracking-widest font-600 mb-2">Remaining Target</p>
-          <p className="text-3xl font-800 text-white" style={{ fontFamily: 'Syne, sans-serif' }}>৳{(report?.remaining_target || 0).toLocaleString()}</p>
+          <p className="text-3xl font-800 text-main" style={{ fontFamily: 'Syne, sans-serif' }}>৳{(report?.remaining_target || 0).toLocaleString()}</p>
           <p className="text-muted text-[10px] mt-2 flex items-center gap-1"><Wallet className="w-3 h-3" /> {employeesWithNoTarget} without target</p>
         </div>
         <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.14), rgba(59,130,246,0.05))', border: '1px solid rgba(59,130,246,0.25)' }}>
@@ -145,7 +145,7 @@ export default function SalesTargetsPage() {
       <div className="hrm-card rounded-2xl overflow-hidden">
         <div className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
           <div>
-            <h3 className="text-white font-700 text-sm" style={{ fontFamily: 'Syne, sans-serif' }}>Employee-wise Progress</h3>
+            <h3 className="text-main font-700 text-sm" style={{ fontFamily: 'Syne, sans-serif' }}>Employee-wise Progress</h3>
             <p className="text-muted text-[11px] mt-1">Each employee gets credit from the POS employee selected during billing.</p>
           </div>
           <div className="relative">
@@ -196,7 +196,7 @@ export default function SalesTargetsPage() {
                           </div>
                         </div>
                         <div>
-                          <p className="text-white text-xs font-600">{item.employee.name}</p>
+                          <p className="text-main text-xs font-600">{item.employee.name}</p>
                           <p className="text-muted text-[10px]">{item.employee.employee_code || 'No code'}</p>
                         </div>
                       </div>
@@ -209,13 +209,13 @@ export default function SalesTargetsPage() {
                       )}
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="text-xs font-700 text-white">৳{Number(item.achieved_amount || 0).toLocaleString()}</span>
+                      <span className="text-xs font-700 text-main">৳{Number(item.achieved_amount || 0).toLocaleString()}</span>
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="text-xs font-600" style={{ color: 'var(--hrm-accent)' }}>৳{Number(item.remaining_amount || 0).toLocaleString()}</span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="text-xs font-600 text-white">{item.order_count || 0}</span>
+                      <span className="text-xs font-600 text-main">{item.order_count || 0}</span>
                     </td>
                     <td className="px-5 py-3.5 min-w-[180px]">
                       <div className="flex items-center gap-3">

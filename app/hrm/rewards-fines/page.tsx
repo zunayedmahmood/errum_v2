@@ -70,7 +70,7 @@ export default function RewardsFinesPage() {
   if (!selectedStoreId) return (
     <div className="flex flex-col items-center justify-center h-96 rounded-2xl" style={{ border: '1px dashed rgba(148,163,184,0.28)' }}>
       <Zap className="w-14 h-14 mb-4" style={{ color: 'rgba(59,130,246,0.35)' }} />
-      <h3 className="text-lg font-700 text-white mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>No Store Selected</h3>
+      <h3 className="text-lg font-700 text-main mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>No Store Selected</h3>
       <p className="text-muted text-sm">Select a store to manage rewards and fines</p>
     </div>
   );
@@ -79,14 +79,14 @@ export default function RewardsFinesPage() {
     <div className="space-y-5">
       <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
         <div>
-          <h2 className="text-white text-xl font-700" style={{ fontFamily: 'Syne, sans-serif' }}>Rewards & Fines</h2>
+          <h2 className="text-main text-xl font-700" style={{ fontFamily: 'Syne, sans-serif' }}>Rewards & Fines</h2>
           <p className="text-muted text-xs mt-0.5">Stack monthly bonuses and penalties per employee and preview salary impact before payroll.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl" style={{ background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.18)' }}>
             <Calendar className="w-3.5 h-3.5" style={{ color: 'var(--hrm-accent)' }} />
             <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-transparent text-white text-xs font-600 border-none outline-none" />
+              className="bg-transparent text-main text-xs font-600 border-none outline-none" />
           </div>
           <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.22)' }}>
             {[
@@ -136,23 +136,23 @@ export default function RewardsFinesPage() {
           <div className="flex items-center gap-3 mb-2">
             <Wallet className="w-5 h-5" style={{ color: 'var(--hrm-accent)' }} />
             <div>
-              <p className="text-white text-sm font-700" style={{ fontFamily: 'Syne, sans-serif' }}>Salary Effect Snapshot</p>
+              <p className="text-main text-sm font-700" style={{ fontFamily: 'Syne, sans-serif' }}>Salary Effect Snapshot</p>
               <p className="text-muted text-xs">Base salary plus this month&apos;s pending reward/fine stack.</p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
             <div className="rounded-xl p-4" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
               <p className="text-muted text-[10px] uppercase tracking-widest font-600 mb-2">Projected payout pool</p>
-              <p className="text-white text-2xl font-800" style={{ fontFamily: 'Syne, sans-serif' }}>৳{Number(summaryData?.total_projected_salary || 0).toLocaleString()}</p>
+              <p className="text-main text-2xl font-800" style={{ fontFamily: 'Syne, sans-serif' }}>৳{Number(summaryData?.total_projected_salary || 0).toLocaleString()}</p>
             </div>
             <div className="rounded-xl p-4" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
               <p className="text-muted text-[10px] uppercase tracking-widest font-600 mb-2">Top positive impact</p>
-              <p className="text-white text-sm font-700">{topPositive?.employee?.name || '—'}</p>
+              <p className="text-main text-sm font-700">{topPositive?.employee?.name || '—'}</p>
               <p className="text-[11px] mt-1" style={{ color: '#34d399' }}>{topPositive ? `+৳${Number(topPositive.net_adjustment || 0).toLocaleString()}` : 'No bonus yet'}</p>
             </div>
             <div className="rounded-xl p-4" style={{ background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.20)' }}>
               <p className="text-muted text-[10px] uppercase tracking-widest font-600 mb-2">Highest deduction</p>
-              <p className="text-white text-sm font-700">{topFine?.employee?.name || '—'}</p>
+              <p className="text-main text-sm font-700">{topFine?.employee?.name || '—'}</p>
               <p className="text-[11px] mt-1" style={{ color: '#f87171' }}>{topFine && Number(topFine.total_fine || 0) > 0 ? `-৳${Number(topFine.total_fine || 0).toLocaleString()}` : 'No fines yet'}</p>
             </div>
           </div>
@@ -161,7 +161,7 @@ export default function RewardsFinesPage() {
           <div className="flex items-center gap-3 mb-4">
             <ShieldAlert className="w-5 h-5" style={{ color: 'var(--hrm-accent)' }} />
             <div>
-              <p className="text-white text-sm font-700" style={{ fontFamily: 'Syne, sans-serif' }}>How this stacks</p>
+              <p className="text-main text-sm font-700" style={{ fontFamily: 'Syne, sans-serif' }}>How this stacks</p>
               <p className="text-muted text-xs">Everything in this month stays pending until payroll marks it applied.</p>
             </div>
           </div>
@@ -182,7 +182,7 @@ export default function RewardsFinesPage() {
       <div className="hrm-card rounded-2xl overflow-hidden">
         <div className="px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4" style={{ borderBottom: '1px solid rgba(148,163,184,0.22)' }}>
           <div>
-            <h3 className="text-white font-700 text-sm" style={{ fontFamily: 'Syne, sans-serif' }}>Employee Breakdown</h3>
+            <h3 className="text-main font-700 text-sm" style={{ fontFamily: 'Syne, sans-serif' }}>Employee Breakdown</h3>
             <p className="text-muted text-[11px] mt-1">See who is getting extra benefits, who is getting deductions, and what their salary would look like before payroll.</p>
           </div>
           <div className="relative">
@@ -230,7 +230,7 @@ export default function RewardsFinesPage() {
                             </div>
                           </div>
                           <div>
-                            <p className="text-white text-xs font-600">{row.employee.name}</p>
+                            <p className="text-main text-xs font-600">{row.employee.name}</p>
                             <p className="text-muted text-[10px]">{row.employee.employee_code || '—'} · {row.total_entries} entries</p>
                           </div>
                         </div>
@@ -269,7 +269,7 @@ export default function RewardsFinesPage() {
                             <div className="px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3" style={{ borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
                               <div>
                                 <p className="text-muted text-[10px] uppercase tracking-widest font-600">Entries — {format(new Date(selectedMonth + '-01'), 'MMMM yyyy')}</p>
-                                <p className="text-white text-xs font-700 mt-1">Projected salary after pending stack: ৳{projectedSalary.toLocaleString()}</p>
+                                <p className="text-main text-xs font-700 mt-1">Projected salary after pending stack: ৳{projectedSalary.toLocaleString()}</p>
                               </div>
                               <AccessControl roles={['super-admin', 'admin', 'branch-manager']}>
                                 <button onClick={() => setDialog({ isOpen: true, employee: row.employee, editData: null })} className="btn-primary px-3 py-1.5 rounded-xl text-[11px] font-700 w-fit">
@@ -293,7 +293,7 @@ export default function RewardsFinesPage() {
                                         </span>
                                       </td>
                                       <td className="px-4 py-2.5">
-                                        <p className="text-white text-xs font-600">{entry.title}</p>
+                                        <p className="text-main text-xs font-600">{entry.title}</p>
                                         {entry.notes && <p className="text-muted text-[10px]">{entry.notes}</p>}
                                       </td>
                                       <td className="px-4 py-2.5 text-xs text-muted whitespace-nowrap">{entry.is_applied ? 'Applied' : 'Pending'}</td>
