@@ -8,6 +8,7 @@ import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import cashSheetService, {
   CashSheetBranchDay,
+  CashSheetDay,
   CashSheetSummaryResponse,
   StoreLite,
 } from '@/services/cashSheetService';
@@ -107,6 +108,95 @@ function branchForStore(branches: CashSheetBranchDay[], storeId: number) {
   return branches.find((branch) => Number(branch.store_id) === Number(storeId));
 }
 
+function addOneDay(date: string) {
+  const [year, month, day] = date.split('-').map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  return next.toISOString().slice(0, 10);
+}
+
+function monthEnd(month: string) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const end = new Date(Date.UTC(year, monthNumber, 0));
+  return end.toISOString().slice(0, 10);
+}
+
+function emptyDay(date: string): CashSheetDay {
+  return {
+    date,
+    branches: [],
+    online: {
+      daily_sales: 0,
+      advance: 0,
+      online_payment: 0,
+      cod: 0,
+      cod_due: 0,
+      cod_collected: 0,
+      cod_refunds: 0,
+      refunds: 0,
+      has_data: {
+        daily_sales: false,
+        advance: false,
+        online_payment: false,
+        cod: false,
+        cod_due: false,
+        cod_collected: false,
+        cod_refunds: false,
+        refunds: false,
+      },
+    },
+    disbursements: {
+      sslzc_received: 0,
+      pathao_received: 0,
+      has_data: {
+        sslzc_received: false,
+        pathao_received: false,
+      },
+    },
+    totals: {
+      sale: 0,
+      branch_sale: 0,
+      cash: 0,
+      bank: 0,
+      final_bank: 0,
+      daily_cost: 0,
+      ex_on: 0,
+      salary: 0,
+      cash_to_bank: 0,
+      has_data: {
+        sale: false,
+        branch_sale: false,
+        cash: false,
+        bank: false,
+        final_bank: false,
+        daily_cost: false,
+        ex_on: false,
+        salary: false,
+        cash_to_bank: false,
+      },
+    },
+    owner: {
+      cash_invest: 0,
+      bank_invest: 0,
+      cash_cost: 0,
+      bank_cost: 0,
+      total_cash: 0,
+      total_bank: 0,
+      cash_after_cost: 0,
+      bank_after_cost: 0,
+      has_data: {
+        cash_invest: false,
+        bank_invest: false,
+        cash_cost: false,
+        bank_cost: false,
+        total_cash: false,
+        total_bank: false,
+        cash_after_cost: false,
+        bank_after_cost: false,
+      },
+    },
+  };
+}
+
 export default function MonthlyCashSheetPage() {
   const { darkMode, setDarkMode } = useTheme();
   const { scopedStoreId, isLoading: authLoading } = useAuth() as any;
@@ -141,6 +231,20 @@ export default function MonthlyCashSheetPage() {
     }
     return map;
   }, [sheet?.summary.stores]);
+  const visibleDays = useMemo(() => {
+    if (!sheet) return [];
+
+    const daysByDate = new Map((sheet.days || []).map((day) => [day.date, day]));
+    const start = sheet.date_from || `${month}-01`;
+    const end = sheet.date_to || monthEnd(month);
+    const days: CashSheetDay[] = [];
+
+    for (let date = start; date <= end; date = addOneDay(date)) {
+      days.push(daysByDate.get(date) || emptyDay(date));
+    }
+
+    return days;
+  }, [sheet, month]);
 
   const today = todayDhaka();
   const dailyCost = sheet?.summary.totals.daily_cost ? -Math.abs(sheet.summary.totals.daily_cost) : 0;
@@ -230,7 +334,7 @@ export default function MonthlyCashSheetPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sheet.days.map((day) => (
+                      {visibleDays.map((day) => (
                         <tr key={day.date} className={day.date === today ? 'bg-blue-50/70 dark:bg-blue-950/20' : 'odd:bg-white even:bg-gray-50/70 dark:odd:bg-gray-900 dark:even:bg-gray-950/40'}>
                           <td className="sticky left-0 z-10 border-b border-r border-gray-200 bg-inherit px-3 py-2 font-bold text-gray-800 dark:border-gray-800 dark:text-gray-100">
                             <div className="flex items-center gap-2">
