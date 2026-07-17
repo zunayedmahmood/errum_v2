@@ -910,12 +910,12 @@ Route::middleware('auth:api')->group(function () {
     
     // ============================================
     // CASH SHEET ROUTES
-    // Fresh live monthly report + manual entry panels.
+    // Live summary + manual entry panels.
     // ============================================
 
     Route::prefix('cash-sheet')->group(function () {
-        // GET  /api/cash-sheet?month=2026-07 → live monthly cash-sheet
-        Route::get('/', [\App\Http\Controllers\CashSheetController::class, 'index']);
+        // GET  /api/cash-sheet/summary?month=2026-07 → live monthly summary
+        Route::get('/summary', [\App\Http\Controllers\CashSheetController::class, 'summary']);
 
         // GET  /api/cash-sheet/entries?date=2026-04-14 → manual entries for a date
         Route::get('/entries', [\App\Http\Controllers\CashSheetController::class, 'entries']);

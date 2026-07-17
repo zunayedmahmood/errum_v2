@@ -1,13 +1,27 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
-import cashSheetService, { CashSheetResponse, CashSheetBranchDay } from '@/services/cashSheetService';
-import { CalendarDays, RefreshCcw, Loader2, AlertCircle, FileText, ArrowRightLeft, Info } from 'lucide-react';
+import cashSheetService, {
+  CashSheetBranchDay,
+  CashSheetSummaryResponse,
+  StoreLite,
+} from '@/services/cashSheetService';
+import { AlertCircle, CalendarDays, FileText, Loader2, RefreshCcw } from 'lucide-react';
+
+const STORE_COLUMNS = [
+  ['daily_sale', 'SALE'],
+  ['cash', 'CASH'],
+  ['bank', 'BANK'],
+  ['ex_on', 'EX/ON'],
+  ['salary', 'SALARY'],
+  ['daily_cost', 'COST'],
+  ['cash_to_bank', '->BANK'],
+] as const;
 
 function dhakaMonthString(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -22,159 +36,83 @@ function dhakaMonthString(date = new Date()) {
   return `${parts.year}-${parts.month}`;
 }
 
-function prettyDate(value: string) {
-  if (!value) return '';
-  const [year, month, day] = value.split('-').map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', weekday: 'short', timeZone: 'UTC' }).format(date);
-}
-
 function money(value: number) {
-  const rounded = Math.round(Number(value || 0));
-  return `৳${rounded.toLocaleString('en-BD')}`;
+  const amount = Object.is(value, -0) ? 0 : Math.round(Number(value || 0));
+  const sign = amount < 0 ? '-' : '';
+  return `${sign}৳${Math.abs(amount).toLocaleString('en-BD')}`;
 }
 
-function MoneyCell({ value, bold = false, showZero = false }: { value: number; bold?: boolean; showZero?: boolean }) {
-  const negative = Number(value) < 0;
-  const zero = Number(value) === 0;
+function dateLabel(date: string) {
+  const parsed = new Date(`${date}T00:00:00+06:00`);
+  const day = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', day: '2-digit' }).format(parsed);
+  const weekday = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', weekday: 'short' }).format(parsed);
+  return `${day} ${weekday}`;
+}
+
+function todayDhaka() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date()).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function displayValue(value: number, outflow = false) {
+  if (!outflow) return value;
+  return value === 0 ? 0 : -Math.abs(value);
+}
+
+function AmountCell({ value, present, outflow = false }: { value: number; present?: boolean; outflow?: boolean }) {
+  if (!present) {
+    return <span className="text-gray-400 dark:text-gray-600">—</span>;
+  }
+
+  const shown = displayValue(value, outflow);
+  const negative = shown < 0;
+
   return (
-    <td className={`whitespace-nowrap px-2 py-2 text-right text-xs ${bold ? 'font-semibold' : ''} ${negative ? 'text-rose-600 dark:text-rose-400' : zero ? 'text-gray-400 dark:text-gray-600' : 'text-gray-800 dark:text-gray-100'}`}>
-      {zero ? (showZero ? '৳0' : '—') : money(value)}
-    </td>
+    <span className={`font-semibold ${negative ? 'text-rose-600 dark:text-rose-400' : 'text-gray-800 dark:text-gray-100'}`}>
+      {money(shown)}
+    </span>
   );
 }
 
-function StatCard({ label, value, hint }: { label: string; value: number; hint?: string }) {
+function MetricCard({ label, value, sub }: { label: string; value: number; sub: string }) {
   const negative = value < 0;
+
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
-      <p className={`mt-2 text-xl font-bold ${negative ? 'text-rose-600 dark:text-rose-400' : 'text-gray-900 dark:text-white'}`}>{money(value)}</p>
-      {hint && <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{hint}</p>}
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+      <p className={`mt-2 text-2xl font-bold ${negative ? 'text-rose-600 dark:text-rose-400' : 'text-gray-950 dark:text-white'}`}>
+        {money(value)}
+      </p>
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{sub}</p>
     </div>
   );
 }
 
-function branchForStore(branches: CashSheetBranchDay[], storeId: number): CashSheetBranchDay {
-  return branches.find((b) => b.store_id === storeId) || {
-    store_id: storeId,
-    store_name: '',
-    daily_sale: 0,
-    cash: 0,
-    bank: 0,
-    ex_on: 0,
-    salary: 0,
-    daily_cost: 0,
-    cash_to_bank: 0,
-    raw_cash: 0,
-    raw_bank: 0,
-    cash_cost: 0,
-    bank_cost: 0,
-    cash_refunds: 0,
-    bank_refunds: 0,
-    has_data: {},
-  };
+function storeBadge(store: StoreLite) {
+  if (store.is_warehouse) return 'WAREHOUSE';
+  if (store.is_online) return 'ONLINE';
+  return null;
 }
 
-function hasData(section: any, key: string, fallback = false): boolean {
-  const value = section?.has_data?.[key];
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-function dayHasCashActivity(row: any): boolean {
-  const legacy = (row.branches || []).some((b: any) => 
-    Number(b.raw_cash || 0) !== 0 || 
-    Number(b.cash_refunds || 0) !== 0 || 
-    Number(b.salary || 0) !== 0 || 
-    Number(b.cash_cost || 0) !== 0 || 
-    Number(b.cash_to_bank || 0) !== 0
-  ) || Number(row.totals.cash || 0) !== 0;
-  return hasData(row.totals, 'cash', legacy);
-}
-
-function dayHasBankActivity(row: any): boolean {
-  const legacy = (row.branches || []).some((b: any) => 
-    Number(b.raw_bank || 0) !== 0 || 
-    Number(b.bank_refunds || 0) !== 0 || 
-    Number(b.bank_cost || 0) !== 0 || 
-    Number(b.cash_to_bank || 0) !== 0
-  ) || Number(row.totals.bank || 0) !== 0;
-  return hasData(row.totals, 'bank', legacy);
-}
-
-function dayHasFinalBankActivity(row: any): boolean {
-  const legacy = dayHasBankActivity(row) || 
-    Number(row.online.online_payment || 0) !== 0 || 
-    Number(row.online.advance || 0) !== 0 || 
-    Number(row.disbursements.sslzc_received || 0) !== 0 || 
-    Number(row.disbursements.pathao_received || 0) !== 0;
-  return hasData(row.totals, 'final_bank', legacy);
-}
-
-function dayHasOwnerCashActivity(row: any): boolean {
-  const legacy = Number(row.owner.cash_invest || 0) !== 0 || 
-    Number(row.owner.cash_cost || 0) !== 0 || 
-    dayHasCashActivity(row);
-  return hasData(row.owner, 'cash_after_cost', legacy);
-}
-
-function dayHasOwnerBankActivity(row: any): boolean {
-  const legacy = Number(row.owner.bank_invest || 0) !== 0 || 
-    Number(row.owner.bank_cost || 0) !== 0 || 
-    dayHasBankActivity(row);
-  return hasData(row.owner, 'bank_after_cost', legacy);
-}
-
-function summaryHasCashActivity(summary: any): boolean {
-  const legacy = (summary.stores || []).some((s: any) => 
-    Number(s.raw_cash || 0) !== 0 || 
-    Number(s.cash_refunds || 0) !== 0 || 
-    Number(s.salary || 0) !== 0 || 
-    Number(s.cash_cost || 0) !== 0 || 
-    Number(s.cash_to_bank || 0) !== 0
-  ) || Number(summary.totals.cash || 0) !== 0;
-  return hasData(summary.totals, 'cash', legacy);
-}
-
-function summaryHasBankActivity(summary: any): boolean {
-  const legacy = (summary.stores || []).some((s: any) => 
-    Number(s.raw_bank || 0) !== 0 || 
-    Number(s.bank_refunds || 0) !== 0 || 
-    Number(s.bank_cost || 0) !== 0 || 
-    Number(s.cash_to_bank || 0) !== 0
-  ) || Number(summary.totals.bank || 0) !== 0;
-  return hasData(summary.totals, 'bank', legacy);
-}
-
-function summaryHasFinalBankActivity(summary: any): boolean {
-  const legacy = summaryHasBankActivity(summary) || 
-    Number(summary.online.online_payment || 0) !== 0 || 
-    Number(summary.online.advance || 0) !== 0 || 
-    Number(summary.disbursements.sslzc_received || 0) !== 0 || 
-    Number(summary.disbursements.pathao_received || 0) !== 0;
-  return hasData(summary.totals, 'final_bank', legacy);
-}
-
-function summaryHasOwnerCashActivity(summary: any): boolean {
-  const legacy = Number(summary.owner.cash_invest || 0) !== 0 || 
-    Number(summary.owner.cash_cost || 0) !== 0 || 
-    summaryHasCashActivity(summary);
-  return hasData(summary.owner, 'cash_after_cost', legacy);
-}
-
-function summaryHasOwnerBankActivity(summary: any): boolean {
-  const legacy = Number(summary.owner.bank_invest || 0) !== 0 || 
-    Number(summary.owner.bank_cost || 0) !== 0 || 
-    summaryHasBankActivity(summary);
-  return hasData(summary.owner, 'bank_after_cost', legacy);
+function branchForStore(branches: CashSheetBranchDay[], storeId: number) {
+  return branches.find((branch) => Number(branch.store_id) === Number(storeId));
 }
 
 export default function MonthlyCashSheetPage() {
   const { darkMode, setDarkMode } = useTheme();
-  const { role, scopedStoreId, isLoading: authLoading } = useAuth() as any;
+  const { scopedStoreId, isLoading: authLoading } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [month, setMonth] = useState(dhakaMonthString());
-  const [sheet, setSheet] = useState<CashSheetResponse | null>(null);
+  const [sheet, setSheet] = useState<CashSheetSummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -182,8 +120,7 @@ export default function MonthlyCashSheetPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await cashSheetService.getSheet(month);
-      setSheet(data);
+      setSheet(await cashSheetService.getSummary(month, scopedStoreId ? Number(scopedStoreId) : null));
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to load monthly cash sheet.');
     } finally {
@@ -194,52 +131,47 @@ export default function MonthlyCashSheetPage() {
   useEffect(() => {
     if (!authLoading) loadSheet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month, authLoading]);
+  }, [month, scopedStoreId, authLoading]);
 
-  const visibleStores = useMemo(() => {
-    const stores = sheet?.stores || [];
-    if (scopedStoreId) return stores.filter((s) => Number(s.id) === Number(scopedStoreId));
-    return stores;
-  }, [sheet?.stores, scopedStoreId]);
+  const stores = useMemo(() => sheet?.stores || [], [sheet?.stores]);
+  const storeTotals = useMemo(() => {
+    const map = new Map<number, CashSheetBranchDay>();
+    for (const row of sheet?.summary.stores || []) {
+      map.set(Number(row.store_id), row as CashSheetBranchDay);
+    }
+    return map;
+  }, [sheet?.summary.stores]);
 
-  const isAdminLike = role === 'admin' || role === 'super-admin';
+  const today = todayDhaka();
+  const dailyCost = sheet?.summary.totals.daily_cost ? -Math.abs(sheet.summary.totals.daily_cost) : 0;
 
   return (
     <div className={`min-h-screen flex ${darkMode ? 'dark bg-gray-950' : 'bg-gray-50'}`}>
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex min-w-0 flex-col">
         <Header darkMode={darkMode} setDarkMode={setDarkMode} toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
-        <main className="flex-1 p-4 md:p-6 min-w-0">
-          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <main className="flex-1 p-4 md:p-6">
+          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <div className="flex items-center gap-2 text-gray-900 dark:text-white">
+              <div className="flex items-center gap-2 text-gray-950 dark:text-white">
                 <FileText size={22} className="text-blue-600" />
                 <h1 className="text-2xl font-bold">Monthly Cash Sheet</h1>
               </div>
-              <p className="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+              <p className="mt-1 max-w-4xl text-sm text-gray-500 dark:text-gray-400">
                 Fresh live aggregation of commercial sales and real cash/bank movement. Sales stay on order date; payments, refunds, costs, settlements, and owner entries stay on their own business dates.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white">
+              <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white">
                 <CalendarDays size={16} className="text-gray-500" />
-                <input
-                  type="month"
-                  value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                  className="bg-transparent outline-none"
-                />
+                <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="bg-transparent outline-none" />
               </label>
-              <button
-                onClick={loadSheet}
-                disabled={loading}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-              >
+              <button onClick={loadSheet} disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
                 Refresh
               </button>
-              <Link href="/cash-sheet/summary" className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+              <Link href="/cash-sheet/summary" className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800">
                 Summary
               </Link>
             </div>
@@ -253,181 +185,123 @@ export default function MonthlyCashSheetPage() {
 
           {sheet && (
             <>
-              <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
-                <StatCard label="Total Sale" value={sheet.summary.totals.sale} hint="Store/warehouse + online order value" />
-                <StatCard label="Branch Cash" value={sheet.summary.totals.cash} hint="Can be negative" />
-                <StatCard label="Bank" value={sheet.summary.totals.bank} hint="Branch bank + online advance" />
-                <StatCard label="Final Bank" value={sheet.summary.totals.final_bank} hint="Bank + SSLZC + Pathao" />
-                <StatCard label="COD/Due" value={sheet.summary.online.cod} hint="COD receivable tracker" />
-                <StatCard label="Daily Cost" value={sheet.summary.totals.daily_cost} hint="Manual + accounting costs" />
+              <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                <MetricCard label="TOTAL SALE" value={sheet.summary.totals.sale} sub="Store/warehouse + online order value" />
+                <MetricCard label="BRANCH CASH" value={sheet.summary.totals.cash} sub="Can be negative" />
+                <MetricCard label="BANK" value={sheet.summary.totals.bank} sub="Branch bank + online advance" />
+                <MetricCard label="FINAL BANK" value={sheet.summary.totals.final_bank} sub="Bank + SSLZC + Pathao" />
+                <MetricCard label="COD/DUE" value={sheet.summary.online.cod} sub="COD receivable tracker" />
+                <MetricCard label="DAILY COST" value={dailyCost} sub="Manual + accounting costs" />
               </div>
 
-              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"><Info size={13} /> Timezone: {sheet.timezone}</span>
-                <span className="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-900">Range: {sheet.date_from} → {sheet.date_to}</span>
-                <span className="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-900">UTC offset env: {sheet.utc_offset_hours}</span>
-                {!isAdminLike && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">Scoped view: own store/warehouse only</span>}
+              <div className="mb-4 flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                <span className="rounded-full bg-blue-50 px-3 py-1 font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">Timezone: {sheet.timezone}</span>
+                <span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-gray-900">Range: {sheet.date_from} - {sheet.date_to}</span>
+                <span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-gray-900">UTC offset env: {sheet.utc_offset_hours}</span>
               </div>
 
-              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                <div className="max-h-[72vh] overflow-auto">
-                  <table className="min-w-full border-collapse text-sm">
-                    <thead className="sticky top-0 z-20 bg-gray-100 text-xs uppercase tracking-wide text-gray-600 dark:bg-gray-900 dark:text-gray-300">
+              <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <div className="max-h-[68vh] overflow-auto">
+                  <table className="min-w-max border-separate border-spacing-0 text-xs">
+                    <thead className="sticky top-0 z-20 bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300">
                       <tr>
-                        <th className="sticky left-0 z-30 border-b border-r border-gray-200 bg-gray-100 px-3 py-3 text-left dark:border-gray-800 dark:bg-gray-900">Date</th>
-                        {visibleStores.map((store) => (
-                          <th key={store.id} colSpan={7} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <span>{store.name}</span>
-                              {store.is_warehouse && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">Warehouse</span>}
-                              {store.is_online && <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">Online</span>}
-                              {store.is_active === false && <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[9px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">Inactive</span>}
-                            </div>
+                        <th rowSpan={2} className="sticky left-0 z-30 min-w-[96px] border-b border-r border-gray-200 bg-gray-100 px-3 py-3 text-left font-bold dark:border-gray-800 dark:bg-gray-900">
+                          DATE
+                        </th>
+                        {stores.map((store) => (
+                          <th key={store.id} colSpan={7} className="border-b border-r border-gray-200 px-3 py-2 text-center font-bold dark:border-gray-800">
+                            <span>{store.name}</span>
+                            {storeBadge(store) && <span className="ml-2 text-[10px] font-black text-blue-600 dark:text-blue-300">{storeBadge(store)}</span>}
                           </th>
                         ))}
-                        <th colSpan={4} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">Online / Ecommerce</th>
-                        <th colSpan={2} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">Disbursement</th>
-                        <th colSpan={4} className="border-b border-r border-gray-200 px-3 py-2 text-center dark:border-gray-800">Day Totals</th>
-                        <th colSpan={2} className="border-b border-gray-200 px-3 py-2 text-center dark:border-gray-800">Owner Remain</th>
+                        <th colSpan={4} className="border-b border-r border-gray-200 px-3 py-2 text-center font-bold dark:border-gray-800">ONLINE / ECOMMERCE</th>
+                        <th colSpan={2} className="border-b border-r border-gray-200 px-3 py-2 text-center font-bold dark:border-gray-800">DISBURSEMENT</th>
+                        <th colSpan={4} className="border-b border-gray-200 px-3 py-2 text-center font-bold dark:border-gray-800">DAY TOTALS</th>
                       </tr>
-                      <tr className="text-[11px]">
-                        <th className="sticky left-0 z-30 border-b border-r border-gray-200 bg-gray-100 px-3 py-2 dark:border-gray-800 dark:bg-gray-900"></th>
-                        {visibleStores.map((store) => (
-                          <FragmentHeader key={store.id} />
+                      <tr>
+                        {stores.map((store) => (
+                          STORE_COLUMNS.map(([, label]) => (
+                            <th key={`${store.id}-${label}`} className="border-b border-r border-gray-200 px-3 py-2 text-right font-bold dark:border-gray-800">{label}</th>
+                          ))
                         ))}
-                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Sales</th>
-                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Advance</th>
-                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">SSLZC</th>
-                        <th className="border-b border-r border-gray-200 px-2 py-2 dark:border-gray-800">COD/Due</th>
-                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">SSLZC Rcv</th>
-                        <th className="border-b border-r border-gray-200 px-2 py-2 dark:border-gray-800">Pathao Rcv</th>
-                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Sale</th>
-                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Cash</th>
-                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Bank</th>
-                        <th className="border-b border-r border-gray-200 px-2 py-2 dark:border-gray-800">Final Bank</th>
-                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Cash</th>
-                        <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Bank</th>
+                        {['SALES', 'ADVANCE', 'SSLZC', 'COD/DUE', 'SSLZC RCV', 'PATHAO RCV', 'SALE', 'CASH', 'BANK', 'FINAL BANK'].map((label) => (
+                          <th key={label} className="border-b border-r border-gray-200 px-3 py-2 text-right font-bold last:border-r-0 dark:border-gray-800">{label}</th>
+                        ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {sheet.data.map((row) => (
-                        <tr key={row.date} className="hover:bg-blue-50/50 dark:hover:bg-gray-800/50">
-                          <td className="sticky left-0 z-10 whitespace-nowrap border-r border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
-                            <div>{prettyDate(row.date)}</div>
-                            <div className="text-[10px] font-normal text-gray-400">{row.date}</div>
+                    <tbody>
+                      {sheet.days.map((day) => (
+                        <tr key={day.date} className={day.date === today ? 'bg-blue-50/70 dark:bg-blue-950/20' : 'odd:bg-white even:bg-gray-50/70 dark:odd:bg-gray-900 dark:even:bg-gray-950/40'}>
+                          <td className="sticky left-0 z-10 border-b border-r border-gray-200 bg-inherit px-3 py-2 font-bold text-gray-800 dark:border-gray-800 dark:text-gray-100">
+                            <div className="flex items-center gap-2">
+                              <span>{dateLabel(day.date)}</span>
+                              {day.date === today && <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white">Today</span>}
+                            </div>
+                            <div className="text-[10px] font-medium text-gray-400">{day.date}</div>
                           </td>
-                          {visibleStores.map((store) => {
-                            const b = branchForStore(row.branches, store.id);
-                            return (
-                              <FragmentCells key={`${row.date}-${store.id}`} b={b} />
-                            );
+
+                          {stores.map((store) => {
+                            const branch = branchForStore(day.branches, store.id);
+                            return STORE_COLUMNS.map(([key]) => (
+                              <td key={`${day.date}-${store.id}-${key}`} className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800">
+                                <AmountCell
+                                  value={Number(branch?.[key] ?? 0)}
+                                  present={Boolean(branch?.has_data?.[key])}
+                                  outflow={key === 'daily_cost'}
+                                />
+                              </td>
+                            ));
                           })}
-                          <MoneyCell value={row.online.daily_sales} showZero={hasData(row.online, 'daily_sales', row.online.daily_sales !== 0)} />
-                          <MoneyCell value={row.online.advance} showZero={hasData(row.online, 'advance', row.online.advance !== 0)} />
-                          <MoneyCell value={row.online.online_payment} showZero={hasData(row.online, 'online_payment', row.online.online_payment !== 0)} />
-                          <MoneyCell value={row.online.cod} showZero={hasData(row.online, 'cod', row.online.cod !== 0)} />
-                          <MoneyCell value={row.disbursements.sslzc_received} showZero={hasData(row.disbursements, 'sslzc_received', row.disbursements.sslzc_received !== 0)} />
-                          <MoneyCell value={row.disbursements.pathao_received} showZero={hasData(row.disbursements, 'pathao_received', row.disbursements.pathao_received !== 0)} />
-                          <MoneyCell value={row.totals.sale} bold showZero={hasData(row.totals, 'sale', row.totals.sale !== 0)} />
-                          <MoneyCell value={row.totals.cash} bold showZero={dayHasCashActivity(row)} />
-                          <MoneyCell value={row.totals.bank} bold showZero={dayHasBankActivity(row)} />
-                          <MoneyCell value={row.totals.final_bank} bold showZero={dayHasFinalBankActivity(row)} />
-                          <MoneyCell value={row.owner.cash_after_cost} showZero={dayHasOwnerCashActivity(row)} />
-                          <MoneyCell value={row.owner.bank_after_cost} showZero={dayHasOwnerBankActivity(row)} />
+
+                          <td className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.online.daily_sales} present={day.online.has_data.daily_sales} /></td>
+                          <td className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.online.advance} present={day.online.has_data.advance} /></td>
+                          <td className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.online.online_payment} present={day.online.has_data.online_payment} /></td>
+                          <td className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.online.cod} present={day.online.has_data.cod} /></td>
+                          <td className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.disbursements.sslzc_received} present={day.disbursements.has_data.sslzc_received} /></td>
+                          <td className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.disbursements.pathao_received} present={day.disbursements.has_data.pathao_received} /></td>
+                          <td className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.totals.sale} present={day.totals.has_data.sale} /></td>
+                          <td className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.totals.cash} present={day.totals.has_data.cash} /></td>
+                          <td className="border-b border-r border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.totals.bank} present={day.totals.has_data.bank} /></td>
+                          <td className="border-b border-gray-200 px-3 py-2 text-right dark:border-gray-800"><AmountCell value={day.totals.final_bank} present={day.totals.has_data.final_bank} /></td>
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="sticky bottom-0 bg-gray-100 text-xs font-bold text-gray-800 dark:bg-gray-900 dark:text-gray-100">
+                    <tfoot className="sticky bottom-0 z-20 bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-white">
                       <tr>
-                        <td className="sticky left-0 border-r border-gray-200 bg-gray-100 px-3 py-3 dark:border-gray-800 dark:bg-gray-900">Month Total</td>
-                        {visibleStores.map((store) => {
-                          const b = sheet.summary.stores.find((s) => s.store_id === store.id);
-                          return <FragmentCells key={`sum-${store.id}`} b={b || branchForStore([], store.id)} />;
+                        <td className="sticky left-0 z-30 border-r border-t border-gray-200 bg-gray-100 px-3 py-3 font-black dark:border-gray-800 dark:bg-gray-900">Month Total</td>
+                        {stores.map((store) => {
+                          const total = storeTotals.get(Number(store.id));
+                          return STORE_COLUMNS.map(([key]) => (
+                            <td key={`total-${store.id}-${key}`} className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800">
+                              <AmountCell value={Number(total?.[key] ?? 0)} present={Boolean(total?.has_data?.[key])} outflow={key === 'daily_cost'} />
+                            </td>
+                          ));
                         })}
-                        <MoneyCell value={sheet.summary.online.daily_sales} bold showZero={hasData(sheet.summary.online, 'daily_sales', sheet.summary.online.daily_sales !== 0)} />
-                        <MoneyCell value={sheet.summary.online.advance} bold showZero={hasData(sheet.summary.online, 'advance', sheet.summary.online.advance !== 0)} />
-                        <MoneyCell value={sheet.summary.online.online_payment} bold showZero={hasData(sheet.summary.online, 'online_payment', sheet.summary.online.online_payment !== 0)} />
-                        <MoneyCell value={sheet.summary.online.cod} bold showZero={hasData(sheet.summary.online, 'cod', sheet.summary.online.cod !== 0)} />
-                        <MoneyCell value={sheet.summary.disbursements.sslzc_received} bold showZero={hasData(sheet.summary.disbursements, 'sslzc_received', sheet.summary.disbursements.sslzc_received !== 0)} />
-                        <MoneyCell value={sheet.summary.disbursements.pathao_received} bold showZero={hasData(sheet.summary.disbursements, 'pathao_received', sheet.summary.disbursements.pathao_received !== 0)} />
-                        <MoneyCell value={sheet.summary.totals.sale} bold showZero={hasData(sheet.summary.totals, 'sale', sheet.summary.totals.sale !== 0)} />
-                        <MoneyCell value={sheet.summary.totals.cash} bold showZero={summaryHasCashActivity(sheet.summary)} />
-                        <MoneyCell value={sheet.summary.totals.bank} bold showZero={summaryHasBankActivity(sheet.summary)} />
-                        <MoneyCell value={sheet.summary.totals.final_bank} bold showZero={summaryHasFinalBankActivity(sheet.summary)} />
-                        <MoneyCell value={sheet.summary.owner.cash_after_cost} bold showZero={summaryHasOwnerCashActivity(sheet.summary)} />
-                        <MoneyCell value={sheet.summary.owner.bank_after_cost} bold showZero={summaryHasOwnerBankActivity(sheet.summary)} />
+                        <td className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.online.daily_sales} present={sheet.summary.online.has_data.daily_sales} /></td>
+                        <td className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.online.advance} present={sheet.summary.online.has_data.advance} /></td>
+                        <td className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.online.online_payment} present={sheet.summary.online.has_data.online_payment} /></td>
+                        <td className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.online.cod} present={sheet.summary.online.has_data.cod} /></td>
+                        <td className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.disbursements.sslzc_received} present={sheet.summary.disbursements.has_data.sslzc_received} /></td>
+                        <td className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.disbursements.pathao_received} present={sheet.summary.disbursements.has_data.pathao_received} /></td>
+                        <td className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.totals.sale} present={sheet.summary.totals.has_data.sale} /></td>
+                        <td className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.totals.cash} present={sheet.summary.totals.has_data.cash} /></td>
+                        <td className="border-r border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.totals.bank} present={sheet.summary.totals.has_data.bank} /></td>
+                        <td className="border-t border-gray-200 px-3 py-3 text-right dark:border-gray-800"><AmountCell value={sheet.summary.totals.final_bank} present={sheet.summary.totals.has_data.final_bank} /></td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
-                  <p className="font-semibold">Date rule</p>
-                  <p className="mt-1 text-xs">Payments use payment_received_date first, then completed/processed/created timestamps. Month rows are grouped by Dhaka business date.</p>
-                </div>
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-                  <p className="font-semibold">Cancellation/refund rule</p>
-                  <p className="mt-1 text-xs">Cancelled/refunded order value leaves the Sale column, but completed money-in remains. Refunds subtract separately on refund date.</p>
-                </div>
-                <div className="rounded-xl border border-violet-100 bg-violet-50 p-4 text-sm text-violet-800 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-200">
-                  <p className="font-semibold flex items-center gap-1"><ArrowRightLeft size={14} /> Ex/On rule</p>
-                  <p className="mt-1 text-xs">Exchange extra collection adds to cash/bank and Ex/On. Exchange refund subtracts from both money movement and Ex/On.</p>
-                </div>
-              </div>
+              </section>
             </>
+          )}
+
+          {!sheet && loading && (
+            <div className="flex min-h-[320px] items-center justify-center text-gray-500 dark:text-gray-400">
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading monthly cash sheet...
+            </div>
           )}
         </main>
       </div>
     </div>
-  );
-}
-
-function FragmentHeader() {
-  return (
-    <>
-      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Sale</th>
-      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Cash</th>
-      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Bank</th>
-      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Ex/On</th>
-      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Salary</th>
-      <th className="border-b border-gray-200 px-2 py-2 dark:border-gray-800">Cost</th>
-      <th className="border-b border-r border-gray-200 px-2 py-2 dark:border-gray-800">→Bank</th>
-    </>
-  );
-}
-
-function FragmentCells({ b }: { b: Partial<CashSheetBranchDay> }) {
-  const hasSaleActivity = hasData(b, 'daily_sale', Number(b.daily_sale || 0) !== 0);
-
-  const legacyCashActivity = Number(b.raw_cash || 0) !== 0 || 
-    Number(b.cash_refunds || 0) !== 0 || 
-    Number(b.salary || 0) !== 0 || 
-    Number(b.cash_cost || 0) !== 0 || 
-    Number(b.cash_to_bank || 0) !== 0;
-  const hasCashActivity = hasData(b, 'cash', legacyCashActivity);
-
-  const legacyBankActivity = Number(b.raw_bank || 0) !== 0 || 
-    Number(b.bank_refunds || 0) !== 0 || 
-    Number(b.bank_cost || 0) !== 0 || 
-    Number(b.cash_to_bank || 0) !== 0;
-  const hasBankActivity = hasData(b, 'bank', legacyBankActivity);
-
-  const hasExOnActivity = hasData(b, 'ex_on', Number(b.ex_on || 0) !== 0);
-  const hasSalaryActivity = hasData(b, 'salary', Number(b.salary || 0) !== 0);
-  const hasCostActivity = hasData(b, 'daily_cost', Number(b.cash_cost || 0) !== 0 || Number(b.bank_cost || 0) !== 0);
-  const hasCashToBankActivity = hasData(b, 'cash_to_bank', Number(b.cash_to_bank || 0) !== 0);
-
-  return (
-    <>
-      <MoneyCell value={Number(b.daily_sale || 0)} showZero={hasSaleActivity} />
-      <MoneyCell value={Number(b.cash || 0)} showZero={hasCashActivity} />
-      <MoneyCell value={Number(b.bank || 0)} showZero={hasBankActivity} />
-      <MoneyCell value={Number(b.ex_on || 0)} showZero={hasExOnActivity} />
-      <MoneyCell value={Number(b.salary || 0)} showZero={hasSalaryActivity} />
-      <MoneyCell value={Number(b.daily_cost || 0)} showZero={hasCostActivity} />
-      <MoneyCell value={Number(b.cash_to_bank || 0)} showZero={hasCashToBankActivity} />
-    </>
   );
 }

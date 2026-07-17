@@ -1,13 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
-import cashSheetService, { CashSheetResponse } from '@/services/cashSheetService';
-import { BarChart3, CalendarDays, Loader2, RefreshCcw, ArrowLeft, AlertCircle } from 'lucide-react';
+import cashSheetService, { CashSheetSummaryResponse } from '@/services/cashSheetService';
+import { BarChart3, CalendarDays, Loader2, RefreshCcw, AlertCircle } from 'lucide-react';
 
 function dhakaMonthString(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -56,7 +55,7 @@ export default function CashSheetSummaryPage() {
   const { scopedStoreId, isLoading: authLoading } = useAuth() as any;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [month, setMonth] = useState(dhakaMonthString());
-  const [sheet, setSheet] = useState<CashSheetResponse | null>(null);
+  const [sheet, setSheet] = useState<CashSheetSummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,7 +63,7 @@ export default function CashSheetSummaryPage() {
     setLoading(true);
     setError(null);
     try {
-      setSheet(await cashSheetService.getSheet(month));
+      setSheet(await cashSheetService.getSummary(month));
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to load summary.');
     } finally {
@@ -96,7 +95,7 @@ export default function CashSheetSummaryPage() {
                 <h1 className="text-2xl font-bold">Cash Sheet Summary</h1>
               </div>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Month-level totals generated from the same fresh live cash-sheet endpoint.
+                Month-level totals generated directly from live transaction data.
               </p>
             </div>
 
@@ -109,9 +108,6 @@ export default function CashSheetSummaryPage() {
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
                 Refresh
               </button>
-              <Link href="/cash-sheet" className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
-                <ArrowLeft size={16} /> Monthly Sheet
-              </Link>
             </div>
           </div>
 

@@ -21,10 +21,10 @@ use Illuminate\Support\Str;
 /**
  * CashSheetController
  *
- * Fresh monthly cash-sheet implementation.
+ * Cash-sheet summary and manual-entry implementation.
  *
- * The monthly sheet is intentionally a live aggregation. It does not save daily
- * rows. Every reload reads source transactions again and rebuilds the month from
+ * The summary is intentionally a live aggregation. It does not save report rows.
+ * Every reload reads source transactions again and rebuilds the month from
  * orders, order payments, split payments, refunds, exchanges, branch costs,
  * accounting expenses, admin entries, online settlements, and owner entries.
  */
@@ -36,11 +36,11 @@ class CashSheetController extends Controller
     private const ONLINE_ORDER_TYPES = ['social_commerce', 'ecommerce'];
     private const ALL_ORDER_TYPES = ['counter', 'pos', 'offline', 'social_commerce', 'ecommerce'];
     private const SALE_EXCLUDED_STATUSES = ['cancelled', 'canceled', 'refunded', 'void', 'deleted'];
-    private const MONEY_PAYMENT_STATUSES = ['completed'];
+    private const MONEY_PAYMENT_STATUSES = ['completed', 'partially_refunded', 'refunded'];
     private const VIRTUAL_PAYMENT_TYPES = ['exchange_balance', 'store_credit', 'balance_carryover'];
     private const NON_MONEY_REFUND_METHODS = ['store_credit', 'gift_card'];
 
-    public function index(Request $request)
+    public function summary(Request $request)
     {
         [$month, $dateFrom, $dateTo, $dates] = $this->resolveMonthWindow($request->query('month'));
         $requestedStoreId = $this->positiveInt($request->query('store_id'));
@@ -64,8 +64,8 @@ class CashSheetController extends Controller
         $stores = $this->loadReportStores($activityStoreIds, $requestedStoreId);
         $storeIds = $stores->pluck('id')->map(fn ($id) => (int) $id)->all();
 
-        $rows = [];
         $summary = $this->emptySummary($stores);
+        $rows = [];
 
         foreach ($dates as $date) {
             $branches = [];
@@ -192,13 +192,23 @@ class CashSheetController extends Controller
             $online = $this->onlineForDate($onlineData, $onlineSalePresence, $date);
             $sslzcReceived = $this->amountAt($adminData, '_global', $date, 'sslzc');
             $pathaoReceived = $this->amountAt($adminData, '_global', $date, 'pathao');
+            $hasSslzcData = $this->hasAmountAt($adminData, '_global', $date, 'sslzc');
+            $hasPathaoData = $this->hasAmountAt($adminData, '_global', $date, 'pathao');
+
+            if ($hasSslzcData) {
+                $online['online_payment'] = $this->round(($online['online_payment'] ?? 0) - $sslzcReceived);
+                $online['has_data']['online_payment'] = true;
+            }
+
+            if ($hasPathaoData) {
+                $online['cod'] = $this->round(($online['cod'] ?? 0) - $pathaoReceived);
+                $online['has_data']['cod'] = true;
+            }
 
             $bankBeforeDisbursement = $dayBank + $online['advance'];
             $finalBank = $bankBeforeDisbursement + $sslzcReceived + $pathaoReceived;
             $totalSale = $dayBranchSale + $online['daily_sales'];
 
-            $hasSslzcData = $this->hasAmountAt($adminData, '_global', $date, 'sslzc');
-            $hasPathaoData = $this->hasAmountAt($adminData, '_global', $date, 'pathao');
             $hasTotalSaleData = $dayHasBranchSaleData || ($online['has_data']['daily_sales'] ?? false);
             $hasTotalBankData = $dayHasBankData || ($online['has_data']['advance'] ?? false);
             $hasFinalBankData = $hasTotalBankData || $hasSslzcData || $hasPathaoData;
@@ -248,7 +258,6 @@ class CashSheetController extends Controller
                 ],
                 'owner' => $owner,
             ];
-
             $rows[] = $row;
 
             $summary['totals']['sale'] += $totalSale;
@@ -297,7 +306,7 @@ class CashSheetController extends Controller
                 'is_online' => (bool) $s->is_online,
                 'is_warehouse' => (bool) $s->is_warehouse,
             ])->values(),
-            'data' => $rows,
+            'days' => $rows,
             'summary' => $summary,
             'rules' => [
                 'model' => 'live_aggregation',
@@ -587,10 +596,20 @@ class CashSheetController extends Controller
         $this->whereNotSoftDeleted($query, 'o');
         $this->whereNotExchangeReplacement($query, 'o.metadata');
 
-        return $query->get()->reduce(function ($out, $row) {
+        $out = $query->get()->reduce(function ($out, $row) {
             $this->addAmount($out, (int) $row->store_id, $row->business_date, 'sale', (float) $row->total);
             return $out;
         }, []);
+
+        foreach ($this->returnRestatementRows($from, $to, self::BRANCH_ORDER_TYPES, true) as $row) {
+            $this->addAmount($out, (int) $row['store_id'], $row['business_date'], 'sale', -1 * (float) $row['amount']);
+        }
+
+        foreach ($this->exchangeReplacementRestatementRows($from, $to, self::BRANCH_ORDER_TYPES, true) as $row) {
+            $this->addAmount($out, (int) $row['store_id'], $row['business_date'], 'sale', (float) $row['amount']);
+        }
+
+        return $out;
     }
 
     private function loadBranchSalePresence(string $from, string $to): array
@@ -610,6 +629,105 @@ class CashSheetController extends Controller
             $this->addAmount($out, (int) $row->store_id, $row->business_date, 'sale', 0.0);
             return $out;
         }, []);
+    }
+
+    private function returnRestatementRows(string $from, string $to, array $orderTypes, bool $includeStore): array
+    {
+        $dateExpr = 'DATE(o.order_date)';
+
+        $query = DB::table('product_returns as pr')
+            ->join('orders as o', 'o.id', '=', 'pr.order_id')
+            ->select(
+                $includeStore ? DB::raw('o.store_id as store_id') : DB::raw('NULL as store_id'),
+                DB::raw("{$dateExpr} as business_date"),
+                DB::raw('SUM(pr.total_return_value) as amount')
+            )
+            ->whereIn('pr.status', ['completed', 'refunded'])
+            ->whereIn('o.order_type', $orderTypes)
+            ->whereNotIn('o.status', self::SALE_EXCLUDED_STATUSES)
+            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
+            ->where('pr.total_return_value', '>', 0);
+
+        $this->whereNotSoftDeleted($query, 'o');
+        $query->whereNull('pr.deleted_at');
+
+        if ($includeStore) {
+            $query->whereNotNull('o.store_id')
+                ->groupBy('o.store_id', DB::raw($dateExpr));
+        } else {
+            $query->groupBy(DB::raw($dateExpr));
+        }
+
+        return $query->get()
+            ->map(fn ($row) => [
+                'store_id' => $includeStore ? (int) $row->store_id : null,
+                'business_date' => (string) $row->business_date,
+                'amount' => (float) $row->amount,
+            ])
+            ->all();
+    }
+
+    private function exchangeReplacementRestatementRows(string $from, string $to, array $orderTypes, bool $includeStore): array
+    {
+        $dateExpr = 'DATE(r.order_date)';
+        $metadata = $this->castToText('r.metadata');
+
+        $rows = DB::table('orders as r')
+            ->select('r.id', 'r.store_id', 'r.order_type', 'r.order_date', 'r.total_amount', 'r.metadata')
+            ->whereRaw("LOWER(COALESCE({$metadata}, '')) LIKE ?", ['%exchange_replacement%'])
+            ->whereNotIn('r.status', self::SALE_EXCLUDED_STATUSES)
+            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to]);
+
+        $this->whereNotSoftDeleted($rows, 'r');
+
+        $replacements = $rows->get();
+        $originalIds = $replacements
+            ->map(fn ($row) => (int) ($this->metadataToArray($row->metadata)['original_order_id'] ?? 0))
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $originals = empty($originalIds)
+            ? collect()
+            : DB::table('orders')
+                ->select('id', 'store_id', 'order_type', 'order_date')
+                ->whereIn('id', $originalIds)
+                ->get()
+                ->keyBy('id');
+
+        $out = [];
+        foreach ($replacements as $row) {
+            $metadata = $this->metadataToArray($row->metadata);
+            $original = $originals->get((int) ($metadata['original_order_id'] ?? 0));
+            $orderType = (string) ($original->order_type ?? $row->order_type);
+
+            if (!in_array($orderType, $orderTypes, true)) {
+                continue;
+            }
+
+            $storeId = (int) ($original->store_id ?? $row->store_id);
+            if ($includeStore && $storeId <= 0) {
+                continue;
+            }
+
+            $businessDate = Carbon::parse($original->order_date ?? $row->order_date, self::DHAKA_TZ)->toDateString();
+            if ($businessDate < $from || $businessDate > $to) {
+                continue;
+            }
+
+            $key = ($includeStore ? $storeId : 'online') . '|' . $businessDate;
+            if (!isset($out[$key])) {
+                $out[$key] = [
+                    'store_id' => $includeStore ? $storeId : null,
+                    'business_date' => $businessDate,
+                    'amount' => 0.0,
+                ];
+            }
+            $out[$key]['amount'] += (float) $row->total_amount;
+        }
+
+        return array_values($out);
     }
 
     private function loadBranchPaymentMovements(string $from, string $to): array
@@ -849,6 +967,15 @@ class CashSheetController extends Controller
             }
         }
 
+        foreach ($this->returnRestatementRows($from, $to, self::ONLINE_ORDER_TYPES, false) as $row) {
+            $this->addOnline($out, $row['business_date'], 'daily_sales', -1 * (float) $row['amount']);
+            $this->addOnline($out, $row['business_date'], 'cod', -1 * (float) $row['amount']);
+        }
+
+        foreach ($this->exchangeReplacementRestatementRows($from, $to, self::ONLINE_ORDER_TYPES, false) as $row) {
+            $this->addOnline($out, $row['business_date'], 'daily_sales', (float) $row['amount']);
+        }
+
         foreach ($this->normalPaymentRows($from, $to, self::ONLINE_ORDER_TYPES) as $row) {
             $this->applyOnlinePaymentRow($out, $row);
         }
@@ -938,7 +1065,7 @@ class CashSheetController extends Controller
                 'ps.amount'
             )
             ->whereIn('o.order_type', $orderTypes)
-            ->where('ps.status', 'completed')
+            ->whereIn('ps.status', self::MONEY_PAYMENT_STATUSES)
             ->whereNotIn('op.status', ['cancelled', 'failed'])
             ->where(function ($q) {
                 $q->whereNull('op.payment_type')
@@ -957,7 +1084,7 @@ class CashSheetController extends Controller
 
         if ($this->isCodLikeOrder($row)) {
             $this->addOnline($out, $row->business_date, 'cod_collected', $amount);
-            $this->addOnline($out, $row->business_date, 'cod', $amount);
+            $this->addOnline($out, $row->business_date, 'cod', -1 * $amount);
             return;
         }
 
@@ -1302,6 +1429,24 @@ class CashSheetController extends Controller
             return strtolower(json_encode($metadata));
         }
         return strtolower((string) $metadata);
+    }
+
+    private function metadataToArray(mixed $metadata): array
+    {
+        if (is_array($metadata)) {
+            return $metadata;
+        }
+
+        if (is_object($metadata)) {
+            return (array) $metadata;
+        }
+
+        if (!is_string($metadata) || trim($metadata) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($metadata, true);
+        return is_array($decoded) ? $decoded : [];
     }
 
     private function positiveInt(mixed $value): ?int

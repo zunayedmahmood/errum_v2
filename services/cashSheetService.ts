@@ -77,15 +77,6 @@ export interface CashSheetOwnerDay {
   has_data: CashSheetPresence;
 }
 
-export interface CashSheetDayRow {
-  date: string;
-  branches: CashSheetBranchDay[];
-  online: CashSheetOnlineDay;
-  disbursements: CashSheetDisbursementDay;
-  totals: CashSheetTotalsDay;
-  owner: CashSheetOwnerDay;
-}
-
 export interface CashSheetStoreSummary extends Omit<CashSheetBranchDay, 'cash_cost' | 'bank_cost' | 'cash_refunds' | 'bank_refunds'> {}
 
 export interface CashSheetSummary {
@@ -96,7 +87,16 @@ export interface CashSheetSummary {
   stores: CashSheetStoreSummary[];
 }
 
-export interface CashSheetResponse {
+export interface CashSheetDay {
+  date: string;
+  branches: CashSheetBranchDay[];
+  online: CashSheetOnlineDay;
+  disbursements: CashSheetDisbursementDay;
+  totals: CashSheetTotalsDay;
+  owner: CashSheetOwnerDay;
+}
+
+export interface CashSheetSummaryResponse {
   success: boolean;
   month: string;
   timezone: string;
@@ -104,7 +104,7 @@ export interface CashSheetResponse {
   date_from: string;
   date_to: string;
   stores: StoreLite[];
-  data: CashSheetDayRow[];
+  days: CashSheetDay[];
   summary: CashSheetSummary;
   rules?: Record<string, unknown>;
 }
@@ -270,7 +270,7 @@ function normalizeOwner(row: any): CashSheetOwnerDay {
   };
 }
 
-function normalizeSheet(raw: any): CashSheetResponse {
+function normalizeSummary(raw: any): CashSheetSummaryResponse {
   const stores = (raw?.stores || []).map(normalizeStore).filter(Boolean) as StoreLite[];
 
   return {
@@ -281,13 +281,13 @@ function normalizeSheet(raw: any): CashSheetResponse {
     date_from: String(raw?.date_from ?? ''),
     date_to: String(raw?.date_to ?? ''),
     stores,
-    data: (raw?.data || []).map((row: any) => ({
-      date: String(row?.date ?? ''),
-      branches: (row?.branches || []).map(normalizeBranchDay),
-      online: normalizeOnline(row?.online),
-      disbursements: normalizeDisbursements(row?.disbursements),
-      totals: normalizeTotals(row?.totals),
-      owner: normalizeOwner(row?.owner),
+    days: (raw?.days || []).map((day: any) => ({
+      date: String(day?.date ?? ''),
+      branches: (day?.branches || []).map(normalizeBranchDay),
+      online: normalizeOnline(day?.online),
+      disbursements: normalizeDisbursements(day?.disbursements),
+      totals: normalizeTotals(day?.totals),
+      owner: normalizeOwner(day?.owner),
     })),
     summary: {
       totals: normalizeTotals(raw?.summary?.totals),
@@ -364,9 +364,11 @@ function normalizeAccountingExpense(entry: any): AccountingExpenseEntry {
 }
 
 const cashSheetService = {
-  async getSheet(month: string): Promise<CashSheetResponse> {
-    const res = await axiosInstance.get('/cash-sheet', { params: { month, _ts: Date.now() } });
-    return normalizeSheet(res.data);
+  async getSummary(month: string, storeId?: number | null): Promise<CashSheetSummaryResponse> {
+    const params: Record<string, unknown> = { month, _ts: Date.now() };
+    if (storeId) params.store_id = storeId;
+    const res = await axiosInstance.get('/cash-sheet/summary', { params });
+    return normalizeSummary(res.data);
   },
 
   async getEntries(date: string): Promise<DayEntries> {
