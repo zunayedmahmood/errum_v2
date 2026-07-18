@@ -483,8 +483,8 @@ class OrderController extends Controller
                 $this->buildOrderSourceMetadata($orderSourceTag)
             );
 
-            // Create order. The selected POS sale date must be trusted for order date,
-            // timestamps, receipts, and same-day cash sheet reporting.
+            // Create order. The selected POS sale date is the business date used by
+            // reports and the cash sheet. Laravel timestamps remain real audit times.
             $order = new Order([
                 'customer_id' => $customer->id,
                 'store_id' => $storeId,  // Use calculated store_id (null for social_commerce/ecommerce)
@@ -501,8 +501,6 @@ class OrderController extends Controller
                 'salesman_id' => $salesmanId,
                 'order_date' => $orderDate,
             ]);
-            $order->created_at = $orderDate;
-            $order->updated_at = $orderDate;
             $order->save();
 
             // Save shipping address to customer_addresses table if provided
@@ -789,10 +787,6 @@ class OrderController extends Controller
                     'cogs' => $cogs,
                     'total_amount' => $itemTotal,
                 ]);
-                $orderItem->forceFill([
-                    'created_at' => $orderDate,
-                    'updated_at' => $orderDate,
-                ])->saveQuietly();
 
                 if ($isDefectiveResale) {
                     $defectiveOrderItemIds[] = $orderItem->id;
@@ -852,10 +846,6 @@ class OrderController extends Controller
                 'is_preorder' => $hasPreOrderItems,  // Mark order as pre-order if any items lack batches
                 'metadata' => $orderMetadata,
             ]);
-            $order->forceFill([
-                'created_at' => $orderDate,
-                'updated_at' => $orderDate,
-            ])->saveQuietly();
 
             // Snapshot loyalty eligibility/rates at purchase time and deduct any requested points once.
             // Redeemed points are intentionally non-refundable for later cancellation, return, or deletion.
@@ -894,8 +884,6 @@ class OrderController extends Controller
 
                 $payment->forceFill([
                     'payment_received_date' => $orderDate->toDateString(),
-                    'created_at' => $orderDate,
-                    'updated_at' => $orderDate,
                 ])->saveQuietly();
 
                 $payment->update([
@@ -903,20 +891,15 @@ class OrderController extends Controller
                 ]);
                 $payment->forceFill([
                     'payment_received_date' => $orderDate->toDateString(),
-                    'created_at' => $orderDate,
-                    'updated_at' => $orderDate,
                 ])->saveQuietly();
 
                 // Update order payment status
                 $order->updatePaymentStatus();
             }
 
-            // Some downstream status/payment helpers touch updated_at. The POS-selected
-            // date is the business timestamp for offline sales and must remain trusted.
+            // Reassert only the selected business date. Audit timestamps stay real.
             $order->forceFill([
                 'order_date' => $orderDate,
-                'created_at' => $orderDate,
-                'updated_at' => $orderDate,
             ])->saveQuietly();
 
             DB::commit();
@@ -1075,6 +1058,7 @@ class OrderController extends Controller
             'discount_amount' => 'nullable|numeric|min:0',
             'shipping_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
+            'order_date' => 'nullable|string|max:50',
             'store_id' => 'nullable|exists:stores,id',
             'store_assignment_mode' => 'nullable|string|max:50',
             'order_source' => 'nullable|string|max:50',
@@ -1130,6 +1114,35 @@ class OrderController extends Controller
             // Update order fields
             if ($request->has('shipping_address')) {
                 $order->shipping_address = $request->shipping_address;
+            }
+
+            // order_date is the single business date used by the rebuilt cash sheet.
+            // Changing it moves the order's current sale and payment allocation as one
+            // unit; created_at/payment timestamps remain truthful audit timestamps.
+            if ($request->filled('order_date')) {
+                $oldOrderDate = optional($order->order_date)->format('Y-m-d H:i:s');
+                $newOrderDate = $this->resolveTrustedOrderDate($request);
+                $oldBusinessDay = optional($order->order_date)->format('Y-m-d');
+
+                if ($oldBusinessDay !== $newOrderDate->toDateString()) {
+                    $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
+                    $history = is_array($metadata['cash_sheet_date_history'] ?? null)
+                        ? $metadata['cash_sheet_date_history']
+                        : [];
+                    $history[] = [
+                        'changed_at' => now('Asia/Dhaka')->toISOString(),
+                        'changed_by' => auth()->id(),
+                        'previous_order_date' => $oldOrderDate,
+                        'new_order_date' => $newOrderDate->format('Y-m-d H:i:s'),
+                    ];
+
+                    $order->order_date = $newOrderDate;
+                    $order->metadata = array_merge($metadata, [
+                        'cash_sheet_date_history' => array_slice($history, -100),
+                        'cash_sheet_last_rebalanced_at' => now('Asia/Dhaka')->toISOString(),
+                        'cash_sheet_last_rebalanced_by' => auth()->id(),
+                    ]);
+                }
             }
 
             if ($request->has('store_id') && $order->needsFulfillment()) {
@@ -1983,14 +1996,12 @@ class OrderController extends Controller
                 }
             }
 
-            // Update order status to confirmed (delivered will be set when shipment is delivered).
-            // Preserve the trusted POS/order date in both business and audit timestamps.
+            // Update order status to confirmed. order_date/confirmed_at are business
+            // dates; created_at/updated_at remain real audit timestamps.
             $order->forceFill([
                 'status' => 'confirmed',
                 'confirmed_at' => $orderDate,
                 'order_date' => $orderDate,
-                'created_at' => $order->created_at ?: $orderDate,
-                'updated_at' => $orderDate,
             ])->save();
 
             // Update customer purchase stats
@@ -2111,6 +2122,10 @@ class OrderController extends Controller
                 'metadata' => array_merge($order->metadata ?? [], [
                     'cancelled_by' => auth()->id(),
                     'reservation_release_on_cancel' => $reservationRelease,
+                    'cash_sheet_rebalanced_at' => now('Asia/Dhaka')->toISOString(),
+                    'cash_sheet_rebalanced_by' => auth()->id(),
+                    'cash_sheet_removed_from_order_date' => optional($order->order_date)->format('Y-m-d'),
+                    'cash_sheet_rebalance_reason' => 'order_cancelled',
                 ]),
             ]);
 
@@ -2336,7 +2351,7 @@ class OrderController extends Controller
                 throw new \Exception('Offline sale not found.');
             }
 
-            if (!in_array($order->order_type, ['counter', 'offline', 'pos'], true)) {
+            if (!in_array($order->order_type, ['counter', 'offline', 'pos', 'offline_sale', 'retail', 'branch'], true)) {
                 throw new \Exception('Only offline/POS sales can be edited from Offline Sale History.');
             }
 
@@ -2345,9 +2360,15 @@ class OrderController extends Controller
                 throw new \Exception('Deleted offline sales cannot be edited.');
             }
 
-            $orderDate = $request->filled('order_date')
-                ? $this->resolveTrustedOrderDate($request)
-                : ($order->order_date ?: $order->created_at ?: now());
+            if ($request->filled('order_date')) {
+                $requestedOrderDate = $this->resolveTrustedOrderDate($request);
+                $orderDate = $order->order_date
+                    && optional($order->order_date)->format('Y-m-d') === $requestedOrderDate->toDateString()
+                        ? $order->order_date
+                        : $requestedOrderDate;
+            } else {
+                $orderDate = $order->order_date ?: $order->created_at ?: now();
+            }
 
             if ($request->has('customer_name') || $request->has('customer_phone') || $request->has('customer_email') || $request->has('customer_address')) {
                 $customer = $order->customer;
@@ -2361,29 +2382,52 @@ class OrderController extends Controller
             }
 
             $oldDate = optional($order->order_date)->format('Y-m-d H:i:s');
+            $oldPaymentAllocation = $this->captureOfflineSalePaymentAllocation($order);
+            $newPaymentAllocation = $request->has('payment_breakdown')
+                ? collect($request->input('payment_breakdown') ?: [])->map(fn ($row) => [
+                    'payment_method_id' => (int) ($row['payment_method_id'] ?? 0),
+                    'amount' => round((float) ($row['amount'] ?? 0), 2),
+                    'wallet' => $row['wallet'] ?? null,
+                ])->filter(fn ($row) => $row['payment_method_id'] > 0 && $row['amount'] > 0)->values()->all()
+                : $oldPaymentAllocation;
+
+            $rebalanceHistory = is_array($metadata['cash_sheet_rebalance_history'] ?? null)
+                ? $metadata['cash_sheet_rebalance_history']
+                : [];
+            $rebalanceHistory[] = [
+                'edited_at' => now('Asia/Dhaka')->toISOString(),
+                'edited_by' => auth()->id(),
+                'previous_order_date' => $oldDate,
+                'new_order_date' => $orderDate->format('Y-m-d H:i:s'),
+                'previous_payment_allocation' => $oldPaymentAllocation,
+                'new_payment_allocation' => $newPaymentAllocation,
+            ];
+
+            // order_date is the business date used by the cash sheet. created_at,
+            // updated_at, payment completed_at, and transaction timestamps remain
+            // truthful audit timestamps and are never backdated.
             $order->order_date = $orderDate;
-            $order->forceFill([
-                'created_at' => $orderDate,
-                'updated_at' => $orderDate,
-            ]);
             $order->metadata = array_merge($metadata, [
-                'offline_sale_last_edited_at' => now()->toISOString(),
+                'offline_sale_last_edited_at' => now('Asia/Dhaka')->toISOString(),
                 'offline_sale_last_edited_by' => auth()->id(),
                 'offline_sale_previous_order_date' => $oldDate,
                 'offline_sale_edit_scope' => 'customer_date_payment_breakdown_only',
+                'cash_sheet_rebalance_history' => array_slice($rebalanceHistory, -100),
             ]);
             $order->save();
 
             if ($request->has('payment_breakdown')) {
-                $this->replaceOfflineSalePaymentBreakdown($order->fresh(['payments.paymentSplits']), $request->input('payment_breakdown') ?: [], $orderDate);
-            } else {
-                // Even date-only edits must move payment timestamps so the cash sheet follows the selected order day.
-                $this->moveOfflineSalePaymentDates($order->fresh(['payments.paymentSplits']), $orderDate);
+                // Replacement payment rows are created at the real edit time. The
+                // cash sheet groups them using the order's selected order_date.
+                $this->replaceOfflineSalePaymentBreakdown(
+                    $order->fresh(['payments.paymentSplits']),
+                    $request->input('payment_breakdown') ?: [],
+                    now('Asia/Dhaka')
+                );
             }
 
             $order->refresh();
             $order->updatePaymentStatus();
-            $order->forceFill(['updated_at' => $orderDate])->saveQuietly();
 
             DB::commit();
 
@@ -2409,6 +2453,47 @@ class OrderController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+    private function captureOfflineSalePaymentAllocation(Order $order): array
+    {
+        $rows = [];
+
+        foreach ($order->payments as $payment) {
+            if (in_array(strtolower((string) $payment->status), ['cancelled', 'failed', 'refunded'], true)) {
+                continue;
+            }
+
+            $activeSplits = $payment->paymentSplits
+                ->filter(fn ($split) => !in_array(strtolower((string) $split->status), ['cancelled', 'failed', 'refunded'], true));
+
+            if ($activeSplits->isNotEmpty()) {
+                foreach ($activeSplits as $split) {
+                    $data = is_array($split->payment_data ?? null) ? $split->payment_data : [];
+                    $rows[] = [
+                        'payment_method_id' => (int) $split->payment_method_id,
+                        'payment_method' => $split->paymentMethod?->name,
+                        'amount' => round((float) $split->amount, 2),
+                        'wallet' => $data['wallet'] ?? $data['channel'] ?? $data['provider'] ?? null,
+                    ];
+                }
+                continue;
+            }
+
+            if (!$payment->payment_method_id) {
+                continue;
+            }
+
+            $data = is_array($payment->payment_data ?? null) ? $payment->payment_data : [];
+            $rows[] = [
+                'payment_method_id' => (int) $payment->payment_method_id,
+                'payment_method' => $payment->paymentMethod?->name,
+                'amount' => round((float) $payment->amount, 2),
+                'wallet' => $data['wallet'] ?? $data['channel'] ?? $data['provider'] ?? null,
+            ];
+        }
+
+        return $rows;
     }
 
     private function replaceOfflineSalePaymentBreakdown(Order $order, array $breakdown, Carbon $paymentAt): void
@@ -2475,7 +2560,8 @@ class OrderController extends Controller
                 $split->status = 'cancelled';
                 $split->metadata = array_merge($split->metadata ?? [], [
                     'replaced_by_offline_sale_edit_at' => now()->toISOString(),
-                    'replacement_order_date' => $paymentAt->toDateTimeString(),
+                    'replacement_edited_at' => $paymentAt->toDateTimeString(),
+                'cash_sheet_order_date' => optional($order->order_date)->format('Y-m-d H:i:s'),
                 ]);
                 $split->save();
             }
@@ -2483,7 +2569,8 @@ class OrderController extends Controller
             $payment->status = 'cancelled';
             $payment->metadata = array_merge($payment->metadata ?? [], [
                 'replaced_by_offline_sale_edit_at' => now()->toISOString(),
-                'replacement_order_date' => $paymentAt->toDateTimeString(),
+                'replacement_edited_at' => $paymentAt->toDateTimeString(),
+                'cash_sheet_order_date' => optional($order->order_date)->format('Y-m-d H:i:s'),
             ]);
             $payment->save();
         }
@@ -2602,32 +2689,6 @@ class OrderController extends Controller
         }
 
         return $data;
-    }
-
-    private function moveOfflineSalePaymentDates(Order $order, Carbon $paymentAt): void
-    {
-        foreach ($order->payments as $payment) {
-            $payment->forceFill([
-                'payment_received_date' => $paymentAt->toDateString(),
-                'processed_at' => $payment->processed_at ? $paymentAt : null,
-                'completed_at' => $payment->completed_at ? $paymentAt : null,
-                'created_at' => $paymentAt,
-                'updated_at' => $paymentAt,
-            ])->saveQuietly();
-
-            \App\Models\Transaction::where('reference_type', \App\Models\OrderPayment::class)
-                ->where('reference_id', $payment->id)
-                ->update(['transaction_date' => $paymentAt]);
-
-            foreach ($payment->paymentSplits as $split) {
-                $split->forceFill([
-                    'processed_at' => $split->processed_at ? $paymentAt : null,
-                    'completed_at' => $split->completed_at ? $paymentAt : null,
-                    'created_at' => $paymentAt,
-                    'updated_at' => $paymentAt,
-                ])->saveQuietly();
-            }
-        }
     }
 
     /**

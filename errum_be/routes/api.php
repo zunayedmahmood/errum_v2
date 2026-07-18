@@ -914,7 +914,8 @@ Route::middleware('auth:api')->group(function () {
     // ============================================
 
     Route::prefix('cash-sheet')->group(function () {
-        // GET  /api/cash-sheet/summary?month=2026-07 → live monthly summary
+        // Deshio-style full monthly sheet. The legacy /summary route remains an alias.
+        Route::get('/', [\App\Http\Controllers\CashSheetController::class, 'index']);
         Route::get('/summary', [\App\Http\Controllers\CashSheetController::class, 'summary']);
 
         // GET  /api/cash-sheet/entries?date=2026-04-14 → manual entries for a date

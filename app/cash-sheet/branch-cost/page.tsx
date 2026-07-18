@@ -9,20 +9,16 @@ import Sidebar from '@/components/Sidebar';
 import { Plus, Trash2, Loader2, CheckCircle, AlertCircle, Receipt } from 'lucide-react';
 import cashSheetService, { BranchCostEntry } from '@/services/cashSheetService';
 import storeService, { Store } from '@/services/storeService';
-function dhakaDateString(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Dhaka',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+
+function todayDhaka() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date()).reduce<Record<string, string>>((acc, part) => {
     if (part.type !== 'literal') acc[part.type] = part.value;
     return acc;
   }, {});
-
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
-
 
 export default function BranchCostPanel() {
   const { darkMode, setDarkMode } = useTheme();
@@ -30,7 +26,7 @@ export default function BranchCostPanel() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const isAdmin  = role === 'admin' || role === 'super-admin';
+  const isAdmin  = ['admin', 'super-admin', 'super_admin', 'superadmin'].includes(role || '');
   const isBranch = role === 'branch-manager' || role === 'pos-salesman';
   const authorized = isAdmin || isBranch;
 
@@ -39,7 +35,7 @@ export default function BranchCostPanel() {
   const [loading, setLoading]   = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
 
-  const today = dhakaDateString();
+  const today = todayDhaka();
   const [date, setDate]         = useState(today);
   const [storeId, setStoreId]   = useState<number | ''>('');
   const [amount, setAmount]     = useState('');
@@ -52,7 +48,7 @@ export default function BranchCostPanel() {
   useEffect(() => {
     storeService.getAllStores().then((list: Store[]) => {
       setStores(list);
-      if (!isAdmin && userStoreId) setStoreId(userStoreId);
+      if (!isAdmin && userStoreId) setStoreId(Number(userStoreId));
       else if (list.length > 0) setStoreId(list[0].id);
     }).catch(() => {});
   }, [isAdmin, userStoreId]);
@@ -64,7 +60,7 @@ export default function BranchCostPanel() {
     setLoading(true);
     try {
       const res = await cashSheetService.getEntries(date);
-      setEntries(res.branch_costs.filter(e => Number(e.store_id) === Number(storeId)));
+      setEntries(res.branch_costs.filter(e => e.store_id === Number(storeId)));
     } catch { } finally { setLoading(false); }
   };
 
@@ -77,13 +73,12 @@ export default function BranchCostPanel() {
     if (!amount || !storeId || !date) return;
     setSaving(true);
     try {
-      const created = await cashSheetService.addBranchCost({
+      await cashSheetService.addBranchCost({
         entry_date: date,
         store_id: Number(storeId),
         amount: parseFloat(amount),
         details: details || undefined,
       });
-      setEntries(prev => [created, ...prev.filter(e => e.id !== created.id)]);
       await loadEntries();
       setAmount('');
       setDetails('');
@@ -105,7 +100,7 @@ export default function BranchCostPanel() {
 
   const total = entries.reduce((s, e) => s + Number(e.amount), 0);
 
-  const fmt = (n: number) => '৳' + Math.round(n).toLocaleString('en-BD');
+  const fmt = (n: number) => '৳' + Number(n || 0).toLocaleString('en-BD', { maximumFractionDigits: 2 });
 
   return (
     <div className={`min-h-screen flex ${darkMode ? 'dark bg-gray-950' : 'bg-gray-50'}`}>
@@ -119,7 +114,7 @@ export default function BranchCostPanel() {
               <Receipt size={20} className="text-indigo-500" /> Branch Daily Cost
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Log operational expenses for your branch. Each entry is also posted to the accounting expense ledger.
+              Log operational expenses for your branch. Each entry is recorded separately with details.
             </p>
           </div>
 
@@ -141,7 +136,7 @@ export default function BranchCostPanel() {
                 disabled={!isAdmin}
                 className="w-full rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-60"
               >
-                {stores.filter(s => isAdmin || s.id === userStoreId).map(s => (
+                {stores.filter(s => isAdmin || s.id === Number(userStoreId)).map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
@@ -183,7 +178,7 @@ export default function BranchCostPanel() {
           <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
               <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                Entries for {new Date(date).toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}
+                Entries for {new Date(`${date}T00:00:00+06:00`).toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}
               </h2>
               {entries.length > 0 && (
                 <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">

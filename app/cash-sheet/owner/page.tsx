@@ -8,20 +8,6 @@ import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import { Plus, Trash2, Loader2, CheckCircle, AlertCircle, Crown, TrendingUp, TrendingDown } from 'lucide-react';
 import cashSheetService, { OwnerEntry, OwnerEntryType } from '@/services/cashSheetService';
-function dhakaDateString(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Dhaka',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date).reduce<Record<string, string>>((acc, part) => {
-    if (part.type !== 'literal') acc[part.type] = part.value;
-    return acc;
-  }, {});
-
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
 
 const ENTRY_TYPES: { value: OwnerEntryType; label: string; icon: 'in' | 'out'; medium: 'cash' | 'bank'; color: string; desc: string }[] = [
   { value: 'cash_invest', label: 'Cash Investment',  icon: 'in',  medium: 'cash', color: 'emerald', desc: 'Cash added into the business by owner / receivables collected' },
@@ -39,16 +25,26 @@ const colorMap: Record<string, string> = {
 
 const typeMeta = Object.fromEntries(ENTRY_TYPES.map(t => [t.value, t]));
 
+function todayDhaka() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date()).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 export default function OwnerPanel() {
   const { darkMode, setDarkMode } = useTheme();
   const { role, isLoading: authLoading } = useAuth() as any;
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const isAdmin = role === 'admin' || role === 'super-admin';
+  const isAdmin = ['admin', 'super-admin', 'super_admin', 'superadmin'].includes(role || '');
   useEffect(() => { if (!authLoading && !isAdmin) router.push('/dashboard'); }, [authLoading, isAdmin]);
 
-  const today = dhakaDateString();
+  const today = todayDhaka();
   const [date, setDate]       = useState(today);
   const [type, setType]       = useState<OwnerEntryType>('cash_invest');
   const [amount, setAmount]   = useState('');
@@ -102,7 +98,7 @@ export default function OwnerPanel() {
     finally { setDeleting(null); }
   };
 
-  const fmt = (n: number) => '৳' + Math.round(n).toLocaleString('en-BD');
+  const fmt = (n: number) => '৳' + Number(n || 0).toLocaleString('en-BD', { maximumFractionDigits: 2 });
 
   const totalIn  = entries.filter(e => typeMeta[e.type]?.icon === 'in').reduce((s,e)=>s+Number(e.amount),0);
   const totalOut = entries.filter(e => typeMeta[e.type]?.icon === 'out').reduce((s,e)=>s+Number(e.amount),0);
