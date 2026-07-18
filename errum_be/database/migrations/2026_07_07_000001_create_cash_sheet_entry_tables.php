@@ -1,68 +1,27 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
+/**
+ * Compatibility marker for installations that received the July cash-sheet
+ * patch after the canonical April migration.
+ *
+ * The tables are owned by:
+ * 2026_04_14_000003_create_cash_sheet_entry_tables.php
+ *
+ * This migration must remain a no-op in both directions. Older copies repeated
+ * the CREATE statements and dropped all three tables from down(), which meant a
+ * one-step rollback could delete tables and data created by the April migration.
+ */
 return new class extends Migration
 {
-    /**
-     * Create only the manual entry tables used by the remaining Cash Sheet panels.
-     *
-     * The monthly cash-sheet report/grid has been removed; these tables are kept
-     * because Branch Costs, Admin Panel, and Owner Panel still need them.
-     */
     public function up(): void
     {
-        if (!Schema::hasTable('branch_cost_entries')) {
-            Schema::create('branch_cost_entries', function (Blueprint $table) {
-                $table->id();
-                $table->date('entry_date');
-                $table->foreignId('store_id')->constrained('stores')->cascadeOnDelete();
-                $table->decimal('amount', 14, 2);
-                $table->text('details')->nullable();
-                $table->foreignId('created_by')->nullable()->constrained('employees')->nullOnDelete();
-                $table->timestamps();
-
-                $table->index(['entry_date', 'store_id']);
-            });
-        }
-
-        if (!Schema::hasTable('admin_entries')) {
-            Schema::create('admin_entries', function (Blueprint $table) {
-                $table->id();
-                $table->date('entry_date');
-                $table->enum('type', ['salary_setaside', 'cash_to_bank', 'sslzc', 'pathao']);
-                $table->foreignId('store_id')->nullable()->constrained('stores')->nullOnDelete();
-                $table->decimal('amount', 14, 2);
-                $table->text('details')->nullable();
-                $table->foreignId('created_by')->nullable()->constrained('employees')->nullOnDelete();
-                $table->timestamps();
-
-                $table->index(['entry_date', 'type']);
-                $table->index(['store_id', 'entry_date']);
-            });
-        }
-
-        if (!Schema::hasTable('owner_entries')) {
-            Schema::create('owner_entries', function (Blueprint $table) {
-                $table->id();
-                $table->date('entry_date');
-                $table->enum('type', ['cash_invest', 'bank_invest', 'cash_cost', 'bank_cost']);
-                $table->decimal('amount', 14, 2);
-                $table->text('details')->nullable();
-                $table->foreignId('created_by')->nullable()->constrained('employees')->nullOnDelete();
-                $table->timestamps();
-
-                $table->index('entry_date');
-            });
-        }
+        // Intentionally empty. The canonical April migration creates the tables.
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('owner_entries');
-        Schema::dropIfExists('admin_entries');
-        Schema::dropIfExists('branch_cost_entries');
+        // Intentionally empty. This compatibility marker owns no schema objects.
     }
 };

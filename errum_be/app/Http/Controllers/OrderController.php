@@ -64,6 +64,36 @@ class OrderController extends Controller
             throw new \InvalidArgumentException('Invalid order_date. Use YYYY-MM-DD or a valid date/time.');
         }
     }
+
+
+    /**
+     * Financial corrections are limited to global admins or the assigned
+     * branch's manager/POS operator. Authentication alone is not enough for a
+     * cash/bank reallocation or deletion that changes the cash sheet.
+     */
+    private function authorizeOfflineSaleFinancialChange(Order $order)
+    {
+        $employee = Auth::guard('api')->user();
+        if (!$employee) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $roleSlug = strtolower(str_replace('_', '-', trim((string) ($employee->role?->slug ?? ''))));
+        if (in_array($roleSlug, ['super-admin', 'superadmin', 'admin'], true)) {
+            return null;
+        }
+
+        if (in_array($roleSlug, ['branch-manager', 'pos-salesman'], true)
+            && (int) $employee->store_id > 0
+            && (int) $employee->store_id === (int) $order->store_id) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => "You are not allowed to change this sale's date, payment allocation, or deletion state.",
+        ], 403);
+    }
     /**
      * List all orders with filters
      * 
@@ -1058,7 +1088,7 @@ class OrderController extends Controller
             'discount_amount' => 'nullable|numeric|min:0',
             'shipping_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
-            'order_date' => 'nullable|string|max:50',
+            'order_date' => 'nullable|date|before_or_equal:today',
             'store_id' => 'nullable|exists:stores,id',
             'store_assignment_mode' => 'nullable|string|max:50',
             'order_source' => 'nullable|string|max:50',
@@ -2351,6 +2381,11 @@ class OrderController extends Controller
                 throw new \Exception('Offline sale not found.');
             }
 
+            if ($denied = $this->authorizeOfflineSaleFinancialChange($order)) {
+                DB::rollBack();
+                return $denied;
+            }
+
             if (!in_array($order->order_type, ['counter', 'offline', 'pos', 'offline_sale', 'retail', 'branch'], true)) {
                 throw new \Exception('Only offline/POS sales can be edited from Offline Sale History.');
             }
@@ -2358,6 +2393,24 @@ class OrderController extends Controller
             $metadata = is_array($order->metadata ?? null) ? $order->metadata : [];
             if (!empty($metadata['offline_sale_deleted']) || !empty($metadata['offline_sale_voided'])) {
                 throw new \Exception('Deleted offline sales cannot be edited.');
+            }
+
+            if (in_array(strtolower((string) $order->status), ['cancelled', 'canceled', 'refunded', 'void', 'deleted'], true)
+                || strtolower((string) $order->payment_status) === 'refunded') {
+                throw new \Exception('Cancelled, voided, or fully refunded sales cannot be edited. Restore/reopen the order through its proper workflow first.');
+            }
+
+            if ($request->has('payment_breakdown')) {
+                $paymentIds = $order->payments->pluck('id')->map(fn ($paymentId) => (int) $paymentId)->all();
+                $hasRefundActivity = $order->refunds()->where('status', 'completed')->exists()
+                    || $order->payments()->where('refunded_amount', '>', 0)->exists()
+                    || (!empty($paymentIds) && \App\Models\PaymentSplit::whereIn('order_payment_id', $paymentIds)
+                        ->where('refunded_amount', '>', 0)
+                        ->exists());
+
+                if ($hasRefundActivity) {
+                    throw new \Exception('Payment allocation cannot be rewritten after refund activity. Adjust or reverse the refund through Return/Exchange first so cash and bank history remain auditable.');
+                }
             }
 
             if ($request->filled('order_date')) {
@@ -2561,7 +2614,7 @@ class OrderController extends Controller
                 $split->metadata = array_merge($split->metadata ?? [], [
                     'replaced_by_offline_sale_edit_at' => now()->toISOString(),
                     'replacement_edited_at' => $paymentAt->toDateTimeString(),
-                'cash_sheet_order_date' => optional($order->order_date)->format('Y-m-d H:i:s'),
+                    'cash_sheet_order_date' => optional($order->order_date)->format('Y-m-d H:i:s'),
                 ]);
                 $split->save();
             }
@@ -2732,7 +2785,12 @@ class OrderController extends Controller
                 ], 404);
             }
 
-            if (!in_array($order->order_type, ['counter', 'offline', 'pos'], true)) {
+            if ($denied = $this->authorizeOfflineSaleFinancialChange($order)) {
+                DB::rollBack();
+                return $denied;
+            }
+
+            if (!in_array($order->order_type, ['counter', 'offline', 'pos', 'offline_sale', 'retail', 'branch'], true)) {
                 throw new \Exception('Only offline/POS sales can be deleted from Offline Sale History. Use normal cancellation for online/social orders.');
             }
 

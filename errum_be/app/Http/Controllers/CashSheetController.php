@@ -108,13 +108,19 @@ class CashSheetController extends Controller
         $storeIds = $stores->pluck('id')->map(fn ($id) => (int) $id)->all();
         $dates = collect(CarbonPeriod::create($dateFrom, $dateTo))->map(fn ($date) => $date->toDateString());
 
-        $branchSales = $this->loadBranchSales($storeIds, $dateFrom, $dateTo);
-        [$branchPayments, $paymentRefundCoverage] = $this->loadBranchPayments($storeIds, $dateFrom, $dateTo);
-        $branchRefunds = $this->loadBranchRefunds($storeIds, $dateFrom, $dateTo, $paymentRefundCoverage);
-        $branchReturns = $this->loadBranchReturns($storeIds, $dateFrom, $dateTo);
+        // A full refund can be recorded in three different Errum workflows:
+        // the refunds table, order_payments.refunded_amount, or split-level
+        // refunded_amount. Resolve those once so every cash-sheet section applies
+        // the same current-state exclusion rule.
+        $fullyRefundedOrderIds = $this->loadFullyRefundedOrderIds($dateFrom, $dateTo);
+
+        $branchSales = $this->loadBranchSales($storeIds, $dateFrom, $dateTo, $fullyRefundedOrderIds);
+        [$branchPayments, $paymentRefundCoverage] = $this->loadBranchPayments($storeIds, $dateFrom, $dateTo, $fullyRefundedOrderIds);
+        $branchRefunds = $this->loadBranchRefunds($storeIds, $dateFrom, $dateTo, $paymentRefundCoverage, $fullyRefundedOrderIds);
+        $branchReturns = $this->loadBranchReturns($storeIds, $dateFrom, $dateTo, $fullyRefundedOrderIds);
         $branchCosts = $this->loadBranchCosts($storeIds, $dateFrom, $dateTo);
         $adminData = $this->loadAdminEntries($dateFrom, $dateTo);
-        $onlineData = $this->loadOnlineData($dateFrom, $dateTo);
+        $onlineData = $this->loadOnlineData($dateFrom, $dateTo, $fullyRefundedOrderIds);
         $ownerData = $this->loadOwnerEntries($dateFrom, $dateTo);
 
         // Branch-scoped users receive only their own operational sheet. Global
@@ -507,7 +513,112 @@ class CashSheetController extends Controller
             ->get(['id', 'name', 'is_warehouse', 'is_active']);
     }
 
-    private function loadBranchSales(array $storeIds, string $from, string $to): array
+    /**
+     * Resolve orders whose current refundable value has reached the complete
+     * order total. Errum can record refunds in the refund workflow, directly
+     * against an order payment, or against individual payment splits.
+     *
+     * We intentionally use the greatest independently recorded total rather
+     * than adding the sources together because the same refund can be mirrored
+     * in more than one table. This prevents a partial refund from being treated
+     * as full through double counting.
+     */
+    private function loadFullyRefundedOrderIds(string $from, string $to): array
+    {
+        $orders = DB::table('orders')
+            ->select('id', 'total_amount', 'status', 'payment_status')
+            ->whereNull('deleted_at')
+            ->whereDate('order_date', '>=', $from)
+            ->whereDate('order_date', '<=', $to)
+            ->get();
+
+        if ($orders->isEmpty()) {
+            return [];
+        }
+
+        // Join back to the monthly orders instead of feeding every order id
+        // into a large WHERE IN list. This remains safe for high-volume months
+        // and for SQLite test environments with small parameter limits.
+        $workflowRefunds = DB::table('refunds as r')
+            ->join('orders as ro', 'ro.id', '=', 'r.order_id')
+            ->whereNull('ro.deleted_at')
+            ->whereNull('r.deleted_at')
+            ->where('r.status', 'completed')
+            ->whereDate('ro.order_date', '>=', $from)
+            ->whereDate('ro.order_date', '<=', $to)
+            ->groupBy('r.order_id')
+            ->selectRaw("r.order_id, SUM(CASE WHEN r.refund_type = 'full' THEN COALESCE(r.original_amount, r.refund_amount + COALESCE(r.processing_fee, 0)) ELSE r.refund_amount END) as coverage_total")
+            ->get()
+            ->keyBy('order_id');
+
+        $paymentRefunds = DB::table('order_payments as rp')
+            ->join('orders as ro', 'ro.id', '=', 'rp.order_id')
+            ->whereNull('ro.deleted_at')
+            ->whereNull('rp.deleted_at')
+            ->whereNotIn('rp.status', ['cancelled', 'failed'])
+            ->whereDate('ro.order_date', '>=', $from)
+            ->whereDate('ro.order_date', '<=', $to)
+            ->groupBy('rp.order_id')
+            ->selectRaw('rp.order_id, SUM(COALESCE(rp.refunded_amount, 0)) as total')
+            ->pluck('total', 'rp.order_id');
+
+        $splitRefunds = DB::table('payment_splits as ps')
+            ->join('order_payments as rp', 'rp.id', '=', 'ps.order_payment_id')
+            ->join('orders as ro', 'ro.id', '=', 'rp.order_id')
+            ->whereNull('ro.deleted_at')
+            ->whereNull('rp.deleted_at')
+            ->whereNotIn('rp.status', ['cancelled', 'failed'])
+            ->whereNotIn('ps.status', ['cancelled', 'failed'])
+            ->whereDate('ro.order_date', '>=', $from)
+            ->whereDate('ro.order_date', '<=', $to)
+            ->groupBy('rp.order_id')
+            ->selectRaw('rp.order_id, SUM(COALESCE(ps.refunded_amount, 0)) as total')
+            ->pluck('total', 'rp.order_id');
+
+        return $orders
+            ->filter(function ($order) use ($workflowRefunds, $paymentRefunds, $splitRefunds) {
+                // Status-flagged cancellations/refunds are already removed by every
+                // report query. This list only needs refund activity that did not
+                // update the order flags, which is the gap this resolver closes.
+                if (in_array(strtolower((string) $order->status), self::EXCLUDED_ORDER_STATUSES, true)
+                    || strtolower((string) $order->payment_status) === 'refunded') {
+                    return false;
+                }
+
+                $total = round(max(0, (float) $order->total_amount), 2);
+                if ($total <= 0) {
+                    return false;
+                }
+
+                $workflowRefund = $workflowRefunds[$order->id] ?? null;
+
+                // refund_type=full means the complete approved return was
+                // refunded; it does not necessarily mean the entire order was
+                // returned. Use original_amount as coverage for full-return
+                // refunds (so a processing fee does not hide full coverage),
+                // then compare the aggregate coverage with the order total.
+                $largestRecordedRefund = max(
+                    (float) ($workflowRefund->coverage_total ?? 0),
+                    (float) ($paymentRefunds[$order->id] ?? 0),
+                    (float) ($splitRefunds[$order->id] ?? 0)
+                );
+
+                return $largestRecordedRefund + 0.01 >= $total;
+            })
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    private function excludeFullyRefundedOrders($query, array $fullyRefundedOrderIds): void
+    {
+        if (!empty($fullyRefundedOrderIds)) {
+            $query->whereNotIn('o.id', $fullyRefundedOrderIds);
+        }
+    }
+
+    private function loadBranchSales(array $storeIds, string $from, string $to, array $fullyRefundedOrderIds): array
     {
         if (empty($storeIds)) {
             return [];
@@ -515,7 +626,7 @@ class CashSheetController extends Controller
 
         $out = [];
 
-        DB::table('orders as o')
+        $query = DB::table('orders as o')
             ->select('o.store_id', DB::raw('DATE(o.order_date) as day'), DB::raw('SUM(o.total_amount) as total'))
             ->whereIn('o.store_id', $storeIds)
             ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
@@ -525,8 +636,11 @@ class CashSheetController extends Controller
             })
             ->whereNull('o.deleted_at')
             ->whereDate('o.order_date', '>=', $from)
-            ->whereDate('o.order_date', '<=', $to)
-            ->groupBy('o.store_id', 'day')
+            ->whereDate('o.order_date', '<=', $to);
+
+        $this->excludeFullyRefundedOrders($query, $fullyRefundedOrderIds);
+
+        $query->groupBy('o.store_id', 'day')
             ->get()
             ->each(function ($row) use (&$out) {
                 $out[(string) $row->store_id][$row->day] = round((float) $row->total, 2);
@@ -540,13 +654,13 @@ class CashSheetController extends Controller
      * prevent a refund from being deducted twice when both order_payments and
      * refunds contain the same reversal.
      */
-    private function loadBranchPayments(array $storeIds, string $from, string $to): array
+    private function loadBranchPayments(array $storeIds, string $from, string $to, array $fullyRefundedOrderIds): array
     {
         if (empty($storeIds)) {
             return [[], []];
         }
 
-        $payments = DB::table('order_payments as op')
+        $paymentQuery = DB::table('order_payments as op')
             ->join('orders as o', 'o.id', '=', 'op.order_id')
             ->leftJoin('payment_methods as pm', 'pm.id', '=', 'op.payment_method_id')
             ->select(
@@ -572,8 +686,10 @@ class CashSheetController extends Controller
             ->whereNull('op.deleted_at')
             ->whereIn('op.status', self::ACTIVE_PAYMENT_STATUSES)
             ->whereDate('o.order_date', '>=', $from)
-            ->whereDate('o.order_date', '<=', $to)
-            ->get();
+            ->whereDate('o.order_date', '<=', $to);
+
+        $this->excludeFullyRefundedOrders($paymentQuery, $fullyRefundedOrderIds);
+        $payments = $paymentQuery->get();
 
         $paymentIds = $payments->pluck('payment_id')->map(fn ($id) => (int) $id)->all();
         $splitsByPayment = [];
@@ -608,45 +724,166 @@ class CashSheetController extends Controller
                 });
         }
 
+        // RefundController records the actual refund instrument in refunds,
+        // while the direct payment APIs can record refunded_amount only on the
+        // payment parent. For split parents, use the workflow instrument first;
+        // any remaining unclassified parent refund is allocated proportionally.
+        // This keeps cash + bank equal to the true net payment without counting
+        // a mirrored workflow refund twice in loadBranchRefunds().
+        $workflowRefundTargets = [];
+        $refundTargetQuery = DB::table('refunds as r')
+            ->join('orders as o', 'o.id', '=', 'r.order_id')
+            ->select('r.order_id', 'r.refund_method', DB::raw('SUM(r.refund_amount) as total'))
+            ->whereIn('o.store_id', $storeIds)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereNotIn('o.status', self::EXCLUDED_ORDER_STATUSES)
+            ->where(function ($query) {
+                $query->whereNull('o.payment_status')->orWhere('o.payment_status', '!=', 'refunded');
+            })
+            ->whereNull('o.deleted_at')
+            ->whereNull('r.deleted_at')
+            ->where('r.status', 'completed')
+            ->whereDate('o.order_date', '>=', $from)
+            ->whereDate('o.order_date', '<=', $to);
+
+        $this->excludeFullyRefundedOrders($refundTargetQuery, $fullyRefundedOrderIds);
+
+        $refundTargetQuery
+            ->groupBy('r.order_id', 'r.refund_method')
+            ->get()
+            ->each(function ($row) use (&$workflowRefundTargets) {
+                $orderId = (int) $row->order_id;
+                $bucket = $this->refundBucket((string) $row->refund_method);
+                $workflowRefundTargets[$orderId][$bucket] =
+                    ($workflowRefundTargets[$orderId][$bucket] ?? 0) + max(0, (float) $row->total);
+            });
+
         $out = [];
         $refundCoverage = [];
+
+        $addMovement = function (string $storeKey, string $day, string $bucket, float $amount) use (&$out): void {
+            if ($amount <= 0) {
+                return;
+            }
+            $out[$storeKey][$day][$bucket] = ($out[$storeKey][$day][$bucket] ?? 0) + $amount;
+        };
+
+        $addCoverage = function (int $orderId, string $bucket, float $amount) use (&$refundCoverage, &$workflowRefundTargets): void {
+            if ($amount <= 0) {
+                return;
+            }
+
+            $refundCoverage[$orderId][$bucket] = ($refundCoverage[$orderId][$bucket] ?? 0) + $amount;
+
+            // Mark matching workflow refunds as already represented by the
+            // payment-level deduction, so loadBranchRefunds only deducts any
+            // genuinely additional amount.
+            $target = (float) ($workflowRefundTargets[$orderId][$bucket] ?? 0);
+            if ($target > 0) {
+                $workflowRefundTargets[$orderId][$bucket] = max(0, $target - min($target, $amount));
+            }
+        };
 
         foreach ($payments as $payment) {
             $storeKey = (string) $payment->store_id;
             $day = (string) $payment->day;
             $paymentId = (int) $payment->payment_id;
+            $orderId = (int) $payment->order_id;
             $hasAnySplit = array_key_exists($paymentId, $paymentIdsWithAnySplit);
             $instruments = $splitsByPayment[$paymentId] ?? [];
 
-            // A split parent must never be counted as a normal bank payment. If
-            // split rows exist, only the currently active split rows contribute.
             if (!$hasAnySplit) {
-                $instruments = [$payment];
+                $amount = max(0, (float) $payment->amount);
+                $refunded = min($amount, max(0, (float) ($payment->refunded_amount ?? 0)));
+                $bucket = $this->paymentBucket(
+                    (string) ($payment->method_type ?? ''),
+                    (string) ($payment->method_code ?? ''),
+                    (string) ($payment->payment_type ?? '')
+                );
+
+                $addMovement($storeKey, $day, $bucket, max(0, $amount - $refunded));
+                $addCoverage($orderId, $bucket, $refunded);
+                continue;
             }
+
+            // A split parent must never be counted as a normal bank payment.
+            // Build current net values from only its active split instruments.
+            $bucketNet = ['cash' => 0.0, 'bank' => 0.0, 'ex_on' => 0.0];
+            $childRefundTotal = 0.0;
 
             foreach ($instruments as $instrument) {
                 $amount = max(0, (float) ($instrument->amount ?? 0));
                 $refunded = min($amount, max(0, (float) ($instrument->refunded_amount ?? 0)));
-                $net = max(0, $amount - $refunded);
                 $bucket = $this->paymentBucket(
                     (string) ($instrument->method_type ?? ''),
                     (string) ($instrument->method_code ?? ''),
                     (string) ($payment->payment_type ?? '')
                 );
 
-                $out[$storeKey][$day][$bucket] = ($out[$storeKey][$day][$bucket] ?? 0) + $net;
+                $bucketNet[$bucket] += max(0, $amount - $refunded);
+                $childRefundTotal += $refunded;
+                $addCoverage($orderId, $bucket, $refunded);
+            }
 
-                if ($refunded > 0) {
-                    $orderId = (int) $payment->order_id;
-                    $refundCoverage[$orderId][$bucket] = ($refundCoverage[$orderId][$bucket] ?? 0) + $refunded;
+            // A direct refund can be attached to the split parent instead of a
+            // child split. Treat only the amount not already represented by
+            // child refunds as an additional reversal.
+            $parentRefundResidual = max(
+                0,
+                min((float) $payment->amount, (float) ($payment->refunded_amount ?? 0)) - $childRefundTotal
+            );
+            $parentRefundResidual = min($parentRefundResidual, array_sum($bucketNet));
+
+            // Prefer the explicit workflow refund method when it is available.
+            foreach (['cash', 'bank', 'ex_on'] as $bucket) {
+                if ($parentRefundResidual <= 0) {
+                    break;
                 }
+
+                $target = max(0, (float) ($workflowRefundTargets[$orderId][$bucket] ?? 0));
+                $deduction = min($parentRefundResidual, $target, $bucketNet[$bucket]);
+                if ($deduction <= 0) {
+                    continue;
+                }
+
+                $bucketNet[$bucket] -= $deduction;
+                $parentRefundResidual -= $deduction;
+                $addCoverage($orderId, $bucket, $deduction);
+            }
+
+            // If the parent-level refund has no instrument metadata, allocate
+            // the unresolved amount proportionally across the current split.
+            // The last non-empty bucket absorbs the rounding remainder so the
+            // total reversal always equals the recorded parent refund.
+            if ($parentRefundResidual > 0) {
+                $eligibleBuckets = array_values(array_filter(
+                    ['cash', 'bank', 'ex_on'],
+                    fn (string $bucket) => $bucketNet[$bucket] > 0
+                ));
+                $eligibleTotal = array_sum(array_map(fn (string $bucket) => $bucketNet[$bucket], $eligibleBuckets));
+                $remaining = $parentRefundResidual;
+
+                foreach ($eligibleBuckets as $index => $bucket) {
+                    $isLast = $index === count($eligibleBuckets) - 1;
+                    $deduction = $isLast
+                        ? min($remaining, $bucketNet[$bucket])
+                        : min($bucketNet[$bucket], round($parentRefundResidual * ($bucketNet[$bucket] / $eligibleTotal), 2));
+
+                    $bucketNet[$bucket] -= $deduction;
+                    $remaining -= $deduction;
+                    $addCoverage($orderId, $bucket, $deduction);
+                }
+            }
+
+            foreach ($bucketNet as $bucket => $amount) {
+                $addMovement($storeKey, $day, $bucket, max(0, $amount));
             }
         }
 
         return [$out, $refundCoverage];
     }
 
-    private function loadBranchRefunds(array $storeIds, string $from, string $to, array $paymentRefundCoverage): array
+    private function loadBranchRefunds(array $storeIds, string $from, string $to, array $paymentRefundCoverage, array $fullyRefundedOrderIds): array
     {
         if (empty($storeIds)) {
             return [];
@@ -655,7 +892,7 @@ class CashSheetController extends Controller
         $out = [];
         $coverage = $paymentRefundCoverage;
 
-        DB::table('refunds as r')
+        $query = DB::table('refunds as r')
             ->join('orders as o', 'o.id', '=', 'r.order_id')
             ->select(
                 'r.order_id',
@@ -674,8 +911,11 @@ class CashSheetController extends Controller
             ->whereNull('r.deleted_at')
             ->where('r.status', 'completed')
             ->whereDate('o.order_date', '>=', $from)
-            ->whereDate('o.order_date', '<=', $to)
-            ->orderBy('r.id')
+            ->whereDate('o.order_date', '<=', $to);
+
+        $this->excludeFullyRefundedOrders($query, $fullyRefundedOrderIds);
+
+        $query->orderBy('r.id')
             ->get()
             ->each(function ($row) use (&$out, &$coverage) {
                 $bucket = $this->refundBucket((string) $row->refund_method);
@@ -697,7 +937,7 @@ class CashSheetController extends Controller
         return $out;
     }
 
-    private function loadBranchReturns(array $storeIds, string $from, string $to): array
+    private function loadBranchReturns(array $storeIds, string $from, string $to, array $fullyRefundedOrderIds): array
     {
         if (empty($storeIds)) {
             return [];
@@ -705,7 +945,7 @@ class CashSheetController extends Controller
 
         $out = [];
 
-        DB::table('product_returns as pr')
+        $query = DB::table('product_returns as pr')
             ->join('orders as o', 'o.id', '=', 'pr.order_id')
             ->select('o.store_id', DB::raw('DATE(o.order_date) as day'), DB::raw('SUM(pr.total_return_value) as total'))
             ->whereIn('o.store_id', $storeIds)
@@ -718,8 +958,11 @@ class CashSheetController extends Controller
             ->whereNull('o.deleted_at')
             ->whereNull('pr.deleted_at')
             ->whereDate('o.order_date', '>=', $from)
-            ->whereDate('o.order_date', '<=', $to)
-            ->groupBy('o.store_id', 'day')
+            ->whereDate('o.order_date', '<=', $to);
+
+        $this->excludeFullyRefundedOrders($query, $fullyRefundedOrderIds);
+
+        $query->groupBy('o.store_id', 'day')
             ->get()
             ->each(function ($row) use (&$out) {
                 $out[(string) $row->store_id][$row->day] = (float) $row->total;
@@ -765,11 +1008,11 @@ class CashSheetController extends Controller
         return $out;
     }
 
-    private function loadOnlineData(string $from, string $to): array
+    private function loadOnlineData(string $from, string $to, array $fullyRefundedOrderIds): array
     {
         $out = [];
 
-        DB::table('orders as o')
+        $query = DB::table('orders as o')
             ->select(
                 DB::raw('DATE(o.order_date) as day'),
                 'o.order_type',
@@ -784,8 +1027,11 @@ class CashSheetController extends Controller
             })
             ->whereNull('o.deleted_at')
             ->whereDate('o.order_date', '>=', $from)
-            ->whereDate('o.order_date', '<=', $to)
-            ->groupBy('day', 'o.order_type')
+            ->whereDate('o.order_date', '<=', $to);
+
+        $this->excludeFullyRefundedOrders($query, $fullyRefundedOrderIds);
+
+        $query->groupBy('day', 'o.order_type')
             ->get()
             ->each(function ($row) use (&$out) {
                 $day = (string) $row->day;

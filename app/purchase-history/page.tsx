@@ -110,11 +110,13 @@ export default function PurchaseHistoryPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStore, setSelectedStore] = useState('');
   const todayIso = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date()).reduce<Record<string, string>>((acc, part) => {
+      if (part.type !== 'literal') acc[part.type] = part.value;
+      return acc;
+    }, {});
+    return `${parts.year}-${parts.month}-${parts.day}`;
   };
   const [exactDate, setExactDate] = useState(() => todayIso());
   const [startDate, setStartDate] = useState(() => todayIso());
@@ -130,6 +132,7 @@ export default function PurchaseHistoryPage() {
   // Legacy state kept for minimal refactor
   const [userRole, setUserRole] = useState<string>('');
   const [userStoreId, setUserStoreId] = useState<string>('');
+  const canManageOfflineSaleFinance = ['super-admin', 'admin', 'branch-manager', 'pos-salesman'].includes(userRole);
   const [activeMenu, setActiveMenu] = useState<number | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
@@ -1644,7 +1647,7 @@ export default function PurchaseHistoryPage() {
                               <div>
                                 <span className="text-gray-600 dark:text-gray-400">Date: </span>
                                 <span className="text-gray-900 dark:text-white">
-                                  {new Date(order.created_at).toLocaleDateString('en-GB')} {new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                  {new Date(order.order_date || order.created_at).toLocaleDateString('en-GB')} {new Date(order.order_date || order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
                                 </span>
                               </div>
                               <div className="md:col-span-2 lg:col-span-4">
@@ -1694,7 +1697,10 @@ export default function PurchaseHistoryPage() {
 
                               {activeMenu === order.id && menuPosition && (
                                 <div className="fixed w-48 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border-2 border-gray-300 dark:border-gray-600 z-50" style={{ top: menuPosition.top, left: menuPosition.left }}>
-                                  {!order.is_deleted_offline_sale && (
+                                  {canManageOfflineSaleFinance
+                                    && !order.is_deleted_offline_sale
+                                    && !['cancelled', 'canceled', 'refunded', 'void', 'deleted'].includes(String(order.status || '').toLowerCase())
+                                    && String(order.payment_status || '').toLowerCase() !== 'refunded' && (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1732,7 +1738,7 @@ export default function PurchaseHistoryPage() {
                                 <ChevronDown className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                               )}
                             </button>
-                            <AccessControl roles={["super-admin", "admin", "online-moderator", "branch-manager"]}>
+                            <AccessControl roles={["super-admin", "admin", "branch-manager", "pos-salesman"]}>
                               <button
                                 onClick={() => handleDelete(order.id)}
                                 disabled={order.is_deleted_offline_sale}
@@ -1961,7 +1967,7 @@ export default function PurchaseHistoryPage() {
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-600 dark:text-gray-400">Order Date</label>
-                  <input type="date" value={offlineEditForm.order_date} onChange={(e) => setOfflineEditForm((p: any) => ({ ...p, order_date: e.target.value }))} className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white" />
+                  <input type="date" max={todayIso()} value={offlineEditForm.order_date} onChange={(e) => setOfflineEditForm((p: any) => ({ ...p, order_date: e.target.value }))} className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white" />
                 </div>
                 <div className="md:col-span-2">
                   <label className="text-xs font-semibold text-gray-600 dark:text-gray-400">Address / Note</label>
