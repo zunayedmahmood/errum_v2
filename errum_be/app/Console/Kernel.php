@@ -18,6 +18,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\AccountingIntegrityCheck::class,
         \App\Console\Commands\SyncOperationalAccounting::class,
         \App\Console\Commands\EnsureStandardAccountingAccounts::class,
+        \App\Console\Commands\SyncPosSaleBusinessDates::class,
     ];
 
     /**

@@ -566,7 +566,9 @@ class AccountingPostingService
                 ->first();
         }
 
-        $date = $payment->completed_at ?? $payment->processed_at ?? $payment->created_at ?? now();
+        $date = $order->order_type === 'counter'
+            ? ($order->order_date ?? $payment->completed_at ?? $payment->created_at ?? now())
+            : ($payment->completed_at ?? $payment->processed_at ?? $payment->created_at ?? now());
         $metadata = [
             'source' => 'order_payment',
             'payment_number' => $payment->payment_number,
@@ -718,7 +720,9 @@ class AccountingPostingService
             $eventKey,
             Order::class,
             (int) $order->id,
-            $order->delivered_at ?? $order->completed_at ?? $order->updated_at ?? now(),
+            ($order->order_type === 'counter'
+                ? ($order->order_date ?? $order->confirmed_at ?? $order->updated_at ?? now())
+                : ($order->delivered_at ?? $order->completed_at ?? $order->updated_at ?? now())),
             "COGS - Order {$order->order_number}",
             $order->store_id,
             $order->created_by,

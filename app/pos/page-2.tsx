@@ -80,6 +80,30 @@ export interface ExtendedCartItem extends CartItem {
   serviceCategory?: string; // NEW: Service category
 }
 
+
+const getDhakaDate = (): string => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+};
+
+const getDhakaTime = (): string => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.hour}:${value.minute}:${value.second}`;
+};
+
 export default function POSPage() {
   const { user, role, scopedStoreId, canSelectStore, canAccessDailyCashReport } = useAuth();
   // UI State
@@ -115,7 +139,7 @@ export default function POSPage() {
   // Basic Setup
   const [outlets, setOutlets] = useState<Store[]>([]);
   const [selectedOutlet, setSelectedOutlet] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getDhakaDate());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState('');
 

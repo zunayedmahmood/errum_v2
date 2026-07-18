@@ -18,6 +18,7 @@ use App\Models\ProductReturn;
 use App\Models\DefectiveProduct;
 use App\Traits\DatabaseAgnosticSearch;
 use App\Services\InventoryReservationService;
+use App\Services\SaleBusinessDateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -367,6 +368,16 @@ class OrderController extends Controller
             ], 422);
         }
 
+        if ($request->input('order_type') === 'counter'
+            && !$request->filled('order_date')
+            && !$request->filled('sale_date')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The selected POS sale date is required.',
+                'errors' => ['order_date' => ['Select the date on which this sale must be recorded.']],
+            ], 422);
+        }
+
         $orderSourceTag = $this->extractOrderSourceTag($request);
         if ($request->order_type === 'social_commerce' && !$orderSourceTag) {
             return response()->json([
@@ -514,7 +525,7 @@ class OrderController extends Controller
             );
 
             // Create order. The selected POS sale date is the business date used by
-            // reports and the cash sheet. Laravel timestamps remain real audit times.
+            // reports, cash sheet, order history, payment history and ledgers.
             $order = new Order([
                 'customer_id' => $customer->id,
                 'store_id' => $storeId,  // Use calculated store_id (null for social_commerce/ecommerce)
@@ -927,10 +938,9 @@ class OrderController extends Controller
                 $order->updatePaymentStatus();
             }
 
-            // Reassert only the selected business date. Audit timestamps stay real.
-            $order->forceFill([
-                'order_date' => $orderDate,
-            ])->saveQuietly();
+            // A POS sale is one backdateable business event. Synchronise the selected
+            // date through order, items, payments, splits and accounting records.
+            $order = app(SaleBusinessDateService::class)->sync($order->fresh(), $orderDate);
 
             DB::commit();
 
@@ -2027,7 +2037,7 @@ class OrderController extends Controller
             }
 
             // Update order status to confirmed. order_date/confirmed_at are business
-            // dates; created_at/updated_at remain real audit timestamps.
+            // dates; all sale-linked business timestamps follow the selected order date.
             $order->forceFill([
                 'status' => 'confirmed',
                 'confirmed_at' => $orderDate,
@@ -2067,6 +2077,10 @@ class OrderController extends Controller
                 // Don't fail the order completion if COGS transaction fails
                 // Just log the error for manual correction
             }
+
+            // COGS and any observer-created accounting rows are created during
+            // completion, so synchronise once more before committing.
+            $order = app(SaleBusinessDateService::class)->sync($order->fresh(), $orderDate);
 
             DB::commit();
 
@@ -2456,9 +2470,8 @@ class OrderController extends Controller
                 'new_payment_allocation' => $newPaymentAllocation,
             ];
 
-            // order_date is the business date used by the cash sheet. created_at,
-            // updated_at, payment completed_at, and transaction timestamps remain
-            // truthful audit timestamps and are never backdated.
+            // The selected sale date is the business timestamp for the complete POS
+            // event. Real edit time remains in the audit/rebalance metadata below.
             $order->order_date = $orderDate;
             $order->metadata = array_merge($metadata, [
                 'offline_sale_last_edited_at' => now('Asia/Dhaka')->toISOString(),
@@ -2470,17 +2483,18 @@ class OrderController extends Controller
             $order->save();
 
             if ($request->has('payment_breakdown')) {
-                // Replacement payment rows are created at the real edit time. The
-                // cash sheet groups them using the order's selected order_date.
+                // Replacement payment rows use the selected order date. The real edit time
+                // remains in cash_sheet_rebalance_history metadata/activity logs.
                 $this->replaceOfflineSalePaymentBreakdown(
                     $order->fresh(['payments.paymentSplits']),
                     $request->input('payment_breakdown') ?: [],
-                    now('Asia/Dhaka')
+                    $orderDate
                 );
             }
 
             $order->refresh();
             $order->updatePaymentStatus();
+            $order = app(SaleBusinessDateService::class)->sync($order->fresh(), $orderDate);
 
             DB::commit();
 

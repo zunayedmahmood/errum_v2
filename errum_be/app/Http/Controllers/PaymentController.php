@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Carbon\Carbon;
+use App\Services\SaleBusinessDateService;
 
 class PaymentController extends Controller
 {
@@ -21,10 +22,14 @@ class PaymentController extends Controller
     private function resolvePaymentTimestamp(Request $request, Order $order): Carbon
     {
         $timezone = config('app.timezone', 'Asia/Dhaka');
-        $raw = $request->input('payment_date')
-            ?: $request->input('payment_received_date')
-            ?: data_get($request->input('payment_data', []), 'payment_date')
-            ?: $order->order_date;
+        // For POS/counter sales, the order's selected sale date is authoritative.
+        // A payment request cannot silently move cash/bank back to today's date.
+        $raw = strtolower((string) $order->order_type) === 'counter' && $order->order_date
+            ? $order->order_date
+            : ($request->input('payment_date')
+                ?: $request->input('payment_received_date')
+                ?: data_get($request->input('payment_data', []), 'payment_date')
+                ?: $order->order_date);
 
         if (!$raw) {
             return now($timezone);
@@ -46,9 +51,16 @@ class PaymentController extends Controller
             return;
         }
 
+        if (strtolower((string) $order->order_type) === 'counter') {
+            app(SaleBusinessDateService::class)->sync(
+                $order->fresh(),
+                $order->order_date ?: $timestamp
+            );
+            return;
+        }
+
         $order->forceFill([
             'order_date' => $order->order_date ?: $timestamp,
-            'created_at' => $order->created_at ?: $timestamp,
             'updated_at' => $timestamp,
         ])->saveQuietly();
     }

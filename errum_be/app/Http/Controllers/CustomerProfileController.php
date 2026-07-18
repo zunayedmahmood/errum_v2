@@ -161,7 +161,7 @@ class CustomerProfileController extends Controller
                         return [
                             'id' => $order->id,
                             'order_number' => $order->order_number,
-                            'order_date' => $order->created_at,
+                            'order_date' => $order->order_date ?: $order->created_at,
                             'status' => $order->status,
                             'total_amount' => $order->total_amount,
                             'items_count' => $order->orderItems->count(),

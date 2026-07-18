@@ -252,16 +252,23 @@ class Customer extends Authenticatable implements JWTSubject
     }
 
     // Business logic methods
-    public function recordPurchase($amount, $orderId = null)
+    public function recordPurchase($amount, $orderId = null, $purchaseAt = null)
     {
         $this->increment('total_orders');
         $this->increment('total_purchases', $amount);
 
-        if (!$this->first_purchase_at) {
-            $this->first_purchase_at = now();
+        if (!$purchaseAt && $orderId) {
+            $purchaseAt = Order::whereKey($orderId)->value('order_date');
+        }
+        $purchaseAt = $purchaseAt ? \Carbon\Carbon::parse($purchaseAt) : now();
+
+        if (!$this->first_purchase_at || $purchaseAt->lt($this->first_purchase_at)) {
+            $this->first_purchase_at = $purchaseAt;
         }
 
-        $this->last_purchase_at = now();
+        if (!$this->last_purchase_at || $purchaseAt->gt($this->last_purchase_at)) {
+            $this->last_purchase_at = $purchaseAt;
+        }
         $this->save();
 
         return $this;

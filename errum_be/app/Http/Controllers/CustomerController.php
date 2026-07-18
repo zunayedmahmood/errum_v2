@@ -648,7 +648,7 @@ class CustomerController extends Controller
         return response()->json([
             'success' => true,
             'data'    => [
-                'order_date'   => $lastOrder->created_at->format('Y-m-d'),
+                'order_date'   => optional($lastOrder->order_date ?: $lastOrder->created_at)->format('Y-m-d'),
                 'order_number' => $lastOrder->order_number,
                 'total_amount' => $lastOrder->total_amount,
                 'summary_text' => $summaryText,

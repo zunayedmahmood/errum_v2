@@ -118,6 +118,30 @@ const calculateItemLineTotals = (
   };
 };
 
+
+const getDhakaDate = (): string => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+};
+
+const getDhakaTime = (): string => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.hour}:${value.minute}:${value.second}`;
+};
+
 export default function POSPage() {
   const { user, role, scopedStoreId, canSelectStore, canAccessDailyCashReport } = useAuth();
   // UI State
@@ -153,7 +177,7 @@ export default function POSPage() {
   // Basic Setup
   const [outlets, setOutlets] = useState<Store[]>([]);
   const [selectedOutlet, setSelectedOutlet] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getDhakaDate());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState('');
 
@@ -847,13 +871,9 @@ export default function POSPage() {
       // VAT is inclusive in product prices; do not add extra tax in POS
       const itemsWithTax = totaledCart.map((item) => ({ item, taxAmount: 0 }));
 
-      const selectedSaleDateTime = (() => {
-        const now = new Date();
-        const hh = String(now.getHours()).padStart(2, '0');
-        const mm = String(now.getMinutes()).padStart(2, '0');
-        const ss = String(now.getSeconds()).padStart(2, '0');
-        return `${date} ${hh}:${mm}:${ss}`;
-      })();
+      // Explicit Bangladesh offset prevents browser/UTC conversion from moving
+      // a selected previous date back to today's server date.
+      const selectedSaleDateTime = `${date}T${getDhakaTime()}+06:00`;
 
       // Create order payload
       const orderPayload = {
