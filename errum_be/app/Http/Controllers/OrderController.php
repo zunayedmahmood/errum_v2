@@ -1219,12 +1219,23 @@ class OrderController extends Controller
                 $taxTotal = $order->items->sum('tax_amount');
                 $taxMode = config('app.tax_mode', 'inclusive');
 
-                if ($taxMode === 'inclusive') {
-                    $order->total_amount = max(0, $order->subtotal - $request->discount_amount - $totalItemDiscount + $order->shipping_amount);
-                } else {
-                    $order->total_amount = max(0, $order->subtotal + $taxTotal - $request->discount_amount - $totalItemDiscount + $order->shipping_amount);
-                }
-                $order->outstanding_amount = max(0, $order->total_amount - $order->paid_amount);
+                $preLoyaltyProductAmount = max(
+                    0,
+                    (float) $order->subtotal - (float) $request->discount_amount - (float) $totalItemDiscount
+                );
+                $preLoyaltyCharge = $taxMode === 'inclusive'
+                    ? $preLoyaltyProductAmount
+                    : max(0, $preLoyaltyProductAmount + (float) $taxTotal);
+                $loyaltyDiscount = min(
+                    max(0, (float) ($order->loyalty_discount_amount ?? 0)),
+                    $preLoyaltyCharge
+                );
+
+                $order->total_amount = round(
+                    max(0, $preLoyaltyCharge - $loyaltyDiscount) + (float) $order->shipping_amount,
+                    2
+                );
+                $order->outstanding_amount = max(0, round((float) $order->total_amount - (float) $order->paid_amount, 2));
             }
 
             if ($request->has('shipping_amount')) {
@@ -1235,12 +1246,23 @@ class OrderController extends Controller
                 $taxTotal = $order->items->sum('tax_amount');
                 $taxMode = config('app.tax_mode', 'inclusive');
 
-                if ($taxMode === 'inclusive') {
-                    $order->total_amount = max(0, $order->subtotal - $order->discount_amount - $totalItemDiscount + $request->shipping_amount);
-                } else {
-                    $order->total_amount = max(0, $order->subtotal + $taxTotal - $order->discount_amount - $totalItemDiscount + $request->shipping_amount);
-                }
-                $order->outstanding_amount = max(0, $order->total_amount - $order->paid_amount);
+                $preLoyaltyProductAmount = max(
+                    0,
+                    (float) $order->subtotal - (float) $order->discount_amount - (float) $totalItemDiscount
+                );
+                $preLoyaltyCharge = $taxMode === 'inclusive'
+                    ? $preLoyaltyProductAmount
+                    : max(0, $preLoyaltyProductAmount + (float) $taxTotal);
+                $loyaltyDiscount = min(
+                    max(0, (float) ($order->loyalty_discount_amount ?? 0)),
+                    $preLoyaltyCharge
+                );
+
+                $order->total_amount = round(
+                    max(0, $preLoyaltyCharge - $loyaltyDiscount) + (float) $request->shipping_amount,
+                    2
+                );
+                $order->outstanding_amount = max(0, round((float) $order->total_amount - (float) $order->paid_amount, 2));
             }
 
             if ($request->has('notes')) {

@@ -143,6 +143,8 @@ export default function AmountDetailsPage() {
   const [outstandingAmountState, setOutstandingAmountState] = useState<number>(0);
   const [originalDiscountAmount, setOriginalDiscountAmount] = useState<number>(0);
   const [originalShippingAmount, setOriginalShippingAmount] = useState<number>(0);
+  const [originalLoyaltyDiscountAmount, setOriginalLoyaltyDiscountAmount] = useState<number>(0);
+  const [originalLoyaltyPointsRedeemed, setOriginalLoyaltyPointsRedeemed] = useState<number>(0);
 
   const displayToast = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
     setToastMessage(message);
@@ -195,6 +197,15 @@ export default function AmountDetailsPage() {
       setOriginalShippingAmount(parseNumber(parsedOrder.original_shipping_amount));
       setTransportCost(String(parsedOrder.original_shipping_amount));
     }
+
+    const savedLoyaltyDiscount = parseNumber(
+      parsedOrder.original_loyalty_discount_amount ?? parsedOrder.loyalty_discount_amount ?? 0
+    );
+    const savedLoyaltyPoints = parseNumber(
+      parsedOrder.original_loyalty_points_redeemed ?? parsedOrder.loyalty_points_redeemed ?? 0
+    );
+    setOriginalLoyaltyDiscountAmount(Math.max(0, savedLoyaltyDiscount));
+    setOriginalLoyaltyPointsRedeemed(Math.max(0, Math.floor(savedLoyaltyPoints)));
 
     const processedItems = (parsedOrder.items || []).map((item: any) => ({
       ...item,
@@ -269,13 +280,20 @@ export default function AmountDetailsPage() {
   const orderDiscount = useMemo(() => Math.min(subtotal, Math.max(0, parseNumber(orderDiscountAmount))), [orderDiscountAmount, subtotal]);
   const transport = useMemo(() => parseNumber(transportCost), [transportCost]);
   const loyaltyEligibleAmount = useMemo(() => Math.max(0, subtotal - orderDiscount), [subtotal, orderDiscount]);
-  const loyaltyDiscount = useMemo(
-    () => useLoyaltyPoints ? Math.min(loyaltyEligibleAmount, Number(loyaltyPreview?.redeemable_taka || 0)) : 0,
-    [useLoyaltyPoints, loyaltyPreview, loyaltyEligibleAmount]
-  );
-  const total = useMemo(() => Math.max(0, loyaltyEligibleAmount - loyaltyDiscount + transport), [loyaltyEligibleAmount, loyaltyDiscount, transport]);
-  
   const isEditMode = useMemo(() => !!(orderData?.editOrderId), [orderData]);
+  const loyaltyDiscount = useMemo(() => {
+    if (isEditMode) {
+      // Redeemed points are already persisted and consumed. Editing the order
+      // must preserve that saved taka discount rather than redeeming again or
+      // silently rebuilding the total without it.
+      return Math.min(loyaltyEligibleAmount, Math.max(0, originalLoyaltyDiscountAmount));
+    }
+
+    return useLoyaltyPoints
+      ? Math.min(loyaltyEligibleAmount, Number(loyaltyPreview?.redeemable_taka || 0))
+      : 0;
+  }, [isEditMode, originalLoyaltyDiscountAmount, useLoyaltyPoints, loyaltyPreview, loyaltyEligibleAmount]);
+  const total = useMemo(() => Math.max(0, loyaltyEligibleAmount - loyaltyDiscount + transport), [loyaltyEligibleAmount, loyaltyDiscount, transport]);
 
   const selectedMethod = useMemo(
     () => paymentMethods.find((m) => String(m.id) === String(selectedPaymentMethod)),
@@ -1026,7 +1044,7 @@ export default function AmountDetailsPage() {
                     </p>
                   </div>
 
-                  {!isEditMode && (
+                  {!isEditMode ? (
                     <div className="mb-4">
                       <LoyaltyRedeemToggle
                         phone={orderData.customer?.phone}
@@ -1038,7 +1056,17 @@ export default function AmountDetailsPage() {
                         }}
                       />
                     </div>
-                  )}
+                  ) : originalLoyaltyDiscountAmount > 0 ? (
+                    <div className="mb-4 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-800 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-200">
+                      <p className="font-semibold">Saved loyalty redemption preserved</p>
+                      <p className="mt-1">
+                        {originalLoyaltyPointsRedeemed > 0
+                          ? `${originalLoyaltyPointsRedeemed} points redeemed for `
+                          : 'Existing loyalty discount: '}
+                        ৳{originalLoyaltyDiscountAmount.toFixed(2)}. Editing will not redeem points again or remove this discount.
+                      </p>
+                    </div>
+                  ) : null}
 
                   {/* Intended Courier Marker */}
                   <div className="mb-4">

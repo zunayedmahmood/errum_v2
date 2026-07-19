@@ -201,6 +201,8 @@ export default function SocialCommercePage() {
   const [totalAmountState, setTotalAmountState] = useState(0);
   const [outstandingAmountState, setOutstandingAmountState] = useState(0);
   const [orderDiscountAmountState, setOrderDiscountAmountState] = useState(0);
+  const [loyaltyDiscountAmountState, setLoyaltyDiscountAmountState] = useState(0);
+  const [loyaltyPointsRedeemedState, setLoyaltyPointsRedeemedState] = useState(0);
 
   const [selectedProductInventory, setSelectedProductInventory] = useState<GlobalInventoryItem | null>(null);
 
@@ -650,6 +652,8 @@ export default function SocialCommercePage() {
       if (typeof prefill.totalAmount === 'number') setTotalAmountState(prefill.totalAmount);
       if (typeof prefill.outstandingAmount === 'number') setOutstandingAmountState(prefill.outstandingAmount);
       if (typeof prefill.discountAmount === 'number') setOrderDiscountAmountState(prefill.discountAmount);
+      if (typeof prefill.loyaltyDiscountAmount === 'number') setLoyaltyDiscountAmountState(prefill.loyaltyDiscountAmount);
+      if (typeof prefill.loyaltyPointsRedeemed === 'number') setLoyaltyPointsRedeemedState(prefill.loyaltyPointsRedeemed);
 
       if (typeof prefill.storeId === 'string' && prefill.storeId) {
         setStoreAssignmentType('specific');
@@ -1097,6 +1101,10 @@ export default function SocialCommercePage() {
         outstanding_amount: outstandingAmountState,
         total_amount: totalAmountState,
         original_discount_amount: orderDiscountAmountState || 0,
+        loyalty_discount_amount: loyaltyDiscountAmountState || 0,
+        loyalty_points_redeemed: loyaltyPointsRedeemedState || 0,
+        original_loyalty_discount_amount: loyaltyDiscountAmountState || 0,
+        original_loyalty_points_redeemed: loyaltyPointsRedeemedState || 0,
         original_shipping_amount: shippingAmount,
       };
 

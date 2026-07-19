@@ -733,7 +733,12 @@ class CashSheetController extends Controller
         $workflowRefundTargets = [];
         $refundTargetQuery = DB::table('refunds as r')
             ->join('orders as o', 'o.id', '=', 'r.order_id')
-            ->select('r.order_id', 'r.refund_method', DB::raw('SUM(r.refund_amount) as total'))
+            ->select(
+                'r.order_id',
+                'r.refund_method',
+                'r.refund_method_details',
+                'r.refund_amount'
+            )
             ->whereIn('o.store_id', $storeIds)
             ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
             ->whereNotIn('o.status', self::EXCLUDED_ORDER_STATUSES)
@@ -749,13 +754,24 @@ class CashSheetController extends Controller
         $this->excludeFullyRefundedOrders($refundTargetQuery, $fullyRefundedOrderIds);
 
         $refundTargetQuery
-            ->groupBy('r.order_id', 'r.refund_method')
+            ->orderBy('r.id')
             ->get()
             ->each(function ($row) use (&$workflowRefundTargets) {
                 $orderId = (int) $row->order_id;
-                $bucket = $this->refundBucket((string) $row->refund_method);
-                $workflowRefundTargets[$orderId][$bucket] =
-                    ($workflowRefundTargets[$orderId][$bucket] ?? 0) + max(0, (float) $row->total);
+                $allocations = $this->refundAllocations(
+                    (string) $row->refund_method,
+                    $row->refund_method_details,
+                    (float) $row->refund_amount
+                );
+
+                foreach ($allocations as $bucket => $amount) {
+                    if ($amount <= 0) {
+                        continue;
+                    }
+
+                    $workflowRefundTargets[$orderId][$bucket] =
+                        ($workflowRefundTargets[$orderId][$bucket] ?? 0) + $amount;
+                }
             });
 
         $out = [];
@@ -801,8 +817,62 @@ class CashSheetController extends Controller
                     (string) ($payment->payment_type ?? '')
                 );
 
-                $addMovement($storeKey, $day, $bucket, max(0, $amount - $refunded));
-                $addCoverage($orderId, $bucket, $refunded);
+                // A completed return/exchange refund can be mirrored both in
+                // order_payments.refunded_amount and in refunds. When its saved
+                // distribution differs from the original payment method (for
+                // example an original bank payment refunded as cash + bank),
+                // deduct only the portion belonging to this payment bucket here.
+                // The other buckets are applied by loadBranchRefunds(). Any
+                // refund amount without workflow metadata still follows the
+                // original payment method as a safe fallback.
+                $deductFromPaymentBucket = 0.0;
+                $remainingPaymentRefund = $refunded;
+
+                if ($remainingPaymentRefund > 0) {
+                    $matchingWorkflowTarget = max(
+                        0,
+                        (float) ($workflowRefundTargets[$orderId][$bucket] ?? 0)
+                    );
+                    $matchingDeduction = min(
+                        $remainingPaymentRefund,
+                        $matchingWorkflowTarget,
+                        $amount
+                    );
+
+                    if ($matchingDeduction > 0) {
+                        $deductFromPaymentBucket += $matchingDeduction;
+                        $remainingPaymentRefund -= $matchingDeduction;
+                        $addCoverage($orderId, $bucket, $matchingDeduction);
+                    }
+
+                    $workflowAmountInOtherBuckets = array_sum(
+                        array_map(
+                            fn ($value) => max(0, (float) $value),
+                            $workflowRefundTargets[$orderId] ?? []
+                        )
+                    );
+                    $deferredToWorkflowBuckets = min(
+                        $remainingPaymentRefund,
+                        $workflowAmountInOtherBuckets
+                    );
+                    $remainingPaymentRefund -= $deferredToWorkflowBuckets;
+
+                    if ($remainingPaymentRefund > 0) {
+                        $unclassifiedDeduction = min(
+                            $remainingPaymentRefund,
+                            max(0, $amount - $deductFromPaymentBucket)
+                        );
+                        $deductFromPaymentBucket += $unclassifiedDeduction;
+                        $addCoverage($orderId, $bucket, $unclassifiedDeduction);
+                    }
+                }
+
+                $addMovement(
+                    $storeKey,
+                    $day,
+                    $bucket,
+                    max(0, $amount - $deductFromPaymentBucket)
+                );
                 continue;
             }
 
@@ -899,6 +969,7 @@ class CashSheetController extends Controller
                 'o.store_id',
                 DB::raw('DATE(o.order_date) as day'),
                 'r.refund_method',
+                'r.refund_method_details',
                 'r.refund_amount'
             )
             ->whereIn('o.store_id', $storeIds)
@@ -918,20 +989,34 @@ class CashSheetController extends Controller
         $query->orderBy('r.id')
             ->get()
             ->each(function ($row) use (&$out, &$coverage) {
-                $bucket = $this->refundBucket((string) $row->refund_method);
                 $orderId = (int) $row->order_id;
-                $amount = max(0, (float) $row->refund_amount);
-                $alreadyCovered = min($amount, (float) ($coverage[$orderId][$bucket] ?? 0));
-                $coverage[$orderId][$bucket] = max(0, (float) ($coverage[$orderId][$bucket] ?? 0) - $alreadyCovered);
-                $remaining = $amount - $alreadyCovered;
-
-                if ($remaining <= 0) {
-                    return;
-                }
-
                 $storeKey = (string) $row->store_id;
                 $day = (string) $row->day;
-                $out[$storeKey][$day][$bucket] = ($out[$storeKey][$day][$bucket] ?? 0) + $remaining;
+                $allocations = $this->refundAllocations(
+                    (string) $row->refund_method,
+                    $row->refund_method_details,
+                    (float) $row->refund_amount
+                );
+
+                foreach ($allocations as $bucket => $amount) {
+                    if ($amount <= 0) {
+                        continue;
+                    }
+
+                    $alreadyCovered = min($amount, (float) ($coverage[$orderId][$bucket] ?? 0));
+                    $coverage[$orderId][$bucket] = max(
+                        0,
+                        (float) ($coverage[$orderId][$bucket] ?? 0) - $alreadyCovered
+                    );
+                    $remaining = $amount - $alreadyCovered;
+
+                    if ($remaining <= 0) {
+                        continue;
+                    }
+
+                    $out[$storeKey][$day][$bucket] =
+                        ($out[$storeKey][$day][$bucket] ?? 0) + $remaining;
+                }
             });
 
         return $out;
@@ -1080,6 +1165,130 @@ class CashSheetController extends Controller
         }
 
         return $methodType === 'cash' ? 'cash' : 'bank';
+    }
+
+    /**
+     * Resolve a refund into the exact monthly-sheet cash/bank/exchange buckets.
+     *
+     * Return/exchange screens store mixed refunds (for example cash + card +
+     * bKash) in refunds.refund_method_details while refund_method contains only
+     * a headline/fallback method. Reading only the headline incorrectly deducts
+     * every mixed refund from one bucket. This helper honours the saved
+     * distribution, caps malformed totals to refund_amount, and assigns any
+     * unclassified remainder to the headline method.
+     *
+     * @return array{cash: float, bank: float, ex_on: float}
+     */
+    private function refundAllocations(string $refundMethod, mixed $details, float $refundAmount): array
+    {
+        $total = round(max(0, $refundAmount), 2);
+        $allocations = ['cash' => 0.0, 'bank' => 0.0, 'ex_on' => 0.0];
+
+        if ($total <= 0) {
+            return $allocations;
+        }
+
+        if (is_string($details) && trim($details) !== '') {
+            $decoded = json_decode($details, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $details = $decoded;
+            }
+        } elseif (is_object($details)) {
+            $details = (array) $details;
+        }
+
+        $bucketForKey = function (string $key): ?string {
+            $normalized = strtolower(trim(str_replace(['-', ' '], '_', $key)));
+
+            return match ($normalized) {
+                'cash', 'cash_amount', 'cash_refund', 'cash_refund_amount' => 'cash',
+                'store_credit', 'store_credit_amount', 'gift_card', 'gift_card_amount',
+                'exchange_balance', 'exchange_credit' => 'ex_on',
+                'bank', 'bank_amount', 'bank_transfer', 'bank_transfer_amount',
+                'card', 'card_amount', 'card_refund', 'card_refund_amount',
+                'bkash', 'b_kash', 'nagad', 'rocket', 'upay',
+                'mobile_banking', 'digital_wallet', 'wallet', 'check', 'cheque',
+                'other' => 'bank',
+                default => null,
+            };
+        };
+
+        $collect = function (mixed $node, ?string $hint = null) use (&$collect, &$allocations, $bucketForKey): void {
+            if (is_object($node)) {
+                $node = (array) $node;
+            }
+
+            if (is_numeric($node) && $hint !== null) {
+                $bucket = $bucketForKey($hint);
+                if ($bucket !== null) {
+                    $allocations[$bucket] += max(0, (float) $node);
+                }
+                return;
+            }
+
+            if (!is_array($node)) {
+                return;
+            }
+
+            // Support structured rows such as {method: "cash", amount: 100}.
+            $method = $node['method'] ?? $node['type'] ?? $node['code'] ?? $node['name'] ?? null;
+            $amount = $node['amount'] ?? $node['refund_amount'] ?? $node['value'] ?? null;
+            if (is_string($method) && is_numeric($amount)) {
+                $bucket = $bucketForKey($method) ?? $this->refundBucket($method);
+                $allocations[$bucket] += max(0, (float) $amount);
+                return;
+            }
+
+            foreach ($node as $key => $value) {
+                if (is_numeric($key)) {
+                    $collect($value, null);
+                    continue;
+                }
+
+                $bucket = $bucketForKey((string) $key);
+                if ($bucket !== null && is_numeric($value)) {
+                    $allocations[$bucket] += max(0, (float) $value);
+                    continue;
+                }
+
+                if (is_array($value) || is_object($value)) {
+                    $collect($value, (string) $key);
+                }
+            }
+        };
+
+        if (is_array($details)) {
+            $collect($details);
+        }
+
+        $explicitTotal = array_sum($allocations);
+        if ($explicitTotal > $total + 0.009) {
+            $scale = $total / $explicitTotal;
+            $remaining = $total;
+            $nonZeroBuckets = array_values(array_filter(
+                array_keys($allocations),
+                fn (string $bucket) => $allocations[$bucket] > 0
+            ));
+
+            foreach ($nonZeroBuckets as $index => $bucket) {
+                $isLast = $index === count($nonZeroBuckets) - 1;
+                $scaled = $isLast
+                    ? $remaining
+                    : round($allocations[$bucket] * $scale, 2);
+                $scaled = min($remaining, max(0, $scaled));
+                $allocations[$bucket] = $scaled;
+                $remaining = round($remaining - $scaled, 2);
+            }
+        } elseif ($explicitTotal < $total - 0.009) {
+            $fallbackBucket = $this->refundBucket($refundMethod);
+            $allocations[$fallbackBucket] += round($total - $explicitTotal, 2);
+        }
+
+        foreach ($allocations as $bucket => $amount) {
+            $allocations[$bucket] = round(max(0, $amount), 2);
+        }
+
+        return $allocations;
     }
 
     private function refundBucket(string $refundMethod): string

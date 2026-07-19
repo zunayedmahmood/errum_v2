@@ -1996,7 +1996,12 @@ export default function OrdersDashboard() {
         return sum + (Number(item.discount_amount || 0) || 0);
       }, 0);
       const rawOrderDiscount = Number(fullOrder.discount_amount || 0) || 0;
-      const safeOrderDiscount = Math.abs(rawOrderDiscount - itemDiscountTotal) < 0.01 ? 0 : rawOrderDiscount;
+      const discountRole = String((fullOrder as any)?.metadata?.discount_amount_role || '');
+      const safeOrderDiscount = discountRole === 'order_level'
+        ? rawOrderDiscount
+        : (Math.abs(rawOrderDiscount - itemDiscountTotal) < 0.01 ? 0 : rawOrderDiscount);
+      const savedLoyaltyDiscount = Math.max(0, Number((fullOrder as any).loyalty_discount_amount || 0) || 0);
+      const savedLoyaltyPoints = Math.max(0, Number((fullOrder as any).loyalty_points_redeemed || 0) || 0);
 
       const prefillPayload = {
         editOrderId: fullOrder.id,
@@ -2035,6 +2040,8 @@ export default function OrdersDashboard() {
         totalAmount: Number(fullOrder.total_amount || 0),
         outstandingAmount: Number(fullOrder.outstanding_amount || 0),
         discountAmount: safeOrderDiscount,
+        loyaltyDiscountAmount: savedLoyaltyDiscount,
+        loyaltyPointsRedeemed: savedLoyaltyPoints,
         shippingAmount: Number(fullOrder.shipping_amount || 0),
       };
 

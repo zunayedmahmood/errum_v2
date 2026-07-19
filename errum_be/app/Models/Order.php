@@ -728,25 +728,25 @@ class Order extends Model
         $this->subtotal = $grossSubtotal;
         $this->tax_amount = $taxAmount;
 
-        if ($taxMode === 'inclusive') {
-            $netAmount = bcsub(
-                bcsub((string) $grossSubtotal, (string) $totalItemDiscount, 2),
-                (string) $globalDiscount,
-                2
-            );
-            $this->attributes['total_amount'] = (float) bcadd($netAmount, (string) $this->shipping_amount, 2);
-        } else {
-            $netBeforeTax = bcsub(
-                bcsub((string) $grossSubtotal, (string) $totalItemDiscount, 2),
-                (string) $globalDiscount,
-                2
-            );
-            $this->attributes['total_amount'] = (float) bcadd(
-                bcadd($netBeforeTax, (string) $taxAmount, 2),
-                (string) $this->shipping_amount,
-                2
-            );
-        }
+        // Loyalty redemption is persisted separately from item/order discounts.
+        // It has already consumed customer points and must remain part of the
+        // final order total whenever items, price, quantity, shipping, or the
+        // normal order discount are edited. It never discounts delivery cost.
+        $preLoyaltyProductAmount = max(
+            0,
+            round($grossSubtotal - $totalItemDiscount - $globalDiscount, 2)
+        );
+        $storedLoyaltyDiscount = max(0, (float) ($this->loyalty_discount_amount ?? 0));
+        $shippingAmount = max(0, (float) ($this->shipping_amount ?? 0));
+        $preLoyaltyCharge = $taxMode === 'inclusive'
+            ? $preLoyaltyProductAmount
+            : max(0, round($preLoyaltyProductAmount + $taxAmount, 2));
+        $effectiveLoyaltyDiscount = min($storedLoyaltyDiscount, $preLoyaltyCharge);
+
+        $this->attributes['total_amount'] = round(
+            max(0, $preLoyaltyCharge - $effectiveLoyaltyDiscount) + $shippingAmount,
+            2
+        );
 
         $paidAmount = (float) ($this->paid_amount ?? 0);
         $this->outstanding_amount = max(0, (float) $this->attributes['total_amount'] - $paidAmount);
