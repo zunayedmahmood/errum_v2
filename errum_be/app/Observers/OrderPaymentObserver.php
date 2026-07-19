@@ -4,6 +4,8 @@ namespace App\Observers;
 
 use App\Models\OrderPayment;
 use App\Models\Transaction as AccountingTransaction;
+use App\Services\PaymentCommissionService;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class OrderPaymentObserver
@@ -13,6 +15,15 @@ class OrderPaymentObserver
      */
     public function created(OrderPayment $orderPayment): void
     {
+        try {
+            app(PaymentCommissionService::class)->syncPayment($orderPayment, true);
+        } catch (\Throwable $e) {
+            Log::error('Order payment commission creation sync failed', [
+                'order_payment_id' => $orderPayment->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         // Skip exchange balance carryover and store credit payments — these are not
         // real cash inflows. Exchange surplus is intentionally NOT skipped because customer actually pays extra cash.
         $nonCashTypes = ['exchange_balance', 'store_credit', 'balance_carryover'];
@@ -29,6 +40,22 @@ class OrderPaymentObserver
      */
     public function updated(OrderPayment $orderPayment): void
     {
+        if ($orderPayment->wasChanged([
+            'amount', 'payment_method_id', 'payment_data', 'metadata', 'store_id', 'status', 'refunded_amount',
+        ])) {
+            try {
+                app(PaymentCommissionService::class)->syncPayment(
+                    $orderPayment,
+                    $orderPayment->wasChanged(['amount', 'payment_method_id', 'payment_data', 'metadata'])
+                );
+            } catch (\Throwable $e) {
+                Log::error('Order payment commission update sync failed', [
+                    'order_payment_id' => $orderPayment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         // Check if status changed to completed
         if ($orderPayment->wasChanged('status') && $orderPayment->status === 'completed') {
             // Find existing transaction or create new one
@@ -134,11 +161,17 @@ class OrderPaymentObserver
         }
     }
 
+    public function deleting(OrderPayment $orderPayment): void
+    {
+        app(PaymentCommissionService::class)->cancelPayment($orderPayment, 'Payment deleted.');
+    }
+
     /**
      * Handle the OrderPayment "deleted" event.
      */
     public function deleted(OrderPayment $orderPayment): void
     {
+        app(PaymentCommissionService::class)->cancelPayment($orderPayment, 'Payment deleted.');
         // Mark related transactions as cancelled
         AccountingTransaction::byReference(OrderPayment::class, $orderPayment->id)
             ->update(['status' => 'cancelled']);
@@ -149,6 +182,7 @@ class OrderPaymentObserver
      */
     public function restored(OrderPayment $orderPayment): void
     {
+        app(PaymentCommissionService::class)->syncPayment($orderPayment, false);
         // Restore related transactions
         AccountingTransaction::byReference(OrderPayment::class, $orderPayment->id)
             ->update(['status' => 'completed']);
@@ -159,6 +193,7 @@ class OrderPaymentObserver
      */
     public function forceDeleted(OrderPayment $orderPayment): void
     {
+        app(PaymentCommissionService::class)->cancelPayment($orderPayment, 'Payment permanently deleted.');
         // Permanently delete related transactions
         AccountingTransaction::byReference(OrderPayment::class, $orderPayment->id)->delete();
     }

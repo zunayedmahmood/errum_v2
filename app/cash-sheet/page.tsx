@@ -198,7 +198,7 @@ export default function CashSheetPage() {
                       <SectionHeader
                         key={s.id}
                         label={s.name}
-                        cols={7}
+                        cols={8}
                         color="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
                       />
                     ))}
@@ -206,7 +206,7 @@ export default function CashSheetPage() {
                     {isAdmin && (
                       <SectionHeader
                         label="Online / Ecommerce"
-                        cols={4}
+                        cols={5}
                         color="bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300"
                       />
                     )}
@@ -222,7 +222,7 @@ export default function CashSheetPage() {
                     {isAdmin && (
                       <SectionHeader
                         label="Day Totals"
-                        cols={4}
+                        cols={5}
                         color="bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300"
                       />
                     )}
@@ -242,7 +242,8 @@ export default function CashSheetPage() {
                       <Fragment key={s.id}>
                         <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Sale</th>
                         <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Cash</th>
-                        <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Bank</th>
+                        <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Bank (Net)</th>
+                        <th className="px-2 py-1.5 text-right font-medium text-rose-500 dark:text-rose-400 whitespace-nowrap">Commission</th>
                         <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Ex/On</th>
                         <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Salary</th>
                         <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Cost</th>
@@ -255,6 +256,7 @@ export default function CashSheetPage() {
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Advance</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">SSLZC</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">COD</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-rose-500 dark:text-rose-400 whitespace-nowrap">Commission</th>
                     </>)}
 
                     {isAdmin && (<>
@@ -265,7 +267,8 @@ export default function CashSheetPage() {
                     {isAdmin && (<>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Total Sale</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Cash</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Bank</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Bank (Net)</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-rose-500 dark:text-rose-400 whitespace-nowrap">Commission</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">Final Bank</th>
                     </>)}
 
@@ -303,7 +306,7 @@ export default function CashSheetPage() {
                           const b = row.branches.find(b => b.store_id === s.id);
                           if (!b) return (
                             <Fragment key={s.id}>
-                              {Array.from({ length: 7 }).map((_, i) => (
+                              {Array.from({ length: 8 }).map((_, i) => (
                                 <td key={i} className="px-2 py-1.5 text-gray-300 dark:text-gray-600 text-center">—</td>
                               ))}
                             </Fragment>
@@ -313,6 +316,7 @@ export default function CashSheetPage() {
                               <StatCell value={b.daily_sale} />
                               <StatCell value={b.cash} />
                               <StatCell value={b.bank} />
+                              <StatCell value={b.commission} highlight="amber" />
                               <StatCell value={b.ex_on} />
                               <StatCell value={b.salary} highlight="amber" />
                               <StatCell value={b.daily_cost} />
@@ -327,6 +331,7 @@ export default function CashSheetPage() {
                           <StatCell value={row.online.advance} highlight="blue" />
                           <StatCell value={row.online.online_payment} />
                           <StatCell value={row.online.cod} />
+                          <StatCell value={row.online.commission} highlight="amber" />
                         </>)}
 
                         {/* disbursements */}
@@ -340,6 +345,7 @@ export default function CashSheetPage() {
                           <StatCell value={row.totals.total_sale} highlight="green" />
                           <StatCell value={row.totals.cash} />
                           <StatCell value={row.totals.bank} />
+                          <StatCell value={row.totals.commission} highlight="amber" />
                           <StatCell value={row.totals.final_bank} highlight="blue" />
                         </>)}
 
@@ -373,6 +379,7 @@ export default function CashSheetPage() {
                           <td className="px-2 py-2 text-right text-xs tabular-nums text-gray-800 dark:text-gray-200">{fmt(b?.daily_sale ?? 0)}</td>
                           <td className="px-2 py-2 text-right text-xs tabular-nums text-gray-800 dark:text-gray-200">{fmt(b?.cash ?? 0)}</td>
                           <td className="px-2 py-2 text-right text-xs tabular-nums text-gray-800 dark:text-gray-200">{fmt(b?.bank ?? 0)}</td>
+                          <td className="px-2 py-2 text-right text-xs tabular-nums text-rose-600 dark:text-rose-400">{fmt(b?.commission ?? 0)}</td>
                           <td className="px-2 py-2 text-right text-xs tabular-nums text-gray-800 dark:text-gray-200">{fmt(b?.ex_on ?? 0)}</td>
                           <td className="px-2 py-2 text-right text-xs tabular-nums text-amber-600 dark:text-amber-400">{fmt(b?.salary ?? 0)}</td>
                           <td className="px-2 py-2 text-right text-xs tabular-nums text-gray-800 dark:text-gray-200">{fmt(b?.daily_cost ?? 0)}</td>
@@ -385,6 +392,7 @@ export default function CashSheetPage() {
                         <td className="px-2 py-2 text-right text-xs tabular-nums text-blue-600 dark:text-blue-400">{fmt(summary.online.advance)}</td>
                         <td className="px-2 py-2 text-right text-xs tabular-nums text-gray-800 dark:text-gray-200">{fmt(summary.online.online_payment)}</td>
                         <td className="px-2 py-2 text-right text-xs tabular-nums text-gray-800 dark:text-gray-200">{fmt(summary.online.cod)}</td>
+                        <td className="px-2 py-2 text-right text-xs tabular-nums text-rose-600 dark:text-rose-400">{fmt(summary.online.commission)}</td>
                       </>)}
 
                       {isAdmin && (<>
@@ -396,6 +404,7 @@ export default function CashSheetPage() {
                         <td className="px-2 py-2 text-right text-xs tabular-nums text-emerald-700 dark:text-emerald-400 font-bold">{fmt(summary.totals.total_sale)}</td>
                         <td className="px-2 py-2 text-right text-xs tabular-nums text-gray-800 dark:text-gray-200">{fmt(summary.totals.cash)}</td>
                         <td className="px-2 py-2 text-right text-xs tabular-nums text-gray-800 dark:text-gray-200">{fmt(summary.totals.bank)}</td>
+                        <td className="px-2 py-2 text-right text-xs tabular-nums text-rose-600 dark:text-rose-400">{fmt(summary.totals.commission)}</td>
                         <td className="px-2 py-2 text-right text-xs tabular-nums text-blue-700 dark:text-blue-400 font-bold">{fmt(summary.totals.final_bank)}</td>
                       </>)}
 
@@ -418,8 +427,8 @@ export default function CashSheetPage() {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl">
                             {[
                               { label: 'Total Cash Collected', value: summary.owner.total_cash, color: 'emerald' },
-                              { label: 'Total Bank Deposit',   value: summary.totals.final_bank, color: 'blue' },
-                              { label: 'Cash After Costs',     value: summary.owner.cash_after_cost, color: 'green' },
+                              { label: 'Net Bank Deposit',     value: summary.totals.final_bank, color: 'blue' },
+                              { label: 'Processing Fees',      value: summary.totals.commission, color: 'rose' },
                               { label: 'Bank After Costs',     value: summary.owner.bank_after_cost, color: 'indigo' },
                             ].map(box => (
                               <div key={box.label} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
@@ -428,6 +437,7 @@ export default function CashSheetPage() {
                                   ${box.color === 'emerald' ? 'text-emerald-600 dark:text-emerald-400' :
                                     box.color === 'blue'    ? 'text-blue-600 dark:text-blue-400' :
                                     box.color === 'green'   ? 'text-green-600 dark:text-green-400' :
+                                    box.color === 'rose'    ? 'text-rose-600 dark:text-rose-400' :
                                     'text-indigo-600 dark:text-indigo-400'}`}>
                                   {fmt(box.value)}
                                 </div>
@@ -444,7 +454,7 @@ export default function CashSheetPage() {
           )}
 
           <div className="mt-3 text-[10px] text-gray-400 dark:text-gray-500">
-            Cash = branch cash only · Bank = branch bank + online advance · Use the Admin / Branch / Owner panels to add entries
+            Sale remains gross · Bank/mobile values are net after the saved processor commission · Commission shows the payment-processing expense · Use the Accounting → Payment Commissions panel to manage rates
           </div>
 
         </main>

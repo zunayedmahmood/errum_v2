@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Order;
 use App\Models\OrderPayment;
 use App\Models\PaymentMethod;
+use App\Models\PaymentCommissionEntry;
 use App\Models\ProductReturn;
 use App\Models\PurchaseOrder;
 use App\Models\Refund;
@@ -88,6 +89,7 @@ class AccountingPostingService
             'operating_expense' => $this->ensureAccount('5001', 'Operating Expenses', 'expense', 'operating_expenses', 'General operating expense.'),
             'delivery_expense_pathao' => $this->ensureAccount('5010', 'Delivery Expense - Pathao', 'expense', 'operating_expenses', 'Courier/delivery expense charged by Pathao.'),
             'ssl_fee_expense' => $this->ensureAccount('5011', 'SSLCommerz Commission Expense', 'expense', 'operating_expenses', 'Payment gateway commission expense.'),
+            'payment_processing_fee' => $this->ensureAccount('5014', 'Payment Processing Fees', 'expense', 'operating_expenses', 'Card, bank and mobile-wallet commissions deducted from customer payments.'),
             'branch_daily_expense' => $this->ensureAccount('5012', 'Branch Daily Expense', 'expense', 'operating_expenses', 'Branch daily cash-sheet expenses.'),
             'damaged_inventory_loss' => $this->ensureAccount('5013', 'Inventory Loss / Damage', 'expense', 'other_expenses', 'Damaged/unsellable inventory loss.'),
             default => throw new RuntimeException("Unknown accounting account slug: {$slug}"),
@@ -128,6 +130,7 @@ class AccountingPostingService
             'operating_expense',
             'delivery_expense_pathao',
             'ssl_fee_expense',
+            'payment_processing_fee',
             'branch_daily_expense',
             'damaged_inventory_loss',
         ] as $slug) {
@@ -533,6 +536,115 @@ class AccountingPostingService
                 'po_number' => $po->po_number,
                 'vendor_id' => $payment->vendor_id,
             ]
+        );
+    }
+
+    public function postPaymentCommission(PaymentCommissionEntry $entry, bool $replace = true): ?Transaction
+    {
+        $entry = $entry->loadMissing('paymentMethod', 'order');
+        $amount = round(max(0, (float) $entry->commission_amount), 2);
+        $eventKey = "payment_commission:{$entry->id}:expense";
+
+        if ($entry->status === 'cancelled' || $amount <= 0) {
+            $this->cancelEvent($eventKey, 'No active commission expense.');
+            return null;
+        }
+
+        $method = $entry->paymentMethod;
+        $methodName = $method?->name ?: 'Payment Method';
+        $channel = $entry->channel_code && $entry->channel_code !== 'default' ? ' / ' . ucfirst($entry->channel_code) : '';
+        $orderNumber = $entry->order?->order_number ?: ('Order #' . $entry->order_id);
+
+        return $this->postBalancedJournal(
+            $eventKey,
+            PaymentCommissionEntry::class,
+            (int) $entry->id,
+            $entry->business_date,
+            "Payment Processing Commission - {$orderNumber}",
+            $entry->store_id,
+            $entry->created_by,
+            [
+                [
+                    'type' => 'debit',
+                    'account_id' => $this->accountId('payment_processing_fee'),
+                    'amount' => $amount,
+                    'description' => "{$methodName}{$channel} Commission Expense - {$orderNumber}",
+                ],
+                [
+                    'type' => 'credit',
+                    'account_id' => $this->settlementAccountIdForPaymentMethod($method, $entry->store_id),
+                    'amount' => $amount,
+                    'description' => "{$methodName}{$channel} Commission Deducted - {$orderNumber}",
+                ],
+            ],
+            [
+                'source' => 'payment_commission',
+                'order_id' => $entry->order_id,
+                'order_number' => $entry->order?->order_number,
+                'payment_method_id' => $entry->payment_method_id,
+                'payment_method' => $methodName,
+                'channel_code' => $entry->channel_code,
+                'gross_amount' => (float) $entry->gross_amount,
+                'commission_rate' => (float) $entry->commission_rate,
+                'commission_amount' => $amount,
+                'net_amount' => (float) $entry->net_amount,
+                'source_type' => $entry->source_type,
+                'source_id' => $entry->source_id,
+            ],
+            'completed',
+            $replace
+        );
+    }
+
+    public function postPaymentCommissionReversal(PaymentCommissionEntry $entry, bool $replace = true): ?Transaction
+    {
+        $entry = $entry->loadMissing('paymentMethod', 'order');
+        $amount = round(max(0, (float) $entry->reversed_commission_amount), 2);
+        $eventKey = "payment_commission:{$entry->id}:reversal";
+
+        if ($entry->status === 'cancelled' || $amount <= 0) {
+            $this->cancelEvent($eventKey, 'No commission reversal due.');
+            return null;
+        }
+
+        $method = $entry->paymentMethod;
+        $methodName = $method?->name ?: 'Payment Method';
+        $channel = $entry->channel_code && $entry->channel_code !== 'default' ? ' / ' . ucfirst($entry->channel_code) : '';
+        $orderNumber = $entry->order?->order_number ?: ('Order #' . $entry->order_id);
+
+        return $this->postBalancedJournal(
+            $eventKey,
+            PaymentCommissionEntry::class,
+            (int) $entry->id,
+            $entry->business_date,
+            "Payment Commission Reversal - {$orderNumber}",
+            $entry->store_id,
+            auth()->id() ?: $entry->created_by,
+            [
+                [
+                    'type' => 'debit',
+                    'account_id' => $this->settlementAccountIdForPaymentMethod($method, $entry->store_id),
+                    'amount' => $amount,
+                    'description' => "{$methodName}{$channel} Commission Returned - {$orderNumber}",
+                ],
+                [
+                    'type' => 'credit',
+                    'account_id' => $this->accountId('payment_processing_fee'),
+                    'amount' => $amount,
+                    'description' => "Reverse {$methodName}{$channel} Commission Expense - {$orderNumber}",
+                ],
+            ],
+            [
+                'source' => 'payment_commission_reversal',
+                'order_id' => $entry->order_id,
+                'payment_method_id' => $entry->payment_method_id,
+                'channel_code' => $entry->channel_code,
+                'commission_entry_id' => $entry->id,
+                'reversed_commission_amount' => $amount,
+                'refund_policy' => $entry->refund_policy,
+            ],
+            'completed',
+            $replace
         );
     }
 

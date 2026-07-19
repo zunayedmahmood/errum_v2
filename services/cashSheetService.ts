@@ -9,6 +9,7 @@ export interface BranchDay {
   raw_cash: number;
   cash: number;
   bank: number;
+  commission: number;
   ex_on: number;
   salary: number;
   cash_to_bank: number;
@@ -18,9 +19,9 @@ export interface BranchDay {
 export interface CashSheetRow {
   date: string;
   branches: BranchDay[];
-  online: { daily_sales: number; advance: number; online_payment: number; cod: number };
+  online: { daily_sales: number; advance: number; online_payment: number; cod: number; commission: number };
   disbursements: { sslzc_received: number; pathao_received: number };
-  totals: { total_sale: number; cash: number; bank: number; final_bank: number };
+  totals: { total_sale: number; cash: number; bank: number; commission: number; final_bank: number };
   owner: {
     cash_invest: number; bank_invest: number;
     total_cash: number; total_bank: number;
@@ -31,9 +32,9 @@ export interface CashSheetRow {
 
 export interface CashSheetSummary {
   branches: BranchDay[];
-  online: { daily_sales: number; advance: number; online_payment: number; cod: number };
+  online: { daily_sales: number; advance: number; online_payment: number; cod: number; commission: number };
   disbursements: { sslzc_received: number; pathao_received: number };
-  totals: { total_sale: number; cash: number; bank: number; final_bank: number };
+  totals: { total_sale: number; cash: number; bank: number; commission: number; final_bank: number };
   owner: {
     cash_invest: number; bank_invest: number;
     total_cash: number; total_bank: number;

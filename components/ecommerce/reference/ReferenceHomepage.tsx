@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import catalogService, { CatalogCategory, SimpleProduct } from '@/services/catalogService';
@@ -23,62 +23,233 @@ interface HeroCategory {
   slug: string;
 }
 
-const preferredCollectionKeywords = ['sneaker', 'watch', 'perfume'];
-const sectionDefinitions = [
-  { eyebrow: 'SNEAKERS', title: 'LATEST SNEAKER DROPS', keywords: ['sneaker', 'shoe', 'jordan', 'nike'] },
-  { eyebrow: 'T-SHIRT', title: 'CLASSY CLOTHING ESSENTIALS', keywords: ['clothing', 'shirt', 't-shirt', 'panjabi', 'pant'] },
-  { eyebrow: 'PERFUME FRAGRANCE', title: 'LUXURY SCENTS & PERFUMES', keywords: ['perfume', 'fragrance', 'scent'] },
-  { eyebrow: 'FASHION ACCESSORIES', title: 'PREMIUM TIMEPIECES & WATCHES', keywords: ['watch', 'accessories', 'cap', 'shawl'] },
+/**
+ * The opening sequence is intentionally editorial and fixed. It must not
+ * inherit category imagery, timings, or ordering from the old homepage
+ * builder. These URLs and slugs are the approved hero art direction.
+ */
+const HARD_CODED_HERO_CATEGORIES: HeroCategory[] = [
+  {
+    id: 1,
+    name: 'Sneakers',
+    slug: 'sneakers',
+    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1QwUTHfvg8DHT06M7iyIpbKpTRV4s8KbJ&w=1920&q=85&output=webp',
+  },
+  {
+    id: 2,
+    name: 'Perfume Fragrance',
+    slug: 'perfume-fragrance',
+    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1GohK21mbp8ZEnD-YW2ZLHeGxA2Jn_UAL&w=1920&q=85&output=webp',
+  },
+  {
+    id: 3,
+    name: 'Watch',
+    slug: 'watch',
+    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1OarJLZNpu59uYs080pXPa9txdgPcNIFq&w=1920&q=85&output=webp',
+  },
+  {
+    id: 4,
+    name: 'Clothing',
+    slug: 'clothing',
+    image: 'https://www.errumbd.com/bento_streetwear.png',
+  },
+  {
+    id: 5,
+    name: 'Fashion Accessories',
+    slug: 'fashion-accessories',
+    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1rp4wszr3H0GXsBEeBywfVi60BEqgv3x-&w=1920&q=85&output=webp',
+  },
+  {
+    id: 6,
+    name: 'Imported Slides',
+    slug: 'imported-slides',
+    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1ebQIb1sbsK8zQqT3NcsT9WtkxfmHVDDD&w=1920&q=85&output=webp',
+  },
+  {
+    id: 7,
+    name: 'Shoe Care',
+    slug: 'shoe-care',
+    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1U5uCqP4aGHoW6vOvvtJ-tWhjBMvkxRbo&w=1920&q=85&output=webp',
+  },
+  {
+    id: 8,
+    name: 'Thobe',
+    slug: 'thobe',
+    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1DyluZChLDjNY0nLISKlVMvlCy2BwlOjW&w=1920&q=85&output=webp',
+  },
+  {
+    id: 9,
+    name: 'Winter Collection',
+    slug: 'winter-collection',
+    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1rGQ6djeFKQR9jDBX708AeAlX3VEc4aw1&w=1920&q=85&output=webp',
+  },
 ];
 
-const getCategoryMatch = (product: SimpleProduct, keywords: string[]) => {
-  const haystack = `${categoryName(product)} ${productName(product)}`.toLowerCase();
-  return keywords.some((keyword) => haystack.includes(keyword));
+const HERO_FORWARD_MS = 18_500;
+const HERO_END_PAUSE_MS = 1_650;
+const HERO_TEXT_HOLD_MS = 6_200;
+
+const sleep = (duration: number) => new Promise<void>((resolve) => window.setTimeout(resolve, duration));
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+const smoothstep = (edge0: number, edge1: number, value: number) => {
+  const x = clamp01((value - edge0) / (edge1 - edge0));
+  return x * x * (3 - 2 * x);
 };
 
+/** Fixed-speed typewriter. Its clock is deliberately separate from the card motion. */
 function TypewriterTitle({ text }: { text: string }) {
   const [visible, setVisible] = useState('');
+  const visibleRef = useRef('');
+
   useEffect(() => {
-    setVisible('');
-    let index = 0;
-    const timer = window.setInterval(() => {
-      index += 1;
-      setVisible(text.slice(0, index));
-      if (index >= text.length) window.clearInterval(timer);
-    }, 48);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+
+    const commit = (value: string) => {
+      visibleRef.current = value;
+      if (!cancelled) setVisible(value);
+    };
+
+    const animate = async () => {
+      let current = visibleRef.current;
+
+      // Erasing remains quicker than typing, but is not tied to hero travel.
+      while (!cancelled && current.length > 0) {
+        current = current.slice(0, -1);
+        commit(current);
+        await sleep(42);
+      }
+
+      if (cancelled) return;
+      await sleep(180);
+
+      for (let index = 1; index <= text.length && !cancelled; index += 1) {
+        commit(text.slice(0, index));
+        await sleep(92);
+      }
+    };
+
+    animate();
+    return () => { cancelled = true; };
   }, [text]);
+
   return <>{visible}<span className="ref-hero__cursor" aria-hidden="true" /></>;
 }
 
-function CategoryMotionHero({ items }: { items: HeroCategory[] }) {
-  const [active, setActive] = useState(0);
-  const usable = items.length ? items : [{ id: 0, name: 'ERRUM', image: '/images/placeholder-product.jpg', slug: 'products' }];
-  useEffect(() => {
-    if (usable.length < 2) return;
-    const timer = window.setInterval(() => setActive((value) => (value + 1) % usable.length), 2700);
-    return () => window.clearInterval(timer);
-  }, [usable.length]);
+function CategoryMotionHero() {
+  const panelRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+  const [textIndex, setTextIndex] = useState(0);
 
-  const visible = Array.from({ length: Math.min(5, Math.max(usable.length, 4)) }, (_, offset) => usable[(active + offset) % usable.length]);
+  // Text changes on its own clock. It does not derive from the oscillator.
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setTextIndex((value) => (value + 1) % HARD_CODED_HERO_CATEGORIES.length),
+      HERO_TEXT_HOLD_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Preload the approved hero art before each card reaches the visible track.
+  useEffect(() => {
+    HARD_CODED_HERO_CATEGORIES.forEach((item) => {
+      const image = new window.Image();
+      image.src = item.image;
+    });
+  }, []);
+
+  useEffect(() => {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const totalCycle = (HERO_FORWARD_MS * 2) + (HERO_END_PAUSE_MS * 2);
+    let frame = 0;
+    let startedAt = performance.now();
+
+    const renderTrack = (now: number) => {
+      const mobile = window.innerWidth < 768;
+      const spacing = mobile ? 0.34 : 0.255;
+      const startingTravel = mobile ? 0.72 : 0.86;
+      const visibleSlots = mobile ? 3 : 4;
+      const maxShift = Math.max(0, HARD_CODED_HERO_CATEGORIES.length - visibleSlots);
+
+      let shift = 0;
+      if (!reducedMotion) {
+        const elapsed = (now - startedAt) % totalCycle;
+        if (elapsed < HERO_FORWARD_MS) {
+          const progress = elapsed / HERO_FORWARD_MS;
+          // Cosine displacement produces a sinusoidal velocity curve: accelerate,
+          // decelerate to zero, pause, and perform the exact reverse journey.
+          shift = (0.5 - (0.5 * Math.cos(Math.PI * progress))) * maxShift;
+        } else if (elapsed < HERO_FORWARD_MS + HERO_END_PAUSE_MS) {
+          shift = maxShift;
+        } else if (elapsed < (HERO_FORWARD_MS * 2) + HERO_END_PAUSE_MS) {
+          const progress = (elapsed - HERO_FORWARD_MS - HERO_END_PAUSE_MS) / HERO_FORWARD_MS;
+          shift = (0.5 + (0.5 * Math.cos(Math.PI * progress))) * maxShift;
+        } else {
+          shift = 0;
+        }
+      }
+
+      panelRefs.current.forEach((panel, index) => {
+        if (!panel) return;
+        const travel = startingTravel + (shift * spacing) - (index * spacing);
+        const x = mobile ? 80 - (118 * travel) : 80 - (108 * travel);
+        const y = mobile ? 5 + (65 * travel) : 1 + (67 * travel);
+        const scale = mobile ? 1.01 - (0.35 * travel) : 1.02 - (0.32 * travel);
+        const fadeIn = smoothstep(-0.27, 0.015, travel);
+        const fadeOut = 1 - smoothstep(0.91, 1.16, travel);
+        const opacity = clamp01(fadeIn * fadeOut);
+
+        panel.style.transform = `translate3d(${x}vw, ${y}vh, 0) scale(${Math.max(0.56, scale)})`;
+        panel.style.opacity = opacity.toFixed(3);
+        panel.style.zIndex = String(Math.round(90 - (travel * 24)));
+        panel.style.pointerEvents = opacity > 0.18 ? 'auto' : 'none';
+      });
+
+      frame = window.requestAnimationFrame(renderTrack);
+    };
+
+    frame = window.requestAnimationFrame(renderTrack);
+    const restartAfterVisibility = () => {
+      if (document.visibilityState === 'visible') startedAt = performance.now();
+    };
+    document.addEventListener('visibilitychange', restartAfterVisibility);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('visibilitychange', restartAfterVisibility);
+    };
+  }, []);
+
+  const typedSlug = `ERRUMBD/${HARD_CODED_HERO_CATEGORIES[textIndex].slug.toUpperCase()}`;
+
   return (
     <section className="ref-hero">
       <Navigation transparent />
       <div className="ref-hero__copy">
-        <h1><TypewriterTitle text={usable[active]?.name.toUpperCase() || 'ERRUM'} /></h1>
+        <h1 className="font-display text-[10vw] md:text-[12vw] lg:text-[9vw] font-black leading-[0.82] tracking-tighter text-accent uppercase select-none ref-hero__title">
+          <TypewriterTitle text={typedSlug} />
+        </h1>
         <p>ERRUM — PREMIUM STREETWEAR CATALOG,<br />CURATING CULTURE FOR SNEAKERHEADS.</p>
         <strong>AUTHENTIC. LIMITED. HIGH-END.</strong>
       </div>
+
       <div className="ref-hero__panels" aria-label="Shop categories">
-        {visible.map((item, index) => (
+        {HARD_CODED_HERO_CATEGORIES.map((item, index) => (
           <Link
             href={`/e-commerce/${item.slug}`}
-            key={`${item.id}-${active}-${index}`}
-            className={`ref-hero-panel ref-hero-panel--${index}`}
-            style={{ animationDelay: `${index * 75}ms` }}
+            key={item.slug}
+            ref={(element) => { panelRefs.current[index] = element; }}
+            className="ref-hero-panel ref-hero-panel--motion"
+            aria-label={`Shop ${item.name}`}
           >
-            <img src={item.image} alt={item.name} />
-            <span><small>CAT. {String(((active + index) % usable.length) + 1).padStart(2, '0')}</small>{item.name}</span>
+            <img
+              src={item.image}
+              alt={item.name}
+              loading={index < 4 ? 'eager' : 'lazy'}
+              decoding="async"
+            />
+            <span>
+              <small>CAT. {String(index + 1).padStart(2, '0')}</small>
+              {item.name}
+            </span>
           </Link>
         ))}
       </div>
@@ -142,7 +313,6 @@ function ProductSection({ eyebrow, title, products }: { eyebrow: string; title: 
 export default function ReferenceHomepage() {
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [products, setProducts] = useState<SimpleProduct[]>([]);
-  const [heroItems, setHeroItems] = useState<HeroCategory[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -159,18 +329,6 @@ export default function ReferenceHomepage() {
         setCategories(topCategories);
         setProducts(displayProducts);
 
-        const heroCategories = await Promise.all(topCategories.slice(0, 12).map(async (category) => {
-          let image = categoryImage(category);
-          if (image.includes('placeholder-product')) {
-            try {
-              const response = await catalogService.getProducts({ category_id: category.id, per_page: 1, sort_by: 'newest' });
-              const first = groupedDisplayProducts(response)[0];
-              if (first) image = productImage(first);
-            } catch { /* keep fallback */ }
-          }
-          return { id: category.id, name: category.name, image, slug: category.slug || slugify(category.name) };
-        }));
-        if (!cancelled) setHeroItems(heroCategories.filter((item) => item.image));
       } catch (error) {
         console.error('Failed to load ERRUM storefront', error);
       } finally {
@@ -206,7 +364,7 @@ export default function ReferenceHomepage() {
 
   return (
     <main className="ref-storefront">
-      <CategoryMotionHero items={heroItems} />
+      <CategoryMotionHero />
       <div className="ref-ticker"><div>✦ 100% AUTHENTIC ✦ PREMIUM STREETWEAR ✦ FREE SECURE SHIPPING ✦ LATEST DROPS ✦ ENGINEERED TO MOVE ✦ 100% AUTHENTIC ✦ PREMIUM STREETWEAR ✦ FREE SECURE SHIPPING ✦</div></div>
 
       <section className="ref-essentials">

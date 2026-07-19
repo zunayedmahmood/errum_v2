@@ -49,6 +49,16 @@ class PaymentMethod extends Model
         return $this->hasMany(OrderPayment::class);
     }
 
+    public function commissionRates(): HasMany
+    {
+        return $this->hasMany(PaymentCommissionRate::class)->orderByDesc('effective_from');
+    }
+
+    public function commissionEntries(): HasMany
+    {
+        return $this->hasMany(PaymentCommissionEntry::class);
+    }
+
     // Scopes
     public function scopeActive($query)
     {
@@ -99,15 +109,15 @@ class PaymentMethod extends Model
         return true;
     }
 
-    public function calculateFee(float $amount): float
+    public function calculateFee(float $amount, $businessDate = null): float
     {
-        $fee = $this->fixed_fee;
-
-        if ($this->percentage_fee > 0) {
-            $fee += ($amount * $this->percentage_fee / 100);
+        try {
+            $resolved = app(\App\Services\PaymentCommissionService::class)
+                ->resolveRate($this, $businessDate ?: now(config('app.timezone', 'Asia/Dhaka')));
+            return round(max(0, $amount) * ((float) $resolved['rate'] / 100), 2);
+        } catch (\Throwable $e) {
+            return round(max(0, $amount) * (max(0, (float) $this->percentage_fee) / 100), 2);
         }
-
-        return round($fee, 2);
     }
 
     public function getNetAmount(float $amount): float

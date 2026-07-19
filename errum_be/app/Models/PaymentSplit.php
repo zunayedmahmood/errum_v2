@@ -6,10 +6,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Traits\AutoLogsActivity;
 
 class PaymentSplit extends Model
 {
-    use HasFactory;
+    use HasFactory, AutoLogsActivity;
 
     protected $fillable = [
         'order_payment_id',
@@ -17,6 +19,12 @@ class PaymentSplit extends Model
         'store_id',
         'amount',
         'fee_amount',
+        'commission_channel_code',
+        'commission_rate_id',
+        'commission_rate',
+        'commission_amount',
+        'reversed_commission_amount',
+        'commission_refund_policy',
         'net_amount',
         'split_sequence',
         'transaction_reference',
@@ -36,6 +44,11 @@ class PaymentSplit extends Model
     protected $casts = [
         'amount' => 'decimal:2',
         'fee_amount' => 'decimal:2',
+        'commission_channel_code' => 'string',
+        'commission_rate_id' => 'integer',
+        'commission_rate' => 'decimal:4',
+        'commission_amount' => 'decimal:2',
+        'reversed_commission_amount' => 'decimal:2',
         'net_amount' => 'decimal:2',
         'refunded_amount' => 'decimal:2',
         'payment_data' => 'array',
@@ -50,13 +63,10 @@ class PaymentSplit extends Model
     {
         parent::boot();
 
-        static::creating(function ($split) {
-            // Calculate net amount if not provided
-            if (!isset($split->net_amount) && isset($split->amount)) {
-                $fee = $split->paymentMethod ? $split->paymentMethod->calculateFee($split->amount) : 0;
-                $split->fee_amount = $fee;
-                $split->net_amount = $split->amount - $fee;
-            }
+        static::saving(function ($split) {
+            $force = !$split->exists || $split->isDirty(['amount', 'payment_method_id', 'payment_data', 'metadata']);
+            app(\App\Services\PaymentCommissionService::class)
+                ->prepareSplitSnapshot($split, $force);
         });
     }
 
@@ -79,6 +89,11 @@ class PaymentSplit extends Model
     public function cashDenominations(): HasMany
     {
         return $this->hasMany(CashDenomination::class);
+    }
+
+    public function commissionEntry(): HasOne
+    {
+        return $this->hasOne(PaymentCommissionEntry::class);
     }
 
     // Scopes

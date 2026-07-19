@@ -206,7 +206,8 @@ function SummaryRow({ row, stores, onClick }: { row: CashSheetRow; stores: {id:n
             </div>
             <div className="flex items-center gap-3 mt-0.5">
               {row.totals.cash !== 0    && <span className="text-[11px] text-gray-500 dark:text-gray-400">Cash {fmt(row.totals.cash)}</span>}
-              {row.totals.bank !== 0    && <span className="text-[11px] text-gray-500 dark:text-gray-400">Bank {fmt(row.totals.bank)}</span>}
+              {row.totals.bank !== 0    && <span className="text-[11px] text-gray-500 dark:text-gray-400">Net bank {fmt(row.totals.bank)}</span>}
+              {row.totals.commission !== 0 && <span className="text-[11px] text-rose-500 dark:text-rose-400">Fees {fmt(row.totals.commission)}</span>}
               {row.totals.final_bank !== row.totals.bank && (
                 <span className="text-[11px] text-blue-500">Final Bank {fmt(row.totals.final_bank)}</span>
               )}
@@ -237,13 +238,14 @@ function SummaryRow({ row, stores, onClick }: { row: CashSheetRow; stores: {id:n
         <div className="border-t border-gray-100 dark:border-gray-800 px-4 py-3 space-y-3">
           {/* per-branch */}
           <div className="grid grid-cols-1 gap-2">
-            {row.branches.filter(b => b.daily_sale !== 0 || b.cash !== 0 || b.bank !== 0 || b.ex_on !== 0 || b.salary !== 0 || b.daily_cost !== 0 || b.cash_to_bank !== 0).map(b => (
+            {row.branches.filter(b => b.daily_sale !== 0 || b.cash !== 0 || b.bank !== 0 || b.commission !== 0 || b.ex_on !== 0 || b.salary !== 0 || b.daily_cost !== 0 || b.cash_to_bank !== 0).map(b => (
               <div key={b.store_id} className="flex items-center justify-between text-xs">
                 <span className="font-medium text-indigo-600 dark:text-indigo-400 w-28 flex-shrink-0">{b.store_name}</span>
                 <div className="flex items-center gap-4 text-gray-600 dark:text-gray-400">
                   <span>Sale {fmt(b.daily_sale)}</span>
                   {b.cash !== 0 && <span>Cash {fmt(b.cash)}</span>}
-                  {b.bank !== 0 && <span>Bank {fmt(b.bank)}</span>}
+                  {b.bank !== 0 && <span>Net bank {fmt(b.bank)}</span>}
+                  {b.commission !== 0 && <span className="text-rose-500 dark:text-rose-400">Fee {fmt(b.commission)}</span>}
                   {b.salary > 0 && <span className="text-amber-600 dark:text-amber-400">Salary {fmt(b.salary)}</span>}
                   {b.daily_cost > 0 && <span className="text-rose-500">Cost {fmt(b.daily_cost)}</span>}
                 </div>
@@ -260,6 +262,7 @@ function SummaryRow({ row, stores, onClick }: { row: CashSheetRow; stores: {id:n
                 {row.online.advance > 0 && <span>Adv {fmt(row.online.advance)}</span>}
                 {row.online.online_payment > 0 && <span>SSLZC {fmt(row.online.online_payment)}</span>}
                 {row.online.cod > 0 && <span>COD {fmt(row.online.cod)}</span>}
+                {row.online.commission > 0 && <span className="text-rose-500 dark:text-rose-400">Fee {fmt(row.online.commission)}</span>}
               </div>
             </div>
           )}
@@ -314,7 +317,7 @@ export default function SummaryPanel() {
   useEffect(() => { if (!authLoading && isAdmin) load(); }, [month, authLoading, isAdmin]);
 
   const activeRows = rows.filter(r =>
-    r.totals.total_sale !== 0 || r.totals.cash !== 0 || r.totals.bank !== 0 ||
+    r.totals.total_sale !== 0 || r.totals.cash !== 0 || r.totals.bank !== 0 || r.totals.commission !== 0 ||
     r.totals.final_bank !== 0 || r.disbursements.sslzc_received !== 0 ||
     r.disbursements.pathao_received !== 0 || r.owner.cash_invest !== 0 ||
     r.owner.bank_invest !== 0 || r.owner.cash_cost !== 0 || r.owner.bank_cost !== 0 ||
@@ -348,8 +351,8 @@ export default function SummaryPanel() {
               {[
                 { label: 'Total Sales',    value: summary.totals.total_sale, color: 'text-emerald-600 dark:text-emerald-400' },
                 { label: 'Total Cash',     value: summary.owner.total_cash,  color: 'text-gray-700 dark:text-gray-200' },
-                { label: 'Total Bank',     value: summary.owner.total_bank,  color: 'text-blue-600 dark:text-blue-400' },
-                { label: 'Net After Costs',value: summary.owner.cash_after_cost + summary.owner.bank_after_cost, color: 'text-teal-600 dark:text-teal-400' },
+                { label: 'Net Bank',       value: summary.owner.total_bank,  color: 'text-blue-600 dark:text-blue-400' },
+                { label: 'Processor Fees', value: summary.totals.commission, color: 'text-rose-600 dark:text-rose-400' },
               ].map(card => (
                 <div key={card.label} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
                   <div className="text-[11px] text-gray-400 mb-1">{card.label}</div>

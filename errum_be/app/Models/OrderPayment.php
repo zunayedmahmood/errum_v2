@@ -22,6 +22,12 @@ class OrderPayment extends Model
         'processed_by',
         'amount',
         'fee_amount',
+        'commission_channel_code',
+        'commission_rate_id',
+        'commission_rate',
+        'commission_amount',
+        'reversed_commission_amount',
+        'commission_refund_policy',
         'net_amount',
         'is_partial_payment',
         'installment_number',
@@ -52,6 +58,11 @@ class OrderPayment extends Model
     protected $casts = [
         'amount' => 'decimal:2',
         'fee_amount' => 'decimal:2',
+        'commission_channel_code' => 'string',
+        'commission_rate_id' => 'integer',
+        'commission_rate' => 'decimal:4',
+        'commission_amount' => 'decimal:2',
+        'reversed_commission_amount' => 'decimal:2',
         'net_amount' => 'decimal:2',
         'order_balance_before' => 'decimal:2',
         'order_balance_after' => 'decimal:2',
@@ -92,19 +103,12 @@ class OrderPayment extends Model
                 }
             }
 
-            // Calculate net amount if not provided
-            // Skip calculation for split payments (payment_method_id is null)
-            if (!isset($payment->net_amount) && isset($payment->amount)) {
-                if ($payment->payment_method_id && $payment->paymentMethod) {
-                    $fee = $payment->paymentMethod->calculateFee($payment->amount);
-                    $payment->fee_amount = $fee;
-                    $payment->net_amount = $payment->amount - $fee;
-                } else {
-                    // For split payments, fees will be calculated from splits
-                    $payment->fee_amount = 0;
-                    $payment->net_amount = $payment->amount;
-                }
-            }
+        });
+
+        static::saving(function ($payment) {
+            $force = !$payment->exists || $payment->isDirty(['amount', 'payment_method_id', 'payment_data', 'metadata']);
+            app(\App\Services\PaymentCommissionService::class)
+                ->preparePaymentSnapshot($payment, $force);
         });
     }
 
@@ -137,6 +141,11 @@ class OrderPayment extends Model
     public function paymentSplits(): HasMany
     {
         return $this->hasMany(PaymentSplit::class);
+    }
+
+    public function commissionEntries(): HasMany
+    {
+        return $this->hasMany(PaymentCommissionEntry::class);
     }
 
     public function cashDenominations(): HasMany
@@ -411,6 +420,9 @@ class OrderPayment extends Model
                     'method' => $split->paymentMethod->name,
                     'amount' => $split->amount,
                     'fee' => $split->fee_amount,
+                    'commission_rate' => $split->commission_rate,
+                    'commission_amount' => $split->commission_amount,
+                    'reversed_commission_amount' => $split->reversed_commission_amount,
                     'net' => $split->net_amount,
                     'status' => $split->status,
                     'transaction_reference' => $split->transaction_reference,

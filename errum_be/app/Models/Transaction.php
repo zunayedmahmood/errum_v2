@@ -137,6 +137,7 @@ class Transaction extends Model
             'Expense' => 'Expense',
             'ExpensePayment' => 'Expense Payment',
             'Refund' => 'Refund',
+            'PaymentCommissionEntry' => 'Payment Commission',
             'ProductReturn' => 'Product Return',
             'VendorPayment' => 'Vendor Payment',
             'Order' => 'Store Order',

@@ -2622,6 +2622,18 @@ class OrderController extends Controller
         $oldPaymentIds = $order->payments()->pluck('id')->map(fn ($id) => (int) $id)->all();
 
         if (!empty($oldPaymentIds)) {
+            // Commission entries and their accounting journals must be cancelled before
+            // the bulk status updates below. Query-builder updates intentionally bypass
+            // Eloquent observers, so relying on observers here would leave the old
+            // card/bKash commission active after a payment-method edit.
+            $commissionService = app(\App\Services\PaymentCommissionService::class);
+            \App\Models\OrderPayment::with('paymentSplits')
+                ->whereIn('id', $oldPaymentIds)
+                ->get()
+                ->each(function ($oldPayment) use ($commissionService) {
+                    $commissionService->cancelPayment($oldPayment, 'Payment allocation replaced from Offline Sale History.');
+                });
+
             // Hard-cancel through direct queries first so stale/partially-loaded relations
             // cannot leave the old cash/card rows active. This prevents edited payments
             // from being counted as old method + new method on the cash sheet/history.
@@ -2756,6 +2768,12 @@ class OrderController extends Controller
             'outstanding_amount' => max(0, (float) $order->total_amount - $targetPaid),
             'payment_status' => $targetPaid + 0.01 >= (float) $order->total_amount ? 'paid' : ($targetPaid > 0 ? 'partial' : 'pending'),
         ])->saveQuietly();
+
+        // Rebuild the new commission snapshot and journal after the replacement is
+        // complete. This guarantees that cash-sheet net bank values follow the latest
+        // payment allocation rather than the cancelled allocation.
+        app(\App\Services\PaymentCommissionService::class)
+            ->syncOrder($order->fresh(['payments.paymentMethod', 'payments.paymentSplits.paymentMethod']), false);
     }
 
     private function buildEditedPaymentData(array $row, Carbon $paymentAt): array

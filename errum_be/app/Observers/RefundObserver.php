@@ -5,6 +5,8 @@ namespace App\Observers;
 use App\Models\Refund;
 use App\Models\ProductReturn;
 use App\Models\Transaction as AccountingTransaction;
+use App\Models\Order;
+use App\Services\PaymentCommissionService;
 
 class RefundObserver
 {
@@ -13,7 +15,12 @@ class RefundObserver
      */
     public function created(Refund $refund): void
     {
-        // Skip ledger creation for exchange refunds as it's handled by Transaction::createFromExchange
+        // Commission refund policy applies to both standard returns and exchange
+        // refunds, even when exchange accounting is posted through a different path.
+        $this->syncCommissionRefundPolicy($refund);
+
+        // Skip the ordinary refund ledger for exchanges; Transaction::createFromExchange
+        // owns that accounting flow.
         if ($refund->refund_type === 'exchange_refund') {
             return;
         }
@@ -54,6 +61,10 @@ class RefundObserver
             AccountingTransaction::byReference(Refund::class, $refund->id)
                 ->update(['status' => 'cancelled']);
         }
+
+        if ($refund->wasChanged(['status', 'refund_amount', 'refund_method', 'refund_method_details'])) {
+            $this->syncCommissionRefundPolicy($refund);
+        }
     }
 
     /**
@@ -61,6 +72,7 @@ class RefundObserver
      */
     public function deleted(Refund $refund): void
     {
+        $this->syncCommissionRefundPolicy($refund);
         // Mark related transactions as cancelled
         AccountingTransaction::byReference(Refund::class, $refund->id)
             ->update(['status' => 'cancelled']);
@@ -71,6 +83,7 @@ class RefundObserver
      */
     public function restored(Refund $refund): void
     {
+        $this->syncCommissionRefundPolicy($refund);
         // Restore related transactions
         AccountingTransaction::byReference(Refund::class, $refund->id)
             ->update(['status' => 'completed']);
@@ -81,8 +94,21 @@ class RefundObserver
      */
     public function forceDeleted(Refund $refund): void
     {
+        $this->syncCommissionRefundPolicy($refund);
         // Permanently delete related transactions
         AccountingTransaction::byReference(Refund::class, $refund->id)->delete();
+    }
+
+    private function syncCommissionRefundPolicy(Refund $refund): void
+    {
+        if (!$refund->order_id) {
+            return;
+        }
+
+        $order = Order::find($refund->order_id);
+        if ($order) {
+            app(PaymentCommissionService::class)->syncRefundReversalForOrder($order);
+        }
     }
 
     /**

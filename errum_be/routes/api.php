@@ -973,6 +973,13 @@ Route::middleware('auth:api')->group(function () {
     // ============================================
     
     Route::prefix('accounting')->group(function () {
+        // Effective-dated payment-medium commissions and accounting report.
+        Route::get('/payment-commissions/settings', [\App\Http\Controllers\PaymentCommissionController::class, 'settings']);
+        Route::post('/payment-commissions/settings', [\App\Http\Controllers\PaymentCommissionController::class, 'storeSetting']);
+        Route::put('/payment-commissions/settings/{id}', [\App\Http\Controllers\PaymentCommissionController::class, 'updateSetting']);
+        Route::delete('/payment-commissions/settings/{id}', [\App\Http\Controllers\PaymentCommissionController::class, 'destroySetting']);
+        Route::get('/payment-commissions/report', [\App\Http\Controllers\PaymentCommissionController::class, 'report']);
+
         // Textbook-style T-Account (Debit/Credit Ledger)
         Route::get('/t-account/{accountId}', [\App\Http\Controllers\AccountingReportController::class, 'getTAccount']);
         

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from 'next/navigation';
-import { FileText, BookOpen, TrendingUp, Download, Search, RefreshCw } from 'lucide-react';
+import { FileText, BookOpen, TrendingUp, Download, Search, RefreshCw, BadgePercent } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import Link from 'next/link';
@@ -347,13 +347,21 @@ const fetchJournalEntries = async () => {
           <main className="flex-1 overflow-auto p-6">
             <div className="max-w-7xl mx-auto">
               {/* Header */}
-              <div className="mb-6">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                  Accounting System
-                </h1>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Double-entry bookkeeping with real-time financial reports
-                </p>
+              <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                    Accounting System
+                  </h1>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Double-entry bookkeeping with real-time financial reports
+                  </p>
+                </div>
+                <Link
+                  href="/accounting/payment-commissions"
+                  className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-600 dark:bg-cyan-400 dark:text-gray-950"
+                >
+                  <BadgePercent size={16} /> Payment Commissions
+                </Link>
               </div>
 
               {/* Tabs */}

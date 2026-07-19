@@ -5,6 +5,7 @@ namespace App\Observers;
 use App\Models\Order;
 use App\Services\SalesTargetAggregationService;
 use App\Services\AccountingPostingService;
+use App\Services\PaymentCommissionService;
 use Illuminate\Support\Facades\Log;
 
 class OrderObserver
@@ -25,6 +26,33 @@ class OrderObserver
     {
         if ($order->wasChanged(['status', 'created_by', 'salesman_id', 'store_id', 'total_amount', 'order_date'])) {
             $this->aggregationService->syncOrderChange($order, $order->getOriginal());
+        }
+
+        if ($order->wasChanged(['order_date', 'store_id'])) {
+            try {
+                app(PaymentCommissionService::class)->syncOrder($order, true);
+            } catch (\Throwable $e) {
+                Log::error('Order date/store commission rebalance failed', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($order->wasChanged('status')) {
+            try {
+                if (in_array(strtolower((string) $order->status), ['cancelled', 'canceled', 'void', 'deleted'], true)) {
+                    app(PaymentCommissionService::class)->cancelOrder($order, 'Order status changed to ' . $order->status . '.');
+                } else {
+                    app(PaymentCommissionService::class)->syncOrder($order, false);
+                }
+            } catch (\Throwable $e) {
+                Log::error('Order status commission rebalance failed', [
+                    'order_id' => $order->id,
+                    'status' => $order->status,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         if ($order->wasChanged('status')) {
@@ -94,6 +122,15 @@ class OrderObserver
     public function deleting(Order $order): void
     {
         try {
+            app(PaymentCommissionService::class)->cancelOrder($order, 'Order deleted.');
+        } catch (\Throwable $e) {
+            Log::error('Deleted order commission cancellation failed', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
             app(\App\Services\LoyaltyCardService::class)->reverseAllEarnedForOrder(
                 $order,
                 'deleted',
@@ -116,6 +153,7 @@ class OrderObserver
     public function restored(Order $order): void
     {
         $this->aggregationService->syncOrderChange($order);
+        app(PaymentCommissionService::class)->syncOrder($order, false);
     }
 
     public function forceDeleted(Order $order): void

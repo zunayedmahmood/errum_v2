@@ -8,6 +8,7 @@ use App\Models\OwnerEntry;
 use App\Models\Store;
 use App\Models\Transaction;
 use App\Models\PaymentMethod;
+use App\Models\PaymentCommissionEntry;
 use App\Models\ExpensePayment;
 use App\Models\ExpenseCategory;
 use App\Models\Expense;
@@ -73,6 +74,7 @@ class CashSheetController extends Controller
     }
     private const BRANCH_ORDER_TYPES = ['counter', 'pos', 'offline', 'offline_sale', 'retail', 'branch'];
     private const ONLINE_ORDER_TYPES = ['social_commerce', 'ecommerce', 'online', 'web', 'website', 'lazychat'];
+    private const CANCELLED_ORDER_STATUSES = ['cancelled', 'canceled', 'void', 'deleted'];
     private const EXCLUDED_ORDER_STATUSES = ['cancelled', 'canceled', 'refunded', 'void', 'deleted'];
     private const ACTIVE_PAYMENT_STATUSES = ['completed', 'partially_refunded', 'refunded'];
     private const VIRTUAL_PAYMENT_TYPES = ['exchange_balance', 'store_credit', 'balance_carryover'];
@@ -116,6 +118,7 @@ class CashSheetController extends Controller
 
         $branchSales = $this->loadBranchSales($storeIds, $dateFrom, $dateTo, $fullyRefundedOrderIds);
         [$branchPayments, $paymentRefundCoverage] = $this->loadBranchPayments($storeIds, $dateFrom, $dateTo, $fullyRefundedOrderIds);
+        $branchCommissions = $this->loadBranchCommissions($storeIds, $dateFrom, $dateTo);
         $branchRefunds = $this->loadBranchRefunds($storeIds, $dateFrom, $dateTo, $paymentRefundCoverage, $fullyRefundedOrderIds);
         $branchReturns = $this->loadBranchReturns($storeIds, $dateFrom, $dateTo, $fullyRefundedOrderIds);
         $branchCosts = $this->loadBranchCosts($storeIds, $dateFrom, $dateTo);
@@ -138,6 +141,7 @@ class CashSheetController extends Controller
             $totalCash = 0.0;
             $totalBank = 0.0;
             $totalSale = 0.0;
+            $totalCommission = 0.0;
 
             foreach ($stores as $store) {
                 $storeId = (int) $store->id;
@@ -147,6 +151,7 @@ class CashSheetController extends Controller
                 $grossCash = (float) ($branchPayments[$storeKey][$date]['cash'] ?? 0);
                 $grossBank = (float) ($branchPayments[$storeKey][$date]['bank'] ?? 0);
                 $grossExOn = (float) ($branchPayments[$storeKey][$date]['ex_on'] ?? 0);
+                $commission = (float) ($branchCommissions[$storeKey][$date] ?? 0);
                 $refundCash = (float) ($branchRefunds[$storeKey][$date]['cash'] ?? 0);
                 $refundBank = (float) ($branchRefunds[$storeKey][$date]['bank'] ?? 0);
                 $refundExOn = (float) ($branchRefunds[$storeKey][$date]['ex_on'] ?? 0);
@@ -172,6 +177,7 @@ class CashSheetController extends Controller
                     'raw_cash' => round($rawCash, 2),
                     'cash' => round($displayCash, 2),
                     'bank' => round($displayBank, 2),
+                    'commission' => round($commission, 2),
                     'ex_on' => round($exOn, 2),
                     'salary' => round($salary, 2),
                     'cash_to_bank' => round($cashToBank, 2),
@@ -181,6 +187,7 @@ class CashSheetController extends Controller
                 $totalSale += $sale;
                 $totalCash += $displayCash;
                 $totalBank += $displayBank;
+                $totalCommission += $commission;
             }
 
             $online = $onlineData[$date] ?? [];
@@ -188,6 +195,8 @@ class CashSheetController extends Controller
             $onlineAdvance = (float) ($online['advance'] ?? 0);
             $onlinePayment = (float) ($online['online_payment'] ?? 0);
             $onlineCod = (float) ($online['cod'] ?? 0);
+            $onlineCommission = (float) ($online['commission'] ?? 0);
+            $totalCommission += $onlineCommission;
 
             // Same Deshio accounting presentation: social-commerce advances are
             // treated as bank receipts; ecommerce collections are settled through
@@ -217,6 +226,7 @@ class CashSheetController extends Controller
                     'advance' => round($onlineAdvance, 2),
                     'online_payment' => round($onlinePayment, 2),
                     'cod' => round($onlineCod, 2),
+                    'commission' => round($onlineCommission, 2),
                 ],
                 'disbursements' => [
                     'sslzc_received' => round($sslzcReceived, 2),
@@ -226,6 +236,7 @@ class CashSheetController extends Controller
                     'total_sale' => round($totalSale + $onlineSales, 2),
                     'cash' => round($totalCash, 2),
                     'bank' => round($totalBank, 2),
+                    'commission' => round($totalCommission, 2),
                     'final_bank' => round($finalBank, 2),
                 ],
                 'owner' => [
@@ -259,6 +270,7 @@ class CashSheetController extends Controller
                 'fully_refunded_orders' => 'excluded',
                 'payment_edits' => 'latest_active_payment_or_split_only',
                 'payment_timestamps' => 'audit_only',
+                'payment_commission' => 'gross_payment_minus_effective_dated_commission_snapshot',
             ],
         ]);
     }
@@ -671,6 +683,8 @@ class CashSheetController extends Controller
                 'op.payment_method_id',
                 'op.payment_type',
                 'op.amount',
+                'op.commission_amount',
+                'op.reversed_commission_amount',
                 'op.refunded_amount',
                 'op.status',
                 'pm.type as method_type',
@@ -678,17 +692,18 @@ class CashSheetController extends Controller
             )
             ->whereIn('o.store_id', $storeIds)
             ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
-            ->whereNotIn('o.status', self::EXCLUDED_ORDER_STATUSES)
-            ->where(function ($query) {
-                $query->whereNull('o.payment_status')->orWhere('o.payment_status', '!=', 'refunded');
-            })
+            // A refund is a real cash/bank movement even when the order is now
+            // marked refunded. Only cancelled/void/deleted orders disappear
+            // without a refund movement.
+            ->whereNotIn('o.status', self::CANCELLED_ORDER_STATUSES)
             ->whereNull('o.deleted_at')
             ->whereNull('op.deleted_at')
             ->whereIn('op.status', self::ACTIVE_PAYMENT_STATUSES)
             ->whereDate('o.order_date', '>=', $from)
             ->whereDate('o.order_date', '<=', $to);
 
-        $this->excludeFullyRefundedOrders($paymentQuery, $fullyRefundedOrderIds);
+        // Do not exclude fully refunded orders here: their gross receipt minus
+        // processor commission and their actual refund must net through cash/bank.
         $payments = $paymentQuery->get();
 
         $paymentIds = $payments->pluck('payment_id')->map(fn ($id) => (int) $id)->all();
@@ -709,6 +724,8 @@ class CashSheetController extends Controller
                 ->select(
                     'ps.order_payment_id',
                     'ps.amount',
+                    'ps.commission_amount',
+                    'ps.reversed_commission_amount',
                     'ps.refunded_amount',
                     'ps.status',
                     'pm.type as method_type',
@@ -741,17 +758,12 @@ class CashSheetController extends Controller
             )
             ->whereIn('o.store_id', $storeIds)
             ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
-            ->whereNotIn('o.status', self::EXCLUDED_ORDER_STATUSES)
-            ->where(function ($query) {
-                $query->whereNull('o.payment_status')->orWhere('o.payment_status', '!=', 'refunded');
-            })
+            ->whereNotIn('o.status', self::CANCELLED_ORDER_STATUSES)
             ->whereNull('o.deleted_at')
             ->whereNull('r.deleted_at')
             ->where('r.status', 'completed')
             ->whereDate('o.order_date', '>=', $from)
             ->whereDate('o.order_date', '<=', $to);
-
-        $this->excludeFullyRefundedOrders($refundTargetQuery, $fullyRefundedOrderIds);
 
         $refundTargetQuery
             ->orderBy('r.id')
@@ -778,7 +790,7 @@ class CashSheetController extends Controller
         $refundCoverage = [];
 
         $addMovement = function (string $storeKey, string $day, string $bucket, float $amount) use (&$out): void {
-            if ($amount <= 0) {
+            if (abs($amount) < 0.005) {
                 return;
             }
             $out[$storeKey][$day][$bucket] = ($out[$storeKey][$day][$bucket] ?? 0) + $amount;
@@ -867,11 +879,14 @@ class CashSheetController extends Controller
                     }
                 }
 
+                $netCommission = $bucket === 'bank'
+                    ? max(0, (float) ($payment->commission_amount ?? 0) - (float) ($payment->reversed_commission_amount ?? 0))
+                    : 0.0;
                 $addMovement(
                     $storeKey,
                     $day,
                     $bucket,
-                    max(0, $amount - $deductFromPaymentBucket)
+                    $amount - $netCommission - $deductFromPaymentBucket
                 );
                 continue;
             }
@@ -890,7 +905,10 @@ class CashSheetController extends Controller
                     (string) ($payment->payment_type ?? '')
                 );
 
-                $bucketNet[$bucket] += max(0, $amount - $refunded);
+                $netCommission = $bucket === 'bank'
+                    ? max(0, (float) ($instrument->commission_amount ?? 0) - (float) ($instrument->reversed_commission_amount ?? 0))
+                    : 0.0;
+                $bucketNet[$bucket] += $amount - $netCommission - $refunded;
                 $childRefundTotal += $refunded;
                 $addCoverage($orderId, $bucket, $refunded);
             }
@@ -902,7 +920,7 @@ class CashSheetController extends Controller
                 0,
                 min((float) $payment->amount, (float) ($payment->refunded_amount ?? 0)) - $childRefundTotal
             );
-            $parentRefundResidual = min($parentRefundResidual, array_sum($bucketNet));
+            $parentRefundResidual = min($parentRefundResidual, array_sum(array_map(fn ($value) => max(0, $value), $bucketNet)));
 
             // Prefer the explicit workflow refund method when it is available.
             foreach (['cash', 'bank', 'ex_on'] as $bucket) {
@@ -946,11 +964,41 @@ class CashSheetController extends Controller
             }
 
             foreach ($bucketNet as $bucket => $amount) {
-                $addMovement($storeKey, $day, $bucket, max(0, $amount));
+                $addMovement($storeKey, $day, $bucket, $amount);
             }
         }
 
         return [$out, $refundCoverage];
+    }
+
+    private function loadBranchCommissions(array $storeIds, string $from, string $to): array
+    {
+        if (empty($storeIds)) {
+            return [];
+        }
+
+        $out = [];
+        PaymentCommissionEntry::query()
+            ->join('orders as o', 'o.id', '=', 'payment_commission_entries.order_id')
+            ->select(
+                'payment_commission_entries.store_id',
+                DB::raw('DATE(payment_commission_entries.business_date) as day'),
+                DB::raw('SUM(payment_commission_entries.net_commission_amount) as total')
+            )
+            ->whereIn('payment_commission_entries.store_id', $storeIds)
+            ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
+            ->whereIn('payment_commission_entries.status', ['active', 'reversed'])
+            ->whereNotIn('o.status', self::CANCELLED_ORDER_STATUSES)
+            ->whereNull('o.deleted_at')
+            ->whereDate('payment_commission_entries.business_date', '>=', $from)
+            ->whereDate('payment_commission_entries.business_date', '<=', $to)
+            ->groupBy('payment_commission_entries.store_id', 'day')
+            ->get()
+            ->each(function ($row) use (&$out) {
+                $out[(string) $row->store_id][(string) $row->day] = round((float) $row->total, 2);
+            });
+
+        return $out;
     }
 
     private function loadBranchRefunds(array $storeIds, string $from, string $to, array $paymentRefundCoverage, array $fullyRefundedOrderIds): array
@@ -974,17 +1022,12 @@ class CashSheetController extends Controller
             )
             ->whereIn('o.store_id', $storeIds)
             ->whereIn('o.order_type', self::BRANCH_ORDER_TYPES)
-            ->whereNotIn('o.status', self::EXCLUDED_ORDER_STATUSES)
-            ->where(function ($query) {
-                $query->whereNull('o.payment_status')->orWhere('o.payment_status', '!=', 'refunded');
-            })
+            ->whereNotIn('o.status', self::CANCELLED_ORDER_STATUSES)
             ->whereNull('o.deleted_at')
             ->whereNull('r.deleted_at')
             ->where('r.status', 'completed')
             ->whereDate('o.order_date', '>=', $from)
             ->whereDate('o.order_date', '<=', $to);
-
-        $this->excludeFullyRefundedOrders($query, $fullyRefundedOrderIds);
 
         $query->orderBy('r.id')
             ->get()
@@ -1099,11 +1142,12 @@ class CashSheetController extends Controller
 
         $query = DB::table('orders as o')
             ->select(
+                'o.id',
                 DB::raw('DATE(o.order_date) as day'),
                 'o.order_type',
-                DB::raw('SUM(o.total_amount) as total_sales'),
-                DB::raw('SUM(o.paid_amount) as paid'),
-                DB::raw('SUM(o.outstanding_amount) as outstanding')
+                'o.total_amount',
+                'o.paid_amount',
+                'o.outstanding_amount'
             )
             ->whereIn('o.order_type', self::ONLINE_ORDER_TYPES)
             ->whereNotIn('o.status', self::EXCLUDED_ORDER_STATUSES)
@@ -1115,21 +1159,34 @@ class CashSheetController extends Controller
             ->whereDate('o.order_date', '<=', $to);
 
         $this->excludeFullyRefundedOrders($query, $fullyRefundedOrderIds);
+        $orders = $query->get();
+        $orderIds = $orders->pluck('id')->map(fn ($id) => (int) $id)->all();
 
-        $query->groupBy('day', 'o.order_type')
-            ->get()
-            ->each(function ($row) use (&$out) {
-                $day = (string) $row->day;
-                $type = strtolower((string) $row->order_type);
-                $out[$day]['daily_sales'] = ($out[$day]['daily_sales'] ?? 0) + (float) $row->total_sales;
+        $commissions = empty($orderIds)
+            ? collect()
+            : PaymentCommissionEntry::selectRaw('order_id, SUM(net_commission_amount) as total')
+                ->whereIn('order_id', $orderIds)
+                ->whereIn('status', ['active', 'reversed'])
+                ->groupBy('order_id')
+                ->pluck('total', 'order_id');
 
-                if ($type === 'social_commerce' || $type === 'lazychat') {
-                    $out[$day]['advance'] = ($out[$day]['advance'] ?? 0) + (float) $row->paid;
-                    $out[$day]['cod'] = ($out[$day]['cod'] ?? 0) + (float) $row->outstanding;
-                } else {
-                    $out[$day]['online_payment'] = ($out[$day]['online_payment'] ?? 0) + (float) $row->paid;
-                }
-            });
+        foreach ($orders as $row) {
+            $day = (string) $row->day;
+            $type = strtolower((string) $row->order_type);
+            $commission = max(0, (float) ($commissions[(int) $row->id] ?? 0));
+            $grossPaid = max(0, (float) $row->paid_amount);
+            $netPaid = max(0, $grossPaid - $commission);
+
+            $out[$day]['daily_sales'] = ($out[$day]['daily_sales'] ?? 0) + (float) $row->total_amount;
+            $out[$day]['commission'] = ($out[$day]['commission'] ?? 0) + $commission;
+
+            if ($type === 'social_commerce' || $type === 'lazychat') {
+                $out[$day]['advance'] = ($out[$day]['advance'] ?? 0) + $netPaid;
+                $out[$day]['cod'] = ($out[$day]['cod'] ?? 0) + (float) $row->outstanding_amount;
+            } else {
+                $out[$day]['online_payment'] = ($out[$day]['online_payment'] ?? 0) + $netPaid;
+            }
+        }
 
         return $out;
     }
@@ -1304,9 +1361,9 @@ class CashSheetController extends Controller
     {
         $summary = [
             'branches' => [],
-            'online' => ['daily_sales' => 0, 'advance' => 0, 'online_payment' => 0, 'cod' => 0],
+            'online' => ['daily_sales' => 0, 'advance' => 0, 'online_payment' => 0, 'cod' => 0, 'commission' => 0],
             'disbursements' => ['sslzc_received' => 0, 'pathao_received' => 0],
-            'totals' => ['total_sale' => 0, 'cash' => 0, 'bank' => 0, 'final_bank' => 0],
+            'totals' => ['total_sale' => 0, 'cash' => 0, 'bank' => 0, 'commission' => 0, 'final_bank' => 0],
             'owner' => [
                 'cash_invest' => 0,
                 'bank_invest' => 0,
@@ -1328,6 +1385,7 @@ class CashSheetController extends Controller
                 'raw_cash' => 0,
                 'cash' => 0,
                 'bank' => 0,
+                'commission' => 0,
                 'ex_on' => 0,
                 'salary' => 0,
                 'cash_to_bank' => 0,
@@ -1337,12 +1395,12 @@ class CashSheetController extends Controller
 
         foreach ($rows as $row) {
             foreach ($row['branches'] as $branch) {
-                foreach (['daily_sale', 'raw_cash', 'cash', 'bank', 'ex_on', 'salary', 'cash_to_bank', 'daily_cost'] as $field) {
+                foreach (['daily_sale', 'raw_cash', 'cash', 'bank', 'commission', 'ex_on', 'salary', 'cash_to_bank', 'daily_cost'] as $field) {
                     $summary['branches'][$branch['store_id']][$field] += (float) $branch[$field];
                 }
             }
 
-            foreach (['daily_sales', 'advance', 'online_payment', 'cod'] as $field) {
+            foreach (['daily_sales', 'advance', 'online_payment', 'cod', 'commission'] as $field) {
                 $summary['online'][$field] += (float) $row['online'][$field];
             }
 
@@ -1350,7 +1408,7 @@ class CashSheetController extends Controller
                 $summary['disbursements'][$field] += (float) $row['disbursements'][$field];
             }
 
-            foreach (['total_sale', 'cash', 'bank', 'final_bank'] as $field) {
+            foreach (['total_sale', 'cash', 'bank', 'commission', 'final_bank'] as $field) {
                 $summary['totals'][$field] += (float) $row['totals'][$field];
             }
 

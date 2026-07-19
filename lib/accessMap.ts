@@ -74,6 +74,7 @@ export const PAGE_ACCESS: Record<string, RoleSlug[]> = {
   '/activity-logs': ['super-admin', 'admin'],
   '/transaction': ['super-admin', 'admin'],
   '/accounting': ['super-admin', 'admin'],
+  '/accounting/payment-commissions': ['super-admin', 'admin'],
   '/employees': ['super-admin', 'admin'],
   '/employees/password': ['super-admin', 'admin'],
   '/settings': ['super-admin', 'admin'],

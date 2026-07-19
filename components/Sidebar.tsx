@@ -191,7 +191,14 @@ export default function Sidebar({ isOpen: controlledOpen, setIsOpen, toggleSideb
     { icon: Search, label: 'Lookup', href: '/lookup' },
     { icon: History, label: 'Activity Log', href: '/activity-logs' },
     { icon: CreditCard, label: 'Transaction', href: '/transaction' },
-    { icon: CreditCard, label: 'Accounting', href: '/accounting' },
+    {
+      icon: CreditCard,
+      label: 'Accounting',
+      subMenu: [
+        { label: 'Overview', href: '/accounting' },
+        { label: 'Payment Commissions', href: '/accounting/payment-commissions' },
+      ],
+    },
     {
       icon: CreditCard,
       label: 'Cash Sheet',
