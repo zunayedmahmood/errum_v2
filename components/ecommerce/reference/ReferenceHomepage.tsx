@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import catalogService, { CatalogCategory, SimpleProduct } from '@/services/catalogService';
@@ -20,30 +20,77 @@ import {
   getHardcodedCategoryImage,
 } from './categoryArtwork';
 
-const preferredCollectionKeywords = ['sneaker', 'watch', 'perfume'];
-const sectionDefinitions = [
-  { eyebrow: 'SNEAKERS', title: 'LATEST SNEAKER DROPS', keywords: ['sneaker', 'shoe', 'jordan', 'nike'] },
-  { eyebrow: 'T-SHIRT', title: 'CLASSY CLOTHING ESSENTIALS', keywords: ['clothing', 'shirt', 't-shirt', 'panjabi', 'pant'] },
-  { eyebrow: 'PERFUME FRAGRANCE', title: 'LUXURY SCENTS & PERFUMES', keywords: ['perfume', 'fragrance', 'scent'] },
-  { eyebrow: 'FASHION ACCESSORIES', title: 'PREMIUM TIMEPIECES & WATCHES', keywords: ['watch', 'accessories', 'cap', 'shawl'] },
+const HERO_FORWARD_MS = 14_800;
+const HERO_REVERSE_MS = 14_800;
+const HERO_ENDPOINT_HOLD_MS = 950;
+const HERO_TEXT_HOLD_MS = 7_200;
+const FEATURED_DROP_HOLD_MS = 5_200;
+const FEATURED_DROP_TRANSITION_MS = 920;
+
+const HERO_TYPED_ITEMS = [
+  'ERRUMBD',
+  ...HARDCODED_CATEGORY_ARTWORK.map((item) => item.slug.toUpperCase()),
 ];
 
-const getCategoryMatch = (product: SimpleProduct, keywords: string[]) => {
-  const haystack = `${categoryName(product)} ${productName(product)}`.toLowerCase();
-  return keywords.some((keyword) => haystack.includes(keyword));
-};
-
-const HERO_FLOW_MS = 34_000;
-const HERO_TEXT_HOLD_MS = 7_400;
+const preferredCollectionKeywords = ['sneaker', 'watch', 'perfume'];
+const sectionDefinitions = [
+  { eyebrow: 'SNEAKERS', title: 'LATEST SNEAKER DROPS', keywords: ['sneaker', 'shoe', 'nike', 'jordan'] },
+  { eyebrow: 'T-SHIRT', title: 'CLASSY CLOTHING ESSENTIALS', keywords: ['clothing', 'shirt', 't-shirt', 'polo', 'panjabi', 'pants'] },
+  { eyebrow: 'PERFUME FRAGRANCE', title: 'LUXURY SCENTS & PERFUMES', keywords: ['perfume', 'fragrance', 'scent'] },
+  { eyebrow: 'FASHION ACCESSORIES', title: 'PREMIUM TIMEPIECES & WATCHES', keywords: ['watch', 'accessories', 'cap', 'shemagh'] },
+];
 
 const sleep = (duration: number) => new Promise<void>((resolve) => window.setTimeout(resolve, duration));
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
-const smoothstep = (edge0: number, edge1: number, value: number) => {
-  const x = clamp01((value - edge0) / Math.max(0.0001, edge1 - edge0));
-  return x * x * (3 - (2 * x));
+
+const getCategoryMatch = (product: SimpleProduct, keywords: string[]): boolean => {
+  const raw = product as any;
+  const searchable = [
+    categoryName(product),
+    productName(product),
+    raw?.category?.slug,
+    raw?.category_slug,
+    raw?.subcategory?.name,
+    raw?.brand?.name,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return keywords.some((keyword) => searchable.includes(keyword.toLowerCase()));
 };
 
-/** The typing clock is intentionally independent from the category-card conveyor. */
+/**
+ * Shared hero displacement.
+ *
+ * Position follows a cosine ease so velocity follows a sine curve: every card
+ * starts together, accelerates together, slows together, stops at the far end,
+ * then reverses through the exact same path. Cards never take turns and never
+ * run on independent timers.
+ */
+const heroSeeSawPosition = (elapsed: number): number => {
+  const cycle = HERO_ENDPOINT_HOLD_MS
+    + HERO_FORWARD_MS
+    + HERO_ENDPOINT_HOLD_MS
+    + HERO_REVERSE_MS;
+  const local = ((elapsed % cycle) + cycle) % cycle;
+
+  if (local < HERO_ENDPOINT_HOLD_MS) return 0;
+
+  const forwardEnd = HERO_ENDPOINT_HOLD_MS + HERO_FORWARD_MS;
+  if (local < forwardEnd) {
+    const progress = (local - HERO_ENDPOINT_HOLD_MS) / HERO_FORWARD_MS;
+    return 0.5 - (0.5 * Math.cos(Math.PI * progress));
+  }
+
+  const farHoldEnd = forwardEnd + HERO_ENDPOINT_HOLD_MS;
+  if (local < farHoldEnd) return 1;
+
+  const reverseProgress = (local - farHoldEnd) / HERO_REVERSE_MS;
+  return 0.5 + (0.5 * Math.cos(Math.PI * reverseProgress));
+};
+
+/** The typing clock is intentionally independent from the category-card motion. */
 function TypewriterTitle({ text }: { text: string }) {
   const [visible, setVisible] = useState('');
   const visibleRef = useRef('');
@@ -62,15 +109,15 @@ function TypewriterTitle({ text }: { text: string }) {
       while (!cancelled && current.length > 0) {
         current = current.slice(0, -1);
         commit(current);
-        await sleep(48);
+        await sleep(58);
       }
 
       if (cancelled) return;
-      await sleep(260);
+      await sleep(380);
 
       for (let index = 1; index <= text.length && !cancelled; index += 1) {
         commit(text.slice(0, index));
-        await sleep(115);
+        await sleep(132);
       }
     };
 
@@ -87,7 +134,7 @@ function CategoryMotionHero() {
 
   useEffect(() => {
     const timer = window.setInterval(
-      () => setTextIndex((value) => (value + 1) % HARDCODED_CATEGORY_ARTWORK.length),
+      () => setTextIndex((value) => (value + 1) % HERO_TYPED_ITEMS.length),
       HERO_TEXT_HOLD_MS,
     );
     return () => window.clearInterval(timer);
@@ -104,42 +151,33 @@ function CategoryMotionHero() {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let frame = 0;
     let startedAt = performance.now();
+    let hiddenAt: number | null = null;
 
     const renderTrack = (now: number) => {
       const mobile = window.innerWidth < 768;
-      const duration = mobile ? HERO_FLOW_MS * 0.9 : HERO_FLOW_MS;
-      const elapsed = reducedMotion ? 0 : now - startedAt;
-      const globalProgress = (elapsed % duration) / duration;
-      const count = HARDCODED_CATEGORY_ARTWORK.length;
+      const elapsed = reducedMotion ? (HERO_FORWARD_MS * 0.42) : now - startedAt;
+      const displacement = heroSeeSawPosition(elapsed);
+
+      const startX = mobile ? -43 : -13;
+      const stepX = mobile ? 58 : 25.6;
+      const travelX = mobile ? 76 : 55;
+      const travelY = mobile ? 18 : 20;
+      const baseYPattern = mobile
+        ? [49, 34, 18, 3, -10, -18, -9, 7, 23]
+        : [57, 42, 27, 12, -3, -16, -10, 4, 19];
 
       panelRefs.current.forEach((panel, index) => {
         if (!panel) return;
 
-        // Every card shares the same uninterrupted conveyor timeline. The phase
-        // offsets distribute cards evenly so there is always a continuous flow;
-        // no card waits for another card, and there are no endpoint pauses.
-        const progress = reducedMotion
-          ? ((index + 1) / (count + 2))
-          : (globalProgress + (index / count)) % 1;
-
-        const x = mobile
-          ? 111 - (151 * progress)
-          : 112 - (146 * progress);
-        const y = mobile
-          ? -8 + (113 * progress)
-          : -10 + (109 * progress);
+        const x = startX + (index * stepX) - (travelX * displacement);
+        const y = (baseYPattern[index] ?? -12) + (travelY * displacement);
         const scale = mobile
-          ? 1.04 - (0.50 * progress)
-          : 1.06 - (0.46 * progress);
+          ? 1 - (0.045 * displacement)
+          : 1 - (0.035 * displacement);
 
-        const fadeIn = smoothstep(0.005, 0.085, progress);
-        const fadeOut = 1 - smoothstep(0.88, 0.995, progress);
-        const opacity = clamp01(fadeIn * fadeOut);
-
-        panel.style.transform = `translate3d(${x}vw, ${y}vh, 0) scale(${Math.max(0.52, scale)})`;
-        panel.style.opacity = opacity.toFixed(3);
-        panel.style.zIndex = String(Math.round(110 - (progress * 40)));
-        panel.style.pointerEvents = opacity > 0.2 ? 'auto' : 'none';
+        panel.style.transform = `translate3d(${x}vw, ${y}vh, 0) scale(${scale})`;
+        panel.style.zIndex = String(20 + index);
+        panel.style.pointerEvents = x > -80 && x < 115 ? 'auto' : 'none';
       });
 
       frame = window.requestAnimationFrame(renderTrack);
@@ -147,25 +185,28 @@ function CategoryMotionHero() {
 
     frame = window.requestAnimationFrame(renderTrack);
 
-    const resumeWithoutJump = () => {
-      if (document.visibilityState === 'visible') startedAt = performance.now();
+    const preserveTimelineAcrossTabChanges = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = performance.now();
+      } else if (hiddenAt !== null) {
+        startedAt += performance.now() - hiddenAt;
+        hiddenAt = null;
+      }
     };
-    document.addEventListener('visibilitychange', resumeWithoutJump);
+    document.addEventListener('visibilitychange', preserveTimelineAcrossTabChanges);
 
     return () => {
       window.cancelAnimationFrame(frame);
-      document.removeEventListener('visibilitychange', resumeWithoutJump);
+      document.removeEventListener('visibilitychange', preserveTimelineAcrossTabChanges);
     };
   }, []);
-
-  const typedSlug = `ERRUMBD/${HARDCODED_CATEGORY_ARTWORK[textIndex].slug.toUpperCase()}`;
 
   return (
     <section className="ref-hero">
       <Navigation transparent />
       <div className="ref-hero__copy">
         <h1 className="font-display text-[10vw] md:text-[12vw] lg:text-[9vw] font-black leading-[0.82] tracking-tighter text-accent uppercase select-none ref-hero__title">
-          <TypewriterTitle text={typedSlug} />
+          <TypewriterTitle text={HERO_TYPED_ITEMS[textIndex]} />
         </h1>
         <p>ERRUM — PREMIUM STREETWEAR CATALOG,<br />CURATING CULTURE FOR SNEAKERHEADS.</p>
         <strong>AUTHENTIC. LIMITED. HIGH-END.</strong>
@@ -184,7 +225,7 @@ function CategoryMotionHero() {
             <img
               src={item.image}
               alt={item.name}
-              loading={index < 5 ? 'eager' : 'lazy'}
+              loading={index < 6 ? 'eager' : 'lazy'}
               decoding="async"
             />
             <span>
@@ -199,29 +240,99 @@ function CategoryMotionHero() {
   );
 }
 
+type FeaturedDirection = 'forward' | 'backward';
+
 function FeaturedDrop({ products }: { products: SimpleProduct[] }) {
   const [active, setActive] = useState(0);
+  const [outgoing, setOutgoing] = useState<number | null>(null);
+  const [direction, setDirection] = useState<FeaturedDirection>('forward');
+  const [transitionSerial, setTransitionSerial] = useState(0);
+  const cleanupTimer = useRef<number | null>(null);
+  const productSignature = products.map((item) => item.id).join(':');
+
+  useEffect(() => {
+    setActive(0);
+    setOutgoing(null);
+    setTransitionSerial(0);
+  }, [productSignature]);
+
+  useEffect(() => () => {
+    if (cleanupTimer.current !== null) window.clearTimeout(cleanupTimer.current);
+  }, []);
+
+  const transitionTo = useCallback((nextIndex: number, forcedDirection?: FeaturedDirection) => {
+    if (products.length < 2 || nextIndex === active) return;
+
+    if (cleanupTimer.current !== null) window.clearTimeout(cleanupTimer.current);
+    setOutgoing(active);
+    setDirection(forcedDirection || (nextIndex > active ? 'forward' : 'backward'));
+    setActive(nextIndex);
+    setTransitionSerial((value) => value + 1);
+    cleanupTimer.current = window.setTimeout(() => {
+      setOutgoing(null);
+      cleanupTimer.current = null;
+    }, FEATURED_DROP_TRANSITION_MS);
+  }, [active, products.length]);
+
   useEffect(() => {
     if (products.length < 2) return;
-    const timer = window.setInterval(() => setActive((value) => (value + 1) % products.length), 4200);
+    const timer = window.setInterval(() => {
+      const next = (active + 1) % products.length;
+      transitionTo(next, 'forward');
+    }, FEATURED_DROP_HOLD_MS);
     return () => window.clearInterval(timer);
-  }, [products.length]);
+  }, [active, products.length, transitionTo]);
+
   if (!products.length) return null;
-  const product = products[active];
-  return (
-    <section className="ref-featured-drop">
+  const activeProduct = products[active];
+  const outgoingProduct = outgoing === null ? null : products[outgoing];
+
+  const renderScene = (
+    product: SimpleProduct,
+    state: 'entering' | 'leaving',
+    sceneKey: string,
+  ) => (
+    <div
+      key={sceneKey}
+      className={`ref-featured-drop__scene is-${state} direction-${direction}`}
+      aria-hidden={state === 'leaving'}
+    >
       <div className="ref-featured-drop__watermark">{(product.base_name || product.name).split(' ')[0]}</div>
       <Link href={`/e-commerce/product/${product.id}`} className="ref-featured-drop__image">
-        <img key={product.id} src={productImage(product)} alt={productName(product)} />
+        <img src={productImage(product)} alt={productName(product)} />
       </Link>
       <div className="ref-featured-drop__copy">
         <span>FEATURED DROP</span>
         <h2>{productName(product)}</h2>
         <b>{formatProductPrice(product)}</b>
       </div>
-      <Link href={`/e-commerce/product/${product.id}`} className="ref-featured-drop__shop">SHOP NOW <ArrowUpRight size={15} /></Link>
+      <Link href={`/e-commerce/product/${product.id}`} className="ref-featured-drop__shop">
+        SHOP NOW <ArrowUpRight size={15} />
+      </Link>
+    </div>
+  );
+
+  return (
+    <section className="ref-featured-drop" aria-live="polite">
+      {outgoingProduct && renderScene(
+        outgoingProduct,
+        'leaving',
+        `outgoing-${outgoingProduct.id}-${transitionSerial}`,
+      )}
+      {renderScene(
+        activeProduct,
+        'entering',
+        `active-${activeProduct.id}-${transitionSerial}`,
+      )}
       <div className="ref-featured-drop__dots">
-        {products.map((item, index) => <button key={item.id} className={index === active ? 'is-active' : ''} onClick={() => setActive(index)} aria-label={`Show ${productName(item)}`} />)}
+        {products.map((item, index) => (
+          <button
+            key={item.id}
+            className={index === active ? 'is-active' : ''}
+            onClick={() => transitionTo(index, index < active ? 'backward' : 'forward')}
+            aria-label={`Show ${productName(item)}`}
+          />
+        ))}
       </div>
     </section>
   );
@@ -269,7 +380,6 @@ export default function ReferenceHomepage() {
         const displayProducts = groupedDisplayProducts(productResponse);
         setCategories(topCategories);
         setProducts(displayProducts);
-
       } catch (error) {
         console.error('Failed to load ERRUM storefront', error);
       } finally {
@@ -286,13 +396,21 @@ export default function ReferenceHomepage() {
       const category = categories.find((item) => item.name.toLowerCase().includes(keyword));
       if (category) {
         const product = products.find((item) => getCategoryMatch(item, [keyword]));
-        selected.push({ category, image: product ? productImage(product) : (getHardcodedCategoryImage(category) || categoryImage(category)), label: keyword === 'sneaker' ? 'ICONIC SNEAKERS' : keyword === 'watch' ? 'WATCHES' : 'LUXURY SCENTS' });
+        selected.push({
+          category,
+          image: product ? productImage(product) : (getHardcodedCategoryImage(category) || categoryImage(category)),
+          label: keyword === 'sneaker' ? 'ICONIC SNEAKERS' : keyword === 'watch' ? 'WATCHES' : 'LUXURY SCENTS',
+        });
       }
     });
     categories.forEach((category) => {
       if (selected.length >= 3 || selected.some((item) => item.category.id === category.id)) return;
       const product = products.find((item) => categoryName(item).toLowerCase().includes(category.name.toLowerCase()));
-      selected.push({ category, image: product ? productImage(product) : (getHardcodedCategoryImage(category) || categoryImage(category)), label: category.name.toUpperCase() });
+      selected.push({
+        category,
+        image: product ? productImage(product) : (getHardcodedCategoryImage(category) || categoryImage(category)),
+        label: category.name.toUpperCase(),
+      });
     });
     return selected.slice(0, 3);
   }, [categories, products]);

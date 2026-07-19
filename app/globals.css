@@ -1664,3 +1664,195 @@ body {
     flex-basis: 38px;
   }
 }
+
+/* Jul 20: editorial see-saw hero, exact artwork clarity, fitted product cards, and featured-drop transitions */
+.ref-hero:after {
+  background: linear-gradient(90deg, rgba(0,0,0,.72) 0%, rgba(0,0,0,.34) 19%, rgba(0,0,0,0) 37%);
+}
+.ref-hero__copy {
+  top: 17vh;
+}
+.ref-hero__copy h1,
+.ref-hero__copy .ref-hero__title {
+  max-width: 55vw;
+  text-overflow: clip;
+}
+.ref-hero-panel--motion {
+  width: min(25.8vw, 455px);
+  height: max(760px, 102vh);
+  opacity: 1;
+  transform-origin: 50% 50%;
+  box-shadow: -16px 0 34px rgba(0,0,0,.18);
+  border-left: 1px solid rgba(255,255,255,.055);
+}
+.ref-hero-panel--motion:after {
+  background: linear-gradient(180deg, rgba(0,0,0,0) 70%, rgba(0,0,0,.13) 100%);
+}
+.ref-hero-panel img,
+.ref-hero-panel:hover img {
+  filter: none;
+  opacity: 1;
+}
+.ref-hero-panel img {
+  object-position: center center;
+  transition: transform .8s cubic-bezier(.2,.7,.2,1);
+}
+.ref-hero-panel:hover img {
+  transform: scale(1.025);
+}
+.ref-hero-panel span {
+  top: 18px;
+  left: 18px;
+  text-shadow: 0 2px 12px rgba(0,0,0,.76);
+}
+
+/* Product photography is predominantly 1200×1600 (3:4). Matching the card
+   frame to the source ratio removes the accidental vertical crop. */
+.ref-product-card__image,
+.ref-product-skeleton > div {
+  aspect-ratio: 3 / 4;
+}
+.ref-product-card__image img {
+  object-position: center center;
+}
+.ref-product-card__image.is-studio img {
+  object-fit: contain;
+  padding: 3.5%;
+}
+.ref-product-card__image.is-editorial img {
+  object-fit: cover;
+  padding: 0;
+}
+
+/* Featured products now cross-slide instead of replacing abruptly. */
+.ref-featured-drop__scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ref-featured-drop__scene.is-entering {
+  z-index: 2;
+  pointer-events: auto;
+}
+.ref-featured-drop__scene.is-leaving {
+  z-index: 1;
+}
+.ref-featured-drop__scene .ref-featured-drop__image,
+.ref-featured-drop__scene .ref-featured-drop__copy,
+.ref-featured-drop__scene .ref-featured-drop__shop,
+.ref-featured-drop__scene .ref-featured-drop__watermark {
+  animation-duration: .92s;
+  animation-timing-function: cubic-bezier(.22,.74,.18,1);
+  animation-fill-mode: both;
+}
+.ref-featured-drop__scene .ref-featured-drop__image {
+  animation-name: none;
+}
+.ref-featured-drop__scene.is-entering.direction-forward .ref-featured-drop__image {
+  animation-name: refFeaturedImageInForward;
+}
+.ref-featured-drop__scene.is-leaving.direction-forward .ref-featured-drop__image {
+  animation-name: refFeaturedImageOutForward;
+}
+.ref-featured-drop__scene.is-entering.direction-backward .ref-featured-drop__image {
+  animation-name: refFeaturedImageInBackward;
+}
+.ref-featured-drop__scene.is-leaving.direction-backward .ref-featured-drop__image {
+  animation-name: refFeaturedImageOutBackward;
+}
+.ref-featured-drop__scene.is-entering.direction-forward .ref-featured-drop__copy,
+.ref-featured-drop__scene.is-entering.direction-forward .ref-featured-drop__shop {
+  animation-name: refFeaturedCopyInForward;
+}
+.ref-featured-drop__scene.is-entering.direction-backward .ref-featured-drop__copy,
+.ref-featured-drop__scene.is-entering.direction-backward .ref-featured-drop__shop {
+  animation-name: refFeaturedCopyInBackward;
+}
+.ref-featured-drop__scene.is-leaving.direction-forward .ref-featured-drop__copy,
+.ref-featured-drop__scene.is-leaving.direction-forward .ref-featured-drop__shop {
+  animation-name: refFeaturedCopyOutForward;
+}
+.ref-featured-drop__scene.is-leaving.direction-backward .ref-featured-drop__copy,
+.ref-featured-drop__scene.is-leaving.direction-backward .ref-featured-drop__shop {
+  animation-name: refFeaturedCopyOutBackward;
+}
+.ref-featured-drop__scene.is-entering .ref-featured-drop__watermark {
+  animation-name: refFeaturedWatermarkIn;
+}
+.ref-featured-drop__scene.is-leaving .ref-featured-drop__watermark {
+  animation-name: refFeaturedWatermarkOut;
+}
+.ref-featured-drop__dots {
+  z-index: 6;
+}
+
+@keyframes refFeaturedImageInForward {
+  from { opacity:0; transform:translate(-31%,-56%) scale(.86) rotate(2.5deg); clip-path:inset(0 0 0 100%); }
+  to { opacity:1; transform:translate(-50%,-50%) scale(1) rotate(0); clip-path:inset(0 0 0 0); }
+}
+@keyframes refFeaturedImageOutForward {
+  from { opacity:1; transform:translate(-50%,-50%) scale(1); clip-path:inset(0 0 0 0); }
+  to { opacity:0; transform:translate(-72%,-43%) scale(.9) rotate(-2deg); clip-path:inset(0 100% 0 0); }
+}
+@keyframes refFeaturedImageInBackward {
+  from { opacity:0; transform:translate(-70%,-44%) scale(.86) rotate(-2.5deg); clip-path:inset(0 100% 0 0); }
+  to { opacity:1; transform:translate(-50%,-50%) scale(1) rotate(0); clip-path:inset(0 0 0 0); }
+}
+@keyframes refFeaturedImageOutBackward {
+  from { opacity:1; transform:translate(-50%,-50%) scale(1); clip-path:inset(0 0 0 0); }
+  to { opacity:0; transform:translate(-30%,-57%) scale(.9) rotate(2deg); clip-path:inset(0 0 0 100%); }
+}
+@keyframes refFeaturedCopyInForward {
+  from { opacity:0; transform:translateX(42px); }
+  to { opacity:1; transform:translateX(0); }
+}
+@keyframes refFeaturedCopyOutForward {
+  from { opacity:1; transform:translateX(0); }
+  to { opacity:0; transform:translateX(-40px); }
+}
+@keyframes refFeaturedCopyInBackward {
+  from { opacity:0; transform:translateX(-42px); }
+  to { opacity:1; transform:translateX(0); }
+}
+@keyframes refFeaturedCopyOutBackward {
+  from { opacity:1; transform:translateX(0); }
+  to { opacity:0; transform:translateX(40px); }
+}
+@keyframes refFeaturedWatermarkIn {
+  from { opacity:0; transform:scale(1.08); }
+  to { opacity:1; transform:scale(1); }
+}
+@keyframes refFeaturedWatermarkOut {
+  from { opacity:1; transform:scale(1); }
+  to { opacity:0; transform:scale(.94); }
+}
+
+@media (max-width: 700px) {
+  .ref-hero__copy {
+    top: 12vh;
+  }
+  .ref-hero__copy h1,
+  .ref-hero__copy .ref-hero__title {
+    max-width: calc(100vw - 24px);
+    font-size: 14vw;
+  }
+  .ref-hero-panel--motion {
+    width: 68vw;
+    height: 94svh;
+    min-height: 660px;
+  }
+  .ref-product-card__image,
+  .ref-product-skeleton > div {
+    aspect-ratio: 3 / 4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ref-featured-drop__scene .ref-featured-drop__image,
+  .ref-featured-drop__scene .ref-featured-drop__copy,
+  .ref-featured-drop__scene .ref-featured-drop__shop,
+  .ref-featured-drop__scene .ref-featured-drop__watermark {
+    animation-duration: .01ms !important;
+  }
+}
