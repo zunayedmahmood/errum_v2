@@ -20,6 +20,19 @@ import {
   getHardcodedCategoryImage,
 } from './categoryArtwork';
 
+const preferredCollectionKeywords = ['sneaker', 'watch', 'perfume'];
+const sectionDefinitions = [
+  { eyebrow: 'SNEAKERS', title: 'LATEST SNEAKER DROPS', keywords: ['sneaker', 'shoe', 'jordan', 'nike'] },
+  { eyebrow: 'T-SHIRT', title: 'CLASSY CLOTHING ESSENTIALS', keywords: ['clothing', 'shirt', 't-shirt', 'panjabi', 'pant'] },
+  { eyebrow: 'PERFUME FRAGRANCE', title: 'LUXURY SCENTS & PERFUMES', keywords: ['perfume', 'fragrance', 'scent'] },
+  { eyebrow: 'FASHION ACCESSORIES', title: 'PREMIUM TIMEPIECES & WATCHES', keywords: ['watch', 'accessories', 'cap', 'shawl'] },
+];
+
+const getCategoryMatch = (product: SimpleProduct, keywords: string[]) => {
+  const haystack = `${categoryName(product)} ${productName(product)}`.toLowerCase();
+  return keywords.some((keyword) => haystack.includes(keyword));
+};
+
 const HERO_FLOW_MS = 34_000;
 const HERO_TEXT_HOLD_MS = 7_400;
 
