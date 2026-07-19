@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Package } from 'lucide-react';
 import Navigation from '@/components/ecommerce/Navigation';
@@ -18,13 +18,23 @@ export default function CollectionPage() {
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
+  const latestRequest = useRef(0);
 
-  const load = async (targetPage = 1, append = false) => {
+  const load = useCallback(async (targetPage = 1, append = false) => {
     if (!slug) return;
+    const requestNumber = ++latestRequest.current;
     setLoading(true);
+    if (!append) {
+      setProducts([]);
+      setCollection(null);
+      setError(false);
+    }
+
     try {
       const response = await catalogService.getCollection(slug, { page: targetPage });
+      if (requestNumber !== latestRequest.current) return;
       if (!response?.success) throw new Error('Collection not found');
+
       setCollection(response.collection);
       const payload = response.products || {};
       const next = Array.isArray(payload.data)
@@ -37,14 +47,21 @@ export default function CollectionPage() {
       setLastPage(Number(payload.last_page || 1));
       setError(false);
     } catch (requestError) {
+      if (requestNumber !== latestRequest.current) return;
       console.error('Unable to load collection:', requestError);
       setError(true);
     } finally {
-      setLoading(false);
+      if (requestNumber === latestRequest.current) setLoading(false);
     }
-  };
+  }, [slug]);
 
-  useEffect(() => { load(1, false); }, [slug]);
+  useEffect(() => {
+    if (!slug) return;
+    setPage(1);
+    load(1, false);
+  }, [load, slug]);
+
+  if (!slug) return <div className="ref-page-loader">LOADING COLLECTION...</div>;
 
   return (
     <main className="ref-storefront ref-catalog-page ref-collection-page">
@@ -62,12 +79,15 @@ export default function CollectionPage() {
             {collection?.banner_url && <img src={collection.banner_url} alt="" />}
             <div>
               <span>CURATED COLLECTION</span>
-              <h1>{collection?.name || 'ERRUM COLLECTION'}</h1>
+              <h1>{collection?.name || (loading ? 'LOADING COLLECTION' : 'ERRUM COLLECTION')}</h1>
               <p>{collection?.description || 'A focused selection of premium ERRUM releases.'}</p>
             </div>
           </header>
           <section className="ref-collection-results">
             <div className="ref-product-grid">
+              {loading && !products.length && Array.from({ length: 8 }).map((_, index) => (
+                <div className="ref-product-skeleton" key={`collection-skeleton-${index}`}><div /><i /><b /></div>
+              ))}
               {products.map((product, index) => (
                 <PremiumProductCard
                   key={product.id}
@@ -78,7 +98,7 @@ export default function CollectionPage() {
                 />
               ))}
             </div>
-            {loading && <div className="ref-loading-grid">LOADING DROPS...</div>}
+            {loading && !!products.length && <div className="ref-loading-grid">LOADING DROPS...</div>}
             {!loading && !products.length && <div className="ref-empty-state"><h2>THIS COLLECTION IS BEING CURATED</h2><p>Check back soon for new releases.</p></div>}
             {!loading && page < lastPage && (
               <button className="ref-load-more" onClick={() => load(page + 1, true)}>LOAD MORE DROPS</button>

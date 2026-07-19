@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Heart, X } from 'lucide-react';
 import type { CatalogCategory } from '@/services/catalogService';
 import { categoryImage, slugify } from '../reference/storefrontUtils';
+import { getHardcodedCategoryImage } from '../reference/categoryArtwork';
 
 export default function GlobalCategorySidebar({ categories, isOpen, onClose }: { categories: CatalogCategory[]; isOpen: boolean; onClose: () => void }) {
   const router = useRouter();
@@ -16,7 +17,7 @@ export default function GlobalCategorySidebar({ categories, isOpen, onClose }: {
       <header><span>☰ CATEGORIES</span><button onClick={onClose}><X size={18} /></button></header>
       <div className="ref-category-drawer__grid">
         {all.map((category) => <button key={category.id} onClick={() => go(`/e-commerce/${category.slug || slugify(category.name)}`)}>
-          <img src={categoryImage(category)} alt="" /><span>{category.name}</span>
+          <img src={getHardcodedCategoryImage(category) || categoryImage(category)} alt="" loading="lazy" decoding="async" /><span>{category.name}</span>
         </button>)}
       </div>
       <footer>

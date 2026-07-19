@@ -9,94 +9,28 @@ import PremiumProductCard from '@/components/ecommerce/ui/PremiumProductCard';
 import {
   categoryImage,
   categoryName,
-  formatPrice,
+  formatProductPrice,
   groupedDisplayProducts,
   productImage,
   productName,
   slugify,
 } from './storefrontUtils';
+import {
+  HARDCODED_CATEGORY_ARTWORK,
+  getHardcodedCategoryImage,
+} from './categoryArtwork';
 
-interface HeroCategory {
-  id: number;
-  name: string;
-  image: string;
-  slug: string;
-}
-
-/**
- * The opening sequence is intentionally editorial and fixed. It must not
- * inherit category imagery, timings, or ordering from the old homepage
- * builder. These URLs and slugs are the approved hero art direction.
- */
-const HARD_CODED_HERO_CATEGORIES: HeroCategory[] = [
-  {
-    id: 1,
-    name: 'Sneakers',
-    slug: 'sneakers',
-    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1QwUTHfvg8DHT06M7iyIpbKpTRV4s8KbJ&w=1920&q=85&output=webp',
-  },
-  {
-    id: 2,
-    name: 'Perfume Fragrance',
-    slug: 'perfume-fragrance',
-    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1GohK21mbp8ZEnD-YW2ZLHeGxA2Jn_UAL&w=1920&q=85&output=webp',
-  },
-  {
-    id: 3,
-    name: 'Watch',
-    slug: 'watch',
-    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1OarJLZNpu59uYs080pXPa9txdgPcNIFq&w=1920&q=85&output=webp',
-  },
-  {
-    id: 4,
-    name: 'Clothing',
-    slug: 'clothing',
-    image: 'https://www.errumbd.com/bento_streetwear.png',
-  },
-  {
-    id: 5,
-    name: 'Fashion Accessories',
-    slug: 'fashion-accessories',
-    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1rp4wszr3H0GXsBEeBywfVi60BEqgv3x-&w=1920&q=85&output=webp',
-  },
-  {
-    id: 6,
-    name: 'Imported Slides',
-    slug: 'imported-slides',
-    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1ebQIb1sbsK8zQqT3NcsT9WtkxfmHVDDD&w=1920&q=85&output=webp',
-  },
-  {
-    id: 7,
-    name: 'Shoe Care',
-    slug: 'shoe-care',
-    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1U5uCqP4aGHoW6vOvvtJ-tWhjBMvkxRbo&w=1920&q=85&output=webp',
-  },
-  {
-    id: 8,
-    name: 'Thobe',
-    slug: 'thobe',
-    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1DyluZChLDjNY0nLISKlVMvlCy2BwlOjW&w=1920&q=85&output=webp',
-  },
-  {
-    id: 9,
-    name: 'Winter Collection',
-    slug: 'winter-collection',
-    image: 'https://wsrv.nl/?url=https%3A%2F%2Flh3.googleusercontent.com%2Fd%2F1rGQ6djeFKQR9jDBX708AeAlX3VEc4aw1&w=1920&q=85&output=webp',
-  },
-];
-
-const HERO_FORWARD_MS = 18_500;
-const HERO_END_PAUSE_MS = 1_650;
-const HERO_TEXT_HOLD_MS = 6_200;
+const HERO_FLOW_MS = 34_000;
+const HERO_TEXT_HOLD_MS = 7_400;
 
 const sleep = (duration: number) => new Promise<void>((resolve) => window.setTimeout(resolve, duration));
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 const smoothstep = (edge0: number, edge1: number, value: number) => {
-  const x = clamp01((value - edge0) / (edge1 - edge0));
-  return x * x * (3 - 2 * x);
+  const x = clamp01((value - edge0) / Math.max(0.0001, edge1 - edge0));
+  return x * x * (3 - (2 * x));
 };
 
-/** Fixed-speed typewriter. Its clock is deliberately separate from the card motion. */
+/** The typing clock is intentionally independent from the category-card conveyor. */
 function TypewriterTitle({ text }: { text: string }) {
   const [visible, setVisible] = useState('');
   const visibleRef = useRef('');
@@ -112,19 +46,18 @@ function TypewriterTitle({ text }: { text: string }) {
     const animate = async () => {
       let current = visibleRef.current;
 
-      // Erasing remains quicker than typing, but is not tied to hero travel.
       while (!cancelled && current.length > 0) {
         current = current.slice(0, -1);
         commit(current);
-        await sleep(42);
+        await sleep(48);
       }
 
       if (cancelled) return;
-      await sleep(180);
+      await sleep(260);
 
       for (let index = 1; index <= text.length && !cancelled; index += 1) {
         commit(text.slice(0, index));
-        await sleep(92);
+        await sleep(115);
       }
     };
 
@@ -139,18 +72,16 @@ function CategoryMotionHero() {
   const panelRefs = useRef<Array<HTMLAnchorElement | null>>([]);
   const [textIndex, setTextIndex] = useState(0);
 
-  // Text changes on its own clock. It does not derive from the oscillator.
   useEffect(() => {
     const timer = window.setInterval(
-      () => setTextIndex((value) => (value + 1) % HARD_CODED_HERO_CATEGORIES.length),
+      () => setTextIndex((value) => (value + 1) % HARDCODED_CATEGORY_ARTWORK.length),
       HERO_TEXT_HOLD_MS,
     );
     return () => window.clearInterval(timer);
   }, []);
 
-  // Preload the approved hero art before each card reaches the visible track.
   useEffect(() => {
-    HARD_CODED_HERO_CATEGORIES.forEach((item) => {
+    HARDCODED_CATEGORY_ARTWORK.forEach((item) => {
       const image = new window.Image();
       image.src = item.image;
     });
@@ -158,67 +89,63 @@ function CategoryMotionHero() {
 
   useEffect(() => {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const totalCycle = (HERO_FORWARD_MS * 2) + (HERO_END_PAUSE_MS * 2);
     let frame = 0;
     let startedAt = performance.now();
 
     const renderTrack = (now: number) => {
       const mobile = window.innerWidth < 768;
-      const spacing = mobile ? 0.34 : 0.255;
-      const startingTravel = mobile ? 0.72 : 0.86;
-      const visibleSlots = mobile ? 3 : 4;
-      const maxShift = Math.max(0, HARD_CODED_HERO_CATEGORIES.length - visibleSlots);
-
-      let shift = 0;
-      if (!reducedMotion) {
-        const elapsed = (now - startedAt) % totalCycle;
-        if (elapsed < HERO_FORWARD_MS) {
-          const progress = elapsed / HERO_FORWARD_MS;
-          // Cosine displacement produces a sinusoidal velocity curve: accelerate,
-          // decelerate to zero, pause, and perform the exact reverse journey.
-          shift = (0.5 - (0.5 * Math.cos(Math.PI * progress))) * maxShift;
-        } else if (elapsed < HERO_FORWARD_MS + HERO_END_PAUSE_MS) {
-          shift = maxShift;
-        } else if (elapsed < (HERO_FORWARD_MS * 2) + HERO_END_PAUSE_MS) {
-          const progress = (elapsed - HERO_FORWARD_MS - HERO_END_PAUSE_MS) / HERO_FORWARD_MS;
-          shift = (0.5 + (0.5 * Math.cos(Math.PI * progress))) * maxShift;
-        } else {
-          shift = 0;
-        }
-      }
+      const duration = mobile ? HERO_FLOW_MS * 0.9 : HERO_FLOW_MS;
+      const elapsed = reducedMotion ? 0 : now - startedAt;
+      const globalProgress = (elapsed % duration) / duration;
+      const count = HARDCODED_CATEGORY_ARTWORK.length;
 
       panelRefs.current.forEach((panel, index) => {
         if (!panel) return;
-        const travel = startingTravel + (shift * spacing) - (index * spacing);
-        const x = mobile ? 80 - (118 * travel) : 80 - (108 * travel);
-        const y = mobile ? 5 + (65 * travel) : 1 + (67 * travel);
-        const scale = mobile ? 1.01 - (0.35 * travel) : 1.02 - (0.32 * travel);
-        const fadeIn = smoothstep(-0.27, 0.015, travel);
-        const fadeOut = 1 - smoothstep(0.91, 1.16, travel);
+
+        // Every card shares the same uninterrupted conveyor timeline. The phase
+        // offsets distribute cards evenly so there is always a continuous flow;
+        // no card waits for another card, and there are no endpoint pauses.
+        const progress = reducedMotion
+          ? ((index + 1) / (count + 2))
+          : (globalProgress + (index / count)) % 1;
+
+        const x = mobile
+          ? 111 - (151 * progress)
+          : 112 - (146 * progress);
+        const y = mobile
+          ? -8 + (113 * progress)
+          : -10 + (109 * progress);
+        const scale = mobile
+          ? 1.04 - (0.50 * progress)
+          : 1.06 - (0.46 * progress);
+
+        const fadeIn = smoothstep(0.005, 0.085, progress);
+        const fadeOut = 1 - smoothstep(0.88, 0.995, progress);
         const opacity = clamp01(fadeIn * fadeOut);
 
-        panel.style.transform = `translate3d(${x}vw, ${y}vh, 0) scale(${Math.max(0.56, scale)})`;
+        panel.style.transform = `translate3d(${x}vw, ${y}vh, 0) scale(${Math.max(0.52, scale)})`;
         panel.style.opacity = opacity.toFixed(3);
-        panel.style.zIndex = String(Math.round(90 - (travel * 24)));
-        panel.style.pointerEvents = opacity > 0.18 ? 'auto' : 'none';
+        panel.style.zIndex = String(Math.round(110 - (progress * 40)));
+        panel.style.pointerEvents = opacity > 0.2 ? 'auto' : 'none';
       });
 
       frame = window.requestAnimationFrame(renderTrack);
     };
 
     frame = window.requestAnimationFrame(renderTrack);
-    const restartAfterVisibility = () => {
+
+    const resumeWithoutJump = () => {
       if (document.visibilityState === 'visible') startedAt = performance.now();
     };
-    document.addEventListener('visibilitychange', restartAfterVisibility);
+    document.addEventListener('visibilitychange', resumeWithoutJump);
 
     return () => {
       window.cancelAnimationFrame(frame);
-      document.removeEventListener('visibilitychange', restartAfterVisibility);
+      document.removeEventListener('visibilitychange', resumeWithoutJump);
     };
   }, []);
 
-  const typedSlug = `ERRUMBD/${HARD_CODED_HERO_CATEGORIES[textIndex].slug.toUpperCase()}`;
+  const typedSlug = `ERRUMBD/${HARDCODED_CATEGORY_ARTWORK[textIndex].slug.toUpperCase()}`;
 
   return (
     <section className="ref-hero">
@@ -232,18 +159,19 @@ function CategoryMotionHero() {
       </div>
 
       <div className="ref-hero__panels" aria-label="Shop categories">
-        {HARD_CODED_HERO_CATEGORIES.map((item, index) => (
+        {HARDCODED_CATEGORY_ARTWORK.map((item, index) => (
           <Link
             href={`/e-commerce/${item.slug}`}
             key={item.slug}
             ref={(element) => { panelRefs.current[index] = element; }}
             className="ref-hero-panel ref-hero-panel--motion"
             aria-label={`Shop ${item.name}`}
+            prefetch
           >
             <img
               src={item.image}
               alt={item.name}
-              loading={index < 4 ? 'eager' : 'lazy'}
+              loading={index < 5 ? 'eager' : 'lazy'}
               decoding="async"
             />
             <span>
@@ -276,7 +204,7 @@ function FeaturedDrop({ products }: { products: SimpleProduct[] }) {
       <div className="ref-featured-drop__copy">
         <span>FEATURED DROP</span>
         <h2>{productName(product)}</h2>
-        <b>{formatPrice(product.selling_price)}</b>
+        <b>{formatProductPrice(product)}</b>
       </div>
       <Link href={`/e-commerce/product/${product.id}`} className="ref-featured-drop__shop">SHOP NOW <ArrowUpRight size={15} /></Link>
       <div className="ref-featured-drop__dots">
@@ -321,7 +249,7 @@ export default function ReferenceHomepage() {
       try {
         const [categoryTree, productResponse] = await Promise.all([
           catalogService.getCategories(),
-          catalogService.getProducts({ per_page: 60, sort_by: 'newest' }),
+          catalogService.getProducts({ per_page: 36, sort_by: 'newest', in_stock: 'all' }),
         ]);
         if (cancelled) return;
         const topCategories = categoryTree.filter((category) => !category.parent_id && category.is_active !== false);
@@ -345,13 +273,13 @@ export default function ReferenceHomepage() {
       const category = categories.find((item) => item.name.toLowerCase().includes(keyword));
       if (category) {
         const product = products.find((item) => getCategoryMatch(item, [keyword]));
-        selected.push({ category, image: product ? productImage(product) : categoryImage(category), label: keyword === 'sneaker' ? 'ICONIC SNEAKERS' : keyword === 'watch' ? 'WATCHES' : 'LUXURY SCENTS' });
+        selected.push({ category, image: product ? productImage(product) : (getHardcodedCategoryImage(category) || categoryImage(category)), label: keyword === 'sneaker' ? 'ICONIC SNEAKERS' : keyword === 'watch' ? 'WATCHES' : 'LUXURY SCENTS' });
       }
     });
     categories.forEach((category) => {
       if (selected.length >= 3 || selected.some((item) => item.category.id === category.id)) return;
       const product = products.find((item) => categoryName(item).toLowerCase().includes(category.name.toLowerCase()));
-      selected.push({ category, image: product ? productImage(product) : categoryImage(category), label: category.name.toUpperCase() });
+      selected.push({ category, image: product ? productImage(product) : (getHardcodedCategoryImage(category) || categoryImage(category)), label: category.name.toUpperCase() });
     });
     return selected.slice(0, 3);
   }, [categories, products]);

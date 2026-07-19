@@ -275,10 +275,16 @@ class EcommerceCatalogController extends Controller
         }
 
         // Step 2: Load Eloquent models only for the filtered and paginated results.
-        $allVariantsQuery = Product::with(['images', 'category', 'batches.store'])
+        $allVariantsQuery = Product::with(['images', 'category', 'batches', 'reservedProduct'])
             ->whereIn('base_name', $baseNames)
             ->where('is_archived', false)
             ->whereNull('deleted_at');
+
+        // Do not pull same-named variants from unrelated categories after the
+        // category slug has already filtered the first-stage query.
+        if ($categoryIds !== null) {
+            $allVariantsQuery->whereIn('category_id', $categoryIds);
+        }
 
         // When the sidebar search is a pure size filter, do not send unrelated
         // variants back inside the matching product group. Example: searching "L"
@@ -310,14 +316,25 @@ class EcommerceCatalogController extends Controller
                 return $price ?? PHP_INT_MAX;
             })->first() ?? $group->first();
 
-            $groupMin = $group->min(fn($p) => $p->batches->where('is_active', true)->where('availability', true)->min('sell_price'));
-            $groupMax = $group->max(fn($p) => $p->batches->where('is_active', true)->where('availability', true)->max('sell_price'));
+            $groupPrices = $group
+                ->flatMap(fn($p) => $p->batches
+                    ->where('is_active', true)
+                    ->where('availability', true)
+                    ->pluck('sell_price'))
+                ->map(fn($price) => (float) $price)
+                ->filter(fn($price) => $price > 0)
+                ->values();
+
+            $groupMin = $groupPrices->isNotEmpty() ? (float) $groupPrices->min() : 0.0;
+            $groupMax = $groupPrices->isNotEmpty() ? (float) $groupPrices->max() : $groupMin;
 
             $formattedVariants = $group->values()->map(fn($p) => $this->formatProductForApi($p))->all();
-            $formattedMain     = $this->formatProductForApi($mainProduct, (float) $groupMin);
+            $formattedMain     = $this->formatProductForApi($mainProduct, $groupMin);
 
-            $totalAvailable = array_sum(array_column($formattedVariants, 'available_inventory'));
-            $totalReserved  = array_sum(array_column($formattedVariants, 'reserved_inventory'));
+            $totalAvailable  = array_sum(array_column($formattedVariants, 'available_inventory'));
+            $totalReserved   = array_sum(array_column($formattedVariants, 'reserved_inventory'));
+            $totalStock      = array_sum(array_column($formattedVariants, 'stock_quantity'));
+            $inStockVariants = count(array_filter($formattedVariants, fn($variant) => ($variant['available_inventory'] ?? 0) > 0));
 
             $orderedResult[] = [
                 'id'               => $mainProduct->id,
@@ -331,9 +348,11 @@ class EcommerceCatalogController extends Controller
                 'variants_count'   => $group->count(),
                 'min_price'        => $groupMin,
                 'max_price'        => $groupMax,
-                'total_available'  => $totalAvailable,
-                'total_reserved'   => $totalReserved,
-                'variants'         => $formattedVariants,
+                'total_available'   => $totalAvailable,
+                'total_reserved'    => $totalReserved,
+                'total_stock'       => $totalStock,
+                'in_stock_variants' => $inStockVariants,
+                'variants'          => $formattedVariants,
                 'main_variant'     => $formattedMain,
             ];
         }
@@ -414,7 +433,7 @@ class EcommerceCatalogController extends Controller
             $productIds = $rows->pluck('id');
         }
 
-        $products = Product::with(['images', 'category', 'batches.store'])
+        $products = Product::with(['images', 'category', 'batches', 'reservedProduct'])
             ->whereIn('id', $productIds)
             ->whereNull('deleted_at')
             ->get()
@@ -466,7 +485,9 @@ class EcommerceCatalogController extends Controller
         $totalStock    = (int) $activeBatches->sum('quantity');
 
         // available_inventory = total - reserved (from reserved_products table)
-        $reservedRow = \App\Models\ReservedProduct::where('product_id', $product->id)->first();
+        $reservedRow = $product->relationLoaded('reservedProduct')
+            ? $product->reservedProduct
+            : \App\Models\ReservedProduct::where('product_id', $product->id)->first();
         $reservedInventory  = $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
         $availableInventory = $reservedRow ? (int) $reservedRow->available_inventory : $totalStock;
 

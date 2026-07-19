@@ -4,7 +4,14 @@ import React, { useEffect, useState } from 'react';
 import { Heart } from 'lucide-react';
 import type { SimpleProduct } from '@/services/catalogService';
 import { wishlistUtils } from '@/lib/wishlistUtils';
-import { categoryName, formatPrice, productImage, productName } from '../reference/storefrontUtils';
+import {
+  categoryName,
+  formatProductPrice,
+  productHasStock,
+  productImage,
+  productName,
+  productPriceRange,
+} from '../reference/storefrontUtils';
 
 interface Props {
   product: SimpleProduct;
@@ -22,19 +29,20 @@ export default function PremiumProductCard({ product, onOpen, animDelay = 0, onI
   const toggleWish = (event: React.MouseEvent) => {
     event.stopPropagation();
     if (wished) wishlistUtils.remove(product.id);
-    else wishlistUtils.add({ id: product.id, name: productName(product), price: Number(product.selling_price || 0), image: productImage(product), sku: product.sku });
+    else wishlistUtils.add({ id: product.id, name: productName(product), price: productPriceRange(product).min, image: productImage(product), sku: product.sku });
     setWished(!wished);
   };
   const visualType = `${categoryName(product)} ${productName(product)}`.toLowerCase();
   const studio = ['sneaker', 'shoe', 'perfume', 'fragrance', 'watch'].some((word) => visualType.includes(word));
+  const inStock = productHasStock(product);
   return <article className="ref-product-card" style={{ animationDelay: `${animDelay}ms` }} onClick={() => onOpen(product)}>
     <div className={`ref-product-card__image ${studio ? 'is-studio' : 'is-editorial'}`}>
-      <img src={productImage(product)} alt={productName(product)} onError={() => onImageError?.(product.id)} />
+      <img src={productImage(product)} alt={productName(product)} loading="lazy" decoding="async" onError={() => onImageError?.(product.id)} />
       <span>{categoryName(product) || 'ERRUM DROP'}</span>
       <button className={wished ? 'is-active' : ''} onClick={toggleWish} aria-label="Add to wishlist"><Heart size={17} fill={wished ? 'currentColor' : 'none'} /></button>
-      {!product.in_stock && <i>SOLD OUT</i>}
+      {!inStock && <i>SOLD OUT</i>}
     </div>
     <h3>{productName(product)}</h3>
-    <b>{formatPrice(product.selling_price)}</b>
+    <b>{formatProductPrice(product)}</b>
   </article>;
 }

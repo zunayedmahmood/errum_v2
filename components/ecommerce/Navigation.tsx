@@ -8,7 +8,7 @@ import { useCart } from '@/app/e-commerce/CartContext';
 import { useCustomerAuth } from '@/contexts/CustomerAuthContext';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
 import GlobalCategorySidebar from './category/GlobalCategorySidebar';
-import { categoryImage, groupedDisplayProducts, productImage, slugify } from './reference/storefrontUtils';
+import { slugify } from './reference/storefrontUtils';
 
 export default function Navigation({ transparent = false }: { transparent?: boolean }) {
   const router = useRouter();
@@ -23,21 +23,11 @@ export default function Navigation({ transparent = false }: { transparent?: bool
 
   useEffect(() => {
     let cancelled = false;
-    catalogService.getCategories().then(async (tree) => {
-      const topLevel = tree.filter((category) => !category.parent_id);
-      const enriched = await Promise.all(topLevel.map(async (category) => {
-        if (!categoryImage(category).includes('placeholder-product')) return category;
-        try {
-          const response = await catalogService.getProducts({ category_id: category.id, per_page: 1, sort_by: 'newest' });
-          const first = groupedDisplayProducts(response)[0];
-          return first ? { ...category, image_url: productImage(first) } : category;
-        } catch { return category; }
-      }));
-      if (!cancelled) {
-        const imageById = new Map(enriched.map((category) => [category.id, category]));
-        setCategories(tree.map((category) => imageById.get(category.id) || category));
-      }
-    }).catch(() => !cancelled && setCategories([]));
+    // Category artwork is resolved locally by the drawer. Do not issue one
+    // product request per category merely to discover a fallback image.
+    catalogService.getCategories()
+      .then((tree) => { if (!cancelled) setCategories(tree); })
+      .catch(() => { if (!cancelled) setCategories([]); });
     return () => { cancelled = true; };
   }, []);
   useEffect(() => { const onScroll = () => setScrolled(window.scrollY > 20); onScroll(); window.addEventListener('scroll', onScroll, { passive: true }); return () => window.removeEventListener('scroll', onScroll); }, []);

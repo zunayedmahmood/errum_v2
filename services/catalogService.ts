@@ -45,6 +45,8 @@ export interface Product {
   cost_price: number;
   selling_price: number;
   price: number;
+  min_price?: number;
+  max_price?: number;
   weight?: number;
   dimensions?: string;
   in_stock: boolean;
@@ -78,8 +80,14 @@ export interface SimpleProduct {
   variants?: Product[];
   sku: string;
   selling_price: number;
+  price?: number;
+  min_price?: number;
+  max_price?: number;
   in_stock: boolean;
   stock_quantity: number;
+  available_inventory?: number | null;
+  reserved_inventory?: number | null;
+  total_available?: number;
   category?: ProductCategory | string | null;
   images: ProductImage[];
 }
@@ -186,7 +194,7 @@ export interface GetProductsParams {
   search?: string;
   min_price?: number;
   max_price?: number;
-  in_stock?: boolean;
+  in_stock?: boolean | 'all';
   sort_by?: 'price_asc' | 'price_desc' | 'newest' | 'name';
   per_page?: number;
   page?: number;
@@ -266,8 +274,30 @@ export type ProductResponse = CatalogProductsResponse;
  * -----------------------------
  */
 const toNumber = (value: any, fallback = 0): number => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/,/g, '').replace(/[^0-9.-]/g, '').trim();
+    const parsed = Number.parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+};
+
+const firstPositivePrice = (...values: any[]): number => {
+  for (const value of values) {
+    const price = toNumber(value, 0);
+    if (price > 0) return price;
+  }
+  return 0;
+};
+
+const batchPrice = (raw: any): number => {
+  const batches = Array.isArray(raw?.batches) ? raw.batches : [];
+  const prices = batches
+    .map((batch: any) => firstPositivePrice(batch?.sell_price, batch?.selling_price, batch?.price))
+    .filter((price: number) => price > 0);
+  return prices.length ? Math.min(...prices) : 0;
 };
 
 const normalizeString = (value: any, fallback = ''): string => {
@@ -493,16 +523,34 @@ const normalizeProduct = (
       ? normalizeString(raw?.variation_suffix)
       : null;
 
-  const sellingPrice = toNumber(raw?.selling_price ?? raw?.price ?? raw?.sale_price, 0);
-  const costPrice = toNumber(raw?.cost_price ?? raw?.regular_price ?? sellingPrice, sellingPrice);
-  const stockQty = toNumber(raw?.stock_quantity ?? raw?.quantity ?? raw?.total_quantity ?? raw?.physical_quantity, 0);
+  const sellingPrice = firstPositivePrice(
+    raw?.selling_price,
+    raw?.price,
+    raw?.sale_price,
+    raw?.min_price,
+    raw?.base_price,
+    raw?.final_price,
+    raw?.unit_price,
+    raw?.current_batch?.sell_price,
+    batchPrice(raw),
+  );
+  const costPrice = firstPositivePrice(raw?.cost_price, raw?.regular_price, sellingPrice) || sellingPrice;
+  const stockQty = toNumber(
+    raw?.stock_quantity ?? raw?.total_stock ?? raw?.quantity ?? raw?.total_quantity ?? raw?.physical_quantity,
+    0,
+  );
   const reservedQty = toNumber(raw?.reserved_inventory ?? raw?.reserved_quantity ?? raw?.assigned_quantity, 0);
-  const availableInventory = raw?.available_inventory != null 
-    ? toNumber(raw.available_inventory, 0) 
-    : (raw?.available_quantity != null ? toNumber(raw.available_quantity, 0) : Math.max(0, stockQty - reservedQty));
+  const availableInventory = raw?.available_inventory != null
+    ? toNumber(raw.available_inventory, 0)
+    : (raw?.total_available != null
+      ? toNumber(raw.total_available, 0)
+      : (raw?.available_quantity != null
+        ? toNumber(raw.available_quantity, 0)
+        : Math.max(0, stockQty - reservedQty)));
 
-  const explicitInStock = raw?.in_stock;
-  const inStock = typeof explicitInStock === 'boolean' ? explicitInStock : stockQty > 0;
+  const explicitInStock = normalizeBoolean(raw?.in_stock, false);
+  const hasExplicitStockFlag = raw?.in_stock !== undefined && raw?.in_stock !== null;
+  const inStock = hasExplicitStockFlag ? explicitInStock : availableInventory > 0;
 
   // Pull images from the root product first.
   // If the root has no images, pool ALL images from ALL sibling variants
@@ -547,6 +595,8 @@ const normalizeProduct = (
     cost_price: costPrice,
     selling_price: sellingPrice,
     price: sellingPrice,
+    min_price: firstPositivePrice(raw?.min_price, sellingPrice),
+    max_price: firstPositivePrice(raw?.max_price, sellingPrice),
     weight: raw?.weight !== undefined ? toNumber(raw.weight, 0) : undefined,
     dimensions: raw?.dimensions || undefined,
     in_stock: inStock,
@@ -626,11 +676,21 @@ const buildGroupedProductsFromFlat = (products: Product[]): CatalogGroupedProduc
     const mainVariant = sorted[0];
     const otherVariants = sorted.slice(1);
 
-    const allPrices = sorted.map((v) => toNumber(v.selling_price, 0));
+    const allPrices = sorted.map((v) => toNumber(v.selling_price, 0)).filter((price) => price > 0);
     const minPrice = allPrices.length ? Math.min(...allPrices) : 0;
-    const maxPrice = allPrices.length ? Math.max(...allPrices) : 0;
+    const maxPrice = allPrices.length ? Math.max(...allPrices) : minPrice;
     const totalStock = sorted.reduce((acc, v) => acc + toNumber(v.stock_quantity, 0), 0);
-    const inStockVariants = sorted.filter((v) => v.in_stock || toNumber(v.stock_quantity, 0) > 0).length;
+    const inStockVariants = sorted.filter((v) =>
+      toNumber(v.available_inventory, Number.NaN) > 0
+      || (v.available_inventory == null && (v.in_stock || toNumber(v.stock_quantity, 0) > 0))
+    ).length;
+
+    mainVariant.selling_price = minPrice || mainVariant.selling_price;
+    mainVariant.price = mainVariant.selling_price;
+    mainVariant.min_price = minPrice;
+    mainVariant.max_price = maxPrice;
+    mainVariant.in_stock = inStockVariants > 0;
+    mainVariant.available_inventory = sorted.reduce((sum, v) => sum + Math.max(0, toNumber(v.available_inventory, 0)), 0);
 
     groupedProducts.push({
       base_name: normalizeString(mainVariant.base_name || getBaseProductName(mainVariant.name)),
@@ -700,14 +760,33 @@ const normalizeGroupedProduct = (rawGroup: any): CatalogGroupedProduct => {
   }
 
 
-  const allPrices = all.map((v) => toNumber(v.selling_price, 0));
-  const minPrice = allPrices.length ? Math.min(...allPrices) : 0;
-  const maxPrice = allPrices.length ? Math.max(...allPrices) : 0;
+  const allPrices = all.map((v) => toNumber(v.selling_price, 0)).filter((price) => price > 0);
+  const rawMinPrice = firstPositivePrice(rawGroup?.min_price);
+  const rawMaxPrice = firstPositivePrice(rawGroup?.max_price);
+  const minPrice = rawMinPrice || (allPrices.length ? Math.min(...allPrices) : 0);
+  const maxPrice = rawMaxPrice || (allPrices.length ? Math.max(...allPrices) : minPrice);
 
-  const totalStock = all.reduce((sum, v) => sum + (v.stock_quantity || 0), 0);
-  const totalAvailable = all.reduce((sum, v) => sum + (v.available_inventory || 0), 0);
-  const totalReserved = all.reduce((sum, v) => sum + (v.reserved_inventory || 0), 0);
-  const inStockVariants = all.filter((v) => (v.available_inventory || 0) > 0).length;
+  const totalStock = all.reduce((sum, v) => sum + toNumber(v.stock_quantity, 0), 0);
+  const totalAvailable = rawGroup?.total_available != null
+    ? Math.max(0, toNumber(rawGroup.total_available, 0))
+    : all.reduce((sum, v) => sum + Math.max(0, toNumber(v.available_inventory, 0)), 0);
+  const totalReserved = rawGroup?.total_reserved != null
+    ? Math.max(0, toNumber(rawGroup.total_reserved, 0))
+    : all.reduce((sum, v) => sum + Math.max(0, toNumber(v.reserved_inventory, 0)), 0);
+  const inStockVariants = rawGroup?.in_stock_variants != null
+    ? Math.max(0, toNumber(rawGroup.in_stock_variants, 0))
+    : all.filter((v) =>
+        toNumber(v.available_inventory, Number.NaN) > 0
+        || (v.available_inventory == null && (v.in_stock || toNumber(v.stock_quantity, 0) > 0))
+      ).length;
+
+  mainVariant.selling_price = minPrice || mainVariant.selling_price;
+  mainVariant.price = mainVariant.selling_price;
+  mainVariant.min_price = minPrice;
+  mainVariant.max_price = maxPrice;
+  mainVariant.available_inventory = totalAvailable;
+  mainVariant.stock_quantity = Math.max(totalAvailable, totalStock);
+  mainVariant.in_stock = inStockVariants > 0 || totalAvailable > 0;
 
   return {
     base_name: baseName,
@@ -915,6 +994,40 @@ const linkCategoryParents = (nodes: CatalogCategory[], parent: CatalogCategory |
   });
 };
 
+const PRODUCT_CACHE_TTL_MS = 25_000;
+const CATEGORY_CACHE_TTL_MS = 5 * 60_000;
+
+type ProductCacheEntry = {
+  expiresAt: number;
+  value?: CatalogProductsResponse;
+  promise?: Promise<CatalogProductsResponse>;
+};
+
+const productRequestCache = new Map<string, ProductCacheEntry>();
+let categoryCache: { expiresAt: number; value?: CatalogCategory[]; promise?: Promise<CatalogCategory[]> } | null = null;
+
+const stableRequestKey = (params: Record<string, any>): string => JSON.stringify(
+  Object.keys(params)
+    .filter((key) => params[key] !== undefined && params[key] !== null && key !== '_suppressErrorLog')
+    .sort()
+    .reduce<Record<string, any>>((out, key) => {
+      out[key] = params[key];
+      return out;
+    }, {}),
+);
+
+const trimProductCache = () => {
+  const now = Date.now();
+  for (const [key, entry] of productRequestCache.entries()) {
+    if (entry.expiresAt <= now) productRequestCache.delete(key);
+  }
+  while (productRequestCache.size > 60) {
+    const first = productRequestCache.keys().next().value;
+    if (!first) break;
+    productRequestCache.delete(first);
+  }
+};
+
 /**
  * -----------------------------
  * Catalog Service
@@ -923,55 +1036,65 @@ const linkCategoryParents = (nodes: CatalogCategory[], parent: CatalogCategory |
 const catalogService = {
   async getProducts(params?: GetProductsParams): Promise<CatalogProductsResponse> {
     const suppressErrorLog = Boolean((params as any)?._suppressErrorLog);
-    try {
-      const requestParams: Record<string, any> = { ...(params || {}) };
-      delete requestParams._suppressErrorLog;
+    const requestParams: Record<string, any> = { ...(params || {}) };
+    delete requestParams._suppressErrorLog;
 
-      // Backend specifically expects 'search' for keyword filtering in /catalog/products
-      if (requestParams.q && !requestParams.search) {
-        requestParams.search = requestParams.q;
-      }
+    // Backend specifically expects `search` for keyword filtering.
+    if (requestParams.q && !requestParams.search) requestParams.search = requestParams.q;
 
-      // Backwards/forwards compatible category filters:
-      // Some backends expect `category` (slug/name) while others use `category_id`.
-      if (!requestParams.category && !requestParams.category_slug && requestParams.category_id) {
-        // Keep category_id, but allow servers that also accept `category_id` + `category` to work.
-        // (CategoryPage sets these explicitly.)
-      }
+    const sortBy = requestParams.sort_by;
+    if (sortBy === 'newest') {
+      requestParams.sort_order = requestParams.sort_order || 'desc';
+      requestParams.sort = requestParams.sort || 'created_at';
+      requestParams.order = requestParams.order || 'desc';
+      requestParams.direction = requestParams.direction || 'desc';
+    } else if (sortBy === 'price_asc') {
+      requestParams.sort = requestParams.sort || 'selling_price';
+      requestParams.order = requestParams.order || 'asc';
+      requestParams.sort_order = requestParams.sort_order || 'asc';
+      requestParams.direction = requestParams.direction || 'asc';
+    } else if (sortBy === 'price_desc') {
+      requestParams.sort = requestParams.sort || 'selling_price';
+      requestParams.order = requestParams.order || 'desc';
+      requestParams.sort_order = requestParams.sort_order || 'desc';
+      requestParams.direction = requestParams.direction || 'desc';
+    } else if (sortBy === 'name') {
+      requestParams.sort = requestParams.sort || 'name';
+      requestParams.order = requestParams.order || 'asc';
+      requestParams.sort_order = requestParams.sort_order || 'asc';
+      requestParams.direction = requestParams.direction || 'asc';
+    }
 
-      // Backwards/forwards compatible sort mapping:
-      // Different API versions have used different parameter names.
-      const sortBy = requestParams.sort_by;
-      if (sortBy === 'newest') {
-        requestParams.sort_order = requestParams.sort_order || 'desc';
-        requestParams.sort = requestParams.sort || 'created_at';
-        requestParams.order = requestParams.order || 'desc';
-        requestParams.direction = requestParams.direction || 'desc';
-      } else if (sortBy === 'price_asc') {
-        requestParams.sort = requestParams.sort || 'selling_price';
-        requestParams.order = requestParams.order || 'asc';
-        requestParams.sort_order = requestParams.sort_order || 'asc';
-        requestParams.direction = requestParams.direction || 'asc';
-      } else if (sortBy === 'price_desc') {
-        requestParams.sort = requestParams.sort || 'selling_price';
-        requestParams.order = requestParams.order || 'desc';
-        requestParams.sort_order = requestParams.sort_order || 'desc';
-        requestParams.direction = requestParams.direction || 'desc';
-      } else if (sortBy === 'name') {
-        requestParams.sort = requestParams.sort || 'name';
-        requestParams.order = requestParams.order || 'asc';
-        requestParams.sort_order = requestParams.sort_order || 'asc';
-        requestParams.direction = requestParams.direction || 'asc';
-      }
+    const cacheKey = stableRequestKey(requestParams);
+    const cached = productRequestCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) {
+      if (cached.value) return cached.value;
+      if (cached.promise) return cached.promise;
+    }
 
+    const requestPromise = (async () => {
       const response = await api.get('/catalog/products', { params: requestParams });
       const payload = response?.data?.data ?? response?.data ?? {};
-      const parsed = parseProductsPayload(payload);
-      return parsed;
+      return parseProductsPayload(payload);
+    })();
+
+    productRequestCache.set(cacheKey, {
+      expiresAt: now + PRODUCT_CACHE_TTL_MS,
+      promise: requestPromise,
+    });
+    trimProductCache();
+
+    try {
+      const result = await requestPromise;
+      productRequestCache.set(cacheKey, {
+        expiresAt: Date.now() + PRODUCT_CACHE_TTL_MS,
+        value: result,
+      });
+      return result;
     } catch (error) {
-      if (!suppressErrorLog) {
-        console.error('Error fetching products:', error);
-      }
+      productRequestCache.delete(cacheKey);
+      if (!suppressErrorLog) console.error('Error fetching products:', error);
       throw new Error('Failed to fetch products');
     }
   },
@@ -1085,7 +1208,13 @@ const catalogService = {
   },
 
   async getCategories(): Promise<CatalogCategory[]> {
-    try {
+    const now = Date.now();
+    if (categoryCache && categoryCache.expiresAt > now) {
+      if (categoryCache.value) return categoryCache.value;
+      if (categoryCache.promise) return categoryCache.promise;
+    }
+
+    const requestPromise = (async () => {
       const response = await api.get('/catalog/categories');
       const payload = response?.data?.data;
 
@@ -1100,7 +1229,22 @@ const catalogService = {
 
       linkCategoryParents(normalized);
       return normalized;
+    })();
+
+    categoryCache = {
+      expiresAt: now + CATEGORY_CACHE_TTL_MS,
+      promise: requestPromise,
+    };
+
+    try {
+      const result = await requestPromise;
+      categoryCache = {
+        expiresAt: Date.now() + CATEGORY_CACHE_TTL_MS,
+        value: result,
+      };
+      return result;
     } catch (error) {
+      categoryCache = null;
       console.error('Error fetching categories:', error);
       throw new Error('Failed to fetch categories');
     }

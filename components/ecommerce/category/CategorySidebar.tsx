@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { getHardcodedCategoryImage } from '../reference/categoryArtwork';
 
 interface Category {
   id: number;
@@ -75,8 +76,8 @@ export default function CategorySidebar({
     return normalizedActive === slug || normalizedActive === category.name.toLowerCase();
   };
 
-  const categoryRouteValue = (category: Category) => 
-    useIdForRouting ? String(category.id) : slugify(category.name);
+  const categoryRouteValue = (category: Category) =>
+    useIdForRouting ? String(category.id) : (category.slug || slugify(category.name));
 
   const renderCategory = (category: Category, level = 0) => {
     const hasChildren = category.children && category.children.length > 0;
@@ -93,12 +94,21 @@ export default function CategorySidebar({
         >
           <span
             onClick={() => {
-              const slug = slugify(category.name);
-              router.push(`/e-commerce/${encodeURIComponent(slug)}`);
+              const routeSlug = category.slug || slugify(category.name);
+              router.push(`/e-commerce/${encodeURIComponent(routeSlug)}`);
               onCategoryChange(categoryRouteValue(category));
             }}
-            className="flex-1"
+            className="flex-1 flex items-center gap-2"
           >
+            {getHardcodedCategoryImage(category as any) && (
+              <img
+                src={getHardcodedCategoryImage(category as any)}
+                alt=""
+                className="w-7 h-8 rounded object-cover shrink-0"
+                loading="lazy"
+                decoding="async"
+              />
+            )}
             {category.name}
           </span>
           {hasChildren && (
