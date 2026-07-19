@@ -1,234 +1,91 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
-import { ShoppingCart, Search, User, ChevronDown, LogOut, Heart, Package, Menu, X, Home, Sparkles } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { useCustomerAuth } from '@/contexts/CustomerAuthContext';
+import { useCart } from '@/app/e-commerce/CartContext';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
 import cartService from '@/services/cartService';
-import { useCart } from '@/app/e-commerce/CartContext';
 import GlobalCategorySidebar from './category/GlobalCategorySidebar';
 
+const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-');
 
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
-
-const catSlug = (c: { name: string; slug?: string }) =>
-  slugify(c.name);
-
-const Navbar = () => {
-  const router = useRouter();
+export default function Navigation() {
   const pathname = usePathname();
+  const router = useRouter();
   const { customer, isAuthenticated, logout } = useCustomerAuth();
-
+  const { isCartOpen, setIsCartOpen } = useCart();
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [cartCount, setCartCount] = useState(0);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
-  const [showUser, setShowUser] = useState(false);
-  const [showCats, setShowCats] = useState(false);
-  const [expandedCats, setExpandedCats] = useState<Set<number>>(new Set());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const [scrolled, setScrolled] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const userRef = useRef<HTMLDivElement>(null);
-  const catsRef = useRef<HTMLDivElement>(null);
-  const { isCartOpen, setIsCartOpen } = useCart();
-  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
-  const [isCategorySidebarOpen, setIsCategorySidebarOpen] = useState(false);
-
+  useEffect(() => { catalogService.getCategories().then(setCategories).catch(() => setCategories([])); }, []);
   useEffect(() => {
-    const handleToggle = (e: any) => setIsFiltersOpen(!!e.detail?.open);
-    window.addEventListener('mobile-sidebar-toggle', handleToggle);
-    return () => window.removeEventListener('mobile-sidebar-toggle', handleToggle);
-  }, []);
-
-  /* Scroll shadow */
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 4);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  /* Categories */
-  useEffect(() => {
-    catalogService.getCategories().then(setCategories).catch(() => { });
-  }, []);
-
-  /* Cart */
-  const refreshCartCount = () =>
-    cartService
-      .getCartSummary()
-      .then((s) => setCartCount(Number((s as any)?.total_items || 0)))
-      .catch(() => setCartCount(0));
-
-  useEffect(() => {
-    refreshCartCount();
+    const refresh = () => cartService.getCartSummary().then((s: any) => setCartCount(Number(s?.total_items || 0))).catch(() => setCartCount(0));
+    refresh();
+    window.addEventListener('cart-updated', refresh);
+    window.addEventListener('customer-auth-changed', refresh);
+    return () => { window.removeEventListener('cart-updated', refresh); window.removeEventListener('customer-auth-changed', refresh); };
   }, [isAuthenticated]);
+  useEffect(() => { const h = () => setScrolled(window.scrollY > 12); window.addEventListener('scroll', h, { passive: true }); return () => window.removeEventListener('scroll', h); }, []);
+  useEffect(() => { setMobileMenuOpen(false); setSearchOpen(false); }, [pathname]);
+  useEffect(() => { if (searchOpen) setTimeout(() => searchRef.current?.focus(), 80); }, [searchOpen]);
 
-  useEffect(() => {
-    const h = () => refreshCartCount();
-    window.addEventListener('cart-updated', h);
-    window.addEventListener('customer-auth-changed', h);
-    return () => {
-      window.removeEventListener('cart-updated', h);
-      window.removeEventListener('customer-auth-changed', h);
-    };
-  }, [isAuthenticated]);
-
-  /* Click outside */
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (userRef.current && !userRef.current.contains(e.target as Node)) setShowUser(false);
-      if (catsRef.current && !catsRef.current.contains(e.target as Node)) setShowCats(false);
-    };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-
-  /* Close mobile on route change */
-  useEffect(() => {
-    setMobileOpen(false);
-    setIsClosing(false);
-    setShowCats(false);
-    setShowUser(false);
-  }, [pathname]);
-
-  const closeMobileMenu = () => {
-    setIsClosing(true);
-    setTimeout(() => {
-      setMobileOpen(false);
-      setIsClosing(false);
-    }, 350);
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = query.trim();
+    if (q) router.push(`/e-commerce/search?q=${encodeURIComponent(q)}`);
   };
 
-  const handleLogout = async () => {
-    setShowUser(false);
-    try { await logout(); router.push('/e-commerce'); } catch { }
-  };
-
-  const isActive = (href: string) => pathname === href;
-
-  // Mobile bottom tab check
-  const isHomePage = pathname === '/e-commerce';
-  const isSearchPage = pathname === '/e-commerce/search';
-  const isNewArrival = pathname.includes('/e-commerce/products') || pathname.includes('/e-commerce/new');
-  const isAccountPage = pathname.includes('/e-commerce/my-account') || pathname.includes('/e-commerce/login');
-
+  const topCategories = categories.filter((c: any) => !c.parent_id).slice(0, 5);
   return (
     <>
+      <header className={`errum-nav ${scrolled ? 'is-scrolled' : ''}`}>
+        <div className="errum-nav__inner">
+          <Link href="/e-commerce" className="errum-nav__brand" aria-label="ERRUM home">
+            <img src="/logo.png" alt="ERRUM" />
+            <span>ERRUM</span>
+          </Link>
 
-    {/* ── Mobile Bottom Tab Bar ─────────────────────────────────── */}
-      <nav
-        className="flex items-stretch"
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          zIndex: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? -1 : 10000,
-          opacity: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 0 : 1,
-          pointerEvents: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 'none' : 'auto',
-          visibility: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 'hidden' : 'visible',
-          transform: (isCartOpen || isFiltersOpen || isCategorySidebarOpen) ? 'translateY(100%)' : 'translateY(0)',
-          transition: 'all 0.4s cubic-bezier(0.32, 0.72, 0, 1)',
-          background: 'var(--ec-color-card-bg)',
-          borderTop: '1px solid var(--ec-color-border)',
-          height: '64px',
-          boxShadow: '0 -4px 16px rgba(0,0,0,0.12)',
-        }}
-      >
-        {/* Brand/Home */}
-        <Link href="/e-commerce"
-          style={{ flex: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', textDecoration: 'none', color: 'var(--ec-color-text-primary)' }}
-        >
-          <img src="/logo.png" alt="" style={{ height: '22px', width: 'auto' }} />
-          <span style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'var(--ec-font-body)', letterSpacing: '0.04em' }}>ERRUM</span>
-        </Link>
+          <nav className="errum-nav__links" aria-label="Main navigation">
+            <button onClick={() => setSidebarOpen(true)}><Menu size={14} /> CATEGORIES</button>
+            <Link href="/e-commerce/products">SHOP</Link>
+            {topCategories.map((cat: any) => (
+              <Link key={cat.id} href={`/e-commerce/${slugify(cat.name)}`}>{cat.name}</Link>
+            ))}
+          </nav>
 
-        {/* Search */}
-        <Link href="/e-commerce/search"
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: isSearchPage ? '#111111' : '#777777', transition: 'color 0.15s' }}
-        >
-          <Search style={{ width: '22px', height: '22px', strokeWidth: isSearchPage ? 2.5 : 2 }} />
-          <span style={{ fontSize: '13px', fontWeight: isSearchPage ? 800 : 700 }}>Search</span>
-        </Link>
+          <form className="errum-nav__search" onSubmit={submitSearch}>
+            <Search size={14} />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search drops..." />
+          </form>
 
-        {/* New Arrivals / Center */}
-        <Link href="/e-commerce/products"
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', textDecoration: 'none', color: 'var(--ec-color-text-primary)', transition: 'color 0.15s', position: 'relative' }}
-        >
-          <div style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '50%',
-            background: 'var(--ec-color-accent)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginTop: '-24px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            flexShrink: 0,
-          }}>
-            <Sparkles style={{ width: '22px', height: '22px', color: 'var(--ec-color-accent-text)' }} />
+          <div className="errum-nav__actions">
+            <Link href="/e-commerce/wishlist" aria-label="Wishlist"><Heart size={18} /></Link>
+            <button onClick={() => setIsCartOpen(true)} aria-label="Cart" className="errum-cart-button"><ShoppingBag size={18} />{cartCount > 0 && <b>{cartCount > 99 ? '99+' : cartCount}</b>}</button>
+            <Link href={isAuthenticated ? '/e-commerce/my-account' : '/e-commerce/login'} aria-label="Account"><User size={18} /></Link>
+            <button className="errum-mobile-menu-trigger" onClick={() => setMobileMenuOpen(true)} aria-label="Open menu"><Menu size={20} /></button>
           </div>
-          <span style={{ fontSize: '13px', fontWeight: isNewArrival ? 800 : 700, color: isNewArrival ? '#111111' : '#777777' }}>New</span>
-        </Link>
+        </div>
+      </header>
 
-        {/* Cart */}
-        <button
-          onClick={() => setIsCartOpen(true)}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ec-color-text-secondary)', position: 'relative', transition: 'color 0.15s' }}
-        >
-          <div style={{ position: 'relative' }}>
-            <ShoppingCart style={{ width: '22px', height: '22px', strokeWidth: 2 }} />
-            {cartCount > 0 && (
-              <span style={{
-                position: 'absolute',
-                top: '-6px',
-                right: '-8px',
-                display: 'flex',
-                height: '18px',
-                minWidth: '18px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: '999px',
-                background: 'var(--ec-color-accent)',
-                color: 'var(--ec-color-accent-text)',
-                fontSize: '10px',
-                fontWeight: 800,
-                padding: '0 4px',
-                border: '1.5px solid #ffffff',
-              }}>
-                {cartCount > 99 ? '99+' : cartCount}
-              </span>
-            )}
-          </div>
-          <span style={{ fontSize: '13px', fontWeight: 700 }}>Cart</span>
-        </button>
-
-        {/* Categories */}
-        <button
-          onClick={() => setIsCategorySidebarOpen(true)}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ec-color-text-secondary)', position: 'relative', transition: 'color 0.15s' }}
-        >
-          <Menu style={{ width: '22px', height: '22px', strokeWidth: 2 }} />
-          <span style={{ fontSize: '13px', fontWeight: 700 }}>Categories</span>
-        </button>
-      </nav>
-
-      <GlobalCategorySidebar 
-        categories={categories} 
-        isOpen={isCategorySidebarOpen} 
-        onClose={() => setIsCategorySidebarOpen(false)} 
-      />
+      {mobileMenuOpen && <div className="errum-mobile-menu">
+        <div className="errum-mobile-menu__top"><span>ERRUM</span><button onClick={() => setMobileMenuOpen(false)}><X /></button></div>
+        <form onSubmit={submitSearch}><Search size={18}/><input ref={searchRef} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search drops..."/></form>
+        <Link href="/e-commerce">HOME</Link><Link href="/e-commerce/products">SHOP ALL</Link><button onClick={() => {setMobileMenuOpen(false);setSidebarOpen(true)}}>CATEGORIES</button>
+        {topCategories.map((cat:any)=><Link key={cat.id} href={`/e-commerce/${slugify(cat.name)}`}>{cat.name}</Link>)}
+        <Link href="/e-commerce/order-tracking">TRACK ORDER</Link>
+        <Link href={isAuthenticated ? '/e-commerce/my-account' : '/e-commerce/login'}>{isAuthenticated ? customer?.name || 'MY ACCOUNT' : 'LOGIN'}</Link>
+        {isAuthenticated && <button onClick={async()=>{await logout();router.push('/e-commerce')}}>LOG OUT</button>}
+      </div>}
+      <GlobalCategorySidebar categories={categories} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
     </>
   );
-};
-
-export default Navbar;
+}
