@@ -3,89 +3,71 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
-import { useCustomerAuth } from '@/contexts/CustomerAuthContext';
+import { Heart, Menu, Search, ShoppingBag, User } from 'lucide-react';
 import { useCart } from '@/app/e-commerce/CartContext';
+import { useCustomerAuth } from '@/contexts/CustomerAuthContext';
 import catalogService, { CatalogCategory } from '@/services/catalogService';
-import cartService from '@/services/cartService';
 import GlobalCategorySidebar from './category/GlobalCategorySidebar';
+import { categoryImage, groupedDisplayProducts, productImage, slugify } from './reference/storefrontUtils';
 
-const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-');
-
-export default function Navigation() {
-  const pathname = usePathname();
+export default function Navigation({ transparent = false }: { transparent?: boolean }) {
   const router = useRouter();
-  const { customer, isAuthenticated, logout } = useCustomerAuth();
-  const { isCartOpen, setIsCartOpen } = useCart();
+  const pathname = usePathname();
+  const { isCartOpen, setIsCartOpen, cart } = useCart();
+  const { isAuthenticated } = useCustomerAuth();
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
-  const [cartCount, setCartCount] = useState(0);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [scrolled, setScrolled] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { catalogService.getCategories().then(setCategories).catch(() => setCategories([])); }, []);
   useEffect(() => {
-    const refresh = () => cartService.getCartSummary().then((s: any) => setCartCount(Number(s?.total_items || 0))).catch(() => setCartCount(0));
-    refresh();
-    window.addEventListener('cart-updated', refresh);
-    window.addEventListener('customer-auth-changed', refresh);
-    return () => { window.removeEventListener('cart-updated', refresh); window.removeEventListener('customer-auth-changed', refresh); };
-  }, [isAuthenticated]);
-  useEffect(() => { const h = () => setScrolled(window.scrollY > 12); window.addEventListener('scroll', h, { passive: true }); return () => window.removeEventListener('scroll', h); }, []);
-  useEffect(() => { setMobileMenuOpen(false); setSearchOpen(false); }, [pathname]);
-  useEffect(() => { if (searchOpen) setTimeout(() => searchRef.current?.focus(), 80); }, [searchOpen]);
+    let cancelled = false;
+    catalogService.getCategories().then(async (tree) => {
+      const topLevel = tree.filter((category) => !category.parent_id);
+      const enriched = await Promise.all(topLevel.map(async (category) => {
+        if (!categoryImage(category).includes('placeholder-product')) return category;
+        try {
+          const response = await catalogService.getProducts({ category_id: category.id, per_page: 1, sort_by: 'newest' });
+          const first = groupedDisplayProducts(response)[0];
+          return first ? { ...category, image_url: productImage(first) } : category;
+        } catch { return category; }
+      }));
+      if (!cancelled) {
+        const imageById = new Map(enriched.map((category) => [category.id, category]));
+        setCategories(tree.map((category) => imageById.get(category.id) || category));
+      }
+    }).catch(() => !cancelled && setCategories([]));
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => { const onScroll = () => setScrolled(window.scrollY > 20); onScroll(); window.addEventListener('scroll', onScroll, { passive: true }); return () => window.removeEventListener('scroll', onScroll); }, []);
+  useEffect(() => setCategoryOpen(false), [pathname]);
 
-  const submitSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const q = query.trim();
-    if (q) router.push(`/e-commerce/search?q=${encodeURIComponent(q)}`);
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = query.trim();
+    if (value) router.push(`/e-commerce/search?q=${encodeURIComponent(value)}`);
   };
 
-  const topCategories = categories.filter((c: any) => !c.parent_id).slice(0, 5);
-  return (
-    <>
-      <header className={`errum-nav ${scrolled ? 'is-scrolled' : ''}`}>
-        <div className="errum-nav__inner">
-          <Link href="/e-commerce" className="errum-nav__brand" aria-label="ERRUM home">
-            <img src="/logo.png" alt="ERRUM" />
-            <span>ERRUM</span>
-          </Link>
-
-          <nav className="errum-nav__links" aria-label="Main navigation">
-            <button onClick={() => setSidebarOpen(true)}><Menu size={14} /> CATEGORIES</button>
-            <Link href="/e-commerce/products">SHOP</Link>
-            {topCategories.map((cat: any) => (
-              <Link key={cat.id} href={`/e-commerce/${slugify(cat.name)}`}>{cat.name}</Link>
-            ))}
-          </nav>
-
-          <form className="errum-nav__search" onSubmit={submitSearch}>
-            <Search size={14} />
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search drops..." />
-          </form>
-
-          <div className="errum-nav__actions">
-            <Link href="/e-commerce/wishlist" aria-label="Wishlist"><Heart size={18} /></Link>
-            <button onClick={() => setIsCartOpen(true)} aria-label="Cart" className="errum-cart-button"><ShoppingBag size={18} />{cartCount > 0 && <b>{cartCount > 99 ? '99+' : cartCount}</b>}</button>
-            <Link href={isAuthenticated ? '/e-commerce/my-account' : '/e-commerce/login'} aria-label="Account"><User size={18} /></Link>
-            <button className="errum-mobile-menu-trigger" onClick={() => setMobileMenuOpen(true)} aria-label="Open menu"><Menu size={20} /></button>
-          </div>
+  const top = categories.filter((category) => !category.parent_id).slice(0, 5);
+  return <>
+    <header className={`ref-nav ${transparent ? 'ref-nav--hero' : ''} ${scrolled ? 'is-scrolled' : ''}`}>
+      <div className="ref-nav__pill">
+        <Link href="/e-commerce" className="ref-nav__brand"><span><img src="/logo.png" alt="ERRUM" /></span><b>ERRUM</b></Link>
+        <nav>
+          <button onClick={() => setCategoryOpen(true)}><Menu size={14} /> CATEGORIES</button>
+          <Link className={pathname === '/e-commerce/products' ? 'is-active' : ''} href="/e-commerce/products">SHOP</Link>
+          {top.map((category) => <Link key={category.id} href={`/e-commerce/${category.slug || slugify(category.name)}`}>{category.name}</Link>)}
+        </nav>
+        <form onSubmit={submit}><Search size={15} /><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search drops..." /></form>
+        <div className="ref-nav__actions">
+          <Link href="/e-commerce/wishlist" aria-label="Wishlist"><Heart size={18} /></Link>
+          <button onClick={() => setIsCartOpen(!isCartOpen)} aria-label="Cart"><ShoppingBag size={18} />{cart.length > 0 && <i>{cart.reduce((sum, item) => sum + item.quantity, 0)}</i>}</button>
+          <Link className="ref-nav__account" href={isAuthenticated ? '/e-commerce/my-account' : '/e-commerce/login'} aria-label="Account"><User size={18} /></Link>
+          <button className="ref-nav__menu" onClick={() => setCategoryOpen(true)} aria-label="Open categories"><Menu size={20} /></button>
         </div>
-      </header>
-
-      {mobileMenuOpen && <div className="errum-mobile-menu">
-        <div className="errum-mobile-menu__top"><span>ERRUM</span><button onClick={() => setMobileMenuOpen(false)}><X /></button></div>
-        <form onSubmit={submitSearch}><Search size={18}/><input ref={searchRef} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search drops..."/></form>
-        <Link href="/e-commerce">HOME</Link><Link href="/e-commerce/products">SHOP ALL</Link><button onClick={() => {setMobileMenuOpen(false);setSidebarOpen(true)}}>CATEGORIES</button>
-        {topCategories.map((cat:any)=><Link key={cat.id} href={`/e-commerce/${slugify(cat.name)}`}>{cat.name}</Link>)}
-        <Link href="/e-commerce/order-tracking">TRACK ORDER</Link>
-        <Link href={isAuthenticated ? '/e-commerce/my-account' : '/e-commerce/login'}>{isAuthenticated ? customer?.name || 'MY ACCOUNT' : 'LOGIN'}</Link>
-        {isAuthenticated && <button onClick={async()=>{await logout();router.push('/e-commerce')}}>LOG OUT</button>}
-      </div>}
-      <GlobalCategorySidebar categories={categories} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-    </>
-  );
+      </div>
+    </header>
+    <GlobalCategorySidebar categories={categories} isOpen={categoryOpen} onClose={() => setCategoryOpen(false)} />
+  </>;
 }
