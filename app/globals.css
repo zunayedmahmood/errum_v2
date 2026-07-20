@@ -1189,8 +1189,8 @@ body {
   --ref-ink: #0a0b0b;
   --ref-muted: #8f9299;
   --ref-line: #e8e8e6;
-  --ref-condensed: "Barlow Condensed", "Arial Narrow", sans-serif;
-  --ref-sans: "Inter", Arial, sans-serif;
+  --ref-condensed: var(--font-space-grotesk), "Space Grotesk", Arial, sans-serif;
+  --ref-sans: var(--font-space-grotesk), "Space Grotesk", Arial, sans-serif;
 }
 
 .ref-storefront, .ref-nav, .ref-footer, .ref-category-drawer, .ref-cart-drawer {
@@ -1596,7 +1596,11 @@ body {
 }
 
 /* Final reference fidelity refinements */
-.errum-storefront-root { min-height:100vh; background:#fbfbfa; }
+.errum-storefront-root { min-height:100vh; background:#fbfbfa; font-family:var(--font-space-grotesk), "Space Grotesk", Arial, sans-serif; }
+.errum-storefront-root button,
+.errum-storefront-root input,
+.errum-storefront-root textarea,
+.errum-storefront-root select { font-family:inherit; }
 .errum-storefront-content { position:relative; z-index:1; }
 @media (min-width:701px) { .ref-essentials__scroll { justify-content:center; } }
 .ref-product-card__image.is-studio img { object-fit:contain; padding:4%; }

@@ -1,1055 +1,588 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
-  ArrowUpRight,
+  AlertCircle,
+  AlertTriangle,
   ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Banknote,
+  BarChart3,
+  Boxes,
+  CalendarDays,
+  CheckCircle2,
+  CircleDollarSign,
+  Clock3,
+  CreditCard,
+  Download,
+  FileClock,
+  Landmark,
+  Loader2,
+  PackageCheck,
+  PackageOpen,
+  Percent,
+  ReceiptText,
+  RefreshCw,
+  RotateCcw,
   ShoppingBag,
   Store,
-  Globe2,
-  Bell,
-  Clock,
-  Package,
+  TrendingDown,
+  TrendingUp,
   Truck,
-  CheckCircle2,
-  RotateCcw,
-  RefreshCw,
-  AlertTriangle,
-} from "lucide-react";
-import axios from "axios";
-import Header from "@/components/Header";
-import Sidebar from "@/components/Sidebar";
-import { useTheme } from "@/contexts/ThemeContext";
-import { useAuth } from "@/contexts/AuthContext";
+  Users,
+  WalletCards,
+} from 'lucide-react';
+import Header from '@/components/Header';
+import Sidebar from '@/components/Sidebar';
+import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
+import executiveDashboardService, { DashboardPeriod } from '@/services/executiveDashboardService';
 
-// ✅ Axios instance (same as you had, but safer extract below)
-const axiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL,
-  headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  },
-});
+type AnyRecord = Record<string, any>;
+type Visibility = Record<string, boolean>;
 
-axiosInstance.interceptors.request.use(
-  (config) => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("authToken");
-      if (token) config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+const PERIOD_OPTIONS: Array<{ value: DashboardPeriod; label: string }> = [
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'This week' },
+  { value: 'month', label: 'This month' },
+  { value: 'quarter', label: 'This quarter' },
+  { value: 'year', label: 'This year' },
+  { value: 'custom', label: 'Custom' },
+];
 
-axiosInstance.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      if (typeof window !== "undefined") {
-        localStorage.clear();
-        window.location.href = "/login";
-      }
-    }
-    return Promise.reject(error);
-  }
-);
+const number = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
-type AnyObj = Record<string, any>;
+const localDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-interface DashboardData {
-  todayMetrics: AnyObj | null;
-  last30Days: AnyObj | null;
-  salesByChannel: AnyObj | null;
-  topStores: AnyObj | null;
-  topProducts: AnyObj | null;
-  slowMoving: AnyObj | null;
-  lowStock: AnyObj | null;
-  inventoryAge: AnyObj | null;
-  operations: AnyObj | null;
-}
+const initialCustomDates = () => {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  return { from: localDate(first), to: localDate(now) };
+};
 
-export default function FounderDashboard() {
+export default function DashboardPage() {
   const { darkMode, setDarkMode } = useTheme();
-  const { role, isLoading: authLoading } = useAuth();
+  const { role, isLoading: authLoading, canSelectStore, scopedStoreId } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [period, setPeriod] = useState<DashboardPeriod>('month');
+  const initialDates = useMemo(initialCustomDates, []);
+  const [dateFrom, setDateFrom] = useState(initialDates.from);
+  const [dateTo, setDateTo] = useState(initialDates.to);
+  const [storeId, setStoreId] = useState<number | 'all'>(scopedStoreId || 'all');
+  const [data, setData] = useState<AnyRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-
-  const [data, setData] = useState<DashboardData>({
-    todayMetrics: null,
-    last30Days: null,
-    salesByChannel: null,
-    topStores: null,
-    topProducts: null,
-    slowMoving: null,
-    lowStock: null,
-    inventoryAge: null,
-    operations: null,
-  });
-
-  const [timeFilter, setTimeFilter] = useState<"today" | "week" | "month">("today");
-  const [branchFilter, setBranchFilter] = useState("all"); // reserved for store_id filter later
-
-
-  // ✅ Normalizer: supports both shapes
-  // A) { success:true, data:{...} }
-  // B) { success:true, top_stores:[...], ... }  (flat)
-  const extractPayload = (raw: any) => {
-    const payload = raw?.data; // axios response => raw.data is server payload
-    if (!payload) return null;
-    if (payload?.success === false) return null;
-    return payload?.data ?? payload;
-  };
-
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const fetchEndpoint = async (endpoint: string, params?: any) => {
-        try {
-          const res = await axiosInstance.get(endpoint, { params });
-          const extracted = extractPayload(res);
-          if (!extracted) {
-            console.warn(`Empty/invalid payload for ${endpoint}`, res.data);
-            return null;
-          }
-          return extracted;
-        } catch (err: any) {
-          console.error(
-            `Error fetching ${endpoint}:`,
-            err?.response?.data || err?.message || err
-          );
-          return null;
-        }
-      };
-
-      // optional store filter
-      const storeParams = branchFilter !== "all" ? { store_id: branchFilter } : {};
-
-      const [
-        todayMetrics,
-        last30Days,
-        salesByChannel,
-        topStores,
-        topProducts,
-        slowMoving,
-        lowStock,
-        inventoryAge,
-        operations,
-      ] = await Promise.all([
-        fetchEndpoint("/dashboard/today-metrics", storeParams),
-        fetchEndpoint("/dashboard/last-30-days-sales", storeParams),
-        fetchEndpoint("/dashboard/sales-by-channel", { ...storeParams, period: timeFilter }),
-        fetchEndpoint("/dashboard/top-stores", { ...storeParams, period: timeFilter, limit: 10 }),
-        fetchEndpoint("/dashboard/today-top-products", { ...storeParams, limit: 5 }),
-        fetchEndpoint("/dashboard/slow-moving-products", { ...storeParams, limit: 10, days: 90 }),
-        fetchEndpoint("/dashboard/low-stock-products", { ...storeParams, threshold: 10 }),
-        fetchEndpoint("/dashboard/inventory-age-by-value", storeParams),
-        fetchEndpoint("/dashboard/operations-today", storeParams),
-      ]);
-
-      setData({
-        todayMetrics,
-        last30Days,
-        salesByChannel,
-        topStores,
-        topProducts,
-        slowMoving,
-        lowStock,
-        inventoryAge,
-        operations,
-      });
-
-      // If the most important blocks fail, show top error banner
-      if (!todayMetrics && !last30Days && !salesByChannel) {
-        setError("Failed to load critical dashboard data. Please check your connection.");
-      }
-    } catch (err: any) {
-      console.error("Error fetching dashboard data:", err);
-      setError(err?.response?.data?.message || "Failed to load dashboard data");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    fetchDashboardData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeFilter, branchFilter]);
+    if (scopedStoreId) setStoreId(scopedStoreId);
+  }, [scopedStoreId]);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchDashboardData();
-  };
+  const loadDashboard = useCallback(async (fresh = false) => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
 
-  const formatCurrency = (amount: number) => {
-    if (amount === null || amount === undefined || Number.isNaN(amount)) return "৳ 0";
-    return `৳ ${Number(amount).toLocaleString("en-BD")}`;
-  };
+    try {
+      if (!data) setLoading(true);
+      if (fresh) setRefreshing(true);
+      setError(null);
 
-  const formatPercentage = (value: number) => {
-    if (value === null || value === undefined || Number.isNaN(value)) return "0%";
-    return `${Number(value).toFixed(1)}%`;
-  };
+      const overview = await executiveDashboardService.getOverview(
+        {
+          period,
+          date_from: period === 'custom' ? dateFrom : undefined,
+          date_to: period === 'custom' ? dateTo : undefined,
+          store_id: storeId,
+          fresh,
+        },
+        controller.signal,
+      );
 
-  // ---------------------------
-  // ✅ Normalize sections safely
-  // ---------------------------
-  const metrics = data.todayMetrics ?? null;
-
-  // last30Days is usually { total_sales, total_orders, daily_sales:[...] }
-  const sales30Days = data.last30Days ?? null;
-
-  // channels: usually { total_orders, channels:[{channel_label,total_sales,percentage}] }
-  const channels = data.salesByChannel ?? null;
-
-  // topStores: might be { top_stores:[...], total_sales_all_stores, period }
-  const topStores = data.topStores ?? null;
-
-  // topProducts: might be { top_products:[...] }
-  const topProducts = data.topProducts ?? null;
-
-  // slowMoving: might be { slow_moving_products:[...] }
-  const slowMoving = data.slowMoving ?? null;
-
-  // lowStock: might be { summary:{...}, out_of_stock:[...], low_stock:[...] }
-  const lowStock = data.lowStock ?? null;
-
-  // inventoryAge: { age_categories:[{label, inventory_value, percentage_of_total}] }
-  const inventoryAge = data.inventoryAge ?? null;
-
-  // operations: often { operations_status:{ pending:{label,count}, ... }, summary:{...} }
-  const operations = data.operations ?? null;
-
-  // derive a stable list of pipeline stages from operations object
-  const pipelineStages = useMemo(() => {
-    const ops = operations?.operations_status || operations?.status_breakdown || operations?.pipeline || null;
-    if (!ops) return [];
-
-    // common keys order
-    const keys = ["pending", "processing", "ready_for_pickup", "shipped", "delivered", "cancelled"];
-    const list: Array<{ key: string; label: string; count: number }> = [];
-
-    keys.forEach((k) => {
-      if (ops[k]) {
-        list.push({
-          key: k,
-          label: ops[k]?.label || k.replace(/_/g, " "),
-          count: Number(ops[k]?.count ?? 0),
-        });
+      setData(overview);
+    } catch (err: any) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
+      setError(err?.response?.data?.message || err?.message || 'Unable to load dashboard reports.');
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
       }
-    });
-
-    // if backend uses different keys, fallback to all entries
-    if (!list.length) {
-      Object.entries(ops).forEach(([k, v]: any) => {
-        list.push({
-          key: k,
-          label: v?.label || k.replace(/_/g, " "),
-          count: Number(v?.count ?? 0),
-        });
-      });
     }
+  }, [data, dateFrom, dateTo, period, storeId]);
 
-    return list;
-  }, [operations]);
+  useEffect(() => {
+    if (!authLoading) loadDashboard(false);
+    return () => requestRef.current?.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, period, dateFrom, dateTo, storeId]);
 
-  // Access Check
-  const canAccess = role === 'super-admin' || role === 'admin';
+  const canSwitchDashboardStore = canSelectStore && ['super-admin', 'admin'].includes(role || '');
 
-  // Loading state
-  if ((loading || authLoading) && !data.todayMetrics) {
-    return (
-      <div className={darkMode ? "dark" : ""}>
-        <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-          <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Header
-              darkMode={darkMode}
-              setDarkMode={setDarkMode}
-              toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-            />
-            <main className="flex-1 overflow-auto p-6 flex items-center justify-center">
-              <div className="text-center">
-                <RefreshCw className="w-12 h-12 animate-spin mx-auto mb-4 text-blue-600" />
-                <p className="text-xl mb-2 text-gray-900 dark:text-white">Loading Dashboard...</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Connecting to backend...</p>
-              </div>
-            </main>
-          </div>
-        </div>
-      </div>
-    );
+  const meta = data?.meta || {};
+  const kpis = data?.kpis || {};
+  const visibility: Visibility = meta.visibility || {};
+  const sales = data?.sales || {};
+  const profitability = data?.profitability || {};
+  const liquidity = data?.liquidity || {};
+  const inventory = data?.inventory || {};
+  const operations = data?.operations || {};
+  const receivables = data?.receivables || {};
+  const payables = data?.payables || {};
+  const purchases = data?.purchases || {};
+  const approvals = data?.approvals || {};
+  const performance = data?.performance || {};
+  const alerts = Array.isArray(data?.alerts) ? data.alerts : [];
+  const series = Array.isArray(sales.series) ? sales.series : [];
+
+  const periodLabel = useMemo(() => {
+    const selected = PERIOD_OPTIONS.find((item) => item.value === period)?.label || 'Selected period';
+    if (!meta.date_from || !meta.date_to) return selected;
+    return `${selected} · ${formatDate(meta.date_from)} – ${formatDate(meta.date_to)}`;
+  }, [meta.date_from, meta.date_to, period]);
+
+  const exportCsv = () => {
+    if (!data) return;
+    const rows: Array<Array<string | number>> = [
+      ['ERRUM ERP Dashboard Report'],
+      ['Period', `${meta.date_from || ''} to ${meta.date_to || ''}`],
+      ['Store scope', meta.store_scope === 'all' ? 'All branches' : selectedStoreName(meta.stores, meta.store_id)],
+      ['Generated at', meta.generated_at || ''],
+      [],
+      ['KPI', 'Value', 'Previous', 'Change %'],
+      ...Object.entries(kpis).map(([key, item]: [string, any]) => [
+        titleCase(key),
+        number(item?.value),
+        number(item?.previous_value),
+        number(item?.change_percentage),
+      ]),
+      [],
+      ['Payment method', 'Gross', 'Commission', 'Net'],
+      ...(sales.payment_mix?.methods || []).map((item: any) => [item.name, number(item.gross_amount), number(item.commission_amount), number(item.net_amount)]),
+      [],
+      ['Top product', 'SKU', 'Quantity', 'Revenue'],
+      ...(performance.top_products || []).map((item: any) => [item.product_name, item.sku, number(item.quantity), number(item.revenue)]),
+      [],
+      ['Top store', 'Orders', 'Sales'],
+      ...(performance.top_stores || []).map((item: any) => [item.store_name, number(item.orders), number(item.sales)]),
+      [],
+      ['Alert', 'Severity', 'Value', 'Message'],
+      ...alerts.map((item: any) => [item.title, item.severity, item.value, item.message]),
+    ];
+
+    const csv = rows
+      .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `errum-dashboard-${meta.date_from || 'report'}-${meta.date_to || ''}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  if (authLoading || (loading && !data)) {
+    return <DashboardShell darkMode={darkMode} setDarkMode={setDarkMode} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen}><DashboardSkeleton /></DashboardShell>;
   }
 
-  // Restriction UI
-  if (!canAccess && !authLoading) {
-    return (
-      <div className={darkMode ? "dark" : ""}>
-        <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-          <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Header
-              darkMode={darkMode}
-              setDarkMode={setDarkMode}
-              toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-            />
-            <main className="flex-1 overflow-auto p-6 flex items-center justify-center">
-              <div className="text-center max-w-md p-8 rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 shadow-xl backdrop-blur">
-                <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-                <p className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Access Restricted</p>
-                <p className="text-gray-600 dark:text-gray-400">
-                  You do not have access to this page. Please go to a page you have access to.
-                </p>
-              </div>
-            </main>
-          </div>
-        </div>
-      </div>
-    );
+  if (error && !data) {
+    return <DashboardShell darkMode={darkMode} setDarkMode={setDarkMode} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen}><div className="flex min-h-full items-center justify-center p-6"><div className="max-w-md rounded-3xl border border-rose-200 bg-white p-8 text-center shadow-sm dark:border-rose-900 dark:bg-slate-950"><AlertCircle className="mx-auto h-11 w-11 text-rose-500" /><h1 className="mt-4 text-xl font-black">Dashboard reports are unavailable</h1><p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{error}</p><button onClick={() => loadDashboard(true)} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white dark:bg-cyan-400 dark:text-slate-950"><RefreshCw className="h-4 w-4" />Try again</button></div></div></DashboardShell>;
   }
-
-  // Error state (only if no data at all)
-  if (error && !data.todayMetrics && !data.last30Days) {
-    return (
-      <div className={darkMode ? "dark" : ""}>
-        <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-          <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Header
-              darkMode={darkMode}
-              setDarkMode={setDarkMode}
-              toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-            />
-            <main className="flex-1 overflow-auto p-6 flex items-center justify-center">
-              <div className="text-center max-w-md">
-                <AlertTriangle className="w-12 h-12 text-red-600 mx-auto mb-4" />
-                <p className="text-xl mb-4 text-gray-900 dark:text-white">Error Loading Dashboard</p>
-                <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
-                <button
-                  onClick={fetchDashboardData}
-                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-                >
-                  Try Again
-                </button>
-              </div>
-            </main>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // KPI derived fields
-  const todaySales = Number(metrics?.total_sales ?? 0);
-  const todayOrders = Number(metrics?.order_count ?? 0);
-  const aov = Number(metrics?.average_order_value ?? 0);
-
-  const grossMarginPct = Number(metrics?.gross_margin_percentage ?? 0);
-  const grossMargin = Number(metrics?.gross_margin ?? 0);
-
-  const netProfit = Number(metrics?.net_profit ?? 0);
-  const netProfitPct = Number(metrics?.net_profit_percentage ?? 0);
-
-  // MTD best-effort: prefer backend mtd_sales if exists, else last30Days total (fallback)
-  const mtdSales = Number(metrics?.mtd_sales ?? sales30Days?.month_to_date_sales ?? sales30Days?.total_sales ?? 0);
-  const mtdTarget = metrics?.mtd_target ? Number(metrics.mtd_target) : null;
-  const mtdProgressPct = mtdTarget ? (mtdSales / Math.max(mtdTarget, 1)) * 100 : null;
 
   return (
-    <div className={darkMode ? "dark" : ""}>
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-        <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header
-            darkMode={darkMode}
-            setDarkMode={setDarkMode}
-            toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          />
-
-          <main className="flex-1 overflow-auto">
-            <div className="min-h-full bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-900 dark:via-purple-900 dark:to-slate-900">
-              {/* Background glow - only visible in dark mode */}
-              <div className="pointer-events-none fixed inset-0 -z-10 dark:block hidden">
-                <div className="absolute -top-32 right-10 h-72 w-72 rounded-full bg-fuchsia-500/20 blur-3xl" />
-                <div className="absolute -bottom-32 left-10 h-72 w-72 rounded-full bg-sky-500/20 blur-3xl" />
+    <DashboardShell darkMode={darkMode} setDarkMode={setDarkMode} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen}>
+      <div className="mx-auto w-full max-w-[1700px] space-y-6 p-4 sm:p-6 lg:p-8">
+        <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-slate-950 text-white shadow-sm dark:border-slate-800">
+          <div className="relative px-5 py-6 sm:px-7 lg:px-8">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,.22),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(99,102,241,.22),transparent_38%)]" />
+            <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300">
+                  <span>ERP command centre</span>
+                  <span className="h-1 w-1 rounded-full bg-slate-500" />
+                  <span>{roleLabel(role)}</span>
+                </div>
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">Business performance, risks and actions in one place.</h1>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">Monitor sales, collections, profit, liquidity, dues, inventory, purchasing and fulfilment without opening separate reports.</p>
               </div>
 
-              <div className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-6 py-6">
-                {/* Warning banner for partial data */}
-                {error && (data.todayMetrics || data.last30Days) && (
-                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-center gap-3">
-                    <AlertTriangle className="w-5 h-5 text-amber-400" />
-                    <div className="flex-1">
-                      <div className="font-semibold text-amber-400">Partial Data Load</div>
-                      <div className="text-sm text-slate-700 dark:text-slate-300">
-                        Some sections failed to load. Check console for details.
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleRefresh}
-                      disabled={refreshing}
-                      className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 rounded-lg transition text-sm disabled:opacity-50"
-                    >
-                      {refreshing ? "Refreshing..." : "Retry"}
-                    </button>
-                  </div>
-                )}
-
-                {/* HEADER */}
-                <header className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <h1 className="text-xl font-semibold tracking-tight">Founder Dashboard</h1>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Live snapshot of sales, inventory, and operations across all channels.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    {/* Filters */}
-                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60 px-3 py-2 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-500 dark:text-slate-400">Time</span>
-                        <button
-                          onClick={() => setTimeFilter("today")}
-                          className={`rounded-full px-3 py-1 text-xs transition ${timeFilter === "today"
-                              ? "bg-slate-100 dark:bg-slate-800 font-medium text-slate-900 dark:text-slate-100 shadow-inner"
-                              : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                            }`}
-                        >
-                          Today
-                        </button>
-                        <button
-                          onClick={() => setTimeFilter("month")}
-                          className={`rounded-full px-3 py-1 text-xs transition ${timeFilter === "month"
-                              ? "bg-slate-100 dark:bg-slate-800 font-medium text-slate-900 dark:text-slate-100 shadow-inner"
-                              : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                            }`}
-                        >
-                          This Month
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="hidden items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300 md:flex">
-                      <Clock className="h-4 w-4 text-slate-400" />
-                      <span>Live • Updated just now</span>
-                    </div>
-
-                    <button
-                      onClick={handleRefresh}
-                      disabled={refreshing}
-                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition disabled:opacity-50"
-                    >
-                      <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} />
-                    </button>
-
-                    <button className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900/70">
-                      <Bell className="h-4 w-4 text-slate-700 dark:text-slate-200" />
-                      {Number(lowStock?.summary?.out_of_stock_count ?? 0) > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full bg-fuchsia-500 text-[9px] font-semibold text-white">
-                          {lowStock?.summary?.out_of_stock_count ?? 0}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                </header>
-
-                {/* ✅ KPI ROW (cash snapshot removed) */}
-                {metrics && (
-                  <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
-                    <KpiCard
-                      label="Today's Sales"
-                      value={formatCurrency(todaySales)}
-                      delta={`${todayOrders} orders • AOV: ${formatCurrency(aov)}`}
-                      positive
-                    />
-
-                    <KpiCard
-                      label="MTD Sales"
-                      value={formatCurrency(mtdSales)}
-                      delta={
-                        mtdTarget
-                          ? `${formatPercentage(mtdProgressPct || 0)} of target • Target: ${formatCurrency(mtdTarget)}`
-                          : "Target not set"
-                      }
-                      positive
-                    />
-
-                    <KpiCard
-                      label="Gross Margin (MTD)"
-                      value={formatPercentage(grossMarginPct)}
-                      delta={`GM: ${formatCurrency(grossMargin)}`}
-                      positive={grossMarginPct >= 35}
-                    />
-
-                    <KpiCard
-                      label="Est. Net Profit (MTD)"
-                      value={formatCurrency(netProfit)}
-                      delta={`Net margin: ${formatPercentage(netProfitPct)}`}
-                      positive={netProfit >= 0}
-                    />
-
-                    <KpiCard
-                      label="Orders Today"
-                      value={String(todayOrders)}
-                      delta={`Avg order: ${formatCurrency(aov)}`}
-                      positive
-                    />
-                  </section>
-                )}
-
-                {/* MIDDLE GRID */}
-                <section className="grid flex-1 gap-4 lg:grid-cols-[1.3fr,1.4fr]">
-                  {/* LEFT COLUMN */}
-                  <div className="flex flex-col gap-4">
-                    {/* Daily sales chart */}
-                    {sales30Days && Array.isArray(sales30Days.daily_sales) && (
-                      <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 p-4 shadow-sm dark:shadow-[0_0_40px_rgba(15,23,42,0.8)] backdrop-blur">
-                        <div className="mb-3 flex items-center justify-between gap-2">
-                          <div>
-                            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                              Daily Sales • Last 30 Days
-                            </h2>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                              Total: {formatCurrency(Number(sales30Days.total_sales ?? 0))} •{" "}
-                              {Number(sales30Days.total_orders ?? 0)} orders
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-2 h-40 rounded-2xl bg-gradient-to-b from-sky-500/10 via-slate-100 to-white dark:from-sky-500/15 dark:via-slate-900/40 dark:to-slate-950/80 p-3">
-                          <div className="flex h-full items-end gap-1">
-                            {(() => {
-                              const allSales = sales30Days.daily_sales.map((d: any) => Number(d.total_sales ?? 0));
-                              const maxSales = Math.max(...allSales, 1);
-                              return sales30Days.daily_sales.map((day: any, i: number) => {
-                                const height = (Number(day.total_sales ?? 0) / maxSales) * 100;
-                                return (
-                                  <div
-                                    key={i}
-                                    className="flex-1 rounded-t-full bg-gradient-to-t from-sky-400/40 via-sky-400/70 to-fuchsia-400/80 hover:opacity-100 transition cursor-pointer"
-                                    style={{ height: `${Math.max(height, 8)}%` }}
-                                    title={`${day.date}: ${formatCurrency(Number(day.total_sales ?? 0))}`}
-                                  />
-                                );
-                              });
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Sales by channel + Store performance */}
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {channels && (
-                        <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 p-4 backdrop-blur">
-                          <h2 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                            Sales by Channel • {timeFilter === "today" ? "Today" : "This Month"}
-                          </h2>
-
-                          <div className="flex items-center gap-3">
-                            <div className="relative h-24 w-24">
-                              <div className="absolute inset-0 rounded-full bg-[conic-gradient(at_top,_#0ea5e9_0,_#e879f9_70%,_#22c55e_100%)]" />
-                              <div className="absolute inset-3 rounded-full bg-white dark:bg-slate-950" />
-                              <div className="absolute inset-6 flex flex-col items-center justify-center text-[10px] text-slate-600 dark:text-slate-300">
-                                <span className="font-semibold text-slate-900 dark:text-slate-50">
-                                  {Number(channels.total_orders ?? 0)}
-                                </span>
-                                <span>orders</span>
-                              </div>
-                            </div>
-
-                            <div className="flex-1 space-y-2 text-[11px]">
-                              {(channels.channels || []).map((channel: any, index: number) => {
-                                const icons = [
-                                  <Store key="store" className="h-3.5 w-3.5" />,
-                                  <Globe2 key="globe" className="h-3.5 w-3.5" />,
-                                  <ShoppingBag key="bag" className="h-3.5 w-3.5" />,
-                                ];
-                                return (
-                                  <ChannelRow
-                                    key={channel.channel || index}
-                                    icon={icons[index] || <Store className="h-3.5 w-3.5" />}
-                                    label={channel.channel_label || channel.channel || "Channel"}
-                                    value={formatCurrency(Number(channel.total_sales ?? 0))}
-                                    percent={formatPercentage(Number(channel.percentage ?? 0))}
-                                  />
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Store performance */}
-                      <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 p-4 backdrop-blur">
-                        <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                          Store Performance
-                        </h2>
-
-                        {Array.isArray(topStores?.top_stores) && topStores.top_stores.length > 0 ? (
-                          <div className="space-y-2 text-[11px]">
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-1">
-                              Top stores by sales • {timeFilter === "today" ? "Today" : "This Month"}
-                            </p>
-
-                            {topStores.top_stores.slice(0, 4).map((store: any) => (
-                              <StoreCard
-                                key={store.store_id}
-                                rank={store.rank}
-                                name={store.store_name}
-                                location={store.store_location}
-                                type={store.store_type}
-                                sales={formatCurrency(Number(store.total_sales ?? 0))}
-                                contribution={formatPercentage(Number(store.contribution_percentage ?? 0))}
-                                orders={Number(store.order_count ?? 0)}
-                              />
-                            ))}
-
-                            <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                              Total period sales: {formatCurrency(Number(topStores.total_sales_all_stores ?? 0))}
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Store-wise analytics will appear once store sales data is available.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* RIGHT COLUMN */}
-                  <div className="flex flex-col gap-4">
-                    {/* Top products */}
-                    {Array.isArray(topProducts?.top_products) && (
-                      <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 p-4 backdrop-blur">
-                        <div className="mb-3">
-                          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                            Top Products • Today
-                          </h2>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            By revenue across all branches & channels.
-                          </p>
-                        </div>
-
-                        <div className="grid gap-3 text-[11px] md:grid-cols-2 xl:grid-cols-3">
-                          {topProducts.top_products.slice(0, 5).map((product: any) => (
-                            <TopProductCard
-                              key={product.product_id}
-                              name={product.product_name}
-                              category={product.product_sku}
-                              sales={formatCurrency(Number(product.total_revenue ?? 0))}
-                              qty={Number(product.total_quantity_sold ?? 0)}
-                              branches={Number(product.order_count ?? 0)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Slow moving + inventory */}
-                    <div className="grid gap-4 md:grid-cols-[1.4fr,1fr]">
-                      {/* Slow moving */}
-                      {Array.isArray(slowMoving?.slow_moving_products) && (
-                        <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 p-4 backdrop-blur">
-                          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                            Slow-Moving / Overstock
-                          </h2>
-
-                          <div className="space-y-2 text-[11px]">
-                            {slowMoving.slow_moving_products.slice(0, 3).map((item: any) => (
-                              <div
-                                key={item.product_id}
-                                className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800/80 dark:bg-slate-950/70"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="truncate text-slate-900 dark:text-slate-100">
-                                    {item.product_name}
-                                  </span>
-                                  <span className="text-[10px] text-fuchsia-700 dark:text-fuchsia-300">
-                                    {formatCurrency(Number(item.stock_value ?? 0))}
-                                  </span>
-                                </div>
-
-                                <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-                                  <span>{Number(item.current_stock ?? 0)} pcs in stock</span>
-                                  <span>{Number(item.days_of_supply ?? 0)} days supply</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Inventory risk */}
-                      <div className="flex flex-col gap-4">
-                        {/* Low stock */}
-                        {lowStock && (
-                          <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 p-4 backdrop-blur">
-                            <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                              Low Stock / OOS
-                            </h2>
-
-                            <div className="space-y-2 text-[11px]">
-                              {(lowStock.out_of_stock || []).slice(0, 2).map((item: any) => (
-                                <div
-                                  key={`${item.product_id}-${item.store_id}-out`}
-                                  className="flex items-center justify-between rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 dark:border-slate-800/80 dark:bg-slate-950/70"
-                                >
-                                  <div className="flex-1">
-                                    <div className="truncate text-slate-900 dark:text-slate-100">{item.product_name}</div>
-                                    <div className="text-[10px] text-slate-500 dark:text-slate-400">{item.store_name}</div>
-                                  </div>
-                                  <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[10px] text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">
-                                    Out of stock
-                                  </span>
-                                </div>
-                              ))}
-
-                              {(lowStock.low_stock || []).slice(0, 1).map((item: any) => (
-                                <div
-                                  key={`${item.product_id}-${item.store_id}-low`}
-                                  className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-slate-800/80 dark:bg-slate-950/70"
-                                >
-                                  <div className="flex-1">
-                                    <div className="truncate text-slate-900 dark:text-slate-100">{item.product_name}</div>
-                                    <div className="text-[10px] text-slate-500 dark:text-slate-400">{item.store_name}</div>
-                                  </div>
-                                  <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
-                                    Low stock
-                                  </span>
-                                </div>
-                              ))}
-
-                              {Number(lowStock?.summary?.out_of_stock_count ?? 0) === 0 &&
-                                Number(lowStock?.summary?.low_stock_count ?? 0) === 0 && (
-                                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                                    No stock alerts right now.
-                                  </div>
-                                )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Inventory age */}
-                        {Array.isArray(inventoryAge?.age_categories) && (
-                          <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 p-4 backdrop-blur">
-                            <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                              Inventory Age (by value)
-                            </h2>
-
-                            <div className="mb-2 h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-900">
-                              <div className="flex h-full w-full">
-                                {inventoryAge.age_categories.map((cat: any, i: number) => {
-                                  const colors = [
-                                    "bg-emerald-400/80",
-                                    "bg-sky-400/80",
-                                    "bg-amber-400/90",
-                                    "bg-rose-500/90",
-                                  ];
-                                  return (
-                                    <div
-                                      key={i}
-                                      className={`h-full ${colors[i] || "bg-slate-400/80"}`}
-                                      style={{ width: `${Number(cat.percentage_of_total ?? 0)}%` }}
-                                      title={`${cat.label}: ${formatCurrency(Number(cat.inventory_value ?? 0))}`}
-                                    />
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2 text-[11px]">
-                              {inventoryAge.age_categories.map((cat: any, i: number) => {
-                                const tones = ["fresh", "good", "watch", "danger"];
-                                return (
-                                  <AgeTile
-                                    key={i}
-                                    label={cat.label}
-                                    value={formatCurrency(Number(cat.inventory_value ?? 0))}
-                                    tone={tones[i] || "good"}
-                                  />
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                {/* ✅ BOTTOM – OPERATIONS & ALERTS */}
-                <section className="grid gap-4 lg:grid-cols-2">
-                  {/* Operations */}
-                  <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 p-4 backdrop-blur">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        Operations • Today
-                      </h2>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                        From order placed to delivered
-                      </span>
-                    </div>
-
-                    {pipelineStages.length ? (
-                      <div className="mb-1 grid gap-2 text-[11px] md:grid-cols-5">
-                        {pipelineStages.slice(0, 5).map((stage) => {
-                          const icons: Record<string, any> = {
-                            pending: <Clock className="h-3 w-3" />,
-                            processing: <Package className="h-3 w-3" />,
-                            ready_for_pickup: <Truck className="h-3 w-3" />,
-                            shipped: <Truck className="h-3 w-3" />,
-                            delivered: <CheckCircle2 className="h-3 w-3" />,
-                            cancelled: <RotateCcw className="h-3 w-3" />,
-                          };
-
-                          return (
-                            <PipelineStage
-                              key={stage.key}
-                              label={stage.label}
-                              count={stage.count}
-                              value={`—`}
-                              icon={icons[stage.key] || <Clock className="h-3 w-3" />}
-                              highlight={stage.key === "delivered"}
-                              warning={stage.key === "cancelled"}
-                            />
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-slate-500 dark:text-slate-400">
-                        No operations data available for today.
-                      </div>
-                    )}
-
-                    {operations?.summary ? (
-                      <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
-                        <MiniStat label="Total orders" value={String(Number(operations.summary.total_orders ?? 0))} />
-                        <MiniStat label="Delivered" value={String(Number(operations.summary.delivered_orders ?? 0))} />
-                        <MiniStat label="Cancelled" value={String(Number(operations.summary.cancelled_orders ?? 0))} />
-                        <MiniStat label="Pending" value={String(Number(operations.summary.pending_orders ?? 0))} />
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {/* Alerts */}
-                  <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/60 p-4 backdrop-blur">
-                    <h2 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      Alerts & Exceptions
-                    </h2>
-
-                    <div className="space-y-2 text-[11px]">
-                      {lowStock?.summary ? (
-                        <>
-                          {Number(lowStock.summary.out_of_stock_count ?? 0) > 0 && (
-                            <div className="rounded-2xl border border-rose-300 bg-rose-50 px-3 py-2 dark:border-rose-500/50 dark:bg-rose-500/10">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-[10px] bg-rose-500/10 text-rose-700 px-2 py-0.5 rounded-full dark:bg-rose-500/20 dark:text-rose-200">
-                                  Critical
-                                </span>
-                                <span className="text-[10px] text-slate-500 dark:text-slate-200">
-                                  Recent
-                                </span>
-                              </div>
-                              <div className="text-slate-900 dark:text-slate-50">Stock-out Alert</div>
-                              <div className="text-[10px] text-slate-600 dark:text-slate-200">
-                                {lowStock.summary.out_of_stock_count} products out of stock across branches
-                              </div>
-                            </div>
-                          )}
-
-                          {Number(lowStock.summary.low_stock_count ?? 0) > 0 && (
-                            <div className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-500/40 dark:bg-amber-500/8">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-[10px] bg-amber-500/10 text-amber-700 px-2 py-0.5 rounded-full dark:bg-amber-500/15 dark:text-amber-200">
-                                  Warning
-                                </span>
-                                <span className="text-[10px] text-slate-500 dark:text-slate-200">
-                                  Recent
-                                </span>
-                              </div>
-                              <div className="text-slate-900 dark:text-slate-50">Low Stock Warning</div>
-                              <div className="text-[10px] text-slate-600 dark:text-slate-200">
-                                {lowStock.summary.low_stock_count} products running low on inventory
-                              </div>
-                            </div>
-                          )}
-
-                          {Number(lowStock.summary.out_of_stock_count ?? 0) === 0 &&
-                            Number(lowStock.summary.low_stock_count ?? 0) === 0 && (
-                              <div className="text-xs text-slate-500 dark:text-slate-400">
-                                No alerts right now.
-                              </div>
-                            )}
-                        </>
-                      ) : (
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                          Alerts will appear once the backend provides stock summary.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </section>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:min-w-[500px]">
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Report window</div>
+                  <div className="mt-1 text-sm font-semibold">{periodLabel}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Data freshness</div>
+                  <div className="mt-1 flex items-center gap-2 text-sm font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{meta.generated_at ? `Updated ${formatTime(meta.generated_at)}` : 'Live'}</div>
+                </div>
               </div>
             </div>
-          </main>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* Subcomponents */
-
-function KpiCard({ label, value, delta, positive, neutral }: any) {
-  const tone = neutral
-    ? "text-slate-500 dark:text-slate-300"
-    : positive
-      ? "text-emerald-600 dark:text-emerald-400"
-      : "text-rose-600 dark:text-rose-400";
-
-  const Icon = neutral ? ShoppingBag : positive ? ArrowUpRight : ArrowDownRight;
-
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 dark:shadow-[0_0_25px_rgba(15,23,42,0.9)] backdrop-blur">
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11px] text-slate-500 dark:text-slate-400">{label}</span>
-        <Icon className={`h-3.5 w-3.5 ${tone}`} />
-      </div>
-      <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">{value}</div>
-      <div className={`mt-1 text-[10px] ${tone}`}>{delta}</div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value }: any) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800/80 dark:bg-slate-950/70">
-      <div className="text-[10px] text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">{value}</div>
-    </div>
-  );
-}
-
-function TopProductCard({ name, category, sales, qty, branches }: any) {
-  return (
-    <div className="flex flex-col justify-between rounded-2xl border border-gray-200 dark:border-slate-800/80 bg-white dark:bg-slate-950/80 p-3 shadow-sm dark:shadow-[0_0_18px_rgba(15,23,42,0.9)]">
-      <div className="mb-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1">
-            <div className="truncate text-[12px] font-semibold text-gray-900 dark:text-slate-50">{name}</div>
-            <span className="mt-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-slate-900 px-2 py-0.5 text-[10px] text-gray-700 dark:text-slate-300">
-              {category}
-            </span>
           </div>
-          <div className="text-right text-xs font-semibold text-purple-700 dark:text-fuchsia-300">{sales}</div>
-        </div>
-      </div>
+        </section>
 
-      <div className="mt-1 flex items-center justify-between text-[10px] text-gray-600 dark:text-slate-300">
-        <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-slate-900 px-2 py-0.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-green-500 dark:bg-emerald-400" />
-          <span>{qty} pcs sold</span>
-        </div>
-        <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-slate-900 px-2 py-0.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 dark:bg-sky-400" />
-          <span>{branches} orders</span>
-        </div>
-      </div>
-    </div>
-  );
-}
+        <section className="sticky top-0 z-20 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
+                <CalendarDays className="h-4 w-4 text-slate-400" />
+                <select value={period} onChange={(event) => setPeriod(event.target.value as DashboardPeriod)} className="bg-transparent text-sm font-semibold outline-none">
+                  {PERIOD_OPTIONS.map((option) => <option key={option.value} value={option.value} className="text-slate-900">{option.label}</option>)}
+                </select>
+              </div>
 
-function ChannelRow({ icon, label, value, percent }: any) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex items-center gap-1.5">
-        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-100">
-          {icon}
-        </div>
-        <span className="text-slate-700 dark:text-slate-200">{label}</span>
-      </div>
+              {period === 'custom' && (
+                <>
+                  <input type="date" value={dateFrom} max={dateTo} onChange={(event) => setDateFrom(event.target.value)} className="rounded-xl border border-slate-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-slate-700" />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input type="date" value={dateTo} min={dateFrom} onChange={(event) => setDateTo(event.target.value)} className="rounded-xl border border-slate-200 bg-transparent px-3 py-2 text-sm outline-none dark:border-slate-700" />
+                </>
+              )}
 
-      <div className="flex items-center gap-2 text-[10px]">
-        <span className="text-slate-600 dark:text-slate-300">{value}</span>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500 dark:bg-slate-900 dark:text-slate-400">
-          {percent}
-        </span>
-      </div>
-    </div>
-  );
-}
+              {canSwitchDashboardStore && (
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
+                  <Store className="h-4 w-4 text-slate-400" />
+                  <select value={storeId} onChange={(event) => setStoreId(event.target.value === 'all' ? 'all' : Number(event.target.value))} className="max-w-[220px] bg-transparent text-sm font-semibold outline-none">
+                    <option value="all" className="text-slate-900">All branches</option>
+                    {(meta.stores || []).map((store: any) => <option key={store.id} value={store.id} className="text-slate-900">{store.name}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
 
-function StoreCard({ rank, name, location, type, sales, contribution, orders }: any) {
-  return (
-    <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800/80 dark:bg-slate-950/70">
-      <div className="flex items-center gap-2">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white dark:bg-slate-100 dark:text-slate-900">
-          {rank}
-        </span>
-        <div>
-          <div className="text-[11px] font-semibold text-slate-900 dark:text-slate-50">{name}</div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-            {location} • {type}
+            <div className="flex items-center gap-2">
+              <button onClick={exportCsv} disabled={!data} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-900"><Download className="h-4 w-4" />Export CSV</button>
+              <button onClick={() => loadDashboard(true)} disabled={refreshing} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 dark:bg-cyan-400 dark:text-slate-950 dark:hover:bg-cyan-300">{refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Refresh</button>
+            </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      <div className="text-right text-[10px]">
-        <div className="font-semibold text-slate-900 dark:text-slate-50">{sales}</div>
-        <div className="text-slate-500 dark:text-slate-400">
-          {orders} orders • {contribution} of total
+        {error && <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200"><AlertCircle className="mt-0.5 h-5 w-5 shrink-0" /><div><div className="font-semibold">Dashboard data could not be fully refreshed</div><div className="mt-1 text-sm opacity-80">{error}</div></div></div>}
+
+        <ReportSection eyebrow="Executive snapshot" title="What changed in the selected period" description="Each card compares the selected window with the immediately preceding equivalent period.">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
+            <KpiCard title="Gross sales" icon={<ShoppingBag />} item={kpis.gross_sales} format="currency" series={series.map((item: any) => number(item.sales))} />
+            <KpiCard title="Net sales" icon={<ReceiptText />} item={kpis.net_sales} format="currency" series={series.map((item: any) => number(item.net_sales))} />
+            <KpiCard title="Net collections" icon={<WalletCards />} item={kpis.collections} format="currency" series={(sales.payment_mix?.methods || []).map((item: any) => number(item.net_amount))} />
+            <KpiCard title="Orders" icon={<PackageCheck />} item={kpis.orders} format="number" series={series.map((item: any) => number(item.orders))} />
+            <KpiCard title="Average order" icon={<CircleDollarSign />} item={kpis.average_order_value} format="currency" series={series.map((item: any) => item.orders ? number(item.sales) / number(item.orders) : 0)} />
+            <KpiCard title="Online sales" icon={<ShoppingBag />} item={kpis.online_sales} format="currency" neutral />
+            {visibility.profitability && <KpiCard title="Gross profit" icon={<TrendingUp />} item={kpis.gross_profit} format="currency" series={series.map((item: any) => number(item.net_sales))} />}
+            {visibility.profitability && <KpiCard title="Gross margin" icon={<Percent />} item={kpis.gross_margin_percentage} format="percent" />}
+            {visibility.profitability && <KpiCard title="Net profit" icon={<BarChart3 />} item={kpis.net_profit} format="currency" />}
+            {visibility.profitability && <KpiCard title="Net margin" icon={<Percent />} item={kpis.net_margin_percentage} format="percent" />}
+            {visibility.receivables && <KpiCard title="Customer due" icon={<Users />} item={kpis.customer_due} format="currency" neutral />}
+            {visibility.payables && <KpiCard title="Supplier due" icon={<Truck />} item={kpis.supplier_due} format="currency" neutral />}
+          </div>
+        </ReportSection>
+
+        <section className="grid gap-5 2xl:grid-cols-[1.55fr_.9fr]">
+          <ReportCard className="min-w-0">
+            <CardHeader title="Sales and refund trend" subtitle="Gross sales, net sales and refunds across the selected report window" actionHref="/purchase-history" />
+            <SalesChart data={series} />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <MiniMetric label="Gross sales" value={money(sales.gross_sales)} />
+              <MiniMetric label="Refunded" value={money(sales.refund_value)} tone="danger" />
+              <MiniMetric label="Returns" value={`${number(sales.return_count).toLocaleString()} · ${money(sales.return_value)}`} />
+              <MiniMetric label="Return rate" value={percent(sales.return_rate_percentage)} tone={number(sales.return_rate_percentage) > 5 ? 'warning' : 'success'} />
+            </div>
+          </ReportCard>
+
+          <ReportCard>
+            <CardHeader title="Sales channel mix" subtitle="Where the period's order value originated" actionHref="/orders" />
+            <div className="space-y-4">
+              {(sales.channels || []).map((channel: any, index: number) => (
+                <ProgressRow key={channel.channel || index} label={channel.label} value={money(channel.sales)} percentage={number(channel.percentage)} detail={`${number(channel.orders).toLocaleString()} orders`} />
+              ))}
+              {!sales.channels?.length && <EmptyState text="No sales channels recorded in this period." />}
+            </div>
+          </ReportCard>
+        </section>
+
+        <section className="grid gap-5 xl:grid-cols-2">
+          <ReportCard>
+            <CardHeader title="Collection and payment reconciliation" subtitle="Gross customer payment, processing commission and expected net receipt" actionHref="/accounting/payment-commissions" />
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead><tr className="border-b border-slate-200 text-[11px] uppercase tracking-[0.14em] text-slate-400 dark:border-slate-800"><th className="py-3 pr-3">Method</th><th className="px-3 py-3 text-right">Gross</th><th className="px-3 py-3 text-right">Commission</th><th className="pl-3 py-3 text-right">Net receipt</th></tr></thead>
+                <tbody>
+                  {(sales.payment_mix?.methods || []).map((method: any) => <tr key={`${method.code}-${method.payment_method_id}`} className="border-b border-slate-100 last:border-0 dark:border-slate-900"><td className="py-3 pr-3"><div className="font-semibold">{method.name}</div><div className="text-xs text-slate-400">{titleCase(method.type)}</div></td><td className="px-3 py-3 text-right font-medium">{money(method.gross_amount)}</td><td className="px-3 py-3 text-right text-rose-600 dark:text-rose-300">{money(method.commission_amount)}</td><td className="pl-3 py-3 text-right font-bold text-emerald-700 dark:text-emerald-300">{money(method.net_amount)}</td></tr>)}
+                </tbody>
+                <tfoot><tr className="border-t-2 border-slate-200 font-bold dark:border-slate-700"><td className="py-3">Total</td><td className="px-3 py-3 text-right">{money(sales.payment_mix?.total_gross)}</td><td className="px-3 py-3 text-right text-rose-600 dark:text-rose-300">{money(sales.payment_mix?.total_commission)}</td><td className="pl-3 py-3 text-right text-emerald-700 dark:text-emerald-300">{money(sales.payment_mix?.total_net)}</td></tr></tfoot>
+              </table>
+            </div>
+          </ReportCard>
+
+          {visibility.profitability && <ReportCard>
+            <CardHeader title="Profit bridge" subtitle="How net sales become period profit" actionHref="/accounting" />
+            <div className="space-y-3">
+              <BridgeRow label="Net sales" value={number(sales.net_sales)} base={Math.max(number(sales.net_sales), 1)} positive />
+              <BridgeRow label="Cost of goods sold" value={number(profitability.cogs)} base={Math.max(number(sales.net_sales), 1)} />
+              <BridgeRow label="Operating expenses" value={number(profitability.operating_expenses)} base={Math.max(number(sales.net_sales), 1)} />
+              <BridgeRow label="Payment commissions" value={number(profitability.payment_commissions)} base={Math.max(number(sales.net_sales), 1)} />
+              <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <MiniMetric label="Gross profit" value={money(profitability.gross_profit)} tone={number(profitability.gross_profit) >= 0 ? 'success' : 'danger'} />
+                <MiniMetric label="Net profit" value={money(profitability.net_profit)} tone={number(profitability.net_profit) >= 0 ? 'success' : 'danger'} />
+                <MiniMetric label="Gross margin" value={percent(profitability.gross_margin_percentage)} />
+                <MiniMetric label="Net margin" value={percent(profitability.net_margin_percentage)} tone={number(profitability.net_margin_percentage) >= 0 ? 'success' : 'danger'} />
+              </div>
+            </div>
+          </ReportCard>}
+        </section>
+
+        {(visibility.liquidity || visibility.capital) && <ReportSection eyebrow="Financial position" title="Liquidity, dues and capital exposure" description="Ledger balances are shown as of the selected end date; aging panels show current outstanding exposure.">
+          <div className="grid gap-5 xl:grid-cols-[1.1fr_1fr_1fr]">
+            {visibility.liquidity && <ReportCard>
+              <CardHeader title="Liquidity snapshot" subtitle={`As of ${formatDate(liquidity.as_of || meta.date_to)}`} actionHref="/accounting" />
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                <BalanceTile icon={<Banknote />} label="Cash balance" value={money(liquidity.cash_balance)} />
+                <BalanceTile icon={<Landmark />} label="Bank balance" value={money(liquidity.bank_balance)} />
+                <BalanceTile icon={<WalletCards />} label="Mobile wallets" value={money(liquidity.mobile_wallet_balance)} />
+                <BalanceTile icon={<Boxes />} label="Stock value" value={money(inventory.stock_value)} />
+              </div>
+              {!!liquidity.wallets?.length && <div className="mt-4 space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">{liquidity.wallets.map((wallet: any) => <div key={wallet.account_id} className="flex items-center justify-between text-sm"><span className="text-slate-500 dark:text-slate-400">{wallet.name}</span><span className="font-semibold">{money(wallet.balance)}</span></div>)}</div>}
+            </ReportCard>}
+
+            {visibility.receivables && <AgingCard title="Customer due aging" subtitle={`${number(receivables.count).toLocaleString()} outstanding orders`} data={receivables} href="/orders" />}
+            {visibility.payables && <AgingCard title="Supplier due aging" subtitle={`${number(payables.count).toLocaleString()} open purchase commitments`} data={payables} href="/purchase-order" />}
+          </div>
+
+          {visibility.capital && <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SummaryTile label="Fixed assets" value={money(liquidity.fixed_asset_value)} icon={<Landmark />} />
+            <SummaryTile label="Owner investment" value={money(liquidity.investment_balance)} icon={<CircleDollarSign />} />
+            <SummaryTile label="Loan balance" value={money(liquidity.loan_balance)} icon={<CreditCard />} />
+            <SummaryTile label="VAT / tax liability" value={money(liquidity.tax_liability)} icon={<ReceiptText />} />
+          </div>}
+        </ReportSection>}
+
+        <ReportSection eyebrow="Inventory and fulfilment" title="Operational health and stock risks" description="Current inventory snapshot combined with selected-period order operations.">
+          <div className="grid gap-5 xl:grid-cols-[1fr_1fr_1.05fr]">
+            <ReportCard>
+              <CardHeader title="Inventory health" subtitle={`${number(inventory.quantity).toLocaleString()} units · ${number(inventory.product_store_count).toLocaleString()} product/store records`} actionHref="/inventory/view-new" />
+              <div className="grid grid-cols-2 gap-3">
+                <MiniMetric label="Stock value" value={money(inventory.stock_value)} />
+                <MiniMetric label="Low stock" value={number(inventory.low_stock_count).toLocaleString()} tone={number(inventory.low_stock_count) ? 'warning' : 'success'} />
+                <MiniMetric label="Out of stock" value={number(inventory.out_of_stock_count).toLocaleString()} tone={number(inventory.out_of_stock_count) ? 'danger' : 'success'} />
+                <MiniMetric label="Alert threshold" value={`${number(inventory.low_stock_threshold)} units`} />
+              </div>
+              <div className="mt-5 space-y-3">
+                {(inventory.age_buckets || []).map((bucket: any) => <ProgressRow key={bucket.label} label={bucket.label} value={money(bucket.amount)} percentage={number(bucket.percentage)} />)}
+              </div>
+            </ReportCard>
+
+            <ReportCard>
+              <CardHeader title="Low-stock watchlist" subtitle="The most urgent product/store combinations" actionHref="/inventory/view-new" />
+              <div className="space-y-2">
+                {(inventory.low_stock_items || []).slice(0, 8).map((item: any) => <Link key={`${item.product_id}-${item.store_id}`} href="/inventory/view-new" className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-900"><div className="min-w-0"><div className="truncate text-sm font-semibold">{item.product_name}</div><div className="truncate text-xs text-slate-400">{item.sku} · {item.store_name}</div></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${item.status === 'out_of_stock' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'}`}>{number(item.quantity).toLocaleString()}</span></Link>)}
+                {!inventory.low_stock_items?.length && <EmptyState text="No stock alerts at the current threshold." icon={<CheckCircle2 className="h-8 w-8" />} />}
+              </div>
+            </ReportCard>
+
+            <ReportCard>
+              <CardHeader title="Order fulfilment pipeline" subtitle={`${number(operations.pending_unfulfilled).toLocaleString()} pending or unfulfilled orders`} actionHref="/orders" />
+              <div className="space-y-3">
+                {(operations.pipeline || []).slice(0, 8).map((stage: any) => {
+                  const max = Math.max(...(operations.pipeline || []).map((item: any) => number(item.orders)), 1);
+                  return <ProgressRow key={stage.status} label={stage.label} value={`${number(stage.orders).toLocaleString()} orders`} percentage={(number(stage.orders) / max) * 100} detail={money(stage.value)} />;
+                })}
+                {!operations.pipeline?.length && <EmptyState text="No order activity in the selected period." />}
+              </div>
+            </ReportCard>
+          </div>
+        </ReportSection>
+
+        <section className="grid gap-5 xl:grid-cols-2">
+          <RankedTable title="Top products" subtitle="Highest sales value in the selected period" href="/reports/daily-branch" columns={['Product', 'Qty', 'Revenue']} rows={(performance.top_products || []).map((item: any) => [<div key="name"><div className="font-semibold">{item.product_name}</div><div className="text-xs text-slate-400">{item.sku}</div></div>, number(item.quantity).toLocaleString(), money(item.revenue)])} />
+          <RankedTable title="Branch performance" subtitle="Sales contribution across the selected scope" href="/dashboard/stores-summary" columns={['Branch', 'Orders', 'Sales']} rows={(performance.top_stores || []).map((item: any) => [<div key="name" className="font-semibold">{item.store_name}</div>, number(item.orders).toLocaleString(), money(item.sales)])} />
+        </section>
+
+        <section className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
+          <ReportCard>
+            <CardHeader title="Action centre" subtitle="Exceptions that need management attention" />
+            <div className="grid gap-3 md:grid-cols-2">
+              {alerts.map((alert: any, index: number) => <AlertItem key={`${alert.title}-${index}`} alert={alert} />)}
+              {!alerts.length && <div className="md:col-span-2"><EmptyState text="No material exceptions were detected for this dashboard scope." icon={<CheckCircle2 className="h-8 w-8" />} /></div>}
+            </div>
+          </ReportCard>
+
+          {visibility.approvals && <ReportCard>
+            <CardHeader title="Pending approvals" subtitle="Open control actions across purchasing, expenses and returns" actionHref="/activity-logs" />
+            <div className="space-y-3">
+              <ApprovalRow label="Purchase orders" value={approvals.purchase_orders} href="/purchase-order" icon={<ShoppingBag />} />
+              <ApprovalRow label="Expenses" value={approvals.expenses} href="/accounting" icon={<ReceiptText />} />
+              <ApprovalRow label="Returns" value={approvals.returns} href="/returns" icon={<RotateCcw />} />
+              <div className="mt-4 rounded-2xl bg-slate-950 p-4 text-white dark:bg-cyan-400 dark:text-slate-950"><div className="text-xs uppercase tracking-[0.16em] opacity-60">Total waiting</div><div className="mt-1 text-3xl font-black">{number(approvals.total).toLocaleString()}</div></div>
+            </div>
+          </ReportCard>}
+        </section>
+
+        <section className={`grid gap-5 ${visibility.payables ? 'xl:grid-cols-3' : 'xl:grid-cols-1'}`}>
+          {visibility.payables && <SummaryTile label="Purchase value" value={money(purchases.purchase_value)} description={`${number(purchases.purchase_count).toLocaleString()} purchase orders`} icon={<ShoppingBag />} href="/purchase-order" />}
+          {visibility.payables && <SummaryTile label="Received purchase value" value={money(purchases.received_value)} description={`Outstanding ${money(purchases.outstanding_amount)}`} icon={<PackageOpen />} href="/purchase-order" />}
+          <SummaryTile label="Returns and refunds" value={money(sales.refund_value)} description={`${number(sales.refund_count).toLocaleString()} completed refunds`} icon={<RotateCcw />} href="/returns" />
+        </section>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+          <div className="font-semibold text-slate-700 dark:text-slate-200">How to read this dashboard</div>
+          <div className="mt-1">{(meta.notes || []).join(' ')}</div>
         </div>
       </div>
-    </div>
+    </DashboardShell>
   );
 }
 
-function AgeTile({ label, value, tone }: any) {
-  const toneStyles: Record<string, string> = {
-    fresh:
-      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/40",
-    good:
-      "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/40",
-    watch:
-      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/40",
-    danger:
-      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/12 dark:text-rose-200 dark:border-rose-500/50",
-  };
-
-  return (
-    <div className={`rounded-2xl border px-3 py-2 text-[11px] ${toneStyles[tone] || toneStyles.good}`}>
-      <div>{label}</div>
-      <div className="text-xs font-semibold">{value}</div>
-    </div>
-  );
+function DashboardShell({ darkMode, setDarkMode, sidebarOpen, setSidebarOpen, children }: any) {
+  return <div className={darkMode ? 'dark' : ''}><div className="flex h-screen bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100"><Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} /><div className="flex min-w-0 flex-1 flex-col overflow-hidden"><Header darkMode={darkMode} setDarkMode={setDarkMode} toggleSidebar={() => setSidebarOpen(!sidebarOpen)} /><main className="flex-1 overflow-y-auto">{children}</main></div></div></div>;
 }
 
-function PipelineStage({ label, count, value, icon, highlight, warning }: any) {
-  const base = "rounded-2xl border px-3 py-2 flex flex-col gap-0.5 bg-white dark:bg-slate-950/70";
-  const color = highlight
-    ? "border-emerald-300 bg-emerald-50 dark:border-emerald-500/50 dark:bg-emerald-500/10"
-    : warning
-      ? "border-amber-300 bg-amber-50 dark:border-amber-500/50 dark:bg-amber-500/10"
-      : "border-slate-200 dark:border-slate-800";
+function ReportSection({ eyebrow, title, description, children }: any) {
+  return <section><div className="mb-4"><div className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-600 dark:text-cyan-400">{eyebrow}</div><h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">{title}</h2>{description && <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">{description}</p>}</div>{children}</section>;
+}
 
-  return (
-    <div className={`${base} ${color}`}>
-      <div className="flex items-center justify-between text-[10px]">
-        <span className="text-slate-700 dark:text-slate-300">{label}</span>
-        <span className="text-slate-700 dark:text-slate-200">{icon}</span>
-      </div>
-      <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">{count}</div>
-      <div className="text-[10px] text-slate-600 dark:text-slate-200">{value}</div>
-    </div>
-  );
+function ReportCard({ children, className = '' }: any) {
+  return <div className={`rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950 ${className}`}>{children}</div>;
+}
+
+function CardHeader({ title, subtitle, actionHref }: any) {
+  return <div className="mb-5 flex items-start justify-between gap-4"><div><h3 className="text-base font-black tracking-tight">{title}</h3>{subtitle && <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{subtitle}</p>}</div>{actionHref && <Link href={actionHref} className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-cyan-700 hover:text-cyan-600 dark:text-cyan-300">Open report <ArrowRight className="h-3.5 w-3.5" /></Link>}</div>;
+}
+
+function KpiCard({ title, icon, item, format, series = [], neutral = false }: any) {
+  const change = number(item?.change_percentage);
+  const positive = change > 0;
+  const negative = change < 0;
+  return <Link href={item?.href || '#'} className="group min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-950 dark:hover:border-cyan-700"><div className="flex items-start justify-between gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-200">{React.cloneElement(icon, { className: 'h-5 w-5' })}</div>{!neutral && <div className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${positive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : negative ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-900'}`}>{positive ? <ArrowUpRight className="h-3 w-3" /> : negative ? <ArrowDownRight className="h-3 w-3" /> : null}{Math.abs(change).toFixed(1)}%</div>}</div><div className="mt-4 truncate text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{title}</div><div className="mt-1 truncate text-2xl font-black tracking-tight">{formatValue(item?.value, format)}</div><div className="mt-3 flex items-end justify-between gap-3"><div className="truncate text-[11px] text-slate-400">Previous {formatValue(item?.previous_value, format)}</div>{series.length > 1 && <Sparkline values={series} />}</div></Link>;
+}
+
+function Sparkline({ values }: { values: number[] }) {
+  const clean = values.map(number);
+  const max = Math.max(...clean, 1);
+  const min = Math.min(...clean, 0);
+  const range = Math.max(max - min, 1);
+  const points = clean.map((value, index) => `${(index / Math.max(clean.length - 1, 1)) * 72},${24 - ((value - min) / range) * 20}`).join(' ');
+  return <svg viewBox="0 0 72 28" className="h-7 w-[72px] overflow-visible"><polyline points={points} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-cyan-500" /></svg>;
+}
+
+function SalesChart({ data }: { data: any[] }) {
+  if (!data.length) return <EmptyState text="No sales activity in the selected period." />;
+  const width = 900;
+  const height = 260;
+  const padX = 36;
+  const padY = 24;
+  const max = Math.max(...data.map((item) => Math.max(number(item.sales), number(item.refunds))), 1);
+  const x = (index: number) => padX + (index / Math.max(data.length - 1, 1)) * (width - padX * 2);
+  const y = (value: number) => height - padY - (value / max) * (height - padY * 2);
+  const salesPoints = data.map((item, index) => `${x(index)},${y(number(item.sales))}`).join(' ');
+  const refundPoints = data.map((item, index) => `${x(index)},${y(number(item.refunds))}`).join(' ');
+  const areaPath = `M ${x(0)} ${height - padY} L ${salesPoints.replace(/ /g, ' L ')} L ${x(data.length - 1)} ${height - padY} Z`;
+  const labelEvery = Math.max(1, Math.ceil(data.length / 7));
+  return <div className="overflow-x-auto"><svg viewBox={`0 0 ${width} ${height + 35}`} className="min-w-[680px] w-full"><defs><linearGradient id="salesArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity="0.28" /><stop offset="100%" stopColor="#06b6d4" stopOpacity="0" /></linearGradient></defs>{[0, .25, .5, .75, 1].map((ratio) => <g key={ratio}><line x1={padX} x2={width - padX} y1={y(max * ratio)} y2={y(max * ratio)} stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeDasharray="4 5" /><text x={2} y={y(max * ratio) + 4} fontSize="10" fill="currentColor" className="text-slate-400">{compactMoney(max * ratio)}</text></g>)}<path d={areaPath} fill="url(#salesArea)" /><polyline points={salesPoints} fill="none" stroke="#06b6d4" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /><polyline points={refundPoints} fill="none" stroke="#fb7185" strokeWidth="2.5" strokeDasharray="7 6" strokeLinecap="round" strokeLinejoin="round" />{data.map((item, index) => index % labelEvery === 0 || index === data.length - 1 ? <text key={item.key} x={x(index)} y={height + 15} textAnchor="middle" fontSize="10" fill="currentColor" className="text-slate-400">{item.label}</text> : null)}</svg><div className="mt-1 flex items-center justify-center gap-5 text-xs text-slate-500"><span className="inline-flex items-center gap-2"><span className="h-1 w-5 rounded bg-cyan-500" />Gross sales</span><span className="inline-flex items-center gap-2"><span className="h-1 w-5 rounded bg-rose-400" />Refunds</span></div></div>;
+}
+
+function ProgressRow({ label, value, percentage, detail }: any) {
+  const pct = Math.max(0, Math.min(number(percentage), 100));
+  return <div><div className="mb-1.5 flex items-end justify-between gap-3"><div><div className="text-sm font-semibold">{label}</div>{detail && <div className="text-[11px] text-slate-400">{detail}</div>}</div><div className="text-right"><div className="text-sm font-bold">{value}</div><div className="text-[10px] text-slate-400">{pct.toFixed(1)}%</div></div></div><div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-900"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-indigo-500" style={{ width: `${pct}%` }} /></div></div>;
+}
+
+function BridgeRow({ label, value, base, positive = false }: any) {
+  const pct = Math.max(2, Math.min(100, (Math.abs(number(value)) / Math.max(number(base), 1)) * 100));
+  return <div><div className="mb-1.5 flex items-center justify-between text-sm"><span className="font-semibold">{label}</span><span className={`font-bold ${positive ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{positive ? '+' : '−'}{money(Math.abs(number(value)))}</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-900"><div className={`h-full rounded-full ${positive ? 'bg-emerald-500' : 'bg-rose-400'}`} style={{ width: `${pct}%` }} /></div></div>;
+}
+
+function AgingCard({ title, subtitle, data, href }: any) {
+  return <ReportCard><CardHeader title={title} subtitle={subtitle} actionHref={href} /><div className="mb-4 text-3xl font-black">{money(data.total)}</div><div className="space-y-3">{(data.buckets || []).map((bucket: any, index: number) => <div key={bucket.label}><div className="mb-1 flex justify-between gap-3 text-xs"><span className="font-semibold">{bucket.label}</span><span className={index === 3 && number(bucket.amount) > 0 ? 'font-bold text-rose-600 dark:text-rose-300' : 'font-bold'}>{money(bucket.amount)} · {number(bucket.count)} items</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-900"><div className={`h-full rounded-full ${['bg-emerald-400', 'bg-cyan-400', 'bg-amber-400', 'bg-rose-500'][index]}`} style={{ width: `${Math.max(0, Math.min(number(bucket.percentage), 100))}%` }} /></div></div>)}</div></ReportCard>;
+}
+
+function RankedTable({ title, subtitle, href, columns, rows }: any) {
+  return <ReportCard><CardHeader title={title} subtitle={subtitle} actionHref={href} /><div className="overflow-x-auto"><table className="w-full min-w-[520px] text-sm"><thead><tr className="border-b border-slate-200 text-left text-[10px] uppercase tracking-[0.14em] text-slate-400 dark:border-slate-800"><th className="w-10 py-3">#</th>{columns.map((column: string, index: number) => <th key={column} className={`py-3 ${index ? 'text-right' : ''}`}>{column}</th>)}</tr></thead><tbody>{rows.map((row: any[], index: number) => <tr key={index} className="border-b border-slate-100 last:border-0 dark:border-slate-900"><td className="py-3 font-black text-slate-300 dark:text-slate-700">{String(index + 1).padStart(2, '0')}</td>{row.map((cell, cellIndex) => <td key={cellIndex} className={`py-3 ${cellIndex ? 'text-right font-semibold' : ''}`}>{cell}</td>)}</tr>)}</tbody></table>{!rows.length && <EmptyState text="No ranked data is available for this period." />}</div></ReportCard>;
+}
+
+function AlertItem({ alert }: any) {
+  const config: AnyRecord = { critical: { icon: <AlertTriangle />, className: 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-100' }, warning: { icon: <AlertCircle />, className: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100' }, info: { icon: <FileClock />, className: 'border-cyan-200 bg-cyan-50 text-cyan-900 dark:border-cyan-900 dark:bg-cyan-950/30 dark:text-cyan-100' } };
+  const selected = config[alert.severity] || config.info;
+  return <Link href={alert.href || '#'} className={`rounded-2xl border p-4 transition hover:-translate-y-0.5 ${selected.className}`}><div className="flex items-start gap-3"><div className="mt-0.5">{React.cloneElement(selected.icon, { className: 'h-5 w-5' })}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div className="font-bold">{alert.title}</div><div className="shrink-0 text-lg font-black">{typeof alert.value === 'number' && Math.abs(alert.value) >= 1000 ? compactMoney(alert.value) : alert.value}</div></div><div className="mt-1 text-xs leading-5 opacity-75">{alert.message}</div></div></div></Link>;
+}
+
+function ApprovalRow({ label, value, href, icon }: any) {
+  return <Link href={href} className="flex items-center justify-between rounded-2xl border border-slate-200 p-3 transition hover:border-cyan-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-cyan-800 dark:hover:bg-slate-900"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-900">{React.cloneElement(icon, { className: 'h-4 w-4' })}</div><span className="text-sm font-semibold">{label}</span></div><span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-black text-white dark:bg-cyan-400 dark:text-slate-950">{number(value).toLocaleString()}</span></Link>;
+}
+
+function BalanceTile({ icon, label, value }: any) {
+  return <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800"><div className="flex items-center gap-2 text-xs font-semibold text-slate-400">{React.cloneElement(icon, { className: 'h-4 w-4' })}{label}</div><div className="mt-2 text-xl font-black">{value}</div></div>;
+}
+
+function SummaryTile({ label, value, description, icon, href }: any) {
+  const content = <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"><div className="flex items-center justify-between gap-3"><div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</div><div className="text-cyan-600 dark:text-cyan-400">{React.cloneElement(icon, { className: 'h-5 w-5' })}</div></div><div className="mt-2 text-2xl font-black">{value}</div>{description && <div className="mt-1 text-xs text-slate-400">{description}</div>}</div>;
+  return href ? <Link href={href} className="transition hover:-translate-y-0.5">{content}</Link> : content;
+}
+
+function MiniMetric({ label, value, tone = 'default' }: any) {
+  const classes: AnyRecord = { success: 'text-emerald-700 dark:text-emerald-300', warning: 'text-amber-700 dark:text-amber-300', danger: 'text-rose-700 dark:text-rose-300', default: '' };
+  return <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-900"><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-slate-400">{label}</div><div className={`mt-1 text-base font-black ${classes[tone]}`}>{value}</div></div>;
+}
+
+function EmptyState({ text, icon = <PackageOpen className="h-8 w-8" /> }: any) {
+  return <div className="flex min-h-[130px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 p-5 text-center text-slate-400 dark:border-slate-800"><div className="mb-2 opacity-60">{icon}</div><div className="text-sm">{text}</div></div>;
+}
+
+function DashboardSkeleton() {
+  return <div className="mx-auto max-w-[1700px] space-y-6 p-6"><div className="h-56 animate-pulse rounded-[30px] bg-slate-200 dark:bg-slate-800" /><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">{Array.from({ length: 12 }).map((_, index) => <div key={index} className="h-40 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />)}</div><div className="grid gap-5 xl:grid-cols-2"><div className="h-96 animate-pulse rounded-3xl bg-slate-200 dark:bg-slate-800" /><div className="h-96 animate-pulse rounded-3xl bg-slate-200 dark:bg-slate-800" /></div></div>;
+}
+
+function formatValue(value: unknown, type: string) {
+  if (type === 'currency') return money(value);
+  if (type === 'percent') return percent(value);
+  return number(value).toLocaleString('en-BD', { maximumFractionDigits: 2 });
+}
+
+function money(value: unknown) {
+  return `৳ ${number(value).toLocaleString('en-BD', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+function compactMoney(value: unknown) {
+  const amount = number(value);
+  if (Math.abs(amount) >= 10_000_000) return `৳${(amount / 10_000_000).toFixed(1)}Cr`;
+  if (Math.abs(amount) >= 100_000) return `৳${(amount / 100_000).toFixed(1)}L`;
+  if (Math.abs(amount) >= 1_000) return `৳${(amount / 1_000).toFixed(1)}K`;
+  return `৳${amount.toFixed(0)}`;
+}
+
+function percent(value: unknown) {
+  return `${number(value).toLocaleString('en-BD', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}%`;
+}
+
+function titleCase(value: string) {
+  return String(value || '').replace(/[_-]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDate(value?: string) {
+  if (!value) return '—';
+  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
+  return date.toLocaleDateString('en-BD', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'just now' : date.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
+}
+
+function roleLabel(role: string | null) {
+  return titleCase(role || 'employee');
+}
+
+function selectedStoreName(stores: any[], id: number) {
+  return stores?.find((store) => Number(store.id) === Number(id))?.name || `Store ${id || ''}`;
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Poppins } from "next/font/google";
+import { Geist, Geist_Mono, Poppins, Space_Grotesk } from "next/font/google";
 import GlobalProviders from "./GlobalProviders";
 import "./globals.css";
 
@@ -19,6 +19,12 @@ const poppins = Poppins({
   weight: ["300", "400", "500", "600", "700", "800"],
 });
 
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+});
+
 export const metadata: Metadata = {
   title: "Errum BD",
   description: "Errum BD - Official Store",
@@ -31,7 +37,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} ${poppins.variable}`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} ${poppins.variable} ${spaceGrotesk.variable}`}>
         <GlobalProviders>
           {children}
         </GlobalProviders>

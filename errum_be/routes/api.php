@@ -37,6 +37,7 @@ use App\Http\Controllers\ProductVariantController;
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\PriceController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExecutiveDashboardController;
 use App\Http\Controllers\BusinessAnalyticsController;
 use App\Http\Controllers\StockIntelligenceController;
 use App\Http\Controllers\SettingController;
@@ -884,6 +885,9 @@ Route::middleware('auth:api')->group(function () {
     // ============================================
     
     Route::prefix('dashboard')->group(function () {
+        // Consolidated, cached and role-aware admin homepage.
+        Route::get('/overview', [ExecutiveDashboardController::class, 'overview']);
+
         // Comprehensive stores summary
         Route::get('/stores-summary', [DashboardController::class, 'allStoresSummary']);
         

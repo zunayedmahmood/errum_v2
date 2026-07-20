@@ -117,7 +117,7 @@ function TypewriterTitle({ text }: { text: string }) {
 
       for (let index = 1; index <= text.length && !cancelled; index += 1) {
         commit(text.slice(0, index));
-        await sleep(132);
+        await sleep(110);
       }
     };
 
