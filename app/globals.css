@@ -1860,3 +1860,73 @@ body {
     animation-duration: .01ms !important;
   }
 }
+
+
+/* Jul 20: complete hero train traversal, tighter cards, stronger type cursor,
+   and centered footer content. */
+.ref-hero__cursor {
+  width: 8px;
+  min-width: 8px;
+  height: .78em;
+  margin-left: 9px;
+}
+.ref-hero-panel--motion {
+  border-left: 0;
+  box-shadow: none;
+}
+.ref-hero-panel--motion:after {
+  background: linear-gradient(180deg, rgba(0,0,0,0) 82%, rgba(0,0,0,.08) 100%);
+}
+.ref-footer__top,
+.ref-footer__main,
+.ref-footer__bottom {
+  width: min(100%, 1280px);
+  margin-left: auto;
+  margin-right: auto;
+}
+.ref-footer__main {
+  grid-template-columns: .86fr 1.14fr;
+  gap: 48px;
+}
+.ref-footer__about {
+  padding-left: clamp(0px, 1.2vw, 18px);
+}
+.ref-footer__locations {
+  padding-right: clamp(0px, 1.2vw, 18px);
+}
+.ref-footer__socials a {
+  transition: border-color .2s ease, background-color .2s ease, color .2s ease, transform .2s ease;
+}
+.ref-footer__socials a:hover {
+  border-color: rgba(0,237,179,.72);
+  background: rgba(0,237,179,.08);
+  color: var(--ref-cyan);
+  transform: translateY(-1px);
+}
+@media (max-width:700px) {
+  .ref-hero__cursor {
+    width: 6px;
+    min-width: 6px;
+    margin-left: 6px;
+  }
+  .ref-footer__brand > div,
+  .ref-footer__socials {
+    justify-content: center;
+  }
+  .ref-footer__brand,
+  .ref-footer__about,
+  .ref-footer__locations {
+    text-align: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .ref-footer__brand p,
+  .ref-footer__main section > p {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .ref-footer__locations h3,
+  .ref-footer__locations article a {
+    justify-content: center;
+  }
+}

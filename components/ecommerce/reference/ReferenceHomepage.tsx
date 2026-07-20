@@ -20,16 +20,24 @@ import {
   getHardcodedCategoryImage,
 } from './categoryArtwork';
 
-const HERO_FORWARD_MS = 14_800;
-const HERO_REVERSE_MS = 14_800;
 const HERO_ENDPOINT_HOLD_MS = 950;
+const HERO_DESKTOP_PEAK_SPEED_VW_PER_SECOND = 6.8;
+const HERO_MOBILE_PEAK_SPEED_VW_PER_SECOND = 8.4;
 const HERO_TEXT_HOLD_MS = 7_200;
 const FEATURED_DROP_HOLD_MS = 5_200;
 const FEATURED_DROP_TRANSITION_MS = 920;
 
 const HERO_TYPED_ITEMS = [
   'ERRUMBD',
-  ...HARDCODED_CATEGORY_ARTWORK.map((item) => item.slug.toUpperCase()),
+  'SNEAKERS',
+  'PERFUME',
+  'WATCH',
+  'CLOTHING',
+  'FASHION',
+  'ACCESSORIES',
+  'SLIDES',
+  'SHOE-CARE',
+  'THOBE',
 ];
 
 const preferredCollectionKeywords = ['sneaker', 'watch', 'perfume'];
@@ -68,25 +76,26 @@ const getCategoryMatch = (product: SimpleProduct, keywords: string[]): boolean =
  * then reverses through the exact same path. Cards never take turns and never
  * run on independent timers.
  */
-const heroSeeSawPosition = (elapsed: number): number => {
+const heroSeeSawPosition = (elapsed: number, travelDurationMs: number): number => {
+  const safeTravelDuration = Math.max(1, travelDurationMs);
   const cycle = HERO_ENDPOINT_HOLD_MS
-    + HERO_FORWARD_MS
+    + safeTravelDuration
     + HERO_ENDPOINT_HOLD_MS
-    + HERO_REVERSE_MS;
+    + safeTravelDuration;
   const local = ((elapsed % cycle) + cycle) % cycle;
 
   if (local < HERO_ENDPOINT_HOLD_MS) return 0;
 
-  const forwardEnd = HERO_ENDPOINT_HOLD_MS + HERO_FORWARD_MS;
+  const forwardEnd = HERO_ENDPOINT_HOLD_MS + safeTravelDuration;
   if (local < forwardEnd) {
-    const progress = (local - HERO_ENDPOINT_HOLD_MS) / HERO_FORWARD_MS;
+    const progress = (local - HERO_ENDPOINT_HOLD_MS) / safeTravelDuration;
     return 0.5 - (0.5 * Math.cos(Math.PI * progress));
   }
 
   const farHoldEnd = forwardEnd + HERO_ENDPOINT_HOLD_MS;
   if (local < farHoldEnd) return 1;
 
-  const reverseProgress = (local - farHoldEnd) / HERO_REVERSE_MS;
+  const reverseProgress = (local - farHoldEnd) / safeTravelDuration;
   return 0.5 + (0.5 * Math.cos(Math.PI * reverseProgress));
 };
 
@@ -155,29 +164,40 @@ function CategoryMotionHero() {
 
     const renderTrack = (now: number) => {
       const mobile = window.innerWidth < 768;
-      const elapsed = reducedMotion ? (HERO_FORWARD_MS * 0.42) : now - startedAt;
-      const displacement = heroSeeSawPosition(elapsed);
+      const viewportWidth = Math.max(1, window.innerWidth);
+      const firstPanel = panelRefs.current.find((panel): panel is HTMLAnchorElement => Boolean(panel));
+      const panelWidthVw = firstPanel
+        ? (firstPanel.offsetWidth / viewportWidth) * 100
+        : (mobile ? 68 : 25.8);
 
-      const startX = mobile ? -43 : -13;
-      const stepX = mobile ? 58 : 25.6;
-      const travelX = mobile ? 76 : 55;
-      const travelY = mobile ? 18 : 20;
+      // Every card is placed exactly one measured card-width after the previous
+      // card, so the train has no gaps or overlaps. The travel range is derived
+      // from the complete train width; consequently the last image must enter
+      // the viewport before the track is allowed to stop and reverse.
+      const startX = 0;
+      const stepX = panelWidthVw;
+      const totalTrainWidthVw = panelWidthVw * HARDCODED_CATEGORY_ARTWORK.length;
+      const travelX = Math.max(0, totalTrainWidthVw - 100);
+      const targetPeakSpeed = mobile
+        ? HERO_MOBILE_PEAK_SPEED_VW_PER_SECOND
+        : HERO_DESKTOP_PEAK_SPEED_VW_PER_SECOND;
+      const travelDurationMs = Math.max(18_000, (travelX * Math.PI * 1000) / (2 * targetPeakSpeed));
+      const elapsed = reducedMotion ? HERO_ENDPOINT_HOLD_MS + (travelDurationMs * 0.5) : now - startedAt;
+      const displacement = heroSeeSawPosition(elapsed, travelDurationMs);
+
+      const travelY = mobile ? 13 : 16;
       const baseYPattern = mobile
-        ? [49, 34, 18, 3, -10, -18, -9, 7, 23]
-        : [57, 42, 27, 12, -3, -16, -10, 4, 19];
+        ? [42, 31, 20, 9, -2, -9, -3, 8, 19]
+        : [52, 40, 28, 16, 4, -8, -3, 10, 22];
 
       panelRefs.current.forEach((panel, index) => {
         if (!panel) return;
 
         const x = startX + (index * stepX) - (travelX * displacement);
-        const y = (baseYPattern[index] ?? -12) + (travelY * displacement);
-        const scale = mobile
-          ? 1 - (0.045 * displacement)
-          : 1 - (0.035 * displacement);
-
-        panel.style.transform = `translate3d(${x}vw, ${y}vh, 0) scale(${scale})`;
+        const y = (baseYPattern[index] ?? 0) + (travelY * displacement);
+        panel.style.transform = `translate3d(${x}vw, ${y}vh, 0)`;
         panel.style.zIndex = String(20 + index);
-        panel.style.pointerEvents = x > -80 && x < 115 ? 'auto' : 'none';
+        panel.style.pointerEvents = x > -panelWidthVw && x < 100 ? 'auto' : 'none';
       });
 
       frame = window.requestAnimationFrame(renderTrack);

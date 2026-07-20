@@ -13,10 +13,10 @@ export default function Footer() {
   return <footer className="ref-footer">
     <div className="ref-footer__top">
       <div className="ref-footer__brand"><div><img src="/logo.png" alt="ERRUM" /><strong>ERRUM</strong></div><p>BEST IMPORTED SNEAKERS SELLING BRAND IN BANGLADESH.</p></div>
-      <a className="ref-footer__whatsapp" href="https://wa.me/8801942565664" target="_blank" rel="noreferrer">◉ WhatsApp: 01942565664 <b>INT'L ORDER</b></a>
+      <a className="ref-footer__whatsapp" href="https://wa.me/8801942565664" target="_blank" rel="noopener noreferrer">◉ WhatsApp: 01942565664 <b>INT'L ORDER</b></a>
     </div>
     <div className="ref-footer__main">
-      <section><span>ABOUT ERRUM</span><p>Curating premium drops, high-quality sneaker imports, and streetwear cultural artifacts for the fashion-forward in Bangladesh. 100% authentic products guaranteed.</p><span>SOCIAL NETWORKS</span><div className="ref-footer__socials"><a href="#"><Facebook size={14}/> MAIN</a><a href="#"><Facebook size={14}/> BACKUP</a><a href="#"><Facebook size={14}/> JFP GROUP</a><a href="#"><Youtube size={14}/> YOUTUBE</a></div></section>
+      <section className="ref-footer__about"><span>ABOUT ERRUM</span><p>Curating premium drops, high-quality sneaker imports, and streetwear cultural artifacts for the fashion-forward in Bangladesh. 100% authentic products guaranteed.</p><span>SOCIAL NETWORKS</span><div className="ref-footer__socials"><a href="https://www.facebook.com/share/1BqdrJpC8U/?mibextid=wwXIfr" target="_blank" rel="noopener noreferrer"><Facebook size={14}/> MAIN</a><a href="https://www.facebook.com/share/18hHoKcwPN/?mibextid=wwXIfr" target="_blank" rel="noopener noreferrer"><Facebook size={14}/> BACKUP</a><a href="https://www.facebook.com/share/1b7oM3cVAo/?mibextid=wwXIfr" target="_blank" rel="noopener noreferrer"><Facebook size={14}/> JFP GROUP</a><a href="https://youtube.com/@errumbd1" target="_blank" rel="noopener noreferrer"><Youtube size={14}/> YOUTUBE</a></div></section>
       <section className="ref-footer__locations"><span>FLAGSHIP OUTLETS</span><h2>OUR RETAIL LOCATIONS</h2><div>{locations.map((location) => <article key={location.name}><h3><MapPin size={14}/>{location.name}</h3><p>{location.address}</p><a href={`tel:${location.phone}`}><Phone size={13}/>{location.phone}</a></article>)}</div></section>
     </div>
     <div className="ref-footer__bottom"><p>© 2026 ERRUM. All Rights Reserved.</p><p>AUTHENTIC SNEAKER RELEASES & CULTURAL ARTIFACTS</p></div>
