@@ -82,6 +82,10 @@ export interface Order {
   order_type_label: string;
   status: string;
   payment_status: string;
+  has_return?: boolean | number | string;
+  has_issued_return?: boolean | number | string;
+  issued_returns_count?: number | string;
+  returns_count?: number | string;
   // Intended courier marker (nullable)
   intended_courier?: string | null;
   is_preorder?: boolean;

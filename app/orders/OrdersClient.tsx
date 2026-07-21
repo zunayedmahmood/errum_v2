@@ -103,6 +103,8 @@ interface Order {
   status: string;
   statusLabel: string;
   fulfillmentStatus?: string;
+  hasReturn: boolean;
+  issuedReturnsCount: number;
 
   // ✅ payment status separate
   paymentStatus: string;
@@ -926,6 +928,12 @@ export default function OrdersDashboard() {
     );
   };
 
+  const getReturnedBadge = () => (
+    <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-black text-orange-700 dark:border-orange-800/70 dark:bg-orange-900/30 dark:text-orange-300">
+      Returned
+    </span>
+  );
+
   const getPaymentStatusBadge = (raw: string, compact = true) => {
     const s = normalize(raw);
     const cls =
@@ -956,6 +964,14 @@ export default function OrdersDashboard() {
 
     const oStatusRaw = order.status ?? '';
     const pStatusRaw = derivePaymentStatus(order);
+    const issuedReturnsCountRaw = Number(order.issued_returns_count ?? order.returns_count ?? 0);
+    const issuedReturnsCount = Number.isFinite(issuedReturnsCountRaw) ? Math.max(0, issuedReturnsCountRaw) : 0;
+    const hasReturnFlag = [order.has_issued_return, order.has_return].some((value) => {
+      if (value === true || value === 1) return true;
+      const normalized = String(value ?? '').trim().toLowerCase();
+      return normalized === '1' || normalized === 'true' || normalized === 'yes';
+    });
+    const hasReturn = issuedReturnsCount > 0 || hasReturnFlag;
 
 
     // 🧩 Products vs Services (POS can create orders with services)
@@ -1065,6 +1081,8 @@ export default function OrdersDashboard() {
       status: normalize(oStatusRaw) || 'pending',
       statusLabel: statusLabel(oStatusRaw || 'pending'),
       fulfillmentStatus: order.fulfillment_status,
+      hasReturn,
+      issuedReturnsCount,
 
       paymentStatus: normalize(pStatusRaw) || 'pending',
       paymentStatusLabel: statusLabel(pStatusRaw || 'pending'),
@@ -1384,7 +1402,11 @@ export default function OrdersDashboard() {
 
     if (orderStatusFilter !== 'All Order Status') {
       const target = normalize(orderStatusFilter);
-      filtered = filtered.filter((o) => normalize(o.status) === target);
+      filtered = filtered.filter((o) =>
+        target === 'returned'
+          ? o.hasReturn || normalize(o.status) === 'returned'
+          : normalize(o.status) === target
+      );
     }
 
     if (paymentStatusFilter !== 'All Payment Status') {
@@ -4291,6 +4313,7 @@ export default function OrdersDashboard() {
                                     </span>
                                   )}
                                   {getOrderStatusBadge(order.status)}
+                                  {order.hasReturn && getReturnedBadge()}
                                   {getPaymentStatusBadge(order.paymentStatus)}
                                 </div>
                               </div>
@@ -4428,8 +4451,9 @@ export default function OrdersDashboard() {
                             </td>
 
                             <td className="px-4 py-3">
-                              <div className="flex flex-col gap-1">
+                              <div className="flex flex-col items-start gap-1">
                                 {getOrderStatusBadge(order.status)}
+                                {order.hasReturn && getReturnedBadge()}
                                 <div className="flex items-center gap-1">{getPaymentStatusBadge(order.paymentStatus)}</div>
                               </div>
                             </td>
@@ -4875,7 +4899,10 @@ export default function OrdersDashboard() {
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase tracking-wider mb-1.5">Status</p>
-                    {getOrderStatusBadge(selectedOrder.status)}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {getOrderStatusBadge(selectedOrder.status)}
+                      {selectedOrder.hasReturn && getReturnedBadge()}
+                    </div>
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase tracking-wider mb-1.5">Payment</p>

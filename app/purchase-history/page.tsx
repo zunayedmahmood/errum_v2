@@ -90,6 +90,10 @@ interface PurchaseHistoryOrder {
     }>;
   }>;
   payment_method_summary?: string;
+  has_return?: boolean | number | string;
+  has_issued_return?: boolean | number | string;
+  issued_returns_count?: number | string;
+  returns_count?: number | string;
   is_deleted_offline_sale?: boolean;
   offline_sale_deleted?: any;
   return_exchange_blocked?: boolean;
@@ -100,6 +104,23 @@ interface Store {
   name: string;
   location: string;
 }
+
+const hasIssuedReturn = (order: Partial<PurchaseHistoryOrder> | any): boolean => {
+  const count = Number(order?.issued_returns_count ?? order?.returns_count ?? 0);
+  if (Number.isFinite(count) && count > 0) return true;
+
+  return [order?.has_issued_return, order?.has_return].some((value) => {
+    if (value === true || value === 1) return true;
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+  });
+};
+
+const ReturnedTag = () => (
+  <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-bold text-orange-700 dark:border-orange-800/70 dark:bg-orange-900/30 dark:text-orange-300">
+    Returned
+  </span>
+);
 
 export default function PurchaseHistoryPage() {
   const { user, scopedStoreId, canSelectStore } = useAuth();
@@ -1601,6 +1622,7 @@ export default function PurchaseHistoryPage() {
                                   Deleted sale · stock restored to new batch
                                 </span>
                               )}
+                              {hasIssuedReturn(order) && <ReturnedTag />}
                               <span className={`text-xs px-2 py-1 rounded ${order.payment_status === 'paid'
                                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                                   : order.payment_status === 'partial'

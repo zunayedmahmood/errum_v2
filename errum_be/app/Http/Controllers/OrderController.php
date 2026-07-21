@@ -40,6 +40,20 @@ class OrderController extends Controller
         'ready_for_shipment',
     ];
 
+
+    /**
+     * A return is considered issued once a ProductReturn record exists and has
+     * not been rejected, cancelled, voided, or deleted. This lets order-history
+     * screens show a Returned tag without changing the order's fulfilment status.
+     */
+    private const NON_ISSUED_RETURN_STATUSES = [
+        'rejected',
+        'cancelled',
+        'canceled',
+        'void',
+        'deleted',
+    ];
+
     /**
      * POS/offline sale date selected in the frontend is the source of truth.
      * Date-only inputs keep the selected day but use the current clock time.
@@ -72,6 +86,34 @@ class OrderController extends Controller
      * branch's manager/POS operator. Authentication alone is not enough for a
      * cash/bank reallocation or deletion that changes the cash sheet.
      */
+    private function applyIssuedReturnConstraint($query): void
+    {
+        $query->where(function ($statusQuery) {
+            $statusQuery->whereNull('status')
+                ->orWhereNotIn('status', self::NON_ISSUED_RETURN_STATUSES);
+        });
+    }
+
+    private function issuedReturnsCount(Order $order): int
+    {
+        if (array_key_exists('issued_returns_count', $order->getAttributes())) {
+            return max(0, (int) $order->getAttribute('issued_returns_count'));
+        }
+
+        if ($order->relationLoaded('returns')) {
+            return $order->returns
+                ->filter(function ($return) {
+                    $status = strtolower(trim((string) ($return->status ?? '')));
+                    return $status === '' || !in_array($status, self::NON_ISSUED_RETURN_STATUSES, true);
+                })
+                ->count();
+        }
+
+        $query = $order->returns();
+        $this->applyIssuedReturnConstraint($query);
+        return (int) $query->count();
+    }
+
     private function authorizeOfflineSaleFinancialChange(Order $order)
     {
         $employee = Auth::guard('api')->user();
@@ -112,6 +154,10 @@ class OrderController extends Controller
             'payments.paymentSplits.paymentMethod',
             'createdBy',
             'salesman',
+        ])->withCount([
+            'returns as issued_returns_count' => function ($returnQuery) {
+                $this->applyIssuedReturnConstraint($returnQuery);
+            },
         ]);
 
         // Filter by order type (counter, social_commerce, ecommerce). Accepts either one order_type
@@ -266,6 +312,10 @@ class OrderController extends Controller
             'payments.cashDenominations',
             'createdBy',
             'salesman',
+        ])->withCount([
+            'returns as issued_returns_count' => function ($returnQuery) {
+                $this->applyIssuedReturnConstraint($returnQuery);
+            },
         ])->find($id);
 
         if (!$order) {
@@ -3426,6 +3476,8 @@ class OrderController extends Controller
         $salesman = $order->salesman ?: $order->createdBy;
 
         $isDeletedOfflineSale = !empty($metadata['offline_sale_deleted']) || !empty($metadata['offline_sale_voided']);
+        $issuedReturnsCount = $this->issuedReturnsCount($order);
+        $hasIssuedReturn = $issuedReturnsCount > 0;
 
         $response = [
             'id' => $order->id,
@@ -3439,6 +3491,13 @@ class OrderController extends Controller
             },
             'status' => $order->status,
             'payment_status' => $order->payment_status,
+            // Keep order status independent: an order can remain delivered/confirmed
+            // while still carrying an issued return. History UIs use these fields for
+            // the additive "Returned" tag.
+            'has_return' => $hasIssuedReturn,
+            'has_issued_return' => $hasIssuedReturn,
+            'issued_returns_count' => $issuedReturnsCount,
+            'returns_count' => $issuedReturnsCount,
             'is_deleted_offline_sale' => $isDeletedOfflineSale,
             'offline_sale_deleted' => $metadata['offline_sale_deleted'] ?? ($metadata['offline_sale_voided'] ?? null),
             'return_exchange_blocked' => $isDeletedOfflineSale || in_array(strtolower((string) $order->status), ['cancelled', 'canceled', 'deleted', 'void'], true),
