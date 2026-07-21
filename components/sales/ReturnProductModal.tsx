@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { X, RotateCcw, Calculator, ChevronDown, AlertCircle, Scan } from 'lucide-react';
 import BarcodeScanner, { type ScannedProduct } from '@/components/pos/BarcodeScanner';
 import storeService, { type Store } from '@/services/storeService';
+import SoldAtPriceEditor from '@/components/sales/SoldAtPriceEditor';
+import { getEffectiveSoldUnitPrice, isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
 
 interface OrderItem {
   id: number;
@@ -284,24 +286,9 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     setSoldAtPrices(prev => ({ ...prev, [itemId]: price }));
   };
 
-  function parseFloatValue(value: any) {
-    if (value == null) return 0;
-    const n = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
-    return isNaN(n) ? 0 : n;
-  }
-
-  const getEffectiveSoldUnitPrice = (item: OrderItem) => {
-    const qty = Math.max(1, Number(item.quantity || 1));
-    const lineTotal = parseFloatValue(item.total_amount);
-    if (Number.isFinite(lineTotal) && lineTotal >= 0) {
-      return String(Number((lineTotal / qty).toFixed(2)));
-    }
-
-    const gross = parseFloatValue(item.unit_price);
-    const discountPerUnit = parseFloatValue(item.discount_amount) / qty;
-    const taxPerUnit = parseFloatValue(item.tax_amount) / qty;
-    return String(Number(Math.max(0, gross - discountPerUnit + taxPerUnit).toFixed(2)));
-  };
+  // Keep the established Return calculations while sharing the exact sold-at logic
+  // with Exchange. Explicit zero remains valid for fully discounted items.
+  const parseFloatValue = parseMoney;
 
   const calculateTotals = () => {
     // Use the actual net sold-at line price. This makes 100% item-discount orders safe:
@@ -357,7 +344,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
 
     const hasMissingPrices = selectedProducts.some(id => {
       const price = soldAtPrices[id];
-      return price === undefined || price === null || String(price).trim() === '' || parseFloatValue(price) < 0;
+      return !isValidSoldAtPrice(price);
     });
 
     if (hasMissingPrices) {
@@ -688,31 +675,12 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                                         </button>
                                       </div>
 
-                                      <div className="flex gap-4">
-                                        <div className="flex-1">
-                                          <label className="block text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400 mb-1">
-                                            Sold At Price *
-                                          </label>
-                                          <div className="relative">
-                                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">৳</span>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              step="0.01"
-                                              value={soldAtPrices[item.id] || ''}
-                                              onChange={(e) => handleSoldAtChange(item.id, e.target.value)}
-                                              className="w-full pl-6 pr-2 py-1.5 text-sm border border-orange-200 dark:border-orange-900/30 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500/20 outline-none font-bold transition-all"
-                                              placeholder="0.00"
-                                            />
-                                          </div>
-                                        </div>
-                                        <div className="text-right">
-                                          <span className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Value</span>
-                                          <span className="text-sm font-black text-gray-900 dark:text-white">
-                                            ৳{((returnedQuantities[item.id] || 0) * parseFloatValue(soldAtPrices[item.id])).toFixed(2)}
-                                          </span>
-                                        </div>
-                                      </div>
+                                      <SoldAtPriceEditor
+                                        itemId={item.id}
+                                        value={soldAtPrices[item.id] ?? ''}
+                                        quantity={returnedQuantities[item.id] || 0}
+                                        onChange={handleSoldAtChange}
+                                      />
 
                                       <div className="space-y-1">
                                         {(returnedBarcodes[item.id] || []).map((bc, idx) => (

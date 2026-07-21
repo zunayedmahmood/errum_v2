@@ -1077,7 +1077,9 @@ export default function LookupPage() {
           unit_price: it?.unit_price ?? it?.sale_price ?? it?.price ?? null,
           discount_amount: it?.discount_amount ?? 0,
           tax_amount: it?.tax_amount ?? 0,
-          total_amount: it?.total_amount ?? it?.total ?? null,
+          total_amount: it?.total_amount ?? it?.total ?? it?.total_price ?? null,
+          total_price: it?.total_price ?? it?.total_amount ?? it?.total ?? null,
+          sold_at_unit_price: it?.sold_at_unit_price ?? it?.net_unit_price ?? null,
           barcodes: finalBarcodes,
         };
       }),

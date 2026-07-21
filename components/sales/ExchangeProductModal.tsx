@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { X, ArrowRightLeft, Calculator, ChevronDown, Loader2, AlertCircle } from 'lucide-react';
 import BarcodeScanner, { ScannedProduct } from '@/components/pos/BarcodeScanner';
 import storeService, { type Store } from '@/services/storeService';
+import SoldAtPriceEditor from '@/components/sales/SoldAtPriceEditor';
+import { getEffectiveSoldUnitPrice, isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
 
 interface OrderItem {
   id: number;
@@ -14,10 +16,11 @@ interface OrderItem {
   barcode?: string;
   quantity: number;
   unit_price: string;
-  discount_amount: string;
-  tax_amount: string;
-  total_amount: string;
-  total_price: string;
+  discount_amount?: string | number;
+  tax_amount?: string | number;
+  total_amount?: string | number;
+  total_price?: string | number;
+  sold_at_unit_price?: string | number;
 }
 
 interface Order {
@@ -37,6 +40,7 @@ interface Order {
   tax_amount: string;
   total_amount: string;
   paid_amount: string;
+  outstanding_amount?: string | number;
 }
 
 interface ExchangeProductModalProps {
@@ -398,24 +402,9 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     );
   };
 
-  const parsePrice = (value: any) => {
-    if (value == null) return 0;
-    const n = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
-    return isNaN(n) ? 0 : n;
-  };
-
-  const getEffectiveSoldUnitPrice = (item: OrderItem) => {
-    const qty = Math.max(1, Number(item.quantity || 1));
-    const lineTotal = parsePrice(item.total_amount);
-    if (Number.isFinite(lineTotal) && lineTotal >= 0) {
-      return String(Number((lineTotal / qty).toFixed(2)));
-    }
-
-    const gross = parsePrice(item.unit_price);
-    const discountPerUnit = parsePrice(item.discount_amount) / qty;
-    const taxPerUnit = parsePrice(item.tax_amount) / qty;
-    return String(Number(Math.max(0, gross - discountPerUnit + taxPerUnit).toFixed(2)));
-  };
+  // Exchange deliberately uses the same parser and historical sold-at calculation
+  // as Return, including explicit zero for 100% discounted items.
+  const parsePrice = parseMoney;
 
   const outstandingAmount = order.outstanding_amount !== undefined && order.outstanding_amount !== null
     ? parsePrice(order.outstanding_amount)
@@ -490,7 +479,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
     const hasMissingPrices = selectedProducts.some(id => {
       const price = soldAtPrices[id];
-      return price === undefined || price === null || String(price).trim() === '' || parsePrice(price) < 0;
+      return !isValidSoldAtPrice(price);
     });
 
     if (hasMissingPrices) {
@@ -847,31 +836,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                         </button>
                                       </div>
 
-                                      <div className="flex gap-4">
-                                        <div className="flex-1">
-                                          <label className="block text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400 mb-1">
-                                            Sold At Price *
-                                          </label>
-                                          <div className="relative">
-                                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">৳</span>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              step="0.01"
-                                              value={soldAtPrices[item.id] || ''}
-                                              onChange={(e) => handleSoldAtChange(item.id, e.target.value)}
-                                              className="w-full pl-6 pr-2 py-1.5 text-sm border border-orange-200 dark:border-orange-900/30 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500/20 outline-none font-bold transition-all"
-                                              placeholder="0.00"
-                                            />
-                                          </div>
-                                        </div>
-                                        <div className="text-right">
-                                          <span className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Value</span>
-                                          <span className="text-sm font-black text-gray-900 dark:text-white">
-                                            ৳{((exchangeQuantities[item.id] || 0) * parsePrice(soldAtPrices[item.id])).toFixed(2)}
-                                          </span>
-                                        </div>
-                                      </div>
+                                      <SoldAtPriceEditor
+                                        itemId={item.id}
+                                        value={soldAtPrices[item.id] ?? ''}
+                                        quantity={exchangeQuantities[item.id] || 0}
+                                        onChange={handleSoldAtChange}
+                                      />
 
                                       <div className="space-y-1">
                                         {(returnedBarcodes[item.id] || []).map((bc, idx) => (

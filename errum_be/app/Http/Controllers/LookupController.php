@@ -555,6 +555,11 @@ class LookupController extends Controller
                 'discount_amount' => $item->discount_amount,
                 'tax_amount' => $item->tax_amount,
                 'total_amount' => $item->total_amount,
+                // Canonical historical unit value used by both Lookup Return and Exchange.
+                // Preserve zero for fully discounted lines.
+                'sold_at_unit_price' => (int) $item->quantity > 0
+                    ? round(max(0, (float) $item->total_amount) / (int) $item->quantity, 2)
+                    : 0,
                 'notes' => $item->notes,
             ];
         });
