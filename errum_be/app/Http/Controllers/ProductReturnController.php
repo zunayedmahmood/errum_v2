@@ -144,6 +144,7 @@ class ProductReturnController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.unit_price' => 'nullable|numeric|min:0',
             'items.*.sold_at_unit_price' => 'nullable|numeric|min:0',
+            'items.*.manual_sold_at_unit_price' => 'nullable|numeric|min:0',
             'items.*.total_price' => 'nullable|numeric|min:0',
             'items.*.product_barcode_id' => 'nullable|exists:product_barcodes,id',
             'items.*.barcode_id' => 'nullable|exists:product_barcodes,id',
@@ -195,6 +196,8 @@ class ProductReturnController extends Controller
                     'quantity' => $item['quantity'],
                     'unit_price' => $unitPrice,
                     'sold_at_unit_price' => $unitPrice,
+                    'manual_sold_at_unit_price' => $unitPrice,
+                    'price_source' => 'lookup_manual_sold_at',
                     'total_price' => $itemReturnValue,
                     'reason' => $item['reason'] ?? null,
                     'returned_barcode_ids' => $returnableBarcodes->pluck('id')->values()->all(),
@@ -292,6 +295,7 @@ class ProductReturnController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.unit_price' => 'nullable|numeric|min:0',
             'items.*.sold_at_unit_price' => 'nullable|numeric|min:0',
+            'items.*.manual_sold_at_unit_price' => 'nullable|numeric|min:0',
             'items.*.total_price' => 'nullable|numeric|min:0',
             'items.*.product_barcode_id' => 'nullable|exists:product_barcodes,id',
             'items.*.barcode_id' => 'nullable|exists:product_barcodes,id',
@@ -352,6 +356,8 @@ class ProductReturnController extends Controller
                     'quantity' => $item['quantity'],
                     'unit_price' => $unitPrice,
                     'sold_at_unit_price' => $unitPrice,
+                    'manual_sold_at_unit_price' => $unitPrice,
+                    'price_source' => 'lookup_manual_sold_at',
                     'total_price' => $itemReturnValue,
                     'reason' => $item['reason'] ?? null,
                     'returned_barcode_ids' => $returnableBarcodes->pluck('id')->values()->all(),
@@ -1194,16 +1200,14 @@ class ProductReturnController extends Controller
 
     /**
      * Resolve the employee-editable Sold At unit value without losing explicit zeroes.
-     * Priority: canonical sold_at_unit_price, legacy unit_price, historical net sold price.
+     * The explicit manual field always wins; history is only the prefill fallback.
      */
     private function resolveSoldAtUnitPrice(array $item, OrderItem $orderItem): float
     {
-        if (array_key_exists('sold_at_unit_price', $item) && $item['sold_at_unit_price'] !== null && $item['sold_at_unit_price'] !== '') {
-            return round(max(0, (float) $item['sold_at_unit_price']), 2);
-        }
-
-        if (array_key_exists('unit_price', $item) && $item['unit_price'] !== null && $item['unit_price'] !== '') {
-            return round(max(0, (float) $item['unit_price']), 2);
+        foreach (['manual_sold_at_unit_price', 'sold_at_unit_price', 'unit_price'] as $field) {
+            if (array_key_exists($field, $item) && $item[$field] !== null && $item[$field] !== '') {
+                return round(max(0, (float) $item[$field]), 2);
+            }
         }
 
         return $this->netSoldUnitPrice($orderItem);

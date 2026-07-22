@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { X, ArrowRightLeft, Calculator, ChevronDown, Loader2, AlertCircle } from 'lucide-react';
 import BarcodeScanner, { ScannedProduct } from '@/components/pos/BarcodeScanner';
 import storeService, { type Store } from '@/services/storeService';
@@ -54,6 +54,9 @@ interface ExchangeProductModalProps {
       quantity: number;
       unit_price: number;
       sold_at_unit_price: number;
+      manual_sold_at_unit_price: number;
+      exchange_credit_unit_price: number;
+      exchange_credit_total: number;
       total_price: number;
       product_barcode_id?: number;
     }>;
@@ -398,6 +401,24 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
   const handleSoldAtChange = (itemId: number, price: string) => {
     setSoldAtPrices(prev => ({ ...prev, [itemId]: price }));
+
+    // The settlement belongs to the currently edited Sold At credit. Clear any
+    // allocation entered against the previous value so the summary and payload
+    // can never retain a stale historical-price difference.
+    setCashAmount(0);
+    setCardAmount(0);
+    setBkashAmount(0);
+    setNagadAmount(0);
+    setNote1000(0);
+    setNote500(0);
+    setNote200(0);
+    setNote100(0);
+    setNote50(0);
+    setNote20(0);
+    setNote10(0);
+    setNote5(0);
+    setNote2(0);
+    setNote1(0);
   };
 
   const handleRemoveReplacement = (id: number | string) => {
@@ -436,33 +457,51 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     : Math.max(0, parsePrice(order.total_amount) - parsePrice(order.paid_amount));
   const isFullyPaid = Math.abs(outstandingAmount) < 0.01;
 
-  const calculateTotals = () => {
-    // Use the current editor value. It starts historical and updates immediately after a manual override.
-    const originalAmount = selectedProducts.reduce((sum, itemId) => {
+  // Build each selected return line exactly once. This is the single source for
+  // the visible subtotal, exchange difference and submitted backend payload.
+  // `hasOwnProperty` preserves an explicit manual zero and prevents the historical
+  // 100%-discount Sold At snapshot from being reintroduced after an override.
+  const exchangeCreditLines = useMemo(() => {
+    return selectedProducts.flatMap((itemId) => {
       const item = order.items.find(i => i.id === itemId);
-      if (!item) return sum;
-      const qty = exchangeQuantities[itemId] || 0;
-      const price = parsePrice(soldAtPrices[itemId] ?? getEffectiveSoldUnitPrice(item));
-      return sum + (price * qty);
-    }, 0);
+      if (!item) return [];
 
+      const quantity = exchangeQuantities[itemId] || 0;
+      const rawSoldAt = Object.prototype.hasOwnProperty.call(soldAtPrices, itemId)
+        ? soldAtPrices[itemId]
+        : getEffectiveSoldUnitPrice(item);
+      const manualSoldAtUnitPrice = parsePrice(rawSoldAt);
+
+      return [{
+        itemId,
+        item,
+        quantity,
+        manualSoldAtUnitPrice,
+        exchangeCreditTotal: Number((manualSoldAtUnitPrice * quantity).toFixed(2)),
+      }];
+    });
+  }, [selectedProducts, exchangeQuantities, soldAtPrices, order.items]);
+
+  const totals = useMemo(() => {
+    const originalAmount = exchangeCreditLines.reduce(
+      (sum, line) => sum + line.exchangeCreditTotal,
+      0
+    );
     const newSubtotal = replacementProducts.reduce((sum, p) => sum + p.amount, 0);
     const vatAmount = 0;
     const vatRate = 0;
     const totalNewAmount = newSubtotal;
-    const difference = totalNewAmount - originalAmount;
+    const difference = Number((totalNewAmount - originalAmount).toFixed(2));
 
     return {
-      originalAmount,
-      newSubtotal,
+      originalAmount: Number(originalAmount.toFixed(2)),
+      newSubtotal: Number(newSubtotal.toFixed(2)),
       vatRate,
       vatAmount,
-      totalNewAmount,
+      totalNewAmount: Number(totalNewAmount.toFixed(2)),
       difference,
     };
-  };
-
-  const totals = calculateTotals();
+  }, [exchangeCreditLines, replacementProducts]);
 
   const cashFromNotes =
     (note1000 * 1000) + (note500 * 500) + (note200 * 200) +
@@ -562,36 +601,41 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     setIsProcessing(true);
     try {
       const exchangeData = {
-        removedProducts: selectedProducts.flatMap(itemId => {
-          const item = order.items.find(i => i.id === itemId);
-          const unitPrice = parsePrice(soldAtPrices[itemId]);
+        removedProducts: exchangeCreditLines.flatMap((line) => {
+          const { itemId, item, quantity, manualSoldAtUnitPrice, exchangeCreditTotal } = line;
           const barcodes = returnedBarcodes[itemId] || [];
 
           if (barcodes.length > 0) {
-            // Send one entry per tracked barcode
+            // Send one entry per tracked barcode. Every price field deliberately
+            // carries the same current editor value for backward-compatible APIs.
             return barcodes.map(bc => ({
               order_item_id: itemId,
               quantity: 1,
-              unit_price: unitPrice,
-              sold_at_unit_price: unitPrice,
-              total_price: unitPrice,
+              unit_price: manualSoldAtUnitPrice,
+              sold_at_unit_price: manualSoldAtUnitPrice,
+              manual_sold_at_unit_price: manualSoldAtUnitPrice,
+              exchange_credit_unit_price: manualSoldAtUnitPrice,
+              exchange_credit_total: manualSoldAtUnitPrice,
+              total_price: manualSoldAtUnitPrice,
               barcode: bc.barcode,
               product_barcode_id: bc.barcode_id || item?.barcode_id,
               barcode_id: bc.barcode_id || item?.barcode_id,
             }));
-          } else {
-            // Quantity-based/non-tracked item. Do not send SKU as barcode.
-            const quantity = exchangeQuantities[itemId] || 0;
-            return [{
-              order_item_id: itemId,
-              quantity: quantity,
-              unit_price: unitPrice,
-              sold_at_unit_price: unitPrice,
-              total_price: unitPrice * quantity,
-              product_barcode_id: item?.barcode_id,
-              barcode_id: item?.barcode_id,
-            }];
           }
+
+          // Quantity-based/non-tracked item. Do not send SKU as barcode.
+          return [{
+            order_item_id: itemId,
+            quantity,
+            unit_price: manualSoldAtUnitPrice,
+            sold_at_unit_price: manualSoldAtUnitPrice,
+            manual_sold_at_unit_price: manualSoldAtUnitPrice,
+            exchange_credit_unit_price: manualSoldAtUnitPrice,
+            exchange_credit_total: exchangeCreditTotal,
+            total_price: exchangeCreditTotal,
+            product_barcode_id: item?.barcode_id,
+            barcode_id: item?.barcode_id,
+          }];
         }),
         replacementProducts: replacementProducts.map(p => ({
           product_id: p.product_id,
@@ -1001,7 +1045,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
 
                   <div className="pt-3 border-t border-gray-300 dark:border-gray-700">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Original Amount:</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Return Credit (Manual Sold At):</span>
                       <span className="font-semibold text-gray-900 dark:text-white">
                         ৳{totals.originalAmount.toLocaleString()}
                       </span>

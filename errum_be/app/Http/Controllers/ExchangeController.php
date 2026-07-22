@@ -50,6 +50,9 @@ class ExchangeController extends Controller
             'removedProducts.*.quantity' => 'required|integer|min:1',
             'removedProducts.*.unit_price' => 'nullable|numeric|min:0',
             'removedProducts.*.sold_at_unit_price' => 'nullable|numeric|min:0',
+            'removedProducts.*.manual_sold_at_unit_price' => 'nullable|numeric|min:0',
+            'removedProducts.*.exchange_credit_unit_price' => 'nullable|numeric|min:0',
+            'removedProducts.*.exchange_credit_total' => 'nullable|numeric|min:0',
             'removedProducts.*.total_price' => 'nullable|numeric|min:0',
             'removedProducts.*.order_item_id' => 'nullable|exists:order_items,id',
             'removedProducts.*.barcode' => 'nullable|string',
@@ -147,6 +150,21 @@ class ExchangeController extends Controller
                 // It is pre-filled from history, but an employee override must survive unchanged.
                 $unitPrice = $this->resolveSoldAtUnitPrice($item, $orderItem);
                 $itemTotal = round($unitPrice * $quantity, 2);
+
+                // Never reuse the historical sold-at snapshot after the employee has
+                // entered a manual exchange credit. The frontend sends the same value
+                // as exchange_credit_total; validate it to catch stale or mixed payloads.
+                if (array_key_exists('exchange_credit_total', $item) && $item['exchange_credit_total'] !== null && $item['exchange_credit_total'] !== '') {
+                    $submittedCreditTotal = round((float) $item['exchange_credit_total'], 2);
+                    if (abs($submittedCreditTotal - $itemTotal) > 0.01) {
+                        throw new \Exception(
+                            'Exchange item credit no longer matches the manual Sold At price. Expected ' .
+                            number_format($itemTotal, 2, '.', '') . ', received ' .
+                            number_format($submittedCreditTotal, 2, '.', '')
+                        );
+                    }
+                }
+
                 $totalReturnValue += $itemTotal;
 
                 $returnItems[] = [
@@ -157,6 +175,10 @@ class ExchangeController extends Controller
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'sold_at_unit_price' => $unitPrice,
+                    'manual_sold_at_unit_price' => $unitPrice,
+                    'exchange_credit_unit_price' => $unitPrice,
+                    'exchange_credit_total' => $itemTotal,
+                    'price_source' => 'lookup_manual_sold_at',
                     'total_price' => $itemTotal,
                     'refundable_amount' => $itemTotal,
                     'return_reason' => $item['return_reason'],
@@ -538,6 +560,7 @@ class ExchangeController extends Controller
                     'order' => $replacementOrder->load('items'),
                     'settlement' => [
                         'return_value' => $totalReturnValue,
+                        'manual_sold_at_credit' => $totalReturnValue,
                         'replacement_value' => $totalAmount,
                         'difference' => $difference,
                         'exchange_balance_used' => $exchangeBalanceUsed,
@@ -859,16 +882,15 @@ class ExchangeController extends Controller
     }
 
     /**
-     * Resolve the current Sold At value. Explicit zero is valid.
+     * Resolve the current employee-controlled exchange credit. Explicit zero is valid.
+     * Manual fields take priority over every historical Sold At snapshot.
      */
     private function resolveSoldAtUnitPrice(array $item, ?OrderItem $orderItem): float
     {
-        if (array_key_exists('sold_at_unit_price', $item) && $item['sold_at_unit_price'] !== null && $item['sold_at_unit_price'] !== '') {
-            return round(max(0, (float) $item['sold_at_unit_price']), 2);
-        }
-
-        if (array_key_exists('unit_price', $item) && $item['unit_price'] !== null && $item['unit_price'] !== '') {
-            return round(max(0, (float) $item['unit_price']), 2);
+        foreach (['manual_sold_at_unit_price', 'exchange_credit_unit_price', 'sold_at_unit_price', 'unit_price'] as $field) {
+            if (array_key_exists($field, $item) && $item[$field] !== null && $item[$field] !== '') {
+                return round(max(0, (float) $item[$field]), 2);
+            }
         }
 
         if ($orderItem) {

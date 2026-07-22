@@ -1887,8 +1887,9 @@ export default function LookupPage() {
         items: returnData.selectedProducts.map((item: any) => ({
           order_item_id: item.order_item_id,
           quantity: item.quantity,
-          unit_price: item.unit_price,
-          sold_at_unit_price: item.sold_at_unit_price ?? item.unit_price,
+          unit_price: item.manual_sold_at_unit_price ?? item.sold_at_unit_price ?? item.unit_price,
+          sold_at_unit_price: item.manual_sold_at_unit_price ?? item.sold_at_unit_price ?? item.unit_price,
+          manual_sold_at_unit_price: item.manual_sold_at_unit_price ?? item.sold_at_unit_price ?? item.unit_price,
           total_price: item.total_price,
           product_barcode_id: item.product_barcode_id || item.barcode_id,
           barcode_id: item.product_barcode_id || item.barcode_id,
@@ -1967,9 +1968,12 @@ export default function LookupPage() {
             product_id: originalItem?.product_id || item.product_id,
             product_batch_id: originalItem?.product_batch_id || originalItem?.batch_id || item.product_batch_id,
             quantity: item.quantity,
-            unit_price: item.unit_price,
-            sold_at_unit_price: item.sold_at_unit_price ?? item.unit_price,
-            total_price: item.total_price,
+            unit_price: item.manual_sold_at_unit_price ?? item.exchange_credit_unit_price ?? item.sold_at_unit_price ?? item.unit_price,
+            sold_at_unit_price: item.manual_sold_at_unit_price ?? item.exchange_credit_unit_price ?? item.sold_at_unit_price ?? item.unit_price,
+            manual_sold_at_unit_price: item.manual_sold_at_unit_price ?? item.exchange_credit_unit_price ?? item.sold_at_unit_price ?? item.unit_price,
+            exchange_credit_unit_price: item.exchange_credit_unit_price ?? item.manual_sold_at_unit_price ?? item.sold_at_unit_price ?? item.unit_price,
+            exchange_credit_total: item.exchange_credit_total ?? item.total_price,
+            total_price: item.exchange_credit_total ?? item.total_price,
             barcode: (item.product_barcode_id || item.barcode_id) ? item.barcode : undefined, // Never send SKU as returned barcode
             product_barcode_id: item.product_barcode_id || item.barcode_id, // Primary ID for removed items
             barcode_id: item.product_barcode_id || item.barcode_id, // Fallback/Alternative

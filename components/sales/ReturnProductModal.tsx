@@ -59,6 +59,7 @@ interface ReturnProductModalProps {
       quantity: number;
       unit_price: number;
       sold_at_unit_price: number;
+      manual_sold_at_unit_price: number;
       total_price: number;
       product_barcode_id?: number;
       barcode_id?: number;
@@ -318,6 +319,23 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
 
   const handleSoldAtChange = (itemId: number, price: string) => {
     setSoldAtPrices(prev => ({ ...prev, [itemId]: price }));
+
+    // Any existing refund allocation was entered against the previous Sold At
+    // value. Clear it so the visible total and submitted settlement stay aligned.
+    setRefundCash(0);
+    setRefundCard(0);
+    setRefundBkash(0);
+    setRefundNagad(0);
+    setNote1000(0);
+    setNote500(0);
+    setNote200(0);
+    setNote100(0);
+    setNote50(0);
+    setNote20(0);
+    setNote10(0);
+    setNote5(0);
+    setNote2(0);
+    setNote1(0);
   };
 
   const calculateTotals = () => {
@@ -417,6 +435,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
             quantity: 1,
             unit_price: unitPrice,
             sold_at_unit_price: unitPrice,
+            manual_sold_at_unit_price: unitPrice,
             total_price: unitPrice,
             product_barcode_id: bc.barcode_id || item?.barcode_id,
             barcode_id: bc.barcode_id || item?.barcode_id,
@@ -429,6 +448,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
             quantity: quantity,
             unit_price: unitPrice,
             sold_at_unit_price: unitPrice,
+            manual_sold_at_unit_price: unitPrice,
             total_price: unitPrice * quantity,
             product_barcode_id: item?.barcode_id,
             barcode_id: item?.barcode_id,
