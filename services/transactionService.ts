@@ -69,6 +69,7 @@ export interface Transaction {
   store_id?: number;
   store_name?: string;
   createdBy?: string;
+  metadata?: BackendTransaction['metadata'];
 }
 
 export interface Category {
@@ -193,6 +194,7 @@ function mapTransactionToUI(transaction: BackendTransaction): Transaction {
     store_id: transaction.store_id,
     store_name: transaction.store?.name,
     createdBy: (transaction as any).created_by?.name || 'System',
+    metadata: transaction.metadata,
   };
 }
 

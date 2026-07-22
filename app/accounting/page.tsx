@@ -592,7 +592,7 @@ const fetchJournalEntries = async () => {
                                     {entry.reference_type}
                                   </span>
                                   <Link 
-                                    href={`/accounting/transaction/${entry.group_id || entry.id || entry.lines[0]?.id}`}
+                                    href={`/accounting/transaction/${entry.detail_transaction_id || entry.lines[0]?.id}`}
                                     className="px-2 py-1 text-[10px] font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
                                   >
                                     VIEW DETAILS

@@ -509,6 +509,22 @@ class TransactionController extends Controller
         $dateTo = $request->get('date_to', now()->endOfMonth());
         $storeId = $request->get('store_id');
 
+        $openingQuery = $account->transactions()
+            ->completed()
+            ->where('transaction_date', '<', $dateFrom);
+
+        if ($storeId) {
+            $openingQuery->byStore($storeId);
+        }
+
+        $openingDebits = (float) (clone $openingQuery)->debit()->sum('amount');
+        $openingCredits = (float) (clone $openingQuery)->credit()->sum('amount');
+        $openingBalance = match ($account->type) {
+            'asset', 'expense' => $openingDebits - $openingCredits,
+            'liability', 'equity', 'income' => $openingCredits - $openingDebits,
+            default => $openingDebits - $openingCredits,
+        };
+
         $query = $account->transactions()
             ->completed()
             ->with(['store', 'createdBy'])
@@ -520,14 +536,18 @@ class TransactionController extends Controller
 
         $transactions = $query->orderBy('transaction_date')->get();
 
-        // Calculate running balance
-        $runningBalance = 0;
+        // Calculate running balance from the true opening balance.
+        // Asset/expense accounts increase on debit; liability/equity/income increase on credit.
+        $runningBalance = $openingBalance;
         $ledger = $transactions->map(function($transaction) use (&$runningBalance, $account) {
-            if ($transaction->type === 'debit') {
-                $runningBalance += $transaction->amount;
-            } else {
-                $runningBalance -= $transaction->amount;
-            }
+            $amount = (float) $transaction->amount;
+            $movement = match ($account->type) {
+                'asset', 'expense' => $transaction->type === 'debit' ? $amount : -$amount,
+                'liability', 'equity', 'income' => $transaction->type === 'credit' ? $amount : -$amount,
+                default => $transaction->type === 'debit' ? $amount : -$amount,
+            };
+
+            $runningBalance += $movement;
 
             return [
                 'id' => $transaction->id,
@@ -536,7 +556,7 @@ class TransactionController extends Controller
                 'description' => $transaction->description,
                 'debit' => $transaction->type === 'debit' ? $transaction->amount : 0,
                 'credit' => $transaction->type === 'credit' ? $transaction->amount : 0,
-                'balance' => $runningBalance,
+                'balance' => round($runningBalance, 2),
                 'status' => $transaction->status,
             ];
         });
@@ -550,8 +570,8 @@ class TransactionController extends Controller
                     'name' => $account->name,
                     'type' => $account->type,
                 ],
-                'opening_balance' => $account->getBalance($storeId, $dateFrom),
-                'closing_balance' => $runningBalance,
+                'opening_balance' => round($openingBalance, 2),
+                'closing_balance' => round($runningBalance, 2),
                 'transactions' => $ledger,
                 'date_range' => [
                     'date_from' => $dateFrom,
@@ -585,4 +605,3 @@ class TransactionController extends Controller
         ]);
     }
 }
-

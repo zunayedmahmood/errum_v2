@@ -454,6 +454,7 @@ export interface JournalEntryLine {
 export interface JournalEntry {
   id: string;
   group_id?: string;
+  detail_transaction_id?: number;
   date: string;
   reference_type: string;
   reference_id: number;
@@ -913,14 +914,18 @@ class FinancialReportsService {
 
     const transactions = allRows.map((t: any) => normalizeTransaction(t));
 
-    // Group transactions by reference (same reference = one journal entry)
+    // Group transactions by journal bundle first. Manual double-entry rows share
+    // metadata.group_id/group_id even when they do not have a reference_id.
     const entriesMap = new Map<string, JournalEntry>();
 
     transactions.forEach((txn: Transaction) => {
       const refType = txn.reference_type || 'Manual';
       const refId = txn.reference_id || txn.id;
       const date = txn.transaction_date;
-      const key = `${refType}-${refId}-${date}`;
+      const journalGroupId = txn.group_id || txn.metadata?.group_id;
+      const key = journalGroupId
+        ? `group-${journalGroupId}`
+        : `${refType}-${refId}-${date}`;
 
       if (!entriesMap.has(key)) {
         entriesMap.set(key, {
@@ -928,7 +933,8 @@ class FinancialReportsService {
           date,
           reference_type: refType,
           reference_id: txn.reference_id || 0,
-          group_id: txn.group_id,
+          group_id: journalGroupId,
+          detail_transaction_id: txn.id,
           description: txn.description || '',
           lines: [],
           total_debit: 0,

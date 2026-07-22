@@ -1053,6 +1053,8 @@ Route::middleware('auth:api')->group(function () {
             Route::post('/complete', [TransactionController::class, 'complete']);
             Route::post('/fail', [TransactionController::class, 'fail']);
             Route::post('/cancel', [TransactionController::class, 'cancel']);
+            Route::post('/attachments', [TransactionController::class, 'addAttachment']);
+            Route::post('/references', [TransactionController::class, 'addReference']);
         });
     });
 
