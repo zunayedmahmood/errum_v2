@@ -94,6 +94,7 @@ interface ReplacementProduct {
   name: string;
   batchNumber?: string;
   price: number;
+  priceInput: string;
   quantity: number;
   amount: number;
   available: number;
@@ -336,6 +337,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       name: scannedProduct.productName,
       batchNumber: scannedProduct.batchNumber,
       price: scannedProduct.price,
+      priceInput: String(scannedProduct.price ?? 0),
       quantity: 1,
       amount: scannedProduct.price,
       available: scannedProduct.availableQty,
@@ -421,8 +423,44 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     setNote1(0);
   };
 
+  const resetSettlementAllocation = () => {
+    setCashAmount(0);
+    setCardAmount(0);
+    setBkashAmount(0);
+    setNagadAmount(0);
+    setNote1000(0);
+    setNote500(0);
+    setNote200(0);
+    setNote100(0);
+    setNote50(0);
+    setNote20(0);
+    setNote10(0);
+    setNote5(0);
+    setNote2(0);
+    setNote1(0);
+  };
+
   const handleRemoveReplacement = (id: number | string) => {
     setReplacementProducts(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handleUpdateReplacementPrice = (id: number | string, priceInput: string) => {
+    const price = parsePrice(priceInput);
+
+    setReplacementProducts(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p;
+
+        return {
+          ...p,
+          price,
+          priceInput,
+          amount: Number((price * p.quantity).toFixed(2)),
+        };
+      })
+    );
+
+    resetSettlementAllocation();
   };
 
   const handleUpdateReplacementQty = (id: number | string, newQty: number) => {
@@ -441,12 +479,14 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
           return {
             ...p,
             quantity: newQty,
-            amount: p.price * newQty,
+            amount: Number((p.price * newQty).toFixed(2)),
           };
         }
         return p;
       })
     );
+
+    resetSettlementAllocation();
   };
 
   // Historical Sold At is the default; the current editor value is the authoritative exchange credit.
@@ -985,6 +1025,39 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                                     {product.barcode}
                                   </span>
                                 )}
+                              </div>
+                              <div className="mt-3 max-w-sm">
+                                <div className="flex gap-4">
+                                  <div className="flex-1">
+                                    <label
+                                      htmlFor={`replacement-sold-at-price-${product.id}`}
+                                      className="block text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400 mb-1"
+                                    >
+                                      Sold At Price *
+                                    </label>
+                                    <div className="relative">
+                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">৳</span>
+                                      <input
+                                        id={`replacement-sold-at-price-${product.id}`}
+                                        type="number"
+                                        inputMode="decimal"
+                                        min="0"
+                                        step="0.01"
+                                        value={product.priceInput}
+                                        onChange={(event) => handleUpdateReplacementPrice(product.id, event.target.value)}
+                                        className="w-full pl-6 pr-2 py-1.5 text-sm border border-orange-200 dark:border-orange-900/30 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500/20 outline-none font-bold transition-all"
+                                        placeholder="0.00"
+                                        aria-label="Replacement sold at price"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Value</span>
+                                    <span className="text-sm font-black text-gray-900 dark:text-white">
+                                      ৳{product.amount.toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                             <div className="flex items-center gap-4">
