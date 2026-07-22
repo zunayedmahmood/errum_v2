@@ -3,7 +3,7 @@ import { X, ArrowRightLeft, Calculator, ChevronDown, Loader2, AlertCircle } from
 import BarcodeScanner, { ScannedProduct } from '@/components/pos/BarcodeScanner';
 import storeService, { type Store } from '@/services/storeService';
 import SoldAtPriceEditor from '@/components/sales/SoldAtPriceEditor';
-import { isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
+import { getEffectiveSoldUnitPrice, isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
 
 interface OrderItem {
   id: number;
@@ -21,6 +21,8 @@ interface OrderItem {
   total_amount?: string | number;
   total_price?: string | number;
   sold_at_unit_price?: string | number;
+  net_unit_price?: string | number;
+  final_unit_price?: string | number;
 }
 
 interface Order {
@@ -51,6 +53,7 @@ interface ExchangeProductModalProps {
       order_item_id: number;
       quantity: number;
       unit_price: number;
+      sold_at_unit_price: number;
       total_price: number;
       product_barcode_id?: number;
     }>;
@@ -126,6 +129,23 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   const [note5, setNote5] = useState(0);
   const [note2, setNote2] = useState(0);
   const [note1, setNote1] = useState(0);
+
+  // Pre-fill historical Sold At values once per order. Manual overrides are preserved.
+  useEffect(() => {
+    setSoldAtPrices((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      for (const item of order.items || []) {
+        if (!Object.prototype.hasOwnProperty.call(next, item.id)) {
+          next[item.id] = getEffectiveSoldUnitPrice(item);
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [order.id, order.items]);
 
   // ✅ NEW: Fetch stores on mount
   useEffect(() => {
@@ -290,6 +310,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
         setSelectedProducts(prev => [...prev, targetItem.id]);
       }
 
+      setSoldAtPrices((current) =>
+        Object.prototype.hasOwnProperty.call(current, targetItem.id)
+          ? current
+          : { ...current, [targetItem.id]: getEffectiveSoldUnitPrice(targetItem) }
+      );
+
       return;
     }
 
@@ -352,8 +378,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       } else {
         const item = order.items.find(i => i.id === itemId);
         if (item) {
-          // Sold At is intentionally manual. Selecting an item only initializes quantity.
-          setSoldAtPrices(prevPrices => ({ ...prevPrices, [itemId]: prevPrices[itemId] ?? '' }));
+          // Start with the historical net Sold At value; the employee may overwrite it.
+          setSoldAtPrices((current) =>
+            Object.prototype.hasOwnProperty.call(current, itemId)
+              ? current
+              : { ...current, [itemId]: getEffectiveSoldUnitPrice(item) }
+          );
           setExchangeQuantities(prevQty => ({ ...prevQty, [itemId]: Math.max(prevQty[itemId] || 0, 1) }));
         }
         return [...prev, itemId];
@@ -398,7 +428,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     );
   };
 
-  // Employee-entered Sold At is the sole exchange-credit source.
+  // Historical Sold At is the default; the current editor value is the authoritative exchange credit.
   const parsePrice = parseMoney;
 
   const outstandingAmount = order.outstanding_amount !== undefined && order.outstanding_amount !== null
@@ -407,12 +437,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   const isFullyPaid = Math.abs(outstandingAmount) < 0.01;
 
   const calculateTotals = () => {
-    // Use only the employee-entered Sold At value.
+    // Use the current editor value. It starts historical and updates immediately after a manual override.
     const originalAmount = selectedProducts.reduce((sum, itemId) => {
       const item = order.items.find(i => i.id === itemId);
       if (!item) return sum;
       const qty = exchangeQuantities[itemId] || 0;
-      const price = parsePrice(soldAtPrices[itemId]);
+      const price = parsePrice(soldAtPrices[itemId] ?? getEffectiveSoldUnitPrice(item));
       return sum + (price * qty);
     }, 0);
 
@@ -442,9 +472,11 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   const effectiveCash = cashFromNotes > 0 ? cashFromNotes : cashAmount;
   const totalPaymentRefund = effectiveCash + cardAmount + bkashAmount + nagadAmount;
 
-  const due = totals.difference > 0
-    ? Math.max(0, totals.difference - totalPaymentRefund)
-    : Math.max(0, Math.abs(totals.difference) - totalPaymentRefund);
+  const requiredSettlement = Math.abs(totals.difference);
+  const settlementDelta = requiredSettlement - totalPaymentRefund;
+  const settlementMismatch = Math.abs(settlementDelta) > 0.01;
+  const due = Math.max(0, settlementDelta);
+  const excessSettlement = Math.max(0, -settlementDelta);
 
   const handleProcessExchange = async () => {
     if (!isFullyPaid) {
@@ -483,10 +515,10 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     }
 
     // 🚫 Block partial payments/refunds (Frontend enforcement)
-    if (due > 0.01) {
+    if (settlementMismatch) {
       const actionType = totals.difference > 0 ? 'payment' : 'refund';
-      const requiredAmount = Math.abs(totals.difference).toFixed(2);
-      alert(`Full ${actionType} required. Please ${actionType === 'payment' ? 'collect' : 'process'} exactly ৳${requiredAmount} to complete this exchange.`);
+      const requiredAmount = requiredSettlement.toFixed(2);
+      alert(`The ${actionType} allocation must equal exactly ৳${requiredAmount}. Currently allocated: ৳${totalPaymentRefund.toFixed(2)}.`);
       return;
     }
 
@@ -541,6 +573,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
               order_item_id: itemId,
               quantity: 1,
               unit_price: unitPrice,
+              sold_at_unit_price: unitPrice,
               total_price: unitPrice,
               barcode: bc.barcode,
               product_barcode_id: bc.barcode_id || item?.barcode_id,
@@ -553,6 +586,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
               order_item_id: itemId,
               quantity: quantity,
               unit_price: unitPrice,
+              sold_at_unit_price: unitPrice,
               total_price: unitPrice * quantity,
               product_barcode_id: item?.barcode_id,
               barcode_id: item?.barcode_id,
@@ -1142,23 +1176,23 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                       </div>
                       <div className="flex justify-between text-base">
                         <span className="font-semibold text-gray-900 dark:text-white">
-                          {totals.difference > 0 ? 'Outstanding' : 'Remaining Refund'}
+                          {excessSettlement > 0.01 ? 'Excess Allocation' : (totals.difference > 0 ? 'Outstanding' : 'Remaining Refund')}
                         </span>
                         <span
-                          className={`font-bold ${due > 0
+                          className={`font-bold ${settlementMismatch
                               ? 'text-orange-600 dark:text-orange-400'
                               : 'text-green-600 dark:text-green-400'
                             }`}
                         >
-                          ৳{due.toFixed(2)}
+                          ৳{(excessSettlement > 0 ? excessSettlement : due).toFixed(2)}
                         </span>
                       </div>
-                      {due > 0.01 && (
+                      {settlementMismatch && (
                         <p className="text-xs font-bold text-red-600 dark:text-red-400 mt-1 animate-pulse">
-                          ⚠️ Full {totals.difference > 0 ? 'payment' : 'refund'} required to proceed
+                          ⚠️ Allocation must match the Sold At exchange difference exactly
                         </p>
                       )}
-                      {due <= 0.01 && totalPaymentRefund > 0 && (
+                      {!settlementMismatch && totalPaymentRefund > 0 && (
                         <p className="text-xs text-green-600 dark:text-green-400 mt-1">
                           ✓ Fully {totals.difference > 0 ? 'paid' : 'refunded'}
                         </p>
@@ -1181,7 +1215,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
                 <button
                   type="button"
                   onClick={handleProcessExchange}
-                  disabled={isProcessing || selectedProducts.length === 0 || replacementProducts.length === 0 || due > 0.01}
+                  disabled={isProcessing || selectedProducts.length === 0 || replacementProducts.length === 0 || settlementMismatch}
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
                 >
                   {isProcessing ? (

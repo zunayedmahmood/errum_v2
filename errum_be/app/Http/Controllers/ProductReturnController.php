@@ -143,6 +143,7 @@ class ProductReturnController extends Controller
             'items.*.order_item_id' => 'required|exists:order_items,id',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.unit_price' => 'nullable|numeric|min:0',
+            'items.*.sold_at_unit_price' => 'nullable|numeric|min:0',
             'items.*.total_price' => 'nullable|numeric|min:0',
             'items.*.product_barcode_id' => 'nullable|exists:product_barcodes,id',
             'items.*.barcode_id' => 'nullable|exists:product_barcodes,id',
@@ -179,13 +180,10 @@ class ProductReturnController extends Controller
                     throw new \Exception("Unable to identify sold barcode units for {$orderItem->product_name}.");
                 }
 
-                $netSoldUnitPrice = $this->netSoldUnitPrice($orderItem);
                 $quantity = (int) $item['quantity'];
-                // A supplied Lookup Sold At value is authoritative. Callers that omit it
-                // retain the historical net unit-price fallback.
-                $unitPrice = array_key_exists('unit_price', $item)
-                    ? round(max(0, (float) $item['unit_price']), 2)
-                    : $netSoldUnitPrice;
+                // sold_at_unit_price is the canonical employee-editable value. unit_price is
+                // accepted for backward compatibility; only a missing value falls back to history.
+                $unitPrice = $this->resolveSoldAtUnitPrice($item, $orderItem);
                 $itemReturnValue = round($unitPrice * $quantity, 2);
                 $totalReturnValue += $itemReturnValue;
 
@@ -196,6 +194,7 @@ class ProductReturnController extends Controller
                     'product_name' => $orderItem->product_name,
                     'quantity' => $item['quantity'],
                     'unit_price' => $unitPrice,
+                    'sold_at_unit_price' => $unitPrice,
                     'total_price' => $itemReturnValue,
                     'reason' => $item['reason'] ?? null,
                     'returned_barcode_ids' => $returnableBarcodes->pluck('id')->values()->all(),
@@ -292,6 +291,7 @@ class ProductReturnController extends Controller
             'items.*.order_item_id' => 'required|exists:order_items,id',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.unit_price' => 'nullable|numeric|min:0',
+            'items.*.sold_at_unit_price' => 'nullable|numeric|min:0',
             'items.*.total_price' => 'nullable|numeric|min:0',
             'items.*.product_barcode_id' => 'nullable|exists:product_barcodes,id',
             'items.*.barcode_id' => 'nullable|exists:product_barcodes,id',
@@ -337,13 +337,10 @@ class ProductReturnController extends Controller
                     throw new \Exception("Unable to identify {$item['quantity']} sold barcode unit(s) for {$orderItem->product_name}. Return requires sold barcode tracking.");
                 }
 
-                $netSoldUnitPrice = $this->netSoldUnitPrice($orderItem);
                 $quantity = (int) $item['quantity'];
-                // A supplied Lookup Sold At value is authoritative. Callers that omit it
-                // retain the historical net unit-price fallback.
-                $unitPrice = array_key_exists('unit_price', $item)
-                    ? round(max(0, (float) $item['unit_price']), 2)
-                    : $netSoldUnitPrice;
+                // sold_at_unit_price is the canonical employee-editable value. unit_price is
+                // accepted for backward compatibility; only a missing value falls back to history.
+                $unitPrice = $this->resolveSoldAtUnitPrice($item, $orderItem);
                 $itemReturnValue = round($unitPrice * $quantity, 2);
                 $totalReturnValue += $itemReturnValue;
 
@@ -354,6 +351,7 @@ class ProductReturnController extends Controller
                     'product_name' => $orderItem->product_name,
                     'quantity' => $item['quantity'],
                     'unit_price' => $unitPrice,
+                    'sold_at_unit_price' => $unitPrice,
                     'total_price' => $itemReturnValue,
                     'reason' => $item['reason'] ?? null,
                     'returned_barcode_ids' => $returnableBarcodes->pluck('id')->values()->all(),
@@ -1192,6 +1190,23 @@ class ProductReturnController extends Controller
             // Fallback to UUID if all attempts fail
             return 'RET-' . $date . '-' . strtoupper(substr(uniqid(), -8));
         });
+    }
+
+    /**
+     * Resolve the employee-editable Sold At unit value without losing explicit zeroes.
+     * Priority: canonical sold_at_unit_price, legacy unit_price, historical net sold price.
+     */
+    private function resolveSoldAtUnitPrice(array $item, OrderItem $orderItem): float
+    {
+        if (array_key_exists('sold_at_unit_price', $item) && $item['sold_at_unit_price'] !== null && $item['sold_at_unit_price'] !== '') {
+            return round(max(0, (float) $item['sold_at_unit_price']), 2);
+        }
+
+        if (array_key_exists('unit_price', $item) && $item['unit_price'] !== null && $item['unit_price'] !== '') {
+            return round(max(0, (float) $item['unit_price']), 2);
+        }
+
+        return $this->netSoldUnitPrice($orderItem);
     }
 
     /**

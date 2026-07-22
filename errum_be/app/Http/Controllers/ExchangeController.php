@@ -48,7 +48,8 @@ class ExchangeController extends Controller
             'removedProducts.*.product_batch_id' => 'nullable|exists:product_batches,id',
             'removedProducts.*.batch_id' => 'nullable|exists:product_batches,id',
             'removedProducts.*.quantity' => 'required|integer|min:1',
-            'removedProducts.*.unit_price' => 'required|numeric|min:0',
+            'removedProducts.*.unit_price' => 'nullable|numeric|min:0',
+            'removedProducts.*.sold_at_unit_price' => 'nullable|numeric|min:0',
             'removedProducts.*.total_price' => 'nullable|numeric|min:0',
             'removedProducts.*.order_item_id' => 'nullable|exists:order_items,id',
             'removedProducts.*.barcode' => 'nullable|string',
@@ -142,9 +143,9 @@ class ExchangeController extends Controller
                     throw new \Exception("Barcode is required to exchange {$orderItem->product_name} because it was sold as a tracked unit.");
                 }
 
-                // Lookup Exchange uses the employee-entered Sold At value as the source of truth.
-                // Do not replace or cap it with the historical order-item price.
-                $unitPrice = round(max(0, (float) $item['unit_price']), 2);
+                // Lookup Exchange uses the current Sold At editor value as the source of truth.
+                // It is pre-filled from history, but an employee override must survive unchanged.
+                $unitPrice = $this->resolveSoldAtUnitPrice($item, $orderItem);
                 $itemTotal = round($unitPrice * $quantity, 2);
                 $totalReturnValue += $itemTotal;
 
@@ -155,6 +156,7 @@ class ExchangeController extends Controller
                     'product_name' => $orderItem?->product_name,
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
+                    'sold_at_unit_price' => $unitPrice,
                     'total_price' => $itemTotal,
                     'refundable_amount' => $itemTotal,
                     'return_reason' => $item['return_reason'],
@@ -354,7 +356,35 @@ class ExchangeController extends Controller
             // --- 3. FINANCIAL SETTLEMENT ---
             $exchangeBalanceUsed = min($totalReturnValue, $totalAmount);
             $difference = round($totalAmount - $totalReturnValue, 2);
-            $requestedSettlementAmount = (float) ($request->paymentRefund['amount'] ?? 0);
+            $requestedSettlementAmount = round((float) ($request->paymentRefund['amount'] ?? 0), 2);
+            $requiredSettlementAmount = round(abs($difference), 2);
+
+            // Lookup requires a complete settlement. Reject payment/refund amounts left over
+            // from a value entered before the Sold At field was edited.
+            if (abs($requestedSettlementAmount - $requiredSettlementAmount) > 0.01) {
+                throw new \Exception(
+                    'Exchange settlement must equal the Sold At difference. Required: ' .
+                    number_format($requiredSettlementAmount, 2, '.', '') .
+                    ', received: ' . number_format($requestedSettlementAmount, 2, '.', '')
+                );
+            }
+
+            $expectedSettlementType = $difference > 0 ? 'surplus' : ($difference < 0 ? 'refund' : 'even');
+            if (($request->paymentRefund['type'] ?? null) !== $expectedSettlementType) {
+                throw new \Exception('Exchange settlement type no longer matches the current Sold At difference. Please review the payment/refund section.');
+            }
+
+            $settlementDetails = (array) ($request->paymentRefund['details'] ?? []);
+            $detailsTotal = round(
+                (float) ($settlementDetails['cash'] ?? 0) +
+                (float) ($settlementDetails['card'] ?? 0) +
+                (float) ($settlementDetails['bkash'] ?? 0) +
+                (float) ($settlementDetails['nagad'] ?? 0),
+                2
+            );
+            if (abs($detailsTotal - $requestedSettlementAmount) > 0.01) {
+                throw new \Exception('Exchange payment/refund method split does not add up to the Sold At settlement amount.');
+            }
 
             $exchangeMethod = PaymentMethod::where('code', 'exchange_balance')->first()
                 ?? PaymentMethod::where('code', 'other')->first()
@@ -826,6 +856,35 @@ class ExchangeController extends Controller
         $reservedRecord->total_inventory = max(0, (int) $reservedRecord->total_inventory - $quantity);
         $reservedRecord->available_inventory = max(0, (int) $reservedRecord->total_inventory - (int) $reservedRecord->reserved_inventory);
         $reservedRecord->save();
+    }
+
+    /**
+     * Resolve the current Sold At value. Explicit zero is valid.
+     */
+    private function resolveSoldAtUnitPrice(array $item, ?OrderItem $orderItem): float
+    {
+        if (array_key_exists('sold_at_unit_price', $item) && $item['sold_at_unit_price'] !== null && $item['sold_at_unit_price'] !== '') {
+            return round(max(0, (float) $item['sold_at_unit_price']), 2);
+        }
+
+        if (array_key_exists('unit_price', $item) && $item['unit_price'] !== null && $item['unit_price'] !== '') {
+            return round(max(0, (float) $item['unit_price']), 2);
+        }
+
+        if ($orderItem) {
+            $qty = max(1, (int) $orderItem->quantity);
+            if ($orderItem->total_amount !== null) {
+                return round(max(0, (float) $orderItem->total_amount) / $qty, 2);
+            }
+
+            $lineTotal = ((float) $orderItem->unit_price * $qty)
+                - (float) ($orderItem->discount_amount ?? 0)
+                + (float) ($orderItem->tax_amount ?? 0);
+
+            return round(max(0, $lineTotal) / $qty, 2);
+        }
+
+        throw new \Exception('Sold At price is required for the returned exchange item.');
     }
 
     private function normalizePaymentMethodCode(string $method): string

@@ -62,7 +62,18 @@ export interface CustomerOrder {
     quantity: number;
     unit_price: string;
     discount_amount: string;
+    tax_amount?: string | number;
     total_amount: string;
+    total_price?: string | number;
+    sold_at_unit_price?: string | number;
+    net_unit_price?: string | number;
+    final_unit_price?: string | number;
+    product_id?: number;
+    batch_id?: number;
+    product_batch_id?: number;
+    barcode_id?: number;
+    product_barcode_id?: number;
+    barcode?: string;
   }>;
   shipping_address?: string;
   notes?: string;

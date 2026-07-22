@@ -1888,6 +1888,7 @@ export default function LookupPage() {
           order_item_id: item.order_item_id,
           quantity: item.quantity,
           unit_price: item.unit_price,
+          sold_at_unit_price: item.sold_at_unit_price ?? item.unit_price,
           total_price: item.total_price,
           product_barcode_id: item.product_barcode_id || item.barcode_id,
           barcode_id: item.product_barcode_id || item.barcode_id,
@@ -1899,6 +1900,15 @@ export default function LookupPage() {
       // Use the atomic quickComplete endpoint (call once, reuse response for refund)
       const res = await productReturnService.quickComplete(returnRequest);
       const returnId = res?.data?.id;
+      const authoritativeRefundAmount = Number(
+        res?.data?.total_refund_amount ?? res?.data?.total_return_value ?? 0
+      );
+
+      if (Math.abs(authoritativeRefundAmount - Number(returnData.refundMethods?.total || 0)) > 0.01) {
+        throw new Error(
+          `Refund allocation (৳${Number(returnData.refundMethods?.total || 0).toFixed(2)}) does not match the saved Sold At return value (৳${authoritativeRefundAmount.toFixed(2)}).`
+        );
+      }
 
       // Handle refund if needed
       if (returnData.refundMethods && returnData.refundMethods.total > 0 && returnId) {
@@ -1910,7 +1920,7 @@ export default function LookupPage() {
         const refundRequest: CreateRefundRequest = {
           return_id: returnId,
           refund_type: 'partial_amount',
-          refund_amount: returnData.refundMethods.total,
+          refund_amount: authoritativeRefundAmount,
           refund_method: refundMethod,
           refund_method_details: {
             cash: returnData.refundMethods.cash,
@@ -1958,6 +1968,7 @@ export default function LookupPage() {
             product_batch_id: originalItem?.product_batch_id || originalItem?.batch_id || item.product_batch_id,
             quantity: item.quantity,
             unit_price: item.unit_price,
+            sold_at_unit_price: item.sold_at_unit_price ?? item.unit_price,
             total_price: item.total_price,
             barcode: (item.product_barcode_id || item.barcode_id) ? item.barcode : undefined, // Never send SKU as returned barcode
             product_barcode_id: item.product_barcode_id || item.barcode_id, // Primary ID for removed items

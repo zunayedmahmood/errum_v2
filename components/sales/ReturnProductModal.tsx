@@ -3,7 +3,7 @@ import { X, RotateCcw, Calculator, ChevronDown, AlertCircle, Scan } from 'lucide
 import BarcodeScanner, { type ScannedProduct } from '@/components/pos/BarcodeScanner';
 import storeService, { type Store } from '@/services/storeService';
 import SoldAtPriceEditor from '@/components/sales/SoldAtPriceEditor';
-import { isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
+import { getEffectiveSoldUnitPrice, isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
 
 interface OrderItem {
   id: number;
@@ -18,7 +18,11 @@ interface OrderItem {
   unit_price: string;
   discount_amount?: string | number;
   tax_amount?: string | number;
-  total_amount: string;
+  total_amount: string | number;
+  total_price?: string | number;
+  sold_at_unit_price?: string | number;
+  net_unit_price?: string | number;
+  final_unit_price?: string | number;
 }
 
 interface Order {
@@ -54,6 +58,7 @@ interface ReturnProductModalProps {
       order_item_id: number;
       quantity: number;
       unit_price: number;
+      sold_at_unit_price: number;
       total_price: number;
       product_barcode_id?: number;
       barcode_id?: number;
@@ -110,6 +115,24 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
 
   // Define the parser before any render-time calculation to avoid TDZ errors in production builds.
   const parseFloatValue = parseMoney;
+
+  // Pre-fill each item with the historical net Sold At value returned by Lookup.
+  // The employee can still overwrite this value; subsequent scans/selections preserve the override.
+  useEffect(() => {
+    setSoldAtPrices((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      for (const item of order.items || []) {
+        if (!Object.prototype.hasOwnProperty.call(next, item.id)) {
+          next[item.id] = getEffectiveSoldUnitPrice(item);
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [order.id, order.items]);
 
   // ✅ NEW: Fetch stores on mount
   useEffect(() => {
@@ -240,6 +263,12 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
         setSelectedProducts(prev => [...prev, targetItem.id]);
       }
 
+      setSoldAtPrices((current) =>
+        Object.prototype.hasOwnProperty.call(current, targetItem.id)
+          ? current
+          : { ...current, [targetItem.id]: getEffectiveSoldUnitPrice(targetItem) }
+      );
+
       return;
     }
 
@@ -274,8 +303,12 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       } else {
         const item = order.items.find(i => i.id === itemId);
         if (item) {
-          // Sold At is intentionally entered by the employee.
-          setSoldAtPrices(p => ({ ...p, [itemId]: p[itemId] ?? '' }));
+          // Start from the historical net Sold At value; manual edits remain authoritative.
+          setSoldAtPrices((current) =>
+            Object.prototype.hasOwnProperty.call(current, itemId)
+              ? current
+              : { ...current, [itemId]: getEffectiveSoldUnitPrice(item) }
+          );
           setReturnedQuantities(q => ({ ...q, [itemId]: Math.max(q[itemId] || 0, 1) }));
         }
         return [...prev, itemId];
@@ -288,17 +321,20 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
   };
 
   const calculateTotals = () => {
-    // Use only the employee-entered Sold At value.
+    // The pre-filled historical value is only a default. Any manual edit in soldAtPrices
+    // immediately becomes the return-credit source.
     const returnAmount = selectedProducts.reduce((sum, productId) => {
       const product = order.items.find(p => p.id === productId);
       if (!product) return sum;
       const qty = returnedQuantities[productId] || 0;
-      const price = parseFloatValue(soldAtPrices[productId]);
+      const price = parseFloatValue(soldAtPrices[productId] ?? getEffectiveSoldUnitPrice(product));
       return sum + (price * qty);
     }, 0);
 
     const totalPaid = parseFloatValue(order.paid_amount);
-    const refundToCustomer = Math.min(returnAmount, totalPaid);
+    // Sold At is authoritative for this Lookup workflow. Do not silently cap the
+    // employee-entered return value back to the historical paid total.
+    const refundToCustomer = returnAmount;
 
     return {
       returnAmount,
@@ -316,6 +352,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
   const effectiveRefundCash = cashFromNotes > 0 ? cashFromNotes : refundCash;
   const totalRefundProcessed = effectiveRefundCash + refundCard + refundBkash + refundNagad;
   const remainingRefund = totals.refundToCustomer - totalRefundProcessed;
+  const refundSettlementMismatch = Math.abs(remainingRefund) > 0.01;
 
   const handleProcessReturn = async () => {
     if (!isFullyPaid) {
@@ -349,8 +386,8 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     }
 
     // 🚫 Block partial refunds (Frontend enforcement)
-    if (remainingRefund > 0.01) {
-      alert(`Full refund required. Please process exactly ৳${totals.refundToCustomer.toFixed(2)} to complete this return.`);
+    if (refundSettlementMismatch) {
+      alert(`Refund allocation must equal exactly ৳${totals.refundToCustomer.toFixed(2)}. Currently allocated: ৳${totalRefundProcessed.toFixed(2)}.`);
       return;
     }
 
@@ -379,6 +416,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
             order_item_id: itemId,
             quantity: 1,
             unit_price: unitPrice,
+            sold_at_unit_price: unitPrice,
             total_price: unitPrice,
             product_barcode_id: bc.barcode_id || item?.barcode_id,
             barcode_id: bc.barcode_id || item?.barcode_id,
@@ -390,6 +428,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
             order_item_id: itemId,
             quantity: quantity,
             unit_price: unitPrice,
+            sold_at_unit_price: unitPrice,
             total_price: unitPrice * quantity,
             product_barcode_id: item?.barcode_id,
             barcode_id: item?.barcode_id,
@@ -811,11 +850,13 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                         <span className="text-gray-900 dark:text-white font-medium">৳{totals.refundToCustomer.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-base">
-                        <span className="font-semibold text-gray-900 dark:text-white">Remaining</span>
-                        <span className={`font-bold ${remainingRefund > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>৳{remainingRefund.toFixed(2)}</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">
+                          {remainingRefund < -0.01 ? 'Excess Refund' : 'Remaining'}
+                        </span>
+                        <span className={`font-bold ${refundSettlementMismatch ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>৳{Math.abs(remainingRefund).toFixed(2)}</span>
                       </div>
-                      {remainingRefund > 0.01 && <p className="text-xs font-bold text-red-600 dark:text-red-400 mt-1 animate-pulse">⚠️ Full refund required to proceed</p>}
-                      {remainingRefund <= 0.01 && totalRefundProcessed > 0 && <p className="text-xs text-green-600 dark:text-green-400 mt-1">✓ Full refund processed</p>}
+                      {refundSettlementMismatch && <p className="text-xs font-bold text-red-600 dark:text-red-400 mt-1 animate-pulse">⚠️ Refund allocation must match the Sold At return value exactly</p>}
+                      {!refundSettlementMismatch && totalRefundProcessed > 0 && <p className="text-xs text-green-600 dark:text-green-400 mt-1">✓ Exact refund allocated</p>}
                     </div>
                   </div>
                 </div>
@@ -829,7 +870,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
                 <button
                   type="button"
                   onClick={handleProcessReturn}
-                  disabled={isProcessing || selectedProducts.length === 0 || remainingRefund > 0.01}
+                  disabled={isProcessing || selectedProducts.length === 0 || refundSettlementMismatch}
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
                 >
                   <RotateCcw className="w-5 h-5" />

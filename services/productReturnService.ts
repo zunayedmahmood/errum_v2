@@ -89,6 +89,7 @@ export interface CreateReturnRequest {
     barcode_id?: number;
     barcode?: string;
     unit_price?: number;
+    sold_at_unit_price?: number;
     total_price?: number;
     reason?: string;
   }>;
