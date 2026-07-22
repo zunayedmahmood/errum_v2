@@ -134,17 +134,18 @@ export default function TransactionDetailPage({ params }: TransactionPageProps) 
   }
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}`}>
-      <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-      
-      <div className="flex flex-col flex-1 lg:pl-64">
-        <Header 
-          darkMode={darkMode} 
-          setDarkMode={setDarkMode} 
-          toggleSidebar={() => setSidebarOpen(!sidebarOpen)} 
-        />
+    <div className={darkMode ? 'dark' : ''}>
+      <div className="flex h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-white">
+        <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
-        <main className="p-4 md:p-6 space-y-6">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Header 
+            darkMode={darkMode} 
+            setDarkMode={setDarkMode} 
+            toggleSidebar={() => setSidebarOpen(!sidebarOpen)} 
+          />
+
+          <main className="flex-1 overflow-auto p-4 md:p-6 space-y-6">
           {/* Top Bar / Back Button */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <button 
@@ -425,7 +426,8 @@ export default function TransactionDetailPage({ params }: TransactionPageProps) 
               </div>
             </>
           )}
-        </main>
+          </main>
+        </div>
       </div>
     </div>
   );
