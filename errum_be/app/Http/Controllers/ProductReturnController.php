@@ -181,12 +181,12 @@ class ProductReturnController extends Controller
 
                 $netSoldUnitPrice = $this->netSoldUnitPrice($orderItem);
                 $quantity = (int) $item['quantity'];
-                $itemReturnValue = array_key_exists('total_price', $item)
-                    ? (float) $item['total_price']
-                    : ($quantity * (array_key_exists('unit_price', $item) ? (float) $item['unit_price'] : $netSoldUnitPrice));
-                $maxReturnValue = round($netSoldUnitPrice * $quantity, 2);
-                $itemReturnValue = round(max(0, min($itemReturnValue, $maxReturnValue)), 2);
-                $unitPrice = $quantity > 0 ? round($itemReturnValue / $quantity, 2) : 0;
+                // A supplied Lookup Sold At value is authoritative. Callers that omit it
+                // retain the historical net unit-price fallback.
+                $unitPrice = array_key_exists('unit_price', $item)
+                    ? round(max(0, (float) $item['unit_price']), 2)
+                    : $netSoldUnitPrice;
+                $itemReturnValue = round($unitPrice * $quantity, 2);
                 $totalReturnValue += $itemReturnValue;
 
                 $returnItems[] = [
@@ -339,12 +339,12 @@ class ProductReturnController extends Controller
 
                 $netSoldUnitPrice = $this->netSoldUnitPrice($orderItem);
                 $quantity = (int) $item['quantity'];
-                $itemReturnValue = array_key_exists('total_price', $item)
-                    ? (float) $item['total_price']
-                    : ($quantity * (array_key_exists('unit_price', $item) ? (float) $item['unit_price'] : $netSoldUnitPrice));
-                $maxReturnValue = round($netSoldUnitPrice * $quantity, 2);
-                $itemReturnValue = round(max(0, min($itemReturnValue, $maxReturnValue)), 2);
-                $unitPrice = $quantity > 0 ? round($itemReturnValue / $quantity, 2) : 0;
+                // A supplied Lookup Sold At value is authoritative. Callers that omit it
+                // retain the historical net unit-price fallback.
+                $unitPrice = array_key_exists('unit_price', $item)
+                    ? round(max(0, (float) $item['unit_price']), 2)
+                    : $netSoldUnitPrice;
+                $itemReturnValue = round($unitPrice * $quantity, 2);
                 $totalReturnValue += $itemReturnValue;
 
                 $returnItems[] = [

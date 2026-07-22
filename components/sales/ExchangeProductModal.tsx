@@ -3,7 +3,7 @@ import { X, ArrowRightLeft, Calculator, ChevronDown, Loader2, AlertCircle } from
 import BarcodeScanner, { ScannedProduct } from '@/components/pos/BarcodeScanner';
 import storeService, { type Store } from '@/services/storeService';
 import SoldAtPriceEditor from '@/components/sales/SoldAtPriceEditor';
-import { getEffectiveSoldUnitPrice, isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
+import { isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
 
 interface OrderItem {
   id: number;
@@ -290,10 +290,6 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
         setSelectedProducts(prev => [...prev, targetItem.id]);
       }
 
-      // Auto-fill sold at price if not set
-      if (!soldAtPrices[targetItem.id]) {
-        setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: getEffectiveSoldUnitPrice(targetItem) }));
-      }
       return;
     }
 
@@ -356,8 +352,8 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       } else {
         const item = order.items.find(i => i.id === itemId);
         if (item) {
-          // Initialize values so manual edits work immediately
-          setSoldAtPrices(prevPrices => ({ ...prevPrices, [itemId]: getEffectiveSoldUnitPrice(item) }));
+          // Sold At is intentionally manual. Selecting an item only initializes quantity.
+          setSoldAtPrices(prevPrices => ({ ...prevPrices, [itemId]: prevPrices[itemId] ?? '' }));
           setExchangeQuantities(prevQty => ({ ...prevQty, [itemId]: Math.max(prevQty[itemId] || 0, 1) }));
         }
         return [...prev, itemId];
@@ -402,8 +398,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     );
   };
 
-  // Exchange deliberately uses the same parser and historical sold-at calculation
-  // as Return, including explicit zero for 100% discounted items.
+  // Employee-entered Sold At is the sole exchange-credit source.
   const parsePrice = parseMoney;
 
   const outstandingAmount = order.outstanding_amount !== undefined && order.outstanding_amount !== null
@@ -412,12 +407,12 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   const isFullyPaid = Math.abs(outstandingAmount) < 0.01;
 
   const calculateTotals = () => {
-    // Use actual net sold-at value. For 100% item-level discount orders, originalAmount is 0.
+    // Use only the employee-entered Sold At value.
     const originalAmount = selectedProducts.reduce((sum, itemId) => {
       const item = order.items.find(i => i.id === itemId);
       if (!item) return sum;
       const qty = exchangeQuantities[itemId] || 0;
-      const price = parsePrice(soldAtPrices[itemId] ?? getEffectiveSoldUnitPrice(item));
+      const price = parsePrice(soldAtPrices[itemId]);
       return sum + (price * qty);
     }, 0);
 
@@ -483,7 +478,7 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     });
 
     if (hasMissingPrices) {
-      alert('Please enter the manual "Sold At" price for all items being exchanged as per the historical record. Zero is allowed for 100% discount items.');
+      alert('Please enter the manual "Sold At" price for every item being exchanged. Zero is allowed.');
       return;
     }
 

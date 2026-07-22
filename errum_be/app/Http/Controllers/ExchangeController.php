@@ -142,13 +142,10 @@ class ExchangeController extends Controller
                     throw new \Exception("Barcode is required to exchange {$orderItem->product_name} because it was sold as a tracked unit.");
                 }
 
-                $netSoldUnitPrice = $orderItem ? $this->netSoldUnitPrice($orderItem) : (float) $item['unit_price'];
-                $itemTotal = array_key_exists('total_price', $item)
-                    ? (float) $item['total_price']
-                    : ($quantity * (float) ($item['unit_price'] ?? $netSoldUnitPrice));
-                $maxReturnValue = round($netSoldUnitPrice * $quantity, 2);
-                $itemTotal = round(max(0, min($itemTotal, $maxReturnValue)), 2);
-                $unitPrice = $quantity > 0 ? round($itemTotal / $quantity, 2) : 0;
+                // Lookup Exchange uses the employee-entered Sold At value as the source of truth.
+                // Do not replace or cap it with the historical order-item price.
+                $unitPrice = round(max(0, (float) $item['unit_price']), 2);
+                $itemTotal = round($unitPrice * $quantity, 2);
                 $totalReturnValue += $itemTotal;
 
                 $returnItems[] = [
@@ -829,25 +826,6 @@ class ExchangeController extends Controller
         $reservedRecord->total_inventory = max(0, (int) $reservedRecord->total_inventory - $quantity);
         $reservedRecord->available_inventory = max(0, (int) $reservedRecord->total_inventory - (int) $reservedRecord->reserved_inventory);
         $reservedRecord->save();
-    }
-
-    /**
-     * Net amount the customer actually paid per unit for the original item.
-     * Keeps 100% item-discount exchange orders from creating false exchange credit.
-     */
-    private function netSoldUnitPrice(OrderItem $orderItem): float
-    {
-        $qty = max(1, (int) $orderItem->quantity);
-
-        if ($orderItem->total_amount !== null) {
-            return round(max(0, (float) $orderItem->total_amount) / $qty, 2);
-        }
-
-        $lineSubtotal = ((float) $orderItem->unit_price * $qty)
-            - (float) ($orderItem->discount_amount ?? 0)
-            + (float) ($orderItem->tax_amount ?? 0);
-
-        return round(max(0, $lineSubtotal) / $qty, 2);
     }
 
     private function normalizePaymentMethodCode(string $method): string

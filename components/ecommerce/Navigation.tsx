@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Heart, Menu, Search, ShoppingBag, User } from 'lucide-react';
@@ -19,7 +20,10 @@ export default function Navigation({ transparent = false }: { transparent?: bool
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [scrolled, setScrolled] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => setPortalReady(true), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +44,8 @@ export default function Navigation({ transparent = false }: { transparent?: bool
   };
 
   const top = categories.filter((category) => !category.parent_id).slice(0, 5);
-  return <>
+
+  const navigation = (
     <header className={`ref-nav ${transparent ? 'ref-nav--hero' : ''} ${scrolled ? 'is-scrolled' : ''}`}>
       <div className="ref-nav__pill">
         <Link href="/e-commerce" className="ref-nav__brand"><span><img src="/logo.png" alt="ERRUM" /></span><b>ERRUM</b></Link>
@@ -58,6 +63,10 @@ export default function Navigation({ transparent = false }: { transparent?: bool
         </div>
       </div>
     </header>
+  );
+
+  return <>
+    {portalReady ? createPortal(navigation, document.body) : null}
     <GlobalCategorySidebar categories={categories} isOpen={categoryOpen} onClose={() => setCategoryOpen(false)} />
   </>;
 }

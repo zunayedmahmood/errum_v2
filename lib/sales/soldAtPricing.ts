@@ -58,5 +58,9 @@ export function getEffectiveSoldUnitPrice(item: SoldAtOrderItemLike): string {
 }
 
 export function isValidSoldAtPrice(value: unknown): boolean {
-  return hasValue(value) && parseMoney(value) >= 0;
+  if (!hasValue(value)) return false;
+  const normalized = String(value).replace(/[,৳\s]/g, '');
+  if (normalized === '') return false;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0;
 }

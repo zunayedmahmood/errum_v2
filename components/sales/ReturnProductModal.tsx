@@ -3,7 +3,7 @@ import { X, RotateCcw, Calculator, ChevronDown, AlertCircle, Scan } from 'lucide
 import BarcodeScanner, { type ScannedProduct } from '@/components/pos/BarcodeScanner';
 import storeService, { type Store } from '@/services/storeService';
 import SoldAtPriceEditor from '@/components/sales/SoldAtPriceEditor';
-import { getEffectiveSoldUnitPrice, isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
+import { isValidSoldAtPrice, parseMoney } from '@/lib/sales/soldAtPricing';
 
 interface OrderItem {
   id: number;
@@ -107,6 +107,9 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
   const [note5, setNote5] = useState(0);
   const [note2, setNote2] = useState(0);
   const [note1, setNote1] = useState(0);
+
+  // Define the parser before any render-time calculation to avoid TDZ errors in production builds.
+  const parseFloatValue = parseMoney;
 
   // ✅ NEW: Fetch stores on mount
   useEffect(() => {
@@ -237,9 +240,6 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
         setSelectedProducts(prev => [...prev, targetItem.id]);
       }
 
-      if (!soldAtPrices[targetItem.id]) {
-        setSoldAtPrices(prev => ({ ...prev, [targetItem.id]: getEffectiveSoldUnitPrice(targetItem) }));
-      }
       return;
     }
 
@@ -274,7 +274,8 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
       } else {
         const item = order.items.find(i => i.id === itemId);
         if (item) {
-          setSoldAtPrices(p => ({ ...p, [itemId]: getEffectiveSoldUnitPrice(item) }));
+          // Sold At is intentionally entered by the employee.
+          setSoldAtPrices(p => ({ ...p, [itemId]: p[itemId] ?? '' }));
           setReturnedQuantities(q => ({ ...q, [itemId]: Math.max(q[itemId] || 0, 1) }));
         }
         return [...prev, itemId];
@@ -286,18 +287,13 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     setSoldAtPrices(prev => ({ ...prev, [itemId]: price }));
   };
 
-  // Keep the established Return calculations while sharing the exact sold-at logic
-  // with Exchange. Explicit zero remains valid for fully discounted items.
-  const parseFloatValue = parseMoney;
-
   const calculateTotals = () => {
-    // Use the actual net sold-at line price. This makes 100% item-discount orders safe:
-    // unit_price can be ৳10, but total_amount is ৳0, so return/exchange credit must be ৳0.
+    // Use only the employee-entered Sold At value.
     const returnAmount = selectedProducts.reduce((sum, productId) => {
       const product = order.items.find(p => p.id === productId);
       if (!product) return sum;
       const qty = returnedQuantities[productId] || 0;
-      const price = parseFloatValue(soldAtPrices[productId] ?? getEffectiveSoldUnitPrice(product));
+      const price = parseFloatValue(soldAtPrices[productId]);
       return sum + (price * qty);
     }, 0);
 
@@ -348,7 +344,7 @@ export default function ReturnProductModal({ order, onClose, onReturn }: ReturnP
     });
 
     if (hasMissingPrices) {
-      alert('Please enter the manual "Sold At" price for all selected items as per the physical invoice or historical record. Zero is allowed for 100% discount items.');
+      alert('Please enter the manual "Sold At" price for every selected item. Zero is allowed.');
       return;
     }
 

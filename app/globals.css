@@ -1930,3 +1930,56 @@ body {
     justify-content: center;
   }
 }
+
+
+/* --------------------------------------------------------------------------
+   ERRUM public storefront: viewport-level chrome layering
+
+   Navigation used to be mounted inside the homepage hero. Because the hero
+   intentionally creates an isolated stacking context, later homepage sections
+   could paint above the navbar and drawers on mobile. Navigation/category/cart
+   chrome is now portalled to document.body; these values define one explicit
+   hierarchy that no product, hero, carousel, sticky control or transformed
+   section can overtake.
+   -------------------------------------------------------------------------- */
+:root {
+  --errum-storefront-z-nav: 100000;
+  --errum-storefront-z-backdrop: 100010;
+  --errum-storefront-z-drawer: 100020;
+}
+
+.errum-storefront-portal,
+.ref-nav,
+.ref-category-drawer,
+.ref-cart-drawer,
+.ref-drawer-backdrop {
+  font-family: var(--font-space-grotesk), "Space Grotesk", Arial, sans-serif;
+}
+
+.ref-nav {
+  z-index: var(--errum-storefront-z-nav) !important;
+  isolation: isolate;
+}
+
+.ref-drawer-backdrop {
+  z-index: var(--errum-storefront-z-backdrop) !important;
+  touch-action: none;
+}
+
+.ref-category-drawer,
+.ref-cart-drawer {
+  z-index: var(--errum-storefront-z-drawer) !important;
+  isolation: isolate;
+  overscroll-behavior: contain;
+}
+
+/* Prevent invisible closed drawers from intercepting page gestures. */
+.ref-category-drawer:not(.is-open),
+.ref-cart-drawer:not(.is-open) {
+  pointer-events: none;
+}
+
+.ref-category-drawer.is-open,
+.ref-cart-drawer.is-open {
+  pointer-events: auto;
+}
