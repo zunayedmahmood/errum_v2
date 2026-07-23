@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Scan, Keyboard, Loader2 } from 'lucide-react';
+import { Scan, Loader2 } from 'lucide-react';
 import barcodeService from '@/services/barcodeService';
 
 interface BarcodeScannerProps {
@@ -36,6 +36,20 @@ export default function BarcodeScanner({
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const scannerBufferRef = useRef<string>('');
   const scannerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isProcessingRef = useRef(false);
+  const lastSubmissionRef = useRef<{ barcode: string; timestamp: number } | null>(null);
+  const onProductScannedRef = useRef(onProductScanned);
+  const onErrorRef = useRef(onError);
+
+  // Keep global scanner listeners connected to the latest parent callbacks without
+  // reinstalling the listener after every modal render.
+  useEffect(() => {
+    onProductScannedRef.current = onProductScanned;
+  }, [onProductScanned]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   /**
    * Physical barcode scanner detection
@@ -47,10 +61,16 @@ export default function BarcodeScanner({
     const handleKeyPress = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       
-      // Ignore keypresses in other input fields
-      if (target.tagName === 'INPUT' && target !== barcodeInputRef.current) return;
-      if (target.tagName === 'TEXTAREA') return;
-      if (target.tagName === 'SELECT') return;
+      // When the scanner input is focused, its own Enter handler is the single
+      // submission path. Listening globally at the same time caused one hardware
+      // scan to be submitted once by the input and once by the window listener.
+      const isEditableTarget =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable;
+
+      if (isEditableTarget) return;
 
       // Clear existing timeout
       if (scannerTimeoutRef.current) {
@@ -103,35 +123,56 @@ export default function BarcodeScanner({
    * Manual barcode submission
    */
   const handleManualSubmit = () => {
-    if (!barcodeInput.trim()) {
-      onError('Please enter a barcode');
+    const submittedBarcode = (barcodeInputRef.current?.value ?? barcodeInput).trim();
+
+    if (!submittedBarcode) {
+      onErrorRef.current('Please enter a barcode');
       return;
     }
-    processBarcode(barcodeInput.trim());
+
     setBarcodeInput('');
+    void processBarcode(submittedBarcode);
   };
 
   /**
    * Process scanned/entered barcode
    */
   const processBarcode = async (barcode: string) => {
+    const normalizedBarcode = barcode.trim();
+
     if (!selectedOutlet) {
-      onError('Please select an outlet first');
+      onErrorRef.current('Please select an outlet first');
       return;
     }
 
-    if (isScanning) return; // Prevent duplicate scans
-    
+    if (!normalizedBarcode || isProcessingRef.current) return;
+
+    // A hardware scanner can dispatch the same Enter-terminated scan through more
+    // than one browser event path in the same tick. The ref lock is synchronous,
+    // unlike React state, so only one API request can start. The short same-code
+    // guard also absorbs duplicate browser events after a very fast response.
+    const now = Date.now();
+    const previousSubmission = lastSubmissionRef.current;
+    if (
+      previousSubmission &&
+      previousSubmission.barcode === normalizedBarcode &&
+      now - previousSubmission.timestamp < 350
+    ) {
+      return;
+    }
+
+    isProcessingRef.current = true;
+    lastSubmissionRef.current = { barcode: normalizedBarcode, timestamp: now };
     setIsScanning(true);
     
     try {
-      console.log('🔍 Scanning barcode:', barcode);
+      console.log('🔍 Scanning barcode:', normalizedBarcode);
       
       // Call barcode API
-      const response = await barcodeService.scanBarcode(barcode);
+      const response = await barcodeService.scanBarcode(normalizedBarcode);
       
       if (!response.success || !response.data) {
-        onError(`Barcode not found: ${barcode}`);
+        onErrorRef.current(`Barcode not found: ${normalizedBarcode}`);
         setIsScanning(false);
         return;
       }
@@ -142,21 +183,21 @@ export default function BarcodeScanner({
 
       // Validate product availability
       if (!scanResult.is_available || scanResult.quantity_available <= 0) {
-        onError(`Product "${scanResult.product.name}" is not available in stock`);
+        onErrorRef.current(`Product "${scanResult.product.name}" is not available in stock`);
         setIsScanning(false);
         return;
       }
 
       // Validate location
       if (scanResult.current_location && scanResult.current_location.id !== parseInt(selectedOutlet)) {
-        onError(`Product is at ${scanResult.current_location.name}, not at selected outlet`);
+        onErrorRef.current(`Product is at ${scanResult.current_location.name}, not at selected outlet`);
         setIsScanning(false);
         return;
       }
 
       // Validate batch
       if (!scanResult.current_batch) {
-        onError('No batch information found for this barcode');
+        onErrorRef.current('No batch information found for this barcode');
         setIsScanning(false);
         return;
       }
@@ -182,7 +223,7 @@ export default function BarcodeScanner({
         batchNumber: scanResult.current_batch.batch_number,
         price: price,
         availableQty: scanResult.quantity_available,
-        barcode: barcode,
+        barcode: normalizedBarcode,
         barcodeId: scanResult.barcode_id,
         ...(isDefectiveResale ? {
           isDefective: true,
@@ -195,12 +236,13 @@ export default function BarcodeScanner({
       playBeep();
       
       // Notify parent component
-      onProductScanned(scannedProduct);
+      onProductScannedRef.current(scannedProduct);
       
     } catch (error: any) {
       console.error('❌ Barcode scan error:', error);
-      onError(error.message || 'Failed to scan barcode');
+      onErrorRef.current(error.message || 'Failed to scan barcode');
     } finally {
+      isProcessingRef.current = false;
       setIsScanning(false);
     }
   };
@@ -253,12 +295,15 @@ export default function BarcodeScanner({
               type="text"
               value={barcodeInput}
               onChange={(e) => setBarcodeInput(e.target.value)}
-              onKeyPress={(e) => {
+              onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
+                  e.stopPropagation();
                   handleManualSubmit();
                 }
               }}
+              autoComplete="off"
+              spellCheck={false}
               placeholder="Scan barcode or type manually..."
               className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-lg font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={!selectedOutlet || isScanning}

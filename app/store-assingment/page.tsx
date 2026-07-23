@@ -25,8 +25,6 @@ import orderManagementService, {
   AvailableStoresResponse,
 } from '@/services/orderManagementService';
 import Toast from '@/components/Toast';
-import storeService from '@/services/storeService';
-import inventoryService from '@/services/inventoryService';
 
 export default function StoreAssignmentPage() {
   const { darkMode, setDarkMode } = useTheme();
@@ -107,9 +105,12 @@ export default function StoreAssignmentPage() {
       0
     );
     const percent = totalRequiredQty > 0 ? Math.round((fulfillableQty / totalRequiredQty) * 100) : 0;
-    const canFulfillEntireOrder = inventoryDetails.every(
-      (d) => toNumber(d?.available_quantity) >= toNumber(d?.required_quantity)
-    );
+    const canFulfillEntireOrder =
+      totalRequiredQty > 0 &&
+      inventoryDetails.length > 0 &&
+      inventoryDetails.every(
+        (d) => toNumber(d?.available_quantity) >= toNumber(d?.required_quantity)
+      );
 
     return {
       totalRequiredQty,
@@ -163,19 +164,33 @@ export default function StoreAssignmentPage() {
       const rawDetails = Array.isArray(store?.inventory_details) ? store.inventory_details : [];
 
       const inventoryDetails = rawDetails.map((d: any) => {
-        const requiredQty = toNumber(d?.required_quantity);
+        const requiredQty = Math.max(0, toNumber(d?.required_quantity));
         const productId = toNumber(d?.product_id);
-        const physicalQty = toNumber(d?.physical_quantity ?? d?.quantity ?? d?.stock ?? 0);
-        const globalAvailable = toNumber(d?.global_available ?? 0);
-        const assignedQty = toNumber(d?.assigned_quantity ?? 0);
+        const hasReportedAvailable =
+          d?.available_quantity !== undefined && d?.available_quantity !== null;
 
-        // Reserved is the difference if globalAvailable is provided, otherwise use assignedQty
-        const reservedQty = (assignedQty === 0 && globalAvailable > 0 && globalAvailable < physicalQty)
-          ? (physicalQty - globalAvailable)
-          : assignedQty;
-
-        // The "Available" count for fulfillment should be the globalAvailable (the for-sale count)
-        const effectiveAvailable = globalAvailable > 0 ? globalAvailable : (physicalQty - reservedQty);
+        // Store fulfillment must only use this store's physical stock.
+        // global_available is a product-wide value and must never make a zero-stock
+        // store appear fillable.
+        const physicalQty = Math.max(
+          0,
+          toNumber(
+            d?.physical_quantity ??
+              d?.quantity ??
+              d?.stock ??
+              (hasReportedAvailable ? d?.available_quantity : 0)
+          )
+        );
+        const explicitReservedQty = Math.max(
+          0,
+          toNumber(d?.reserved_quantity ?? d?.assigned_quantity ?? 0)
+        );
+        const derivedAvailable = Math.max(0, physicalQty - explicitReservedQty);
+        const reportedAvailable = hasReportedAvailable
+          ? Math.max(0, toNumber(d?.available_quantity))
+          : derivedAvailable;
+        const effectiveAvailable = Math.max(0, Math.min(physicalQty, reportedAvailable));
+        const reservedQty = Math.max(explicitReservedQty, physicalQty - effectiveAvailable);
 
         return {
           ...d,
@@ -204,7 +219,8 @@ export default function StoreAssignmentPage() {
         for (const [pid, reqMeta] of orderReqByProduct.entries()) {
           const found = byPid.get(pid);
           if (found) {
-            const correctedReq = Math.max(toNumber(found?.required_quantity), toNumber(reqMeta.req));
+            // The selected order is authoritative for required quantity.
+            const correctedReq = toNumber(reqMeta.req);
             found.required_quantity = correctedReq;
             found.can_fulfill = toNumber(found.available_quantity) >= correctedReq;
           } else {
@@ -236,6 +252,16 @@ export default function StoreAssignmentPage() {
 
       const requiredCount = orderReqByProduct.size || inventoryDetails.length;
 
+      const canFulfillEntireOrder = inventoryDetails.length
+        ? metrics.canFulfillEntireOrder
+        : !!store?.can_fulfill_entire_order;
+      const fillableUnits = inventoryDetails.length
+        ? metrics.fulfillableQty
+        : Math.max(0, toNumber(store?.total_items_available));
+      const requiredUnits = inventoryDetails.length
+        ? metrics.totalRequiredQty
+        : Math.max(0, toNumber(store?.total_items_required ?? requiredCount));
+
       return {
         ...store,
         store_id: storeId,
@@ -244,12 +270,14 @@ export default function StoreAssignmentPage() {
         store_type: resolvedType === 'warehouse' ? 'warehouse' : 'store',
         inventory_details: inventoryDetails,
         fulfillment_percentage: safePercent,
-        can_fulfill_entire_order: inventoryDetails.length
-          ? metrics.canFulfillEntireOrder
-          : !!store?.can_fulfill_entire_order,
-        total_items_available: inventoryDetails.filter((d: any) => toNumber(d?.available_quantity) > 0).length,
-        total_items_required:
-          store?.total_items_required ?? requiredCount,
+        can_fulfill_entire_order: canFulfillEntireOrder,
+        fulfillment_status: canFulfillEntireOrder
+          ? 'full'
+          : fillableUnits > 0
+          ? 'partial'
+          : 'none',
+        total_items_available: fillableUnits,
+        total_items_required: requiredUnits,
       };
     });
 
@@ -282,152 +310,6 @@ export default function StoreAssignmentPage() {
       ...data,
       stores: Array.from(dedupMap.values()),
     };
-  };
-
-  const extractWarehouseList = (raw: any): any[] => {
-    const candidates = [
-      raw?.data?.data,
-      raw?.data,
-      raw?.warehouses,
-      raw?.stores,
-      raw,
-    ];
-
-    for (const c of candidates) {
-      if (Array.isArray(c)) {
-        return c.filter((x: any) => {
-          const t = String(x?.store_type ?? x?.type ?? '').toLowerCase();
-          return x?.is_warehouse === true || t === 'warehouse';
-        });
-      }
-    }
-
-    return [];
-  };
-
-  const buildWarehouseRowsFromInventory = async (order: PendingAssignmentOrder | null) => {
-    if (!order?.items?.length) return [] as any[];
-
-    // 1) Warehouse master list
-    let warehouseMasters: any[] = [];
-    try {
-      const warehousesResp = await storeService.getWarehouses();
-      warehouseMasters = extractWarehouseList(warehousesResp);
-    } catch (e) {
-      console.warn('Could not load warehouse master list:', e);
-    }
-
-    const warehouseMeta = new Map<number, any>();
-    warehouseMasters.forEach((w: any) => {
-      const id = toNumber(w?.id ?? w?.store_id);
-      if (!id) return;
-      warehouseMeta.set(id, {
-        id,
-        name: w?.name ?? w?.store_name ?? `Warehouse #${id}`,
-        address: w?.address ?? w?.store_address ?? '—',
-      });
-    });
-
-    // 2) Global inventory snapshot (includes store-wise quantities)
-    let inventoryItems: any[] = [];
-    try {
-      const inventoryResp: any = await inventoryService.getGlobalInventory();
-      const cands = [inventoryResp?.data, inventoryResp?.data?.data, inventoryResp];
-      for (const c of cands) {
-        if (Array.isArray(c)) {
-          inventoryItems = c;
-          break;
-        }
-      }
-    } catch (e) {
-      console.warn('Could not load global inventory for warehouses:', e);
-    }
-
-    type WarehouseAgg = {
-      store_id: number;
-      store_name: string;
-      store_address: string;
-      byProduct: Map<number, number>;
-    };
-
-    const warehouseAgg = new Map<number, WarehouseAgg>();
-
-    const ensureAgg = (id: number, fallbackName?: string, fallbackAddress?: string) => {
-      if (!warehouseAgg.has(id)) {
-        const meta = warehouseMeta.get(id);
-        warehouseAgg.set(id, {
-          store_id: id,
-          store_name: meta?.name ?? fallbackName ?? `Warehouse #${id}`,
-          store_address: meta?.address ?? fallbackAddress ?? '—',
-          byProduct: new Map<number, number>(),
-        });
-      }
-      return warehouseAgg.get(id)!;
-    };
-
-    // seed from warehouse master so 0-stock warehouses are still visible
-    for (const [id, meta] of warehouseMeta.entries()) {
-      ensureAgg(id, meta?.name, meta?.address);
-    }
-
-    for (const item of inventoryItems) {
-      const productId = toNumber(item?.product_id);
-      const sku = String(item?.sku || '').trim().toLowerCase();
-      const stores = Array.isArray(item?.stores) ? item.stores : [];
-
-      for (const s of stores) {
-        const sid = toNumber(s?.store_id ?? s?.id);
-        if (!sid) continue;
-
-        const sType = String(s?.store_type ?? s?.type ?? '').toLowerCase();
-        const isWarehouse = s?.is_warehouse === true || sType === 'warehouse' || warehouseMeta.has(sid);
-        if (!isWarehouse) continue;
-
-        const agg = ensureAgg(sid, s?.store_name ?? s?.name, s?.store_address ?? s?.address);
-        const qty = toNumber(s?.quantity);
-
-        if (productId) {
-          agg.byProduct.set(productId, toNumber(agg.byProduct.get(productId)) + qty);
-        }
-      }
-    }
-
-    const rows = Array.from(warehouseAgg.values()).map((w) => {
-      const inventory_details = order.items.map((oi: any) => {
-        const req = toNumber(oi?.quantity);
-        const pid = toNumber(oi?.product_id);
-        const sku = String(oi?.product_sku || '').trim().toLowerCase();
-
-        const byPid = pid ? toNumber(w.byProduct.get(pid)) : 0;
-        const available = byPid;
-
-        return {
-          product_id: pid,
-          product_name: oi?.product_name ?? 'Unknown Product',
-          product_sku: oi?.product_sku ?? '',
-          required_quantity: req,
-          available_quantity: available,
-          can_fulfill: available >= req,
-          batches: [],
-        };
-      });
-
-      const metrics = computeFulfillmentMetrics(inventory_details);
-
-      return {
-        store_id: w.store_id,
-        store_name: w.store_name,
-        store_address: w.store_address,
-        store_type: 'warehouse',
-        inventory_details,
-        total_items_available: inventory_details.filter((d: any) => toNumber(d.available_quantity) > 0).length,
-        total_items_required: inventory_details.length,
-        can_fulfill_entire_order: metrics.canFulfillEntireOrder,
-        fulfillment_percentage: metrics.percent,
-      };
-    });
-
-    return rows;
   };
 
   const isOrderUnassigned = (order: any): boolean => {
@@ -518,21 +400,10 @@ export default function StoreAssignmentPage() {
       const data = await orderManagementService.getAvailableStores(orderId);
       const normalized = normalizeAvailableStoresPayload(data, orderCtx || selectedOrder || null);
 
-      let mergedStores = Array.isArray(normalized?.stores) ? [...normalized.stores] : [];
-      const hasWarehouseAlready = mergedStores.some(
-        (s: any) => String(s?.store_type ?? s?.type ?? '').toLowerCase() === 'warehouse'
-      );
-
-      // Fallback: if API doesn't return warehouses, derive them from warehouse master + global inventory.
-      if (!hasWarehouseAlready) {
-        const fallbackWarehouses = await buildWarehouseRowsFromInventory(orderCtx || selectedOrder || null);
-        const existingIds = new Set(mergedStores.map((s: any) => toNumber(s?.store_id ?? s?.id)).filter(Boolean));
-        for (const w of fallbackWarehouses) {
-          const sid = toNumber(w?.store_id);
-          if (!sid || existingIds.has(sid)) continue;
-          mergedStores.push(w);
-        }
-      }
+      // The backend endpoint is the source of truth because it subtracts
+      // active store reservations from live physical stock. Do not append rows
+      // from global inventory, which has no reliable per-store reservation data.
+      const mergedStores = Array.isArray(normalized?.stores) ? [...normalized.stores] : [];
 
       const mergedPayload: any = {
         ...normalized,
@@ -893,6 +764,11 @@ export default function StoreAssignmentPage() {
                       {availableStoresData?.stores?.map((store) => {
                         const isSelected = selectedStoreId === store.store_id;
                         const isRecommended = recommendation?.store_id === store.store_id;
+                        const fulfillmentState = store.can_fulfill_entire_order
+                          ? 'full'
+                          : toNumber(store.total_items_available) > 0
+                          ? 'partial'
+                          : 'none';
 
                         return (
                           <div
@@ -901,9 +777,11 @@ export default function StoreAssignmentPage() {
                             className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
                               isSelected
                                 ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                                : store.can_fulfill_entire_order
+                                : fulfillmentState === 'full'
                                 ? 'border-green-300 dark:border-green-800 bg-white dark:bg-gray-800 hover:border-green-500'
-                                : 'border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-400'
+                                : fulfillmentState === 'partial'
+                                ? 'border-amber-300 dark:border-amber-800 bg-white dark:bg-gray-800 hover:border-amber-500'
+                                : 'border-red-200 dark:border-red-900 bg-white dark:bg-gray-800 hover:border-red-400'
                             }`}
                           >
                             <div className="flex items-start justify-between mb-3">
@@ -923,18 +801,25 @@ export default function StoreAssignmentPage() {
                                 </p>
                               </div>
                               <div className="ml-4">
-                                {store.can_fulfill_entire_order ? (
+                                {fulfillmentState === 'full' ? (
                                   <div className="flex items-center gap-1 px-2 py-1 rounded bg-green-100 dark:bg-green-900/30">
                                     <CheckCircle className="h-4 w-4 text-green-600" />
                                     <span className="text-xs font-medium text-green-700 dark:text-green-400">
                                       Can Fulfill
                                     </span>
                                   </div>
+                                ) : fulfillmentState === 'partial' ? (
+                                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30">
+                                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                    <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                                      Partially Fillable
+                                    </span>
+                                  </div>
                                 ) : (
                                   <div className="flex items-center gap-1 px-2 py-1 rounded bg-red-100 dark:bg-red-900/30">
                                     <XCircle className="h-4 w-4 text-red-600" />
                                     <span className="text-xs font-medium text-red-700 dark:text-red-400">
-                                      Insufficient
+                                      Not Fillable
                                     </span>
                                   </div>
                                 )}
@@ -943,7 +828,7 @@ export default function StoreAssignmentPage() {
 
                             <div className="mb-3">
                               <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
-                                <span>Reservation Capacity</span>
+                                <span>Non-reserved stock coverage</span>
                                 <span className="font-semibold">{store.fulfillment_percentage}%</span>
                               </div>
                               <div className="w-full h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
@@ -961,7 +846,7 @@ export default function StoreAssignmentPage() {
                             </div>
 
                             <div className="text-xs text-gray-600 dark:text-gray-400">
-                              Available: {store.total_items_available} / {store.total_items_required} items
+                              Fillable: {store.total_items_available} / {store.total_items_required} units
                             </div>
                           </div>
                         );
@@ -1016,7 +901,7 @@ export default function StoreAssignmentPage() {
                                   <div className="flex flex-wrap gap-2 text-[10px]">
                                     <span className="bg-white/50 dark:bg-black/20 px-1.5 py-0.5 rounded border border-gray-100 dark:border-gray-700">In store: {detail.physical_quantity}</span>
                                     <span className="bg-white/50 dark:bg-black/20 px-1.5 py-0.5 rounded border border-gray-100 dark:border-gray-700 text-amber-600 dark:text-amber-400">Reserved: {detail.reserved_quantity}</span>
-                                    <span className="bg-blue-100/50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 font-bold text-blue-700 dark:text-blue-300">Global Available: {detail.available_quantity}</span>
+                                    <span className="bg-blue-100/50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 font-bold text-blue-700 dark:text-blue-300">Available (non-reserved): {detail.available_quantity}</span>
                                   </div>
                                 </div>
                                 <span
@@ -1075,14 +960,24 @@ export default function StoreAssignmentPage() {
                         ) : (
                           <>
                             <AlertTriangle className="h-5 w-5" />
-                            Insufficient Inventory
+                            {toNumber(selectedStoreData.total_items_available) > 0
+                              ? 'Partially Fillable'
+                              : 'Not Fillable'}
                           </>
                         )}
                       </button>
 
                       {!selectedStoreData.can_fulfill_entire_order && (
-                        <p className="text-sm text-center text-red-600 dark:text-red-400">
-                          ⚠️ This store cannot fulfill the entire order. Please select a different store or consider restocking.
+                        <p
+                          className={`text-sm text-center ${
+                            toNumber(selectedStoreData.total_items_available) > 0
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-red-600 dark:text-red-400'
+                          }`}
+                        >
+                          {toNumber(selectedStoreData.total_items_available) > 0
+                            ? '⚠️ This store can fill only part of the order using its non-reserved physical stock.'
+                            : '⚠️ This store has no non-reserved physical stock for the ordered items.'}
                         </p>
                       )}
                     </div>

@@ -16,6 +16,21 @@ use Illuminate\Support\Facades\Validator;
 
 class OrderManagementController extends Controller
 {
+    /**
+     * Statuses where an order still holds stock without the batch quantity
+     * having been finally deducted. These reservations must be subtracted
+     * from a store's physical stock before it can be shown as fillable.
+     */
+    private const STORE_RESERVATION_STATUSES = [
+        'pending',
+        'pending_assignment',
+        'assigned_to_store',
+        'picking',
+        'processing',
+        'ready_for_pickup',
+        'ready_for_shipment',
+    ];
+
     public function __construct()
     {
         $this->middleware('auth:api'); // Employee authentication
@@ -191,9 +206,13 @@ class OrderManagementController extends Controller
                 ->orderBy('name')
                 ->get();
 
-            $productIds = $order->items->pluck('product_id')->unique()->toArray();
+            // Aggregate duplicate order lines for the same product so one physical
+            // stock pool is never counted more than once.
+            $orderRequirements = $this->aggregateOrderRequirements($order);
+            $productIds = $orderRequirements->pluck('product_id')->all();
 
-            // 1. Fetch Global Reserved Inventory View
+            // 1. Fetch Global Reserved Inventory View (context only; never used
+            // as a substitute for store-specific physical availability).
             $reservedProducts = ReservedProduct::whereIn('product_id', $productIds)
                 ->get()
                 ->keyBy('product_id');
@@ -203,6 +222,9 @@ class OrderManagementController extends Controller
             $batches = ProductBatch::whereIn('product_id', $productIds)
                 ->where('availability', true)
                 ->where('quantity', '>', 0)
+                ->where(function ($query) {
+                    $query->where('is_active', true)->orWhereNull('is_active');
+                })
                 ->where(function($query) {
                     $query->whereNull('expiry_date')
                         ->orWhere('expiry_date', '>', now());
@@ -210,15 +232,14 @@ class OrderManagementController extends Controller
                 ->get()
                 ->groupBy(['store_id', 'product_id']);
 
-            // 3. Fetch Already Assigned (But Not Yet Deducted) Orders for these products
-            // Deduction from batches happens when status becomes 'confirmed' or 'delivered' or 'cancelled' etc.
-            // We need to know which quantities are already promised to specific stores.
-            $deductedStatuses = ['confirmed', 'delivered', 'cancelled', 'returned'];
+            // 3. Fetch quantities actively reserved against a specific store.
+            // Only reservation-held statuses are counted. Completed/deducted orders
+            // are already reflected in ProductBatch.quantity and must not be subtracted twice.
             $assignedOrders = DB::table('order_items')
                 ->join('orders', 'order_items.order_id', '=', 'orders.id')
                 ->whereIn('order_items.product_id', $productIds)
                 ->whereNotNull('orders.store_id')
-                ->whereNotIn('orders.status', $deductedStatuses)
+                ->whereIn('orders.status', self::STORE_RESERVATION_STATUSES)
                 ->whereNull('orders.deleted_at')
                 ->where('orders.id', '!=', $order->id) // Exclude current order if re-assigning
                 ->select('orders.store_id', 'order_items.product_id', DB::raw('SUM(order_items.quantity) as total_assigned'))
@@ -229,21 +250,22 @@ class OrderManagementController extends Controller
             $storeInventory = [];
 
             foreach ($stores as $store) {
-                $canFulfillEntireOrder = true;
+                $canFulfillEntireOrder = $orderRequirements->isNotEmpty();
                 $storeData = [
                     'store_id' => $store->id,
                     'store_name' => $store->name,
                     'store_address' => $store->address,
                     'inventory_details' => [],
+                    // These are quantities (units), not the number of distinct lines.
                     'total_items_available' => 0,
-                    'total_items_required' => $order->items->sum('quantity'),
+                    'total_items_required' => (int) $orderRequirements->sum('required_quantity'),
                 ];
 
                 $assignedStoreData = $assignedOrders->get($store->id, collect())->keyBy('product_id');
 
-                foreach ($order->items as $orderItem) {
-                    $productId = $orderItem->product_id;
-                    $requiredQuantity = $orderItem->quantity;
+                foreach ($orderRequirements as $requirement) {
+                    $productId = (int) $requirement['product_id'];
+                    $requiredQuantity = (int) $requirement['required_quantity'];
 
                     // Physical stock in this store for this product
                     $productBatchesInStore = $batches->get($store->id, collect())->get($productId, collect());
@@ -261,13 +283,16 @@ class OrderManagementController extends Controller
 
                     $inventoryDetail = [
                         'product_id' => $productId,
-                        'product_name' => $orderItem->product_name,
-                        'product_sku' => $orderItem->product_sku,
+                        'product_name' => $requirement['product_name'],
+                        'product_sku' => $requirement['product_sku'],
                         'required_quantity' => $requiredQuantity,
-                        'physical_quantity' => $totalPhysicalInStore,
-                        'assigned_quantity' => $alreadyAssignedInStore,
-                        'available_quantity' => $actuallyAvailableInStore, // Store-specific true available
-                        'global_available' => $globalAvailable,
+                        'physical_quantity' => (int) $totalPhysicalInStore,
+                        'reserved_quantity' => (int) $alreadyAssignedInStore,
+                        // Backward-compatible alias used by older frontend builds.
+                        'assigned_quantity' => (int) $alreadyAssignedInStore,
+                        // Store-specific non-reserved physical stock.
+                        'available_quantity' => (int) $actuallyAvailableInStore,
+                        'global_available' => (int) $globalAvailable,
                         'can_fulfill' => $actuallyAvailableInStore >= $requiredQuantity,
                         'batches' => $productBatchesInStore->map(function($batch) {
                             return [
@@ -281,7 +306,9 @@ class OrderManagementController extends Controller
                     ];
 
                     $storeData['inventory_details'][] = $inventoryDetail;
-                    $storeData['total_items_available'] += $actuallyAvailableInStore;
+                    // Excess stock of one product must never compensate for a shortage
+                    // of another product in the fulfillment percentage.
+                    $storeData['total_items_available'] += min($requiredQuantity, $actuallyAvailableInStore);
 
                     if ($actuallyAvailableInStore < $requiredQuantity) {
                         $canFulfillEntireOrder = false;
@@ -292,6 +319,9 @@ class OrderManagementController extends Controller
                 $storeData['fulfillment_percentage'] = $storeData['total_items_required'] > 0
                     ? min(100, round(($storeData['total_items_available'] / $storeData['total_items_required']) * 100, 2))
                     : 0;
+                $storeData['fulfillment_status'] = $canFulfillEntireOrder
+                    ? 'full'
+                    : ($storeData['total_items_available'] > 0 ? 'partial' : 'none');
 
                 $storeInventory[] = $storeData;
             }
@@ -357,13 +387,17 @@ class OrderManagementController extends Controller
 
             // Double check TRUE inventory availability at the moment of assignment
             // This prevents race conditions or overlapping assignments
-            $productIds = $order->items->pluck('product_id')->unique()->toArray();
+            $orderRequirements = $this->aggregateOrderRequirements($order);
+            $productIds = $orderRequirements->pluck('product_id')->all();
             
             // 1. Current Physical Stock
             $physicalStock = ProductBatch::whereIn('product_id', $productIds)
                 ->where('store_id', $storeId)
                 ->where('availability', true)
                 ->where('quantity', '>', 0)
+                ->where(function ($query) {
+                    $query->where('is_active', true)->orWhereNull('is_active');
+                })
                 ->where(function($query) {
                     $query->whereNull('expiry_date')
                         ->orWhere('expiry_date', '>', now());
@@ -374,12 +408,11 @@ class OrderManagementController extends Controller
                 ->keyBy('product_id');
 
             // 2. Current Assigned (Promised) Quantities
-            $deductedStatuses = ['confirmed', 'delivered', 'cancelled', 'returned'];
             $assignedQuantityMap = DB::table('order_items')
                 ->join('orders', 'order_items.order_id', '=', 'orders.id')
                 ->whereIn('order_items.product_id', $productIds)
                 ->where('orders.store_id', $storeId)
-                ->whereNotIn('orders.status', $deductedStatuses)
+                ->whereIn('orders.status', self::STORE_RESERVATION_STATUSES)
                 ->whereNull('orders.deleted_at')
                 ->where('orders.id', '!=', $order->id)
                 ->select('order_items.product_id', DB::raw('SUM(order_items.quantity) as total'))
@@ -387,19 +420,20 @@ class OrderManagementController extends Controller
                 ->get()
                 ->keyBy('product_id');
 
-            foreach ($order->items as $orderItem) {
-                $pid = $orderItem->product_id;
-                $pStock = $physicalStock->get($pid)->total ?? 0;
-                $aStock = $assignedQuantityMap->get($pid)->total ?? 0;
+            foreach ($orderRequirements as $requirement) {
+                $pid = (int) $requirement['product_id'];
+                $pStock = (int) ($physicalStock->get($pid)->total ?? 0);
+                $aStock = (int) ($assignedQuantityMap->get($pid)->total ?? 0);
                 $actualAvailable = max(0, $pStock - $aStock);
+                $requiredQuantity = (int) $requirement['required_quantity'];
 
-                if ($actualAvailable < $orderItem->quantity) {
+                if ($actualAvailable < $requiredQuantity) {
                     return response()->json([
                         'success' => false,
-                        'message' => "Insufficient real-time inventory for '{$orderItem->product_name}' at {$store->name} due to other recent assignments.",
+                        'message' => "Insufficient non-reserved physical inventory for '{$requirement['product_name']}' at {$store->name}.",
                         'data' => [
-                            'product' => $orderItem->product_name,
-                            'required' => $orderItem->quantity,
+                            'product' => $requirement['product_name'],
+                            'required' => $requiredQuantity,
                             'physically_present' => $pStock,
                             'assigned_to_other_orders' => $aStock,
                             'actually_free' => $actualAvailable,
@@ -482,10 +516,38 @@ class OrderManagementController extends Controller
     }
 
     /**
+     * Collapse duplicate order lines into one requirement per product.
+     *
+     * Without this aggregation, two lines for the same product can each reuse the
+     * same physical quantity and incorrectly make a store look fully fillable.
+     */
+    private function aggregateOrderRequirements(Order $order)
+    {
+        return $order->items
+            ->filter(fn ($item) => !empty($item->product_id) && (int) $item->quantity > 0)
+            ->groupBy(fn ($item) => (int) $item->product_id)
+            ->map(function ($items, $productId) {
+                $first = $items->first();
+
+                return [
+                    'product_id' => (int) $productId,
+                    'product_name' => (string) ($first->product_name ?? $first->product?->name ?? 'Unknown Product'),
+                    'product_sku' => (string) ($first->product_sku ?? $first->product?->sku ?? ''),
+                    'required_quantity' => (int) $items->sum('quantity'),
+                ];
+            })
+            ->values();
+    }
+
+    /**
      * Get recommendation for best store to assign order
      */
     private function getRecommendation(array $storeInventory): ?array
     {
+        if (empty($storeInventory)) {
+            return null;
+        }
+
         // Find stores that can fulfill entire order
         $canFulfillStores = array_filter($storeInventory, function($store) {
             return $store['can_fulfill_entire_order'];

@@ -34,7 +34,16 @@ export interface StoreInventoryDetail {
   product_name: string;
   product_sku: string;
   required_quantity: number;
+  /** Live physical units in this specific store. */
+  physical_quantity?: number;
+  /** Units already promised to active orders at this store. */
+  reserved_quantity?: number;
+  /** Backward-compatible alias for reserved_quantity. */
+  assigned_quantity?: number;
+  /** Store-specific physical stock minus active store reservations. */
   available_quantity: number;
+  /** Product-wide context only; never use for store fulfillment. */
+  global_available?: number;
   can_fulfill: boolean;
   batches: Array<{
     batch_id: number;
@@ -58,6 +67,7 @@ export interface AvailableStore {
   total_items_required: number;
   can_fulfill_entire_order: boolean;
   fulfillment_percentage: number;
+  fulfillment_status?: 'full' | 'partial' | 'none';
 }
 
 export interface StoreRecommendation {

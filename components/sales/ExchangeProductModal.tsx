@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { X, ArrowRightLeft, Calculator, ChevronDown, Loader2, AlertCircle } from 'lucide-react';
 import BarcodeScanner, { ScannedProduct } from '@/components/pos/BarcodeScanner';
 import storeService, { type Store } from '@/services/storeService';
@@ -102,11 +102,20 @@ interface ReplacementProduct {
   barcode_id?: number; // Optional since it may not be available from scanner
 }
 
+function getReplacementScanKey(product: { barcode?: string; barcodeId?: number; barcode_id?: number }): string {
+  const barcodeId = product.barcodeId ?? product.barcode_id;
+  if (barcodeId) return `barcode-id:${barcodeId}`;
+
+  const barcode = String(product.barcode || '').trim();
+  return barcode ? `barcode:${barcode}` : '';
+}
+
 export default function ExchangeProductModal({ order, onClose, onExchange }: ExchangeProductModalProps) {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [exchangeQuantities, setExchangeQuantities] = useState<{ [key: number]: number }>({});
   const [returnedBarcodes, setReturnedBarcodes] = useState<{ [key: number]: ReturnedBarcode[] }>({});
   const [replacementProducts, setReplacementProducts] = useState<ReplacementProduct[]>([]);
+  const replacementScanKeysRef = useRef<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
   const [soldAtPrices, setSoldAtPrices] = useState<{ [key: number]: string }>({});
   // ✅ NEW: Store selection
@@ -114,6 +123,16 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   const [exchangeAtStoreId, setExchangeAtStoreId] = useState<number>(order.store?.id || 0);
   const [inventoryWarnings, setInventoryWarnings] = useState<{ [key: number]: string }>({});
   const [isCheckingInventory, setIsCheckingInventory] = useState(false);
+
+  // Keep the synchronous scan lock aligned after a product is removed or the
+  // replacement list is otherwise changed.
+  useEffect(() => {
+    replacementScanKeysRef.current = new Set(
+      replacementProducts
+        .map(getReplacementScanKey)
+        .filter((key): key is string => Boolean(key))
+    );
+  }, [replacementProducts]);
 
   // Payment/Refund states
   const [cashAmount, setCashAmount] = useState(0);
@@ -324,10 +343,16 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
     }
 
     // 2. Replacement product scanner path
-    // Prevent duplicate barcode in replacement
-    if (replacementProducts.some(p => p.barcode === scannedProduct.barcode)) {
+    // Use a synchronous ref instead of render-time state so two callbacks emitted
+    // in the same browser tick cannot both append the same scanned barcode.
+    const scanKey = getReplacementScanKey(scannedProduct);
+    if (scanKey && replacementScanKeysRef.current.has(scanKey)) {
       alert('This barcode is already added as a replacement.');
       return;
+    }
+
+    if (scanKey) {
+      replacementScanKeysRef.current.add(scanKey);
     }
 
     const newItem: ReplacementProduct = {
@@ -341,11 +366,14 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
       quantity: 1,
       amount: scannedProduct.price,
       available: scannedProduct.availableQty,
-      barcode: scannedProduct.barcode,
+      barcode: String(scannedProduct.barcode || '').trim(),
       barcode_id: scannedProduct.barcodeId,
     };
 
-    setReplacementProducts(prev => [...prev, newItem]);
+    setReplacementProducts(prev => {
+      const alreadyAdded = prev.some(product => getReplacementScanKey(product) === scanKey && Boolean(scanKey));
+      return alreadyAdded ? prev : [...prev, newItem];
+    });
   };
 
   const handleRemoveReturnBarcode = (itemId: number, barcode: string) => {
@@ -441,7 +469,13 @@ export default function ExchangeProductModal({ order, onClose, onExchange }: Exc
   };
 
   const handleRemoveReplacement = (id: number | string) => {
-    setReplacementProducts(prev => prev.filter(p => p.id !== id));
+    const productToRemove = replacementProducts.find(product => product.id === id);
+    const scanKey = productToRemove ? getReplacementScanKey(productToRemove) : '';
+    if (scanKey) {
+      replacementScanKeysRef.current.delete(scanKey);
+    }
+
+    setReplacementProducts(prev => prev.filter(product => product.id !== id));
   };
 
   const handleUpdateReplacementPrice = (id: number | string, priceInput: string) => {
