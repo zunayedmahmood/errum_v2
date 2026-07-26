@@ -443,19 +443,38 @@ class DefectiveProductController extends Controller
 
         DB::beginTransaction();
         try {
-            $defectiveProduct = DefectiveProduct::findOrFail($id);
+            $defectiveProduct = DefectiveProduct::withTrashed()->findOrFail($id);
 
             $metadata = is_array($defectiveProduct->metadata ?? null) ? $defectiveProduct->metadata : [];
             $isUsedItem = !empty($metadata['is_used_item']) || str_contains(strtoupper((string) $defectiveProduct->defect_description), 'USED');
 
-            if ($isUsedItem && $defectiveProduct->barcode) {
-                $defectiveProduct->barcode->unmarkAsUsed();
-            }
+            if ($isUsedItem) {
+                $barcodeId = $defectiveProduct->product_barcode_id;
+                if ($barcodeId) {
+                    $barcode = ProductBarcode::find($barcodeId);
+                    if ($barcode) {
+                        $barcode->unmarkAsUsed();
+                    }
+                    $records = DefectiveProduct::withTrashed()
+                        ->where('product_barcode_id', $barcodeId)
+                        ->get();
 
-            $success = $defectiveProduct->markAsDisposed($request->disposal_notes);
+                    foreach ($records as $record) {
+                        $meta = is_array($record->metadata ?? null) ? $record->metadata : [];
+                        $desc = strtolower((string) $record->defect_description);
+                        if (!empty($meta['is_used_item']) || strtolower((string) $record->defect_type) === 'other' || str_contains($desc, 'used')) {
+                            $record->forceDelete();
+                        }
+                    }
+                } else {
+                    $defectiveProduct->forceDelete();
+                }
+            } else {
+                $success = $defectiveProduct->markAsDisposed($request->disposal_notes);
 
-            if (!$success) {
-                throw new \Exception('Cannot dispose product in current status');
+                if (!$success) {
+                    throw new \Exception('Cannot dispose product in current status');
+                }
             }
 
             DB::commit();
@@ -463,7 +482,6 @@ class DefectiveProductController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Product marked as disposed',
-                'data' => $defectiveProduct,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -481,14 +499,49 @@ class DefectiveProductController extends Controller
     {
         DB::beginTransaction();
         try {
-            $defectiveProduct = DefectiveProduct::withTrashed()->findOrFail($id);
+            $defectiveProduct = DefectiveProduct::withTrashed()->find($id);
 
-            if ($defectiveProduct->barcode) {
-                $defectiveProduct->barcode->unmarkAsUsed();
+            if ($defectiveProduct) {
+                $barcodeId = $defectiveProduct->product_barcode_id;
+                if ($barcodeId) {
+                    $barcode = ProductBarcode::find($barcodeId);
+                    if ($barcode) {
+                        $barcode->unmarkAsUsed();
+                    }
+
+                    // Clean up / forceDelete all used-only defective_product records for this barcode
+                    $records = DefectiveProduct::withTrashed()
+                        ->where('product_barcode_id', $barcodeId)
+                        ->get();
+
+                    foreach ($records as $record) {
+                        $meta = is_array($record->metadata ?? null) ? $record->metadata : [];
+                        $desc = strtolower((string) $record->defect_description);
+                        if (!empty($meta['is_used_item']) || strtolower((string) $record->defect_type) === 'other' || str_contains($desc, 'used')) {
+                            $record->forceDelete();
+                        }
+                    }
+                } else {
+                    $defectiveProduct->forceDelete();
+                }
+            } else {
+                // If $id passed is actually a product barcode ID or string barcode
+                $barcode = ProductBarcode::where('id', $id)->orWhere('barcode', $id)->first();
+                if ($barcode) {
+                    $barcode->unmarkAsUsed();
+                    $records = DefectiveProduct::withTrashed()
+                        ->where('product_barcode_id', $barcode->id)
+                        ->get();
+
+                    foreach ($records as $record) {
+                        $meta = is_array($record->metadata ?? null) ? $record->metadata : [];
+                        $desc = strtolower((string) $record->defect_description);
+                        if (!empty($meta['is_used_item']) || strtolower((string) $record->defect_type) === 'other' || str_contains($desc, 'used')) {
+                            $record->forceDelete();
+                        }
+                    }
+                }
             }
-
-            // Remove/delete the defective product record if it's used-item only
-            $defectiveProduct->forceDelete();
 
             DB::commit();
 

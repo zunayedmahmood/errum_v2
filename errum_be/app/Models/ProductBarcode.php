@@ -827,10 +827,12 @@ class ProductBarcode extends Model
             }
         }
 
-        $this->forceFill([
-            'location_metadata' => $metadata,
-            'location_updated_at' => now(),
-        ])->saveOrFail();
+        DB::table('product_barcodes')
+            ->where('id', $this->id)
+            ->update([
+                'location_metadata' => json_encode($metadata),
+                'location_updated_at' => now(),
+            ]);
 
         return $this->refresh();
     }
