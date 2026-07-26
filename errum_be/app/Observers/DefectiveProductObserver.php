@@ -182,6 +182,88 @@ class DefectiveProductObserver
     }
 
     /**
+     * Reverse write-off accounting entries when a defective product is unmarked/restored.
+     */
+    public function reverseWriteoff(DefectiveProduct $defectiveProduct, string $reason = 'unmark_defect'): void
+    {
+        try {
+            $lossAmount = (float) ($defectiveProduct->original_price ?? 0);
+
+            if ($lossAmount <= 0) {
+                return;
+            }
+
+            // Check if write-off reversal already exists
+            $exists = Transaction::where('reference_type', DefectiveProduct::class)
+                ->where('reference_id', $defectiveProduct->id)
+                ->where(function ($q) {
+                    $q->whereJsonContains('metadata->event', 'unmark_defect_reversal')
+                      ->orWhereJsonContains('metadata->event', 'vendor_return_reversal');
+                })
+                ->exists();
+
+            if ($exists) {
+                return;
+            }
+
+            // Only reverse if an initial write-off was actually created
+            $writeOffExists = Transaction::where('reference_type', DefectiveProduct::class)
+                ->where('reference_id', $defectiveProduct->id)
+                ->whereJsonContains('metadata->event', 'write_off')
+                ->exists();
+
+            if (!$writeOffExists) {
+                return;
+            }
+
+            $inventoryWriteoffAccountId = $this->getInventoryWriteoffAccountId();
+            $inventoryAccountId         = Transaction::getInventoryAccountId();
+            $transactionDate            = now();
+
+            $metadata = [
+                'event'               => 'unmark_defect_reversal',
+                'defective_product_id'=> $defectiveProduct->id,
+                'reason'              => $reason,
+                'original_price'      => $lossAmount,
+            ];
+
+            // 1. Debit Inventory (restores asset)
+            Transaction::create([
+                'transaction_date' => $transactionDate,
+                'amount'           => $lossAmount,
+                'type'             => 'debit',
+                'account_id'       => $inventoryAccountId,
+                'reference_type'   => DefectiveProduct::class,
+                'reference_id'     => $defectiveProduct->id,
+                'description'      => "Reversal — Defective Item Restored to Regular Stock #{$defectiveProduct->id}",
+                'store_id'         => $defectiveProduct->store_id,
+                'metadata'         => $metadata,
+                'status'           => 'completed',
+            ]);
+
+            // 2. Credit Inventory Write-off Loss (reduces expense)
+            Transaction::create([
+                'transaction_date' => $transactionDate,
+                'amount'           => $lossAmount,
+                'type'             => 'credit',
+                'account_id'       => $inventoryWriteoffAccountId,
+                'reference_type'   => DefectiveProduct::class,
+                'reference_id'     => $defectiveProduct->id,
+                'description'      => "Write-off Reversal — Defective Item Restored #{$defectiveProduct->id}",
+                'store_id'         => $defectiveProduct->store_id,
+                'metadata'         => $metadata,
+                'status'           => 'completed',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('DefectiveProductObserver@reverseWriteoff failed', [
+                'defective_product_id' => $defectiveProduct->id,
+                'error'                => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Returns the account ID for "Inventory Write-off Loss" — an operating expense sub-account.
      * Falls back to the generic Operating Expenses account if a dedicated one doesn't exist.
      */

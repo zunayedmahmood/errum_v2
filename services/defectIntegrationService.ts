@@ -274,6 +274,22 @@ class DefectIntegrationService {
   }
 
   /**
+   * Unmark defective status on barcode and restore to active inventory
+   */
+  async unmarkDefective(id: string | number): Promise<void> {
+    try {
+      console.log(`🛡️ Unmarking defect status for defect ${id}...`);
+      await defectiveProductService.unmarkDefective(Number(id));
+      console.log('✅ Defect status unmarked successfully');
+    } catch (error: unknown) {
+      console.error('❌ Unmark defect error:', error);
+      const message = (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+        || (error instanceof Error ? error.message : 'Failed to unmark defective item');
+      throw new Error(message);
+    }
+  }
+
+  /**
    * Get product barcode ID from barcode string
    * This method queries the backend to get the actual product_barcode record ID
    */

@@ -831,8 +831,61 @@ class ProductBarcode extends Model
             ->where('id', $this->id)
             ->update([
                 'location_metadata' => json_encode($metadata),
+                'is_active' => true,
                 'location_updated_at' => now(),
             ]);
+
+        return $this->refresh();
+    }
+
+    public function unmarkAsDefective(?int $batchId = null): self
+    {
+        $wasDefective = (bool) $this->is_defective;
+
+        DB::table('product_barcodes')
+            ->where('id', $this->id)
+            ->update([
+                'is_defective' => false,
+                'is_active' => true,
+                'location_updated_at' => now(),
+            ]);
+
+        if ($wasDefective) {
+            $effectiveBatchId = $batchId ?? $this->batch_id;
+            if ($effectiveBatchId) {
+                $batch = ProductBatch::find($effectiveBatchId);
+                if ($batch) {
+                    $batch->increment('quantity', 1);
+                    $batch->update([
+                        'availability' => true,
+                        'is_active' => true,
+                    ]);
+
+                    ProductMovement::create([
+                        'product_id' => $this->product_id,
+                        'product_batch_id' => $batch->id,
+                        'product_barcode_id' => $this->id,
+                        'to_store_id' => $this->current_store_id ?? $batch->store_id,
+                        'movement_type' => 'unmark_defective',
+                        'quantity' => 1,
+                        'unit_cost' => $batch->cost_price ?? 0,
+                        'total_cost' => $batch->cost_price ?? 0,
+                        'movement_date' => now(),
+                        'notes' => 'Restored stock: Defective barcode unmarked',
+                    ]);
+
+                    // Sync ReservedProduct snapshot
+                    $total = ProductBatch::where('product_id', $this->product_id)->sum('quantity');
+                    $reservedRecord = ReservedProduct::firstOrCreate(
+                        ['product_id' => $this->product_id],
+                        ['total_inventory' => 0, 'reserved_inventory' => 0, 'available_inventory' => 0]
+                    );
+                    $reservedRecord->total_inventory = $total;
+                    $reservedRecord->available_inventory = max(0, $total - $reservedRecord->reserved_inventory);
+                    $reservedRecord->save();
+                }
+            }
+        }
 
         return $this->refresh();
     }

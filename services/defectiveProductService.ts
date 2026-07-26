@@ -279,6 +279,14 @@ class DefectiveProductService {
   }
 
   /**
+   * Unmark defective status on barcode and restore to active stock
+   */
+  async unmarkDefective(id: number) {
+    const response = await axiosInstance.post(`${this.basePath}/${id}/unmark-defective`);
+    return response.data;
+  }
+
+  /**
    * Return defective product to vendor
    */
   async returnToVendor(id: number, data: ReturnToVendorRequest) {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from "@/contexts/ThemeContext";
-import { Search, Barcode, User, Package, Trash2, ShoppingCart, AlertCircle, StoreIcon, ChevronDown, ChevronUp, Calendar, MapPin, Image as ImageIcon, Truck, RotateCcw } from 'lucide-react';
+import { Search, Barcode, User, Package, Trash2, ShoppingCart, AlertCircle, StoreIcon, ChevronDown, ChevronUp, Calendar, MapPin, Image as ImageIcon, Truck, RotateCcw, ShieldCheck } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import SellDefectModal from '@/components/SellDefectModal';
@@ -417,6 +417,21 @@ export default function DefectsPage() {
     } catch (error: unknown) {
       console.error('Error unmarking used item:', error);
       const msg = error instanceof Error ? error.message : 'Error unmarking used item';
+      alert(msg);
+    }
+  };
+
+  const handleUnmarkDefective = async (defectId: string) => {
+    if (!confirm('Are you sure you want to unmark this defect and restore the product to regular active inventory?')) return;
+
+    try {
+      await defectIntegrationService.unmarkDefective(defectId);
+      fetchDefects();
+      setSuccessMessage('Defect unmarked successfully! Barcode restored to regular active stock.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error: unknown) {
+      console.error('Error unmarking defective item:', error);
+      const msg = error instanceof Error ? error.message : 'Error unmarking defective item';
       alert(msg);
     }
   };
@@ -889,6 +904,15 @@ export default function DefectsPage() {
                                     >
                                       <ShoppingCart className="w-4 h-4" />
                                     </button>
+                                     {hasDefectTag && (
+                                       <button
+                                         onClick={() => handleUnmarkDefective(defect.id)}
+                                         className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition-colors"
+                                         title="Unmark Defect (Restore to Regular Active Stock)"
+                                       >
+                                         <ShieldCheck className="w-4 h-4" />
+                                       </button>
+                                     )}
                                      {hasUsedTag && (
                                        <button
                                          onClick={() => handleUnmarkUsed(defect.id)}

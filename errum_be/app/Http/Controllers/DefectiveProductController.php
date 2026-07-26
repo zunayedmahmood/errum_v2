@@ -507,6 +507,9 @@ class DefectiveProductController extends Controller
                     $barcode = ProductBarcode::find($barcodeId);
                     if ($barcode) {
                         $barcode->unmarkAsUsed();
+                        if ($barcode->is_defective) {
+                            $barcode->unmarkAsDefective();
+                        }
                     }
 
                     // Clean up / forceDelete all used-only defective_product records for this barcode
@@ -529,6 +532,9 @@ class DefectiveProductController extends Controller
                 $barcode = ProductBarcode::where('id', $id)->orWhere('barcode', $id)->first();
                 if ($barcode) {
                     $barcode->unmarkAsUsed();
+                    if ($barcode->is_defective) {
+                        $barcode->unmarkAsDefective();
+                    }
                     $records = DefectiveProduct::withTrashed()
                         ->where('product_barcode_id', $barcode->id)
                         ->get();
@@ -554,6 +560,66 @@ class DefectiveProductController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to unmark used status: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Unmark defective status on barcode and reverse accounting write-off
+     */
+    public function unmarkDefective(Request $request, $id): JsonResponse
+    {
+        DB::beginTransaction();
+        try {
+            $defectiveProduct = DefectiveProduct::withTrashed()->find($id);
+            $barcode = null;
+
+            if ($defectiveProduct) {
+                if ($defectiveProduct->product_barcode_id) {
+                    $barcode = ProductBarcode::find($defectiveProduct->product_barcode_id);
+                }
+            } else {
+                $barcode = ProductBarcode::where('id', $id)->orWhere('barcode', $id)->first();
+                if ($barcode) {
+                    $defectiveProduct = DefectiveProduct::withTrashed()
+                        ->where('product_barcode_id', $barcode->id)
+                        ->latest('id')
+                        ->first();
+                }
+            }
+
+            if ($defectiveProduct) {
+                $observer = new \App\Observers\DefectiveProductObserver();
+                $observer->reverseWriteoff($defectiveProduct, 'unmarked_defective');
+            }
+
+            if ($barcode) {
+                $batchId = $defectiveProduct->product_batch_id ?? $barcode->batch_id;
+                $barcode->unmarkAsDefective($batchId);
+                $barcode->unmarkAsUsed();
+            }
+
+            if ($defectiveProduct) {
+                $defectiveProduct->forceDelete();
+            }
+
+            if ($barcode) {
+                DefectiveProduct::withTrashed()
+                    ->where('product_barcode_id', $barcode->id)
+                    ->forceDelete();
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Defect unmarked and barcode restored to active inventory',
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to unmark defective item: ' . $e->getMessage(),
             ], 500);
         }
     }
