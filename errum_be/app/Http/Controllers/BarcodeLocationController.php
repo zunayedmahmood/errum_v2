@@ -879,7 +879,13 @@ class BarcodeLocationController extends Controller
         }
 
         $query = ProductBarcode::where('batch_id', $batchId)
-            ->with(['currentStore', 'product']);
+            ->where('product_id', $batch->product_id);
+
+        if ($batch->store_id) {
+            $query->where('current_store_id', $batch->store_id);
+        }
+
+        $query->with(['currentStore', 'product']);
 
         // Filter by status
         if ($request->has('status')) {

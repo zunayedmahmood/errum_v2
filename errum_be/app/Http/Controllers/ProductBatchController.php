@@ -217,6 +217,16 @@ class ProductBatchController extends Controller
             $skipBarcodes = $request->input('skip_barcode_generation', false);
             
             if (!$skipBarcodes) {
+                // Clear stale orphaned barcodes that share batch_id but belong to a different store/product
+                ProductBarcode::where('batch_id', $batch->id)
+                    ->where(function ($q) use ($batch) {
+                        $q->where('product_id', '!=', $batch->product_id);
+                        if ($batch->store_id) {
+                            $q->orWhere('current_store_id', '!=', $batch->store_id);
+                        }
+                    })
+                    ->update(['batch_id' => null]);
+
                 $barcodeType = $request->input('barcode_type', 'CODE128');
                 $quantity = (int) $request->quantity;
                 

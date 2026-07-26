@@ -7,6 +7,7 @@ use App\Models\DefectiveProduct;
 use App\Models\LoyaltyPointTransaction;
 use App\Models\Order;
 use App\Models\OrderPayment;
+use App\Models\PaymentCommissionEntry;
 use App\Models\PaymentSplit;
 use App\Models\ProductBarcode;
 use App\Models\ProductMovement;
@@ -204,6 +205,17 @@ class SaleBusinessDateService
             DefectiveProduct::where('order_id', $order->id)
                 ->where('status', 'sold')
                 ->update(['sold_at' => $businessAt, 'updated_at' => $businessAt]);
+        }
+
+        if (Schema::hasTable('payment_commission_entries')) {
+            PaymentCommissionEntry::where('order_id', $order->id)
+                ->update([
+                    'business_date' => $businessDate,
+                    'created_at' => $businessAt,
+                    'updated_at' => $businessAt,
+                ]);
+
+            app(PaymentCommissionService::class)->syncOrder($order, false);
         }
 
         return $order->fresh();

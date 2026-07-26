@@ -433,6 +433,15 @@ class PaymentCommissionService
             ]
         );
 
+        $offlineOrderTypes = ['counter', 'offline', 'pos', 'offline_sale', 'retail', 'branch'];
+        if ($order->order_date && in_array(strtolower((string) $order->order_type), $offlineOrderTypes, true)) {
+            $businessAt = Carbon::parse($order->order_date, config('app.timezone', 'Asia/Dhaka'));
+            $entry->forceFill([
+                'created_at' => $businessAt,
+                'updated_at' => $businessAt,
+            ])->saveQuietly();
+        }
+
         $this->postEntryAccounting($entry);
     }
 
@@ -515,13 +524,16 @@ class PaymentCommissionService
 
     private function businessDate(Order $order, Model $instrument): string
     {
-        return $this->normaliseBusinessDate(
-            $order->order_date
-                ?? $instrument->payment_received_date
-                ?? $instrument->completed_at
-                ?? $instrument->created_at
-                ?? now()
-        );
+        $date = $order->order_date
+            ?? data_get($instrument->metadata ?? [], 'cash_sheet_order_date')
+            ?? data_get($instrument->payment_data ?? [], 'payment_date')
+            ?? data_get($instrument->payment_data ?? [], 'business_date')
+            ?? $instrument->payment_received_date
+            ?? $instrument->completed_at
+            ?? $instrument->created_at
+            ?? now();
+
+        return $this->normaliseBusinessDate($date);
     }
 
     private function normaliseBusinessDate($value): string
