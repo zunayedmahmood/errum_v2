@@ -9,7 +9,7 @@ import dispatchService, {
 } from '@/services/dispatchService';
 
 export type DispatchScanMode = 'send' | 'receive';
-
+// just to make a new fe deployments
 interface Props {
   dispatch: ProductDispatch | null;
   isOpen: boolean;
@@ -299,12 +299,12 @@ export default function DispatchBarcodeScanModal({
         // it finds the existing item or adds a new one if permitted by the backend.
         const res = await dispatchService.scanToAddItem(dispatch.id, code);
         const data = unpackData(res);
-        
+
         // Update selection to the item that was just scanned/added
         if (data?.dispatch_item_id) {
           setSelectedItemId(Number(data.dispatch_item_id));
         }
-        
+
         // Signal that dispatch items might have changed
         if (onComplete) onComplete();
       } else {
@@ -435,11 +435,10 @@ export default function DispatchBarcodeScanModal({
                       <button
                         key={it.id}
                         onClick={() => setSelectedItemId(it.id)}
-                        className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                          active
+                        className={`w-full text-left p-3 rounded-lg border transition-colors ${active
                             ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
                             : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -528,7 +527,7 @@ export default function DispatchBarcodeScanModal({
                       {selectedItem ? selectedItem.product.name : 'Scan to Add New Item'}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      {selectedItem 
+                      {selectedItem
                         ? `SKU: ${selectedItem.product.sku} • Batch: ${selectedItem.batch.batch_number}`
                         : 'Any scanned barcode will be added to this dispatch if it belongs to the source store.'}
                     </div>
@@ -591,9 +590,8 @@ export default function DispatchBarcodeScanModal({
                   <button
                     onClick={enqueueScan}
                     disabled={loading || !barcode.trim()}
-                    className={`px-4 py-3 rounded-lg text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-                      mode === 'send' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'
-                    }`}
+                    className={`px-4 py-3 rounded-lg text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${mode === 'send' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'
+                      }`}
                   >
                     {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Scan className="w-4 h-4" />}
                     {mode === 'send' ? 'Add Scan' : 'Receive'}
