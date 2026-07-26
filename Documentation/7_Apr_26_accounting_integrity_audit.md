@@ -3,7 +3,7 @@
 This document lists identified integrity issues, reporting discrepancies, and edge cases found after the implementation of the "7_Apr_26_accounting_plan". These issues must be resolved to ensure the General Ledger remains the single source of truth.
 
 ## 1. Reporting & Case Sensitivity Issues
-
+just to make a new fe deployments
 ### [CRITICAL] Case Sensitivity Inconsistency
 *   **Issue**: The backend logic is inconsistent with string comparisons for transaction types.
     *   `AccountingReportController@getTAccount` uses `debit` / `credit` (lowercase).

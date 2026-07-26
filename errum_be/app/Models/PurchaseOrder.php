@@ -477,12 +477,10 @@ class PurchaseOrder extends Model
             });
         }
 
-        if (!$batch->barcode_id) {
-            $firstBarcodeId = ProductBarcode::where('batch_id', $batch->id)->orderBy('id')->value('id');
-            if ($firstBarcodeId) {
-                $batch->barcode_id = $firstBarcodeId;
-                $batch->save();
-            }
+        $firstBarcodeId = ProductBarcode::where('batch_id', $batch->id)->orderBy('id')->value('id');
+        if ($firstBarcodeId && (int) $batch->barcode_id !== (int) $firstBarcodeId) {
+            $batch->barcode_id = $firstBarcodeId;
+            $batch->save();
         }
     }
 

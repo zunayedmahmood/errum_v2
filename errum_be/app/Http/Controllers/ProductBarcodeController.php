@@ -395,7 +395,7 @@ class ProductBarcodeController extends Controller
      * 
      * GET /api/products/{productId}/barcodes
      */
-    public function getProductBarcodes($productId)
+    public function getProductBarcodes(Request $request, $productId)
     {
         $product = Product::find($productId);
 
@@ -406,7 +406,19 @@ class ProductBarcodeController extends Controller
             ], 404);
         }
 
-        $barcodes = ProductBarcode::getBarcodesForProduct($productId, false);
+        $query = ProductBarcode::byProduct($productId);
+
+        if ($request->has('batch_id')) {
+            $query->where('batch_id', $request->batch_id);
+        } elseif ($request->boolean('batch_only')) {
+            $query->whereNotNull('batch_id');
+        }
+
+        if ($request->boolean('active_only', false)) {
+            $query->active();
+        }
+
+        $barcodes = $query->get();
 
         return response()->json([
             'success' => true,

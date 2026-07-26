@@ -322,7 +322,7 @@ class ExchangeController extends Controller
                     $scannedBarcode->updateLocation($storeId, 'with_customer', [
                         'order_id' => $replacementOrder->id,
                         'customer_id' => $customerId,
-                        'exchange_return_id' => $productReturn->id,
+                        'exchange_replacement' => true,
                         'performed_by' => $employee->id,
                     ]);
                     $scannedBarcode->is_active = false;

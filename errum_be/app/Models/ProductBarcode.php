@@ -149,11 +149,26 @@ class ProductBarcode extends Model
         $oldStore = $this->current_store_id;
         $oldStatus = $this->current_status;
 
+        $existingMetadata = $this->location_metadata ?? [];
+
+        // Purge stale return tracking attributes when a barcode is sold in a new order
+        if (in_array($status, ['with_customer', 'sold'], true)) {
+            unset(
+                $existingMetadata['return_id'],
+                $existingMetadata['returned_at'],
+                $existingMetadata['return_reason'],
+                $existingMetadata['exchange_return_id'],
+                $existingMetadata['cross_store_return']
+            );
+        }
+
+        $mergedMetadata = array_merge($existingMetadata, $metadata);
+
         $this->update([
             'current_store_id' => $storeId,
             'current_status' => $status,
             'location_updated_at' => now(),
-            'location_metadata' => array_merge($this->location_metadata ?? [], $metadata),
+            'location_metadata' => $mergedMetadata,
         ]);
 
         // Create movement record for audit trail
@@ -237,11 +252,22 @@ class ProductBarcode extends Model
      */
     public function markSold($orderId, $customerId)
     {
+        $existingMetadata = $this->location_metadata ?? [];
+
+        // Purge stale return tracking attributes from previous lifecycle
+        unset(
+            $existingMetadata['return_id'],
+            $existingMetadata['returned_at'],
+            $existingMetadata['return_reason'],
+            $existingMetadata['exchange_return_id'],
+            $existingMetadata['cross_store_return']
+        );
+
         $this->update([
             'is_active' => false,  // Mark as sold
             'current_status' => 'with_customer',
             'location_updated_at' => now(),
-            'location_metadata' => array_merge($this->location_metadata ?? [], [
+            'location_metadata' => array_merge($existingMetadata, [
                 'sold_at' => now()->toDateTimeString(),
                 'order_id' => $orderId,
                 'customer_id' => $customerId,
