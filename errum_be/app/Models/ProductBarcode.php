@@ -784,6 +784,57 @@ class ProductBarcode extends Model
         return $this->refresh();
     }
 
+    public function unmarkAsUsed(): self
+    {
+        $rawMetadata = $this->location_metadata ?? [];
+        if (is_string($rawMetadata)) {
+            $decoded = json_decode($rawMetadata, true);
+            $metadata = is_array($decoded) ? $decoded : [];
+        } else {
+            $metadata = is_array($rawMetadata) ? $rawMetadata : [];
+        }
+
+        unset(
+            $metadata['used'],
+            $metadata['is_used_item'],
+            $metadata['used_item'],
+            $metadata['used_item_metadata_only'],
+            $metadata['used_at'],
+            $metadata['used_item_marked_at'],
+            $metadata['used_item_store_id'],
+            $metadata['used_item_reason'],
+            $metadata['used_item_original_price'],
+            $metadata['used_item_performed_by'],
+            $metadata['used_item_source'],
+            $metadata['defective_product_id'],
+            $metadata['used_item_defective_product_id']
+        );
+
+        if (isset($metadata['condition']) && $metadata['condition'] === 'used') {
+            unset($metadata['condition']);
+        }
+        if (isset($metadata['item_condition']) && $metadata['item_condition'] === 'used') {
+            unset($metadata['item_condition']);
+        }
+
+        if (isset($metadata['attributes']) && is_array($metadata['attributes'])) {
+            unset($metadata['attributes']['used']);
+            if (isset($metadata['attributes']['condition']) && $metadata['attributes']['condition'] === 'used') {
+                unset($metadata['attributes']['condition']);
+            }
+            if (isset($metadata['attributes']['item_condition']) && $metadata['attributes']['item_condition'] === 'used') {
+                unset($metadata['attributes']['item_condition']);
+            }
+        }
+
+        $this->forceFill([
+            'location_metadata' => $metadata,
+            'location_updated_at' => now(),
+        ])->saveOrFail();
+
+        return $this->refresh();
+    }
+
     public function markAsDefective(array $defectData): DefectiveProduct
     {
         // Mark barcode as defective only for real defect flows. Used-only items

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from "@/contexts/ThemeContext";
-import { Search, Barcode, User, Package, Trash2, ShoppingCart, AlertCircle, StoreIcon, ChevronDown, ChevronUp, Calendar, MapPin, Image as ImageIcon, Truck } from 'lucide-react';
+import { Search, Barcode, User, Package, Trash2, ShoppingCart, AlertCircle, StoreIcon, ChevronDown, ChevronUp, Calendar, MapPin, Image as ImageIcon, Truck, RotateCcw } from 'lucide-react';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import SellDefectModal from '@/components/SellDefectModal';
@@ -403,6 +403,21 @@ export default function DefectsPage() {
     } catch (error: any) {
       console.error('Error removing item:', error);
       alert(error.message || 'Error removing item');
+    }
+  };
+
+  const handleUnmarkUsed = async (defectId: string) => {
+    if (!confirm('Are you sure you want to remove the used mark from this item and restore it to regular inventory?')) return;
+
+    try {
+      await defectIntegrationService.unmarkUsed(defectId);
+      fetchDefects();
+      setSuccessMessage('Used mark removed successfully! Item restored to regular inventory.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error: unknown) {
+      console.error('Error unmarking used item:', error);
+      const msg = error instanceof Error ? error.message : 'Error unmarking used item';
+      alert(msg);
     }
   };
 
@@ -874,6 +889,15 @@ export default function DefectsPage() {
                                     >
                                       <ShoppingCart className="w-4 h-4" />
                                     </button>
+                                     {hasUsedTag && (
+                                       <button
+                                         onClick={() => handleUnmarkUsed(defect.id)}
+                                         className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                                         title="Unmark Used Tag (Restore to Regular Inventory)"
+                                       >
+                                         <RotateCcw className="w-4 h-4" />
+                                       </button>
+                                     )}
                                     <button
                                       onClick={() => handleRemove(defect.id)}
                                       className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"

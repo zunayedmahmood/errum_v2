@@ -1623,6 +1623,7 @@ Route::middleware('auth:api')->group(function () {
             Route::post('/make-available', [\App\Http\Controllers\DefectiveProductController::class, 'makeAvailableForSale']);
             Route::post('/sell', [\App\Http\Controllers\DefectiveProductController::class, 'sell']);
             Route::post('/dispose', [\App\Http\Controllers\DefectiveProductController::class, 'dispose']);
+            Route::post('/unmark-used', [\App\Http\Controllers\DefectiveProductController::class, 'unmarkUsed']);
             Route::post('/return-to-vendor', [\App\Http\Controllers\DefectiveProductController::class, 'returnToVendor']);
             
             // Image management routes

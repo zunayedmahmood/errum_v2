@@ -445,6 +445,13 @@ class DefectiveProductController extends Controller
         try {
             $defectiveProduct = DefectiveProduct::findOrFail($id);
 
+            $metadata = is_array($defectiveProduct->metadata ?? null) ? $defectiveProduct->metadata : [];
+            $isUsedItem = !empty($metadata['is_used_item']) || str_contains(strtoupper((string) $defectiveProduct->defect_description), 'USED');
+
+            if ($isUsedItem && $defectiveProduct->barcode) {
+                $defectiveProduct->barcode->unmarkAsUsed();
+            }
+
             $success = $defectiveProduct->markAsDisposed($request->disposal_notes);
 
             if (!$success) {
@@ -463,6 +470,37 @@ class DefectiveProductController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to dispose product: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Unmark used item status on defective record and barcode
+     */
+    public function unmarkUsed(Request $request, $id): JsonResponse
+    {
+        DB::beginTransaction();
+        try {
+            $defectiveProduct = DefectiveProduct::withTrashed()->findOrFail($id);
+
+            if ($defectiveProduct->barcode) {
+                $defectiveProduct->barcode->unmarkAsUsed();
+            }
+
+            // Remove/delete the defective product record if it's used-item only
+            $defectiveProduct->forceDelete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Used item status removed and barcode restored to regular inventory',
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to unmark used status: ' . $e->getMessage(),
             ], 500);
         }
     }
