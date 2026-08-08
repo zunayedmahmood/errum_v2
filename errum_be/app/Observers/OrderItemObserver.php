@@ -4,7 +4,6 @@ namespace App\Observers;
 
 use App\Models\OrderItem;
 use App\Models\ReservedProduct;
-use App\Models\ProductBatch;
 use Illuminate\Support\Facades\Log;
 
 class OrderItemObserver
@@ -89,18 +88,7 @@ class OrderItemObserver
             return;
         }
 
-        $total = \App\Models\ProductBatch::where('product_id', $productId)->sum('quantity');
-        $reservedRecord = ReservedProduct::firstOrCreate(
-            ['product_id' => $productId],
-            ['total_inventory' => 0, 'reserved_inventory' => 0, 'available_inventory' => 0]
-        );
-
-        $reservedRecord->total_inventory = $total;
-        $reservedRecord->available_inventory = max(0, $total - $reservedRecord->reserved_inventory);
-
-        if ($reservedRecord->isDirty(['total_inventory', 'available_inventory'])) {
-            $reservedRecord->save();
-        }
+        $reservedRecord = ReservedProduct::syncSnapshot((int) $productId);
 
         Log::info("Synced reserved_products availability snapshot for POS product {$productId}", [
             'product_id' => $productId,
@@ -159,17 +147,6 @@ class OrderItemObserver
 
     private function syncReservedProductSnapshot(int $productId): ReservedProduct
     {
-        $reservedRecord = ReservedProduct::firstOrCreate(
-            ['product_id' => $productId],
-            ['total_inventory' => 0, 'reserved_inventory' => 0, 'available_inventory' => 0]
-        );
-
-        $totalInventory = (int) ProductBatch::where('product_id', $productId)->sum('quantity');
-        $reservedRecord->total_inventory = $totalInventory;
-        $reservedRecord->reserved_inventory = max(0, (int) $reservedRecord->reserved_inventory);
-        $reservedRecord->available_inventory = max(0, $totalInventory - (int) $reservedRecord->reserved_inventory);
-        $reservedRecord->save();
-
-        return $reservedRecord;
+        return ReservedProduct::syncSnapshot($productId);
     }
 }

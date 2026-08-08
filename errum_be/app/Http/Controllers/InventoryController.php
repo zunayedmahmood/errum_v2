@@ -26,6 +26,8 @@ class InventoryController extends Controller
                     $q->where('is_archived', false);
                 })
                 ->with(['product', 'store'])
+                ->where('is_active', true)
+                ->where('availability', true)
                 ->where('quantity', '>', 0);
 
             // Filter by product
@@ -75,9 +77,9 @@ class InventoryController extends Controller
                         ];
                     })->values();
 
-                    $reservedRecord = \App\Models\ReservedProduct::where('product_id', $productId)->first();
-                    $availableQuantity = $reservedRecord ? max(0, $reservedRecord->available_inventory) : $totalQuantity;
-                    $reservedQuantity = $reservedRecord ? $reservedRecord->reserved_inventory : 0;
+                    $reservedRecord = ReservedProduct::where('product_id', $productId)->first();
+                    $reservedQuantity = $reservedRecord ? max(0, (int) $reservedRecord->reserved_inventory) : 0;
+                    $availableQuantity = max(0, (int) $totalQuantity - $reservedQuantity);
 
                     // Resolve category hierarchy
                     $category = $product->category;
@@ -132,7 +134,10 @@ class InventoryController extends Controller
             $this->whereAnyLike($products, ['name', 'sku'], $search);
             
             $products = $products->with(['category.parent', 'productBatches' => function ($query) {
-                    $query->where('quantity', '>', 0)->with('store');
+                    $query->where('is_active', true)
+                        ->where('availability', true)
+                        ->where('quantity', '>', 0)
+                        ->with('store');
                 }])
                 ->get()
                 ->map(function ($product) {
@@ -151,9 +156,9 @@ class InventoryController extends Controller
                         ];
                     })->values();
 
-                    $reservedRecord = \App\Models\ReservedProduct::where('product_id', $product->id)->first();
-                    $availableQuantity = $reservedRecord ? max(0, $reservedRecord->available_inventory) : $totalQuantity;
-                    $reservedQuantity = $reservedRecord ? $reservedRecord->reserved_inventory : 0;
+                    $reservedRecord = ReservedProduct::where('product_id', $product->id)->first();
+                    $reservedQuantity = $reservedRecord ? max(0, (int) $reservedRecord->reserved_inventory) : 0;
+                    $availableQuantity = max(0, (int) $totalQuantity - $reservedQuantity);
 
                     // Resolve category hierarchy
                     $category = $product->category;
@@ -276,12 +281,14 @@ class InventoryController extends Controller
                     return $batch->quantity * $batch->cost_price;
                 });
 
+                $reservedQuantity = max(0, (int) (ReservedProduct::where('product_id', $product->id)->value('reserved_inventory') ?? 0));
+
                 return [
                     'product_id' => $product->id,
                     'product_name' => $product->name,
                     'sku' => $product->sku,
                     'total_quantity' => $totalQuantity,
-                    'available_quantity' => \App\Models\ReservedProduct::where('product_id', $product->id)->value('available_inventory') ?? $totalQuantity,
+                    'available_quantity' => max(0, (int) $totalQuantity - $reservedQuantity),
                     'total_value' => $totalValue,
                     'average_unit_cost' => $totalQuantity > 0 ? $totalValue / $totalQuantity : 0,
                 ];

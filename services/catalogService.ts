@@ -785,8 +785,8 @@ const normalizeGroupedProduct = (rawGroup: any): CatalogGroupedProduct => {
   mainVariant.min_price = minPrice;
   mainVariant.max_price = maxPrice;
   mainVariant.available_inventory = totalAvailable;
-  mainVariant.stock_quantity = Math.max(totalAvailable, totalStock);
-  mainVariant.in_stock = inStockVariants > 0 || totalAvailable > 0;
+  mainVariant.stock_quantity = totalStock;
+  mainVariant.in_stock = totalAvailable > 0;
 
   return {
     base_name: baseName,

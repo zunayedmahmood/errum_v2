@@ -806,6 +806,7 @@ class ProductBarcode extends Model
             $metadata['used_item_original_price'],
             $metadata['used_item_performed_by'],
             $metadata['used_item_source'],
+            $metadata['used_item_history'],
             $metadata['defective_product_id'],
             $metadata['used_item_defective_product_id']
         );
@@ -842,16 +843,56 @@ class ProductBarcode extends Model
     {
         $wasDefective = (bool) $this->is_defective;
 
+        // Check if barcode is currently assigned to an EXTRA resale batch
+        $currentBatch = $this->batch;
+        $isResaleBatch = $currentBatch && (
+            str_starts_with((string) $currentBatch->batch_number, 'EXTRA-') ||
+            str_contains(strtolower((string) $currentBatch->notes), 'resale batch')
+        );
+
+        $metadata = is_array($this->location_metadata ?? null) ? $this->location_metadata : [];
+        $effectiveBatchId = $batchId ?? ($metadata['original_batch_id'] ?? null);
+
+        // If effectiveBatchId is the resale batch ID, fallback to metadata or current batch_id
+        if ($isResaleBatch && $effectiveBatchId && $currentBatch && $effectiveBatchId === $currentBatch->id) {
+            $effectiveBatchId = $metadata['original_batch_id'] ?? null;
+        }
+
+        if (!$effectiveBatchId) {
+            $effectiveBatchId = $this->batch_id;
+        }
+
+        $updateData = [
+            'is_defective' => false,
+            'is_active' => true,
+            'current_status' => 'in_shop',
+            'location_updated_at' => now(),
+        ];
+
+        if ($effectiveBatchId && $effectiveBatchId != $this->batch_id) {
+            $updateData['batch_id'] = $effectiveBatchId;
+        }
+
+        // Clean up resale/defective metadata keys
+        unset(
+            $metadata['defective_product_id'],
+            $metadata['extra_item_resale_available_at'],
+            $metadata['resale_batch_id'],
+            $metadata['original_batch_id']
+        );
+        $updateData['location_metadata'] = json_encode($metadata);
+
         DB::table('product_barcodes')
             ->where('id', $this->id)
-            ->update([
-                'is_defective' => false,
-                'is_active' => true,
-                'location_updated_at' => now(),
-            ]);
+            ->update($updateData);
 
-        if ($wasDefective) {
-            $effectiveBatchId = $batchId ?? $this->batch_id;
+        // If item was in an EXTRA resale batch, decrement the resale batch quantity
+        if ($isResaleBatch && $currentBatch && $currentBatch->quantity > 0) {
+            $currentBatch->decrement('quantity', 1);
+        }
+
+        // Restore stock on original batch if it was defective OR if it was in an EXTRA resale batch
+        if ($wasDefective || $isResaleBatch) {
             if ($effectiveBatchId) {
                 $batch = ProductBatch::find($effectiveBatchId);
                 if ($batch) {
@@ -862,15 +903,17 @@ class ProductBarcode extends Model
                     ]);
 
                     ProductMovement::create([
-                        'product_id' => $this->product_id,
                         'product_batch_id' => $batch->id,
                         'product_barcode_id' => $this->id,
+                        'from_store_id' => $isResaleBatch ? $currentBatch->store_id : null,
                         'to_store_id' => $this->current_store_id ?? $batch->store_id,
-                        'movement_type' => 'unmark_defective',
+                        'movement_type' => 'adjustment',
                         'quantity' => 1,
                         'unit_cost' => $batch->cost_price ?? 0,
                         'total_cost' => $batch->cost_price ?? 0,
                         'movement_date' => now(),
+                        'status_before' => $wasDefective ? 'defective' : 'in_shop',
+                        'status_after' => 'in_shop',
                         'notes' => 'Restored stock: Defective barcode unmarked',
                     ]);
 
@@ -889,6 +932,7 @@ class ProductBarcode extends Model
 
         return $this->refresh();
     }
+
 
     public function markAsDefective(array $defectData): DefectiveProduct
     {

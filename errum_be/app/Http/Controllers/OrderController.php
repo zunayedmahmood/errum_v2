@@ -773,6 +773,8 @@ class OrderController extends Controller
                     // Check store-level stock for specific store assignment without batch
                     $storeStock = ProductBatch::where('product_id', $product->id)
                         ->where('store_id', $request->store_id)
+                        ->where('is_active', true)
+                        ->where('availability', true)
                         ->sum('quantity');
                     
                     if ($storeStock < $itemData['quantity']) {
@@ -1032,30 +1034,7 @@ class OrderController extends Controller
 
     private function syncReservedProductSnapshot(int $productId, bool $lock = true): ReservedProduct
     {
-        $query = ReservedProduct::where('product_id', $productId);
-        if ($lock) {
-            $query->lockForUpdate();
-        }
-
-        $reservedProduct = $query->first();
-        if (!$reservedProduct) {
-            $reservedProduct = new ReservedProduct([
-                'product_id' => $productId,
-                'total_inventory' => 0,
-                'reserved_inventory' => 0,
-                'available_inventory' => 0,
-            ]);
-        }
-
-        $totalInventory = (int) ProductBatch::where('product_id', $productId)->sum('quantity');
-        $reservedInventory = max(0, (int) ($reservedProduct->reserved_inventory ?? 0));
-
-        $reservedProduct->total_inventory = $totalInventory;
-        $reservedProduct->reserved_inventory = $reservedInventory;
-        $reservedProduct->available_inventory = max(0, $totalInventory - $reservedInventory);
-        $reservedProduct->save();
-
-        return $reservedProduct;
+        return ReservedProduct::syncSnapshot($productId, null, $lock);
     }
 
     private function reserveOnlineQuantityIfObserverWillNot(Order $order, int $productId, int $quantity, string $productName = ''): void

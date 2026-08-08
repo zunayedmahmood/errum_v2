@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -24,6 +25,8 @@ return new class extends Migration
 
         // Seed with current data
         $batches = DB::table('product_batches')
+            ->where('is_active', true)
+            ->where('availability', true)
             ->select('product_id', DB::raw('SUM(quantity) as total'))
             ->groupBy('product_id')
             ->get();

@@ -508,16 +508,21 @@ class DefectiveProductController extends Controller
                     if ($barcode) {
                         $barcode->unmarkAsUsed();
                         if ($barcode->is_defective) {
-                            $barcode->unmarkAsDefective();
+                            $meta = is_array($defectiveProduct->metadata ?? null) ? $defectiveProduct->metadata : [];
+                            $batchId = $meta['original_batch_id'] ?? $defectiveProduct->product_batch_id ?? $barcode->batch_id;
+                            $barcode->unmarkAsDefective($batchId);
                         }
                     }
 
-                    // Clean up / forceDelete all used-only defective_product records for this barcode
-                    $records = DefectiveProduct::withTrashed()
+                    // Always delete the originally-requested record first
+                    $defectiveProduct->forceDelete();
+
+                    // Then clean up any remaining sibling used-only records for the same barcode.
+                    $remaining = DefectiveProduct::withTrashed()
                         ->where('product_barcode_id', $barcodeId)
                         ->get();
 
-                    foreach ($records as $record) {
+                    foreach ($remaining as $record) {
                         $meta = is_array($record->metadata ?? null) ? $record->metadata : [];
                         $desc = strtolower((string) $record->defect_description);
                         if (!empty($meta['is_used_item']) || strtolower((string) $record->defect_type) === 'other' || str_contains($desc, 'used')) {
@@ -528,13 +533,14 @@ class DefectiveProductController extends Controller
                     $defectiveProduct->forceDelete();
                 }
             } else {
-                // If $id passed is actually a product barcode ID or string barcode
+                // $id might be a product_barcode id or barcode string instead of a defective_product id
                 $barcode = ProductBarcode::where('id', $id)->orWhere('barcode', $id)->first();
                 if ($barcode) {
                     $barcode->unmarkAsUsed();
                     if ($barcode->is_defective) {
                         $barcode->unmarkAsDefective();
                     }
+
                     $records = DefectiveProduct::withTrashed()
                         ->where('product_barcode_id', $barcode->id)
                         ->get();
@@ -594,7 +600,8 @@ class DefectiveProductController extends Controller
             }
 
             if ($barcode) {
-                $batchId = $defectiveProduct->product_batch_id ?? $barcode->batch_id;
+                $meta = is_array($defectiveProduct?->metadata) ? $defectiveProduct->metadata : [];
+                $batchId = $meta['original_batch_id'] ?? $defectiveProduct?->product_batch_id ?? $barcode->batch_id;
                 $barcode->unmarkAsDefective($batchId);
                 $barcode->unmarkAsUsed();
             }

@@ -26,9 +26,17 @@ export interface Product {
     id: number;
     name: string;
   };
-  selling_price?: number;
-  base_price?: number; // alias for selling_price
-  global_available?: number; // total available from reserved_products
+  selling_price?: number | null;
+  base_price?: number | null; // alias for selling_price
+  global_available?: number;
+  total_stock?: number;
+  stock_quantity?: number;
+  total_available?: number;
+  available_inventory?: number;
+  total_reserved?: number;
+  reserved_inventory?: number;
+  in_stock?: boolean;
+  min_price?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -134,9 +142,17 @@ function transformProduct(product: any): Product {
     variants_count: product.variants_count,
     category: product.category,
     vendor: product.vendor,
-    selling_price: product.selling_price || product.base_price,
-    base_price: product.base_price || product.selling_price,
+    selling_price: product.selling_price ?? product.base_price ?? null,
+    base_price: product.base_price ?? product.selling_price ?? null,
     global_available: product.global_available,
+    total_stock: product.total_stock,
+    stock_quantity: product.stock_quantity,
+    total_available: product.total_available,
+    available_inventory: product.available_inventory,
+    total_reserved: product.total_reserved,
+    reserved_inventory: product.reserved_inventory,
+    in_stock: product.in_stock,
+    min_price: product.min_price,
     created_at: product.created_at,
     updated_at: product.updated_at,
   };
