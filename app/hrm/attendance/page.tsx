@@ -129,8 +129,8 @@ export default function AttendanceManagerPage() {
     setPolicyForm({
       mode: policy.mode || 'fixed_day_off',
       fixed_days_off: policy.fixed_days_off || ['friday'],
-      fixed_start_time: policy.fixed_start_time || '10:00',
-      fixed_end_time: policy.fixed_end_time || '20:00',
+      fixed_start_time: policy.fixed_start_time?.slice(0, 5) || '10:00',
+      fixed_end_time: policy.fixed_end_time?.slice(0, 5) || '20:00',
       late_fee_per_minute: String(policy.late_fee_per_minute ?? 0),
       overtime_rate_per_hour: String(policy.overtime_rate_per_hour ?? 0),
       grace_period_minutes: String(policy.grace_period_minutes ?? 0),
