@@ -40,7 +40,7 @@ export interface PurchaseOrderWithPayment {
   total_amount: number;
   paid_amount: number;
   outstanding_amount: number;
-  payment_status: 'unpaid' | 'partial' | 'paid';
+  payment_status: 'unpaid' | 'partial' | 'partially_paid' | 'paid';
   status: string;
   created_at: string;
 }

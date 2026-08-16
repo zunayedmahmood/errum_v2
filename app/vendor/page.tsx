@@ -2203,6 +2203,7 @@ export default function VendorPaymentPage() {
                     />
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{po.po_number || `PO #${po.id}`}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">PO Total: ৳{formatCurrency(po.total_amount)}</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">Outstanding: ৳{formatCurrency(po.outstanding_amount)}</p>
                     </div>
                     {selectedPOs[po.id]?.selected && (

@@ -43,6 +43,30 @@ const getError = (error: any) =>
   error?.message ||
   'Something went wrong';
 
+const getResellPaymentSettlement = (payment: any): { label: string; tone: 'green' | 'amber' | 'red' | 'gray' } => {
+  if (payment?.status === 'cancelled' || payment?.status === 'refunded') {
+    return { label: payment.status, tone: 'red' };
+  }
+  if (payment?.status !== 'completed') {
+    return { label: payment?.status || 'pending', tone: 'amber' };
+  }
+
+  const items = Array.isArray(payment?.payment_items)
+    ? payment.payment_items
+    : Array.isArray(payment?.paymentItems)
+      ? payment.paymentItems
+      : [];
+
+  if (items.length === 0) {
+    return { label: 'completed', tone: 'green' };
+  }
+
+  const hasOutstandingAfterPayment = items.some((item: any) => Number(item?.po_outstanding_after || 0) > 0.001);
+  return hasOutstandingAfterPayment
+    ? { label: 'Partially Paid', tone: 'amber' }
+    : { label: 'Paid', tone: 'green' };
+};
+
 function Modal({ open, title, onClose, children, wide = false }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   if (!open) return null;
   return (
@@ -326,7 +350,7 @@ export default function ResellItemsPage() {
 
               {tab === 'payments' && <section>
                 <div className="mb-4 flex justify-end"><button onClick={() => openPayment()} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700"><CircleDollarSign className="h-4 w-4" /> Record Payment</button></div>
-                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-gray-800"><tr><th className="px-5 py-3">Payment</th><th className="px-5 py-3">Vendor</th><th className="px-5 py-3">Date</th><th className="px-5 py-3">Method</th><th className="px-5 py-3">Amount</th><th className="px-5 py-3">Status</th></tr></thead><tbody className="divide-y divide-gray-100 dark:divide-gray-800">{payments.map((payment) => <tr key={payment.id}><td className="px-5 py-4 font-semibold">{payment.payment_number}</td><td className="px-5 py-4">{payment.vendor?.name}</td><td className="px-5 py-4">{payment.payment_date}</td><td className="px-5 py-4">{payment.payment_method?.name || '—'}</td><td className="px-5 py-4 font-semibold text-emerald-600">{money(payment.amount)}</td><td className="px-5 py-4"><Pill tone={payment.status === 'completed' ? 'green' : 'amber'}>{payment.status}</Pill></td></tr>)}{payments.length === 0 && <tr><td colSpan={6} className="px-5 py-14 text-center text-gray-500">No resell vendor payments yet.</td></tr>}</tbody></table></div></div>
+                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-gray-800"><tr><th className="px-5 py-3">Payment</th><th className="px-5 py-3">Vendor</th><th className="px-5 py-3">Date</th><th className="px-5 py-3">Method</th><th className="px-5 py-3">Amount</th><th className="px-5 py-3">Status</th></tr></thead><tbody className="divide-y divide-gray-100 dark:divide-gray-800">{payments.map((payment) => <tr key={payment.id}><td className="px-5 py-4 font-semibold">{payment.payment_number}</td><td className="px-5 py-4">{payment.vendor?.name}</td><td className="px-5 py-4">{payment.payment_date}</td><td className="px-5 py-4">{payment.payment_method?.name || '—'}</td><td className="px-5 py-4 font-semibold text-emerald-600">{money(payment.amount)}</td><td className="px-5 py-4">{(() => { const settlement = getResellPaymentSettlement(payment); return <Pill tone={settlement.tone}>{settlement.label}</Pill>; })()}</td></tr>)}{payments.length === 0 && <tr><td colSpan={6} className="px-5 py-14 text-center text-gray-500">No resell vendor payments yet.</td></tr>}</tbody></table></div></div>
               </section>}
             </>
           )}
