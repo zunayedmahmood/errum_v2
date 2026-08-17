@@ -121,13 +121,13 @@ class ProductController extends Controller
                 $query->whereHas('batches', function($q) {
                     $q->where('is_active', true)
                       ->where('availability', true)
-                      ->where('quantity', '>', 0);
+                      ->where('stock_qty', '>', 0);
                 });
             } elseif ($stockStatus === 'not_in_stock' || $stockStatus === 'false' || $stockStatus === false) {
                 $query->whereDoesntHave('batches', function($q) {
                     $q->where('is_active', true)
                       ->where('availability', true)
-                      ->where('quantity', '>', 0);
+                      ->where('stock_qty', '>', 0);
                 });
             }
         }
@@ -203,7 +203,7 @@ class ProductController extends Controller
             $skus = collect($items)->pluck('sku')->filter()->values();
 
             // Load full models for the representatives
-            $products = Product::with(['category', 'vendor', 'productFields.field', 'batches', 'reservedProduct', 'images' => function($q) {
+            $products = Product::with(['category', 'vendor', 'productFields.field', 'images' => function($q) {
                 $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
             }])
             ->whereIn('id', $representativeIds)
@@ -215,7 +215,7 @@ class ProductController extends Controller
             })->values();
 
             // Load variants for these SKUs
-            $allVariants = Product::with(['productFields.field', 'batches', 'reservedProduct', 'images' => function($q) {
+            $allVariants = Product::with(['productFields.field', 'images' => function($q) {
                 $q->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('sort_order');
             }])
             ->whereIn('sku', $skus)
@@ -229,48 +229,7 @@ class ProductController extends Controller
                 $product->has_variants = $product->variants->isNotEmpty();
                 $product->variants_count = $product->variants->count() + 1;
                 $product->custom_fields = $this->formatCustomFields($product);
-
-                $groupProducts = collect([$product])->concat($product->variants);
-                $groupPhysicalStock = 0;
-                $groupReservedStock = 0;
-                $groupAvailableStock = 0;
-                $groupPrices = collect();
-
-                foreach ($groupProducts as $groupProduct) {
-                    $sellableBatches = $groupProduct->batches
-                        ->where('is_active', true)
-                        ->where('availability', true);
-                    $physicalStock = (int) $sellableBatches->sum('quantity');
-                    $reservedStock = $groupProduct->reservedProduct
-                        ? max(0, (int) $groupProduct->reservedProduct->reserved_inventory)
-                        : 0;
-                    $availableStock = max(0, $physicalStock - $reservedStock);
-
-                    $groupPhysicalStock += $physicalStock;
-                    $groupReservedStock += $reservedStock;
-                    $groupAvailableStock += $availableStock;
-
-                    $groupPrices = $groupPrices->concat(
-                        $sellableBatches
-                            ->where('quantity', '>', 0)
-                            ->pluck('sell_price')
-                            ->map(fn ($price) => (float) $price)
-                            ->filter(fn ($price) => $price > 0)
-                    );
-                }
-
-                // Group-level stock metadata is authoritative for the product-list card.
-                // The representative product may itself be out of stock while another
-                // variation with the same SKU is sellable.
-                $product->setAttribute('total_stock', $groupPhysicalStock);
-                $product->setAttribute('stock_quantity', $groupPhysicalStock);
-                $product->setAttribute('total_reserved', $groupReservedStock);
-                $product->setAttribute('reserved_inventory', $groupReservedStock);
-                $product->setAttribute('total_available', $groupAvailableStock);
-                $product->setAttribute('available_inventory', $groupAvailableStock);
-                $product->setAttribute('in_stock', $groupAvailableStock > 0);
-                $product->setAttribute('selling_price', $groupPrices->isNotEmpty() ? (float) $groupPrices->min() : null);
-
+                
                 foreach ($product->variants as $variant) {
                     $variant->custom_fields = $this->formatCustomFields($variant);
                 }

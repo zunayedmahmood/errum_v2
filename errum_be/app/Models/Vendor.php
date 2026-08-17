@@ -85,7 +85,7 @@ class Vendor extends Model
     public function getTotalOutstanding()
     {
         return $this->purchaseOrders()
-            ->whereIn('payment_status', ['unpaid', 'partial'])
+            ->whereIn('payment_status', ['unpaid', 'partial', 'partially_paid'])
             ->sum('outstanding_amount');
     }
 

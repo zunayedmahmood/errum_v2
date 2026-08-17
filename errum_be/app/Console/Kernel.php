@@ -20,7 +20,6 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\EnsureStandardAccountingAccounts::class,
         \App\Console\Commands\SyncPosSaleBusinessDates::class,
         \App\Console\Commands\SyncPaymentCommissions::class,
-        \App\Console\Commands\ReconcileReservedStock::class,
     ];
 
     /**

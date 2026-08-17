@@ -362,7 +362,7 @@ class VendorPaymentController extends Controller
         }
 
         $purchaseOrders = PurchaseOrder::where('vendor_id', $vendorId)
-            ->whereIn('payment_status', ['unpaid', 'partial'])
+            ->whereIn('payment_status', ['unpaid', 'partial', 'partially_paid'])
             ->with('items')
             ->get();
 

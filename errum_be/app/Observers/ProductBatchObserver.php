@@ -27,7 +27,19 @@ class ProductBatchObserver
 
     protected function syncReservedProduct(int $productId): void
     {
-        ReservedProduct::syncSnapshot($productId);
+        $total = ProductBatch::where('product_id', $productId)->sum('quantity');
+
+        $reservedProduct = ReservedProduct::firstOrCreate(
+            ['product_id' => $productId],
+            ['total_inventory' => 0, 'reserved_inventory' => 0, 'available_inventory' => 0]
+        );
+
+        $reservedProduct->total_inventory = $total;
+        $reservedProduct->available_inventory = max(0, $total - $reservedProduct->reserved_inventory);
+
+        if ($reservedProduct->isDirty(['total_inventory', 'available_inventory'])) {
+            $reservedProduct->save();
+        }
     }
 
     protected function shouldSyncCatalogStock(ProductBatch $batch): bool

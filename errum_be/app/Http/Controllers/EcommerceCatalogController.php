@@ -103,8 +103,7 @@ class EcommerceCatalogController extends Controller
                 'products.sku',
                 'products.created_at',
                 DB::raw('MIN(product_batches.sell_price) AS min_batch_price'),
-                DB::raw('COALESCE(SUM(product_batches.quantity), 0) AS physical_stock'),
-                DB::raw('COALESCE(MAX(reserved_products.reserved_inventory), 0) AS reserved_inventory'),
+                DB::raw('MAX(reserved_products.available_inventory) AS reserved_available_inventory'),
                 // We keep category_id in select/groupby because it's often needed for further filtering/grouping
                 'products.category_id', 
             ])
@@ -188,9 +187,9 @@ class EcommerceCatalogController extends Controller
 
         // Apply price and stock filters first (in HAVING)
         if ($inStock === 'true' || $inStock === true) {
-            $q->havingRaw('(COALESCE(SUM(product_batches.quantity), 0) - COALESCE(MAX(reserved_products.reserved_inventory), 0)) > 0');
+            $q->havingRaw('GREATEST(COALESCE(MAX(reserved_products.available_inventory), 0), COALESCE(SUM(product_batches.quantity), 0)) > 0');
         } elseif ($inStock === 'false' || $inStock === false) {
-            $q->havingRaw('(COALESCE(SUM(product_batches.quantity), 0) - COALESCE(MAX(reserved_products.reserved_inventory), 0)) <= 0');
+            $q->havingRaw('GREATEST(COALESCE(MAX(reserved_products.available_inventory), 0), COALESCE(SUM(product_batches.quantity), 0)) = 0');
         }
 
         if ($minPrice !== null && $minPrice !== '') {
@@ -485,12 +484,12 @@ class EcommerceCatalogController extends Controller
         $sellingPrice  = $cheapestBatch ? (float) $cheapestBatch->sell_price : ($groupMinPrice ?? 0);
         $totalStock    = (int) $activeBatches->sum('quantity');
 
-        // reserved_products stores reservation counts only; physical stock comes from batches.
+        // available_inventory = total - reserved (from reserved_products table)
         $reservedRow = $product->relationLoaded('reservedProduct')
             ? $product->reservedProduct
-            : ReservedProduct::where('product_id', $product->id)->first();
-        $reservedInventory  = $reservedRow ? max(0, (int) $reservedRow->reserved_inventory) : 0;
-        $availableInventory = max(0, $totalStock - $reservedInventory);
+            : \App\Models\ReservedProduct::where('product_id', $product->id)->first();
+        $reservedInventory  = $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
+        $availableInventory = $reservedRow ? (int) $reservedRow->available_inventory : $totalStock;
 
         return [
             'id'                  => $product->id,
@@ -653,15 +652,13 @@ class EcommerceCatalogController extends Controller
                     ->where('is_archived', false)
                     ->get()
                     ->map(function ($variant) {
-                        $variantSellableBatches = $variant->batches
-                            ->where('is_active', true)
-                            ->where('availability', true);
-                        $variantStock = (int) $variantSellableBatches->sum('quantity');
-                        $variantAvailableBatches = $variantSellableBatches->where('quantity', '>', 0);
+                        $variantStock = $variant->batches->sum('quantity');
+                        $variantAvailableBatches = $variant->batches->where('quantity', '>', 0);
                         $variantLowestBatch = $variantAvailableBatches->sortBy('sell_price')->first();
-                        $variantReserved = ReservedProduct::where('product_id', $variant->id)->first();
-                        $variantReservedInventory = $variantReserved ? max(0, (int) $variantReserved->reserved_inventory) : 0;
-                        $variantAvailableInventory = max(0, $variantStock - $variantReservedInventory);
+                        $variantReserved = \App\Models\ReservedProduct::where('product_id', $variant->id)->first();
+                        $variantAvailableInventory = $variantReserved
+                            ? (int) $variantReserved->available_inventory
+                            : $variantStock;
 
                         return [
                             'id' => $variant->id,
@@ -672,7 +669,7 @@ class EcommerceCatalogController extends Controller
                             'cost_price' => $variantLowestBatch ? $variantLowestBatch->cost_price : null,
                             'stock_quantity' => $variantStock,
                             'available_inventory' => $variantAvailableInventory,
-                            'reserved_inventory' => $variantReservedInventory,
+                            'reserved_inventory' => $variantReserved ? (int) $variantReserved->reserved_inventory : 0,
                             'in_stock' => $variantAvailableInventory > 0,
                             'images' => $variant->images->where('is_active', true)->map(function ($image) {
                                 return [
@@ -686,15 +683,12 @@ class EcommerceCatalogController extends Controller
                     });
             }
 
-            $sellableBatches = $product->batches
-                ->where('is_active', true)
-                ->where('availability', true);
-            $lowestBatch = $sellableBatches->where('quantity', '>', 0)->sortBy('sell_price')->first()
-                ?? $sellableBatches->sortBy('sell_price')->first();
-            $totalStock = (int) $sellableBatches->sum('quantity');
-            $mainReserved = ReservedProduct::where('product_id', $product->id)->first();
-            $mainReservedInventory = $mainReserved ? max(0, (int) $mainReserved->reserved_inventory) : 0;
-            $availableInventory = max(0, $totalStock - $mainReservedInventory);
+            $lowestBatch = $product->batches->sortBy('sell_price')->first();
+            $totalStock = $product->batches->sum('quantity');
+            $mainReserved = \App\Models\ReservedProduct::where('product_id', $product->id)->first();
+            $availableInventory = $mainReserved
+                ? (int) $mainReserved->available_inventory
+                : $totalStock;
 
             // ✅ Merge core SKU images + variant image (primary) so details page always has images.
             $mergedImages = $this->mergedActiveImages($product, ['id','url','alt_text','is_primary','sort_order']);
@@ -714,7 +708,7 @@ class EcommerceCatalogController extends Controller
                         'cost_price' => $lowestBatch ? $lowestBatch->cost_price : 0,
                         'stock_quantity' => $totalStock,
                         'available_inventory' => $availableInventory,
-                        'reserved_inventory' => $mainReservedInventory,
+                        'reserved_inventory' => $mainReserved ? (int) $mainReserved->reserved_inventory : 0,
                         'in_stock' => $availableInventory > 0,
                         'has_variants' => $variants->count() > 0,
                         'variants_count' => $variants->count(),
@@ -948,7 +942,9 @@ class EcommerceCatalogController extends Controller
                 $totalStock = (int) $product->batches->sum('quantity');
                 $reservedRow = ReservedProduct::where('product_id', $product->id)->first();
                 $reservedInventory = $reservedRow ? max(0, (int) $reservedRow->reserved_inventory) : 0;
-                $availableInventory = max(0, $totalStock - $reservedInventory);
+                $availableInventory = $reservedRow
+                    ? max(0, (int) $reservedRow->available_inventory)
+                    : max(0, $totalStock - $reservedInventory);
                 
                 return [
                     'id' => $product->id,
@@ -1265,8 +1261,8 @@ class EcommerceCatalogController extends Controller
             
             // Reserved stock logic
             $reservedRow = ReservedProduct::where('product_id', $product->id)->first();
-            $reservedInventory = $reservedRow ? max(0, (int) $reservedRow->reserved_inventory) : 0;
-            $availableInventory = max(0, $totalPhysicalStock - $reservedInventory);
+            $reservedInventory = $reservedRow ? (int) $reservedRow->reserved_inventory : 0;
+            $availableInventory = $totalPhysicalStock - $reservedInventory;
 
             // 4. Load Variants (SKU group)
             $variants = collect();
@@ -1279,15 +1275,15 @@ class EcommerceCatalogController extends Controller
                     ->get()
                     ->map(function ($variant) {
                         $vStock = (int) $variant->batches->sum('quantity');
-                        $vReserved = max(0, (int) (ReservedProduct::where('product_id', $variant->id)->value('reserved_inventory') ?? 0));
+                        $vReserved = ReservedProduct::where('product_id', $variant->id)->value('reserved_inventory') ?? 0;
                         return [
                             'id' => $variant->id,
                             'name' => $variant->name,
                             'variation_suffix' => $variant->variation_suffix,
                             'sku' => $variant->sku,
                             'stock_quantity' => $vStock,
-                            'available_inventory' => max(0, $vStock - $vReserved),
-                            'in_stock' => max(0, $vStock - $vReserved) > 0,
+                            'available_inventory' => $vStock - $vReserved,
+                            'in_stock' => $vStock > 0,
                             'primary_image' => $variant->images->where('is_active', true)->where('is_primary', true)->first()?->image_url 
                                             ?? $variant->images->where('is_active', true)->first()?->image_url,
                         ];

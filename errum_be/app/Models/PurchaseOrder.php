@@ -155,14 +155,16 @@ class PurchaseOrder extends Model
      */
     public function calculateTotals(): void
     {
+        $items = $this->items()->get();
+
         // 1. Subtotal is the GROSS sum of all items (quantity * unit_cost)
-        $this->subtotal = $this->items->sum(function($item) {
+        $this->subtotal = $items->sum(function($item) {
             return ($item->unit_cost ?? 0) * ($item->quantity_ordered ?? 0);
         });
 
         // 2. Sum up all item-level taxes and discounts
-        $itemTaxTotal = $this->items->sum('tax_amount');
-        $itemDiscountTotal = $this->items->sum('discount_amount');
+        $itemTaxTotal = $items->sum('tax_amount');
+        $itemDiscountTotal = $items->sum('discount_amount');
 
         // 3. Grand total = Gross Subtotal + PO Tax + Item Tax + Shipping + Other Charges - PO Discount - Item Discount
         $this->total_amount = $this->subtotal 
@@ -189,7 +191,7 @@ class PurchaseOrder extends Model
         } elseif ($this->paid_amount >= $this->total_amount) {
             $this->payment_status = 'paid';
         } else {
-            $this->payment_status = 'partial';
+            $this->payment_status = 'partially_paid';
         }
     }
 
@@ -589,7 +591,7 @@ class PurchaseOrder extends Model
 
     public function scopePartiallyPaid($query)
     {
-        return $query->where('payment_status', 'partial');
+        return $query->where('payment_status', 'partially_paid');
     }
 
     public function scopeOverdue($query)
