@@ -14,6 +14,8 @@ class ProductBarcode extends Model
 
     protected $fillable = [
         'product_id',
+        'source_purchase_order_id',
+        'source_purchase_order_item_id',
         'batch_id',
         'barcode',
         'type',
@@ -55,6 +57,16 @@ class ProductBarcode extends Model
     public function batch(): BelongsTo
     {
         return $this->belongsTo(ProductBatch::class, 'batch_id');
+    }
+
+    public function sourcePurchaseOrder(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseOrder::class, 'source_purchase_order_id');
+    }
+
+    public function sourcePurchaseOrderItem(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseOrderItem::class, 'source_purchase_order_item_id');
     }
 
     public function batches(): HasMany

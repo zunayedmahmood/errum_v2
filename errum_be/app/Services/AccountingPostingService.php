@@ -288,6 +288,9 @@ class AccountingPostingService
     public function syncPurchaseOrderCommitment(PurchaseOrder $po, bool $replace = true, bool $allowAfterReceipt = false): ?Transaction
     {
         $po = $po->loadMissing('items', 'vendor');
+        if (data_get($po->metadata, 'resell', false)) {
+            return null;
+        }
         if (in_array($po->status, ['cancelled', 'returned'], true)) {
             return $this->postPurchaseOrderCancellation($po);
         }
@@ -332,6 +335,9 @@ class AccountingPostingService
     public function postPurchaseOrderReceipt(PurchaseOrder $po, float $amount, array $extraMetadata = []): ?Transaction
     {
         $po = $po->loadMissing('vendor', 'store');
+        if (data_get($po->metadata, 'resell', false)) {
+            return null;
+        }
         $amount = round(abs($amount), 2);
         if ($amount <= 0) {
             return null;
@@ -393,6 +399,9 @@ class AccountingPostingService
     public function postPurchaseOrderCancellation(PurchaseOrder $po): ?Transaction
     {
         $po = $po->loadMissing('items', 'vendor');
+        if (data_get($po->metadata, 'resell', false)) {
+            return null;
+        }
         $remaining = $this->purchaseOrderRemainingCommitmentAmount($po);
         if ($remaining <= 0) {
             return null;
@@ -820,16 +829,59 @@ class AccountingPostingService
 
     public function postOrderCOGS(Order $order): ?Transaction
     {
-        $order = $order->loadMissing('items', 'customer');
-        $totalCOGS = round((float) $order->items->sum('cogs'), 2);
+        $order = $order->loadMissing('items.batch', 'items.barcode', 'customer');
+        $sourceItemIds = $order->items->map(function ($item) {
+            return (int) ($item->barcode?->source_purchase_order_item_id
+                ?: $item->batch?->source_purchase_order_item_id
+                ?: 0);
+        })->filter()->unique()->values();
+        $resellUnitCosts = $sourceItemIds->isEmpty()
+            ? collect()
+            : DB::table('purchase_order_items')->whereIn('id', $sourceItemIds)->pluck('unit_cost', 'id');
+
+        $normalCOGS = 0.0;
+        $resellCOGS = 0.0;
+        $resellUnits = 0;
+        foreach ($order->items as $item) {
+            $sourcePoId = (int) ($item->barcode?->source_purchase_order_id
+                ?: $item->batch?->source_purchase_order_id
+                ?: 0);
+            $sourceItemId = (int) ($item->barcode?->source_purchase_order_item_id
+                ?: $item->batch?->source_purchase_order_item_id
+                ?: 0);
+
+            if ($sourcePoId > 0 && $sourceItemId > 0) {
+                $unitCost = (float) ($resellUnitCosts[$sourceItemId] ?? 0);
+                if ($unitCost <= 0) {
+                    $unitCost = (float) ($item->cogs ?? 0) / max(1, (int) $item->quantity);
+                }
+                $resellCOGS += $unitCost * (int) $item->quantity;
+                $resellUnits += (int) $item->quantity;
+            } else {
+                $normalCOGS += (float) ($item->cogs ?? 0);
+            }
+        }
+
+        $normalCOGS = round($normalCOGS, 2);
+        $resellCOGS = round($resellCOGS, 2);
+        $totalCOGS = round($normalCOGS + $resellCOGS, 2);
         if ($totalCOGS <= 0) {
             return null;
         }
 
-        $eventKey = "order:{$order->id}:cogs";
+        $lines = [];
+        if ($normalCOGS > 0) {
+            $lines[] = ['type' => 'debit', 'account_id' => $this->accountId('cogs'), 'amount' => $normalCOGS, 'description' => "COGS - {$order->order_number}"];
+            $lines[] = ['type' => 'credit', 'account_id' => $this->accountId('inventory'), 'amount' => $normalCOGS, 'description' => "Inventory Out - {$order->order_number}"];
+        }
+        if ($resellCOGS > 0) {
+            // Consignment/resell stock is not Errum-owned inventory. The liability is born only when sold.
+            $lines[] = ['type' => 'debit', 'account_id' => $this->accountId('cogs'), 'amount' => $resellCOGS, 'description' => "Resell COGS - {$order->order_number}"];
+            $lines[] = ['type' => 'credit', 'account_id' => $this->accountId('accounts_payable'), 'amount' => $resellCOGS, 'description' => "Resell Vendor Payable - {$order->order_number}"];
+        }
 
         return $this->postBalancedJournal(
-            $eventKey,
+            "order:{$order->id}:cogs",
             Order::class,
             (int) $order->id,
             ($order->order_type === 'counter'
@@ -838,15 +890,15 @@ class AccountingPostingService
             "COGS - Order {$order->order_number}",
             $order->store_id,
             $order->created_by,
-            [
-                ['type' => 'debit', 'account_id' => $this->accountId('cogs'), 'amount' => $totalCOGS, 'description' => "COGS - {$order->order_number}"],
-                ['type' => 'credit', 'account_id' => $this->accountId('inventory'), 'amount' => $totalCOGS, 'description' => "Inventory Out - {$order->order_number}"],
-            ],
+            $lines,
             [
                 'source' => 'order_cogs',
                 'order_number' => $order->order_number,
                 'order_type' => $order->order_type,
                 'items_count' => $order->items->count(),
+                'normal_cogs' => $normalCOGS,
+                'resell_cogs' => $resellCOGS,
+                'resell_units' => $resellUnits,
             ]
         );
     }
@@ -1001,14 +1053,27 @@ class AccountingPostingService
     public function postReturnRestock(ProductReturn $return): ?Transaction
     {
         $return = $return->loadMissing('order');
-        $amount = round(abs((float) ($return->total_return_value ?? 0)), 2);
-        if ($amount <= 0) {
+        $totalReturnValue = round(abs((float) ($return->total_return_value ?? 0)), 2);
+        $resell = $this->resellReturnAmounts($return);
+        $normalReturnValue = round(max(0, $totalReturnValue - $resell['sale_value']), 2);
+        if ($normalReturnValue <= 0 && $resell['cost'] <= 0) {
             return null;
         }
 
-        $inventoryDebitAccount = $this->isReturnSellable($return)
-            ? $this->accountId('inventory')
-            : $this->accountId('damaged_inventory_loss');
+        $lines = [];
+        if ($normalReturnValue > 0) {
+            $inventoryDebitAccount = $this->isReturnSellable($return)
+                ? $this->accountId('inventory')
+                : $this->accountId('damaged_inventory_loss');
+            $lines[] = ['type' => 'debit', 'account_id' => $inventoryDebitAccount, 'amount' => $normalReturnValue, 'description' => "Returned Item Restocked - {$return->return_number}"];
+            $lines[] = ['type' => 'credit', 'account_id' => $this->accountId('cogs'), 'amount' => $normalReturnValue, 'description' => "COGS Reversal - {$return->return_number}"];
+        }
+        if ($resell['cost'] > 0) {
+            // A returned consignment unit is no longer earned by the vendor; reduce AP rather than
+            // putting vendor-owned stock onto Errum's inventory asset account.
+            $lines[] = ['type' => 'debit', 'account_id' => $this->accountId('accounts_payable'), 'amount' => $resell['cost'], 'description' => "Resell Vendor Payable Reversal - {$return->return_number}"];
+            $lines[] = ['type' => 'credit', 'account_id' => $this->accountId('cogs'), 'amount' => $resell['cost'], 'description' => "Resell COGS Reversal - {$return->return_number}"];
+        }
 
         return $this->postBalancedJournal(
             "product_return:{$return->id}:restock_cogs_reversal",
@@ -1018,27 +1083,131 @@ class AccountingPostingService
             "Return Restock / COGS Reversal - {$return->return_number}",
             $return->order->store_id ?? null,
             $return->processed_by,
-            [
-                ['type' => 'debit', 'account_id' => $inventoryDebitAccount, 'amount' => $amount, 'description' => "Returned Item Restocked - {$return->return_number}"],
-                ['type' => 'credit', 'account_id' => $this->accountId('cogs'), 'amount' => $amount, 'description' => "COGS Reversal - {$return->return_number}"],
-            ],
+            $lines,
             [
                 'source' => 'return_restock_cogs_reversal',
                 'return_number' => $return->return_number,
                 'order_number' => $return->order->order_number ?? null,
                 'sellable' => $this->isReturnSellable($return),
+                'normal_return_value' => $normalReturnValue,
+                'resell_return_cost' => $resell['cost'],
             ]
         );
+    }
+
+    private function resellReturnAmounts(ProductReturn $return): array
+    {
+        $items = collect($return->return_items ?? []);
+        if ($items->isEmpty()) {
+            return ['cost' => 0.0, 'sale_value' => 0.0];
+        }
+
+        $orderItemIds = $items->pluck('order_item_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
+        $orderItems = $orderItemIds->isEmpty() ? collect() : DB::table('order_items as oi')
+            ->leftJoin('product_batches as pb', 'oi.product_batch_id', '=', 'pb.id')
+            ->leftJoin('product_barcodes as pbc', 'oi.product_barcode_id', '=', 'pbc.id')
+            ->whereIn('oi.id', $orderItemIds)
+            ->get([
+                'oi.id',
+                'pbc.source_purchase_order_item_id as barcode_po_item_id',
+                'pb.source_purchase_order_item_id as batch_po_item_id',
+            ])->keyBy('id');
+
+        $barcodeIds = $items->flatMap(fn ($item) => array_map('intval', (array) ($item['returned_barcode_ids'] ?? [])))->filter()->unique()->values();
+        $barcodes = $barcodeIds->isEmpty() ? collect() : DB::table('product_barcodes')
+            ->whereIn('id', $barcodeIds)
+            ->get(['id', 'source_purchase_order_item_id'])
+            ->keyBy('id');
+
+        $sourceItemIds = collect();
+        foreach ($items as $item) {
+            foreach ((array) ($item['returned_barcode_ids'] ?? []) as $barcodeId) {
+                $sourceId = (int) ($barcodes->get((int) $barcodeId)?->source_purchase_order_item_id ?? 0);
+                if ($sourceId > 0) {
+                    $sourceItemIds->push($sourceId);
+                    break;
+                }
+            }
+            if (!empty($item['order_item_id'])) {
+                $orderItem = $orderItems->get((int) $item['order_item_id']);
+                $sourceId = (int) ($orderItem?->barcode_po_item_id ?: $orderItem?->batch_po_item_id ?: 0);
+                if ($sourceId > 0) {
+                    $sourceItemIds->push($sourceId);
+                }
+            }
+        }
+        $costs = $sourceItemIds->isEmpty() ? collect() : DB::table('purchase_order_items')->whereIn('id', $sourceItemIds->unique())->pluck('unit_cost', 'id');
+
+        $resellCost = 0.0;
+        $resellSaleValue = 0.0;
+        foreach ($items as $item) {
+            $sourceId = 0;
+            foreach ((array) ($item['returned_barcode_ids'] ?? []) as $barcodeId) {
+                $sourceId = (int) ($barcodes->get((int) $barcodeId)?->source_purchase_order_item_id ?? 0);
+                if ($sourceId > 0) {
+                    break;
+                }
+            }
+            if (!$sourceId && !empty($item['order_item_id'])) {
+                $orderItem = $orderItems->get((int) $item['order_item_id']);
+                $sourceId = (int) ($orderItem?->barcode_po_item_id ?: $orderItem?->batch_po_item_id ?: 0);
+            }
+            if ($sourceId <= 0 || !$costs->has($sourceId)) {
+                continue;
+            }
+
+            $qty = max(0, (int) ($item['quantity'] ?? 0));
+            $resellCost += (float) $costs[$sourceId] * $qty;
+            $resellSaleValue += (float) ($item['total_price'] ?? ((float) ($item['unit_price'] ?? 0) * $qty));
+        }
+
+        return [
+            'cost' => round($resellCost, 2),
+            'sale_value' => round(max(0, $resellSaleValue), 2),
+        ];
     }
 
     public function postExchange(ProductReturn $return, Order $newOrder): ?Transaction
     {
         $return = $return->loadMissing('order');
-        $newOrder = $newOrder->loadMissing('items');
+        $newOrder = $newOrder->loadMissing('items.batch', 'items.barcode');
         $oldSaleValue = round(abs((float) ($return->refund_amount ?? $return->total_return_value ?? 0)), 2);
-        $oldCost = round(abs((float) ($return->total_return_value ?? 0)), 2);
+        $resellReturn = $this->resellReturnAmounts($return);
+        // Resell return COGS/AP reversal is already posted by postReturnRestock(). Keep the legacy
+        // exchange restock entry only for the non-resell portion so resell liability is not reversed twice.
+        $oldCost = round(max(0, abs((float) ($return->total_return_value ?? 0)) - $resellReturn['sale_value']), 2);
         $newSaleValue = round(abs((float) ($newOrder->total_amount ?? 0)), 2);
-        $newCost = round(abs((float) $newOrder->items->sum('cogs')), 2);
+
+        $sourceItemIds = $newOrder->items->map(function ($item) {
+            return (int) ($item->barcode?->source_purchase_order_item_id
+                ?: $item->batch?->source_purchase_order_item_id
+                ?: 0);
+        })->filter()->unique()->values();
+        $resellUnitCosts = $sourceItemIds->isEmpty()
+            ? collect()
+            : DB::table('purchase_order_items')->whereIn('id', $sourceItemIds)->pluck('unit_cost', 'id');
+
+        $normalNewCost = 0.0;
+        $resellNewCost = 0.0;
+        foreach ($newOrder->items as $item) {
+            $sourcePoId = (int) ($item->barcode?->source_purchase_order_id
+                ?: $item->batch?->source_purchase_order_id
+                ?: 0);
+            $sourceItemId = (int) ($item->barcode?->source_purchase_order_item_id
+                ?: $item->batch?->source_purchase_order_item_id
+                ?: 0);
+            if ($sourcePoId > 0 && $sourceItemId > 0) {
+                $unitCost = (float) ($resellUnitCosts[$sourceItemId] ?? 0);
+                if ($unitCost <= 0) {
+                    $unitCost = (float) ($item->cogs ?? 0) / max(1, (int) $item->quantity);
+                }
+                $resellNewCost += $unitCost * (int) $item->quantity;
+            } else {
+                $normalNewCost += (float) ($item->cogs ?? 0);
+            }
+        }
+        $normalNewCost = round($normalNewCost, 2);
+        $resellNewCost = round($resellNewCost, 2);
         $diff = round($newSaleValue - $oldSaleValue, 2);
 
         $lines = [];
@@ -1065,9 +1234,13 @@ class AccountingPostingService
             $lines[] = ['type' => 'debit', 'account_id' => $this->accountId('exchange_clearing'), 'amount' => $refundDiff, 'description' => "Exchange Downgrade Difference - {$return->return_number}"];
             $lines[] = ['type' => 'credit', 'account_id' => $this->accountId('cash'), 'amount' => $refundDiff, 'description' => "Exchange Downgrade Refund - {$return->return_number}"];
         }
-        if ($newCost > 0) {
-            $lines[] = ['type' => 'debit', 'account_id' => $this->accountId('cogs'), 'amount' => $newCost, 'description' => "Exchange - New Item COGS - {$newOrder->order_number}"];
-            $lines[] = ['type' => 'credit', 'account_id' => $this->accountId('inventory'), 'amount' => $newCost, 'description' => "Exchange - New Item Out of Inventory - {$newOrder->order_number}"];
+        if ($normalNewCost > 0) {
+            $lines[] = ['type' => 'debit', 'account_id' => $this->accountId('cogs'), 'amount' => $normalNewCost, 'description' => "Exchange - New Item COGS - {$newOrder->order_number}"];
+            $lines[] = ['type' => 'credit', 'account_id' => $this->accountId('inventory'), 'amount' => $normalNewCost, 'description' => "Exchange - New Item Out of Inventory - {$newOrder->order_number}"];
+        }
+        if ($resellNewCost > 0) {
+            $lines[] = ['type' => 'debit', 'account_id' => $this->accountId('cogs'), 'amount' => $resellNewCost, 'description' => "Exchange - Resell COGS - {$newOrder->order_number}"];
+            $lines[] = ['type' => 'credit', 'account_id' => $this->accountId('accounts_payable'), 'amount' => $resellNewCost, 'description' => "Exchange - Resell Vendor Payable - {$newOrder->order_number}"];
         }
 
         return $this->postBalancedJournal(
@@ -1088,6 +1261,9 @@ class AccountingPostingService
                 'old_sale_value' => $oldSaleValue,
                 'new_sale_value' => $newSaleValue,
                 'net_difference' => $diff,
+                'normal_new_cogs' => $normalNewCost,
+                'resell_new_cogs' => $resellNewCost,
+                'resell_return_cost' => $resellReturn['cost'],
             ]
         );
     }

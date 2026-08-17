@@ -211,13 +211,16 @@ class VendorPayment extends Model
     {
         DB::beginTransaction();
         try {
-            // Reverse all allocations
-            foreach ($this->paymentItems as $item) {
-                $purchaseOrder = $item->purchaseOrder;
-                $purchaseOrder->paid_amount -= $item->allocated_amount;
-                $purchaseOrder->outstanding_amount += $item->allocated_amount;
-                $purchaseOrder->updatePaymentStatus();
-                $purchaseOrder->save();
+            // Resell settlements never mutate the normal PO paid/outstanding columns; their
+            // current liability is derived from sold source-PO cost and completed resell payments.
+            if (!data_get($this->metadata, 'resell', false)) {
+                foreach ($this->paymentItems as $item) {
+                    $purchaseOrder = $item->purchaseOrder;
+                    $purchaseOrder->paid_amount -= $item->allocated_amount;
+                    $purchaseOrder->outstanding_amount += $item->allocated_amount;
+                    $purchaseOrder->updatePaymentStatus();
+                    $purchaseOrder->save();
+                }
             }
 
             $this->status = 'cancelled';
@@ -237,6 +240,8 @@ class VendorPayment extends Model
     {
         DB::beginTransaction();
         try {
+            $isResell = (bool) data_get($this->metadata, 'resell', false);
+
             // Create a refund payment entry
             $refundPayment = static::create([
                 'payment_number' => static::generatePaymentNumber(),
@@ -253,26 +258,32 @@ class VendorPayment extends Model
                 'payment_date' => now(),
                 'processed_at' => now(),
                 'notes' => "Refund for payment {$this->payment_number}",
+                'metadata' => $isResell ? array_merge((array) $this->metadata, ['refund_of_payment_id' => $this->id]) : null,
             ]);
 
-            // Reverse allocations
+            // Reverse allocations. Resell PO settlement is computed dynamically and therefore
+            // must not touch the normal PO paid/outstanding columns when a payment is refunded.
             foreach ($this->paymentItems as $item) {
                 $purchaseOrder = $item->purchaseOrder;
-                $purchaseOrder->paid_amount -= $item->allocated_amount;
-                $purchaseOrder->outstanding_amount += $item->allocated_amount;
-                $purchaseOrder->updatePaymentStatus();
-                $purchaseOrder->save();
+                if (!$isResell) {
+                    $purchaseOrder->paid_amount -= $item->allocated_amount;
+                    $purchaseOrder->outstanding_amount += $item->allocated_amount;
+                    $purchaseOrder->updatePaymentStatus();
+                    $purchaseOrder->save();
+                }
 
-                // Create refund item
+                // Keep the refund allocation as an audit trail. Refund payments are excluded from
+                // resell settlement totals, while the original payment leaves completed status.
                 VendorPaymentItem::create([
                     'vendor_payment_id' => $refundPayment->id,
                     'purchase_order_id' => $purchaseOrder->id,
                     'allocated_amount' => -$item->allocated_amount,
-                    'po_total_at_payment' => $purchaseOrder->total_amount,
+                    'po_total_at_payment' => $isResell ? $item->po_total_at_payment : $purchaseOrder->total_amount,
                     'po_outstanding_before' => $item->po_outstanding_after,
-                    'po_outstanding_after' => $purchaseOrder->outstanding_amount,
+                    'po_outstanding_after' => $isResell ? $item->po_outstanding_before : $purchaseOrder->outstanding_amount,
                     'allocation_type' => 'partial',
                     'notes' => "Refund for {$this->payment_number}",
+                    'metadata' => $isResell ? ['resell' => true, 'refund_of_payment_id' => $this->id] : null,
                 ]);
             }
 

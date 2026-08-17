@@ -243,6 +243,8 @@ class InventoryRebalancing extends Model
         // Create new batch at destination store
         $destinationBatch = ProductBatch::create([
             'product_id' => $sourceBatch->product_id,
+            'source_purchase_order_id' => $sourceBatch->source_purchase_order_id,
+            'source_purchase_order_item_id' => $sourceBatch->source_purchase_order_item_id,
             'batch_number' => $sourceBatch->batch_number . '-REBAL-' . $this->id,
             'quantity' => $this->quantity,
             'cost_price' => $sourceBatch->cost_price,

@@ -3107,6 +3107,8 @@ class OrderController extends Controller
         $existing = ProductBatch::where('batch_number', $base)->lockForUpdate()->first();
         if ($existing) {
             $existing->forceFill([
+                'source_purchase_order_id' => $existing->source_purchase_order_id ?: $originalBatch->source_purchase_order_id,
+                'source_purchase_order_item_id' => $existing->source_purchase_order_item_id ?: $originalBatch->source_purchase_order_item_id,
                 'availability' => true,
                 'is_active' => true,
             ])->save();
@@ -3117,6 +3119,8 @@ class OrderController extends Controller
 
         return ProductBatch::create([
             'product_id' => $originalBatch->product_id,
+            'source_purchase_order_id' => $originalBatch->source_purchase_order_id,
+            'source_purchase_order_item_id' => $originalBatch->source_purchase_order_item_id,
             'store_id' => $storeId,
             'batch_number' => $base,
             'quantity' => 0,

@@ -358,7 +358,7 @@ class PurchaseOrder extends Model
             $lockedPo->save();
 
             $receiptLedgerAmount = $lockedPo->calculateReceiptLedgerAmount($receiptLedgerLines);
-            if ($receiptLedgerAmount > 0) {
+            if ($receiptLedgerAmount > 0 && !data_get($lockedPo->metadata, 'resell', false)) {
                 \App\Models\Transaction::createFromPurchaseOrderReceipt(
                     $lockedPo->loadMissing('vendor', 'store'),
                     $receiptLedgerAmount,
@@ -412,13 +412,34 @@ class PurchaseOrder extends Model
                 ->first();
         }
 
+        $isResell = (bool) data_get($po->metadata, 'resell', false);
+
         if ($batch) {
             if ((int) $batch->product_id !== (int) $item->product_id || (int) $batch->store_id !== (int) $po->store_id) {
                 throw new \Exception("Batch number {$batch->batch_number} already exists for a different product or store.");
             }
 
+            if ($isResell && $batch->source_purchase_order_id && (
+                (int) $batch->source_purchase_order_id !== (int) $po->id
+                || (int) $batch->source_purchase_order_item_id !== (int) $item->id
+            )) {
+                throw new \Exception("Batch {$batch->batch_number} already belongs to a different resell purchase-order item.");
+            }
+
             if ((int) $batch->quantity < $requestedQuantity) {
                 throw new \Exception("Existing batch {$batch->batch_number} has only {$batch->quantity} units, but {$requestedQuantity} units were requested.");
+            }
+
+            if ($isResell && !$batch->source_purchase_order_id) {
+                // Never turn unrelated owned stock into consignment stock merely because an employee
+                // typed an existing batch number. Only the legacy auto-number recovery path may adopt it.
+                if ($manualBatchNumber !== '') {
+                    throw new \Exception("Existing batch {$batch->batch_number} is not linked to this resell PO. Use a new batch number.");
+                }
+                $batch->forceFill([
+                    'source_purchase_order_id' => $po->id,
+                    'source_purchase_order_item_id' => $item->id,
+                ])->save();
             }
 
             return [$batch, true];
@@ -426,6 +447,8 @@ class PurchaseOrder extends Model
 
         $batch = ProductBatch::create([
             'product_id' => $item->product_id,
+            'source_purchase_order_id' => $isResell ? $po->id : null,
+            'source_purchase_order_item_id' => $isResell ? $item->id : null,
             'batch_number' => $batchNumber,
             'quantity' => $requestedQuantity,
             'cost_price' => $item->unit_cost,
@@ -450,6 +473,16 @@ class PurchaseOrder extends Model
             })
             ->update(['batch_id' => null]);
 
+        $isResell = (bool) data_get($po->metadata, 'resell', false);
+        if ($isResell) {
+            ProductBarcode::where('batch_id', $batch->id)
+                ->whereNull('source_purchase_order_id')
+                ->update([
+                    'source_purchase_order_id' => $po->id,
+                    'source_purchase_order_item_id' => $item->id,
+                ]);
+        }
+
         $existingCount = ProductBarcode::where('batch_id', $batch->id)
             ->where('product_id', $batch->product_id)
             ->where('current_store_id', $batch->store_id)
@@ -467,6 +500,8 @@ class PurchaseOrder extends Model
             foreach ($barcodeValues as $i => $barcodeValue) {
                 $rows[] = [
                     'product_id' => $item->product_id,
+                    'source_purchase_order_id' => $isResell ? $po->id : null,
+                    'source_purchase_order_item_id' => $isResell ? $item->id : null,
                     'batch_id' => $batch->id,
                     'barcode' => $barcodeValue,
                     'type' => 'CODE128',
@@ -480,6 +515,9 @@ class PurchaseOrder extends Model
                     'location_metadata' => json_encode([
                         'source' => 'purchase_order',
                         'po_number' => $po->po_number,
+                        'purchase_order_id' => $po->id,
+                        'purchase_order_item_id' => $item->id,
+                        'resell' => $isResell,
                         'received_date' => $now->format('Y-m-d H:i:s'),
                     ]),
                     'created_at' => $now,

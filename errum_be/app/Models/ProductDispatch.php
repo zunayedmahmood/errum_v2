@@ -540,6 +540,8 @@ class ProductDispatch extends Model
         // Create new batch at destination store
         $destinationBatch = ProductBatch::create([
             'product_id' => $sourceBatch->product_id,
+            'source_purchase_order_id' => $sourceBatch->source_purchase_order_id,
+            'source_purchase_order_item_id' => $sourceBatch->source_purchase_order_item_id,
             'batch_number' => $sourceBatch->batch_number . '-DST-' . $this->dispatch_number,
             'quantity' => $receivedQuantity,
             'cost_price' => $sourceBatch->cost_price,

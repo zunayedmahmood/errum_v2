@@ -344,11 +344,19 @@ class DefectiveProduct extends Model
 
         $existing = ProductBatch::where('batch_number', $batchNumber)->lockForUpdate()->first();
         if ($existing) {
+            if (!$existing->source_purchase_order_id && $originalBatch->source_purchase_order_id) {
+                $existing->forceFill([
+                    'source_purchase_order_id' => $originalBatch->source_purchase_order_id,
+                    'source_purchase_order_item_id' => $originalBatch->source_purchase_order_item_id,
+                ])->save();
+            }
             return $existing;
         }
 
         return ProductBatch::create([
             'product_id' => $defectiveProduct->product_id,
+            'source_purchase_order_id' => $originalBatch->source_purchase_order_id,
+            'source_purchase_order_item_id' => $originalBatch->source_purchase_order_item_id,
             'store_id' => $storeId,
             'batch_number' => $batchNumber,
             'quantity' => 0,

@@ -1062,6 +1062,12 @@ class ProductReturnController extends Controller
         while (ProductBatch::where('batch_number', $batchNumber)->exists()) {
             $existing = ProductBatch::where('batch_number', $batchNumber)->first();
             if ($existing && (int) $existing->product_id === $productId && (int) $existing->store_id === $returnStore) {
+                if (!$existing->source_purchase_order_id && $originalBatch->source_purchase_order_id) {
+                    $existing->forceFill([
+                        'source_purchase_order_id' => $originalBatch->source_purchase_order_id,
+                        'source_purchase_order_item_id' => $originalBatch->source_purchase_order_item_id,
+                    ])->save();
+                }
                 return $existing;
             }
             $batchNumber = $baseBatchNumber . '-' . $counter++;
@@ -1069,6 +1075,8 @@ class ProductReturnController extends Controller
 
         return ProductBatch::create([
             'product_id' => $productId,
+            'source_purchase_order_id' => $originalBatch->source_purchase_order_id,
+            'source_purchase_order_item_id' => $originalBatch->source_purchase_order_item_id,
             'store_id' => $returnStore,
             'batch_number' => $batchNumber,
             'quantity' => 0,

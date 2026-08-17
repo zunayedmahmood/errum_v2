@@ -13,6 +13,8 @@ class ProductBatch extends Model
 
     protected $fillable = [
         'product_id',
+        'source_purchase_order_id',
+        'source_purchase_order_item_id',
         'batch_number',
         'quantity',
         'cost_price',
@@ -121,6 +123,16 @@ class ProductBatch extends Model
     public function store(): BelongsTo
     {
         return $this->belongsTo(Store::class);
+    }
+
+    public function sourcePurchaseOrder(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseOrder::class, 'source_purchase_order_id');
+    }
+
+    public function sourcePurchaseOrderItem(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseOrderItem::class, 'source_purchase_order_item_id');
     }
 
     public function barcode(): BelongsTo
