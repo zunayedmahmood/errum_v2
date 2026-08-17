@@ -121,12 +121,12 @@ export default function ResellReportsPage() {
   const exportProducts = () => {
     const headers = [
       'Vendor', 'Product', 'SKU', 'Brand', 'Category', 'Ordered Qty', 'Received Qty',
-      'Current Stock', 'Gross Sold', 'Returned', 'Net Sold', 'Net Sales', 'Net COGS',
+      'Current Stock', 'Inventory Cost', 'Gross Sold', 'Returned', 'Net Sold', 'Net Sales', 'Vendor Earned (Sold Cost)',
       'Gross Profit', 'Margin %', 'Sell-through %', 'Last Received', 'Last Sale',
     ];
     const rows = productRows.map((row) => [
       row.vendor_name, row.product_name, row.sku || '', row.brand || '', row.category || '',
-      row.ordered_quantity, row.received_quantity, row.stock_on_hand, row.gross_units_sold,
+      row.ordered_quantity, row.received_quantity, row.stock_on_hand, row.stock_cost_value, row.gross_units_sold,
       row.returned_quantity, row.net_units_sold, row.net_sales, row.net_cogs,
       row.gross_profit, row.margin_percent, row.sell_through_percent,
       row.last_received_at || '', row.last_sale_at || '',
@@ -149,10 +149,12 @@ export default function ResellReportsPage() {
     ['Units Received', report?.summary.received_quantity || 0, PackageCheck],
     ['Units Left', report?.summary.stock_on_hand || 0, Box],
     ['Net Units Sold', report?.summary.net_units_sold || 0, TrendingUp],
+    ['Inventory at Cost', money(report?.summary.stock_cost_value), Box],
+    ['Vendor Earned', money(report?.summary.vendor_earned), CircleDollarSign],
+    ['Paid Vendors', money(report?.summary.paid_amount), CircleDollarSign],
+    ['Vendor Due', money(report?.summary.vendor_due), CircleDollarSign],
     ['Net Sales', money(report?.summary.net_sales), BarChart3],
-    ['COGS', money(report?.summary.net_cogs), CircleDollarSign],
     ['Gross Profit', money(report?.summary.gross_profit), TrendingUp],
-    ['Vendor Outstanding', money(report?.summary.outstanding_amount), CircleDollarSign],
   ];
 
   return (
@@ -176,7 +178,7 @@ export default function ResellReportsPage() {
               </Link>
               <h1 className="text-3xl font-bold">Resell Reports</h1>
               <p className="mt-2 max-w-4xl text-sm text-gray-600 dark:text-gray-400">
-                Live sell-through, stock, COGS, profit, purchase-order and vendor-payment reporting. Deleted sales,
+                Live sell-through, stock, sold-cost liability, profit, purchase-order and vendor-payment reporting. Deleted sales,
                 cancelled orders, returns, and exchange replacement orders are recalculated from current records.
               </p>
             </div>
@@ -283,7 +285,7 @@ export default function ResellReportsPage() {
             </div>
           </form>
 
-          <div className="mb-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-9">
+          <div className="mb-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
             {cards.map(([label, value, Icon]: any) => (
               <div key={label} className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
                 <Icon className="mb-3 h-5 w-5 text-violet-600" />
@@ -325,12 +327,12 @@ export default function ResellReportsPage() {
                       <th className="px-4 py-3 text-right">Returned</th>
                       <th className="px-4 py-3 text-right">Net Sold</th>
                       <th className="px-4 py-3 text-right">Left</th>
+                      <th className="px-4 py-3 text-right">Inventory Cost</th>
                       <th className="px-4 py-3 text-right">Net Sales</th>
-                      <th className="px-4 py-3 text-right">COGS</th>
+                      <th className="px-4 py-3 text-right">Vendor Earned</th>
                       <th className="px-4 py-3 text-right">Profit</th>
-                      <th className="px-4 py-3 text-right">PO Value</th>
                       <th className="px-4 py-3 text-right">Paid</th>
-                      <th className="px-4 py-3 text-right">Outstanding</th>
+                      <th className="px-4 py-3 text-right">Due</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -343,12 +345,12 @@ export default function ResellReportsPage() {
                         <td className="px-4 py-4 text-right text-red-600">{number(row.returned_quantity)}</td>
                         <td className="px-4 py-4 text-right font-semibold">{number(row.net_units_sold)}</td>
                         <td className="px-4 py-4 text-right">{number(row.stock_on_hand)}</td>
+                        <td className="px-4 py-4 text-right">{money(row.stock_cost_value)}</td>
                         <td className="px-4 py-4 text-right font-semibold">{money(row.net_sales)}</td>
-                        <td className="px-4 py-4 text-right">{money(row.net_cogs)}</td>
+                        <td className="px-4 py-4 text-right font-semibold">{money(row.vendor_earned)}</td>
                         <td className={`px-4 py-4 text-right font-semibold ${row.gross_profit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{money(row.gross_profit)}</td>
-                        <td className="px-4 py-4 text-right">{money(row.total_po_value)}</td>
                         <td className="px-4 py-4 text-right text-emerald-600">{money(row.paid_amount)}</td>
-                        <td className="px-4 py-4 text-right font-semibold text-amber-600">{money(row.outstanding_amount)}</td>
+                        <td className="px-4 py-4 text-right font-semibold text-amber-600">{money(row.vendor_due)}</td>
                       </tr>
                     ))}
                     {vendorRows.length === 0 && (
@@ -371,8 +373,9 @@ export default function ResellReportsPage() {
                       <th className="px-4 py-3 text-right">Returned</th>
                       <th className="px-4 py-3 text-right">Net Sold</th>
                       <th className="px-4 py-3 text-right">Left</th>
+                      <th className="px-4 py-3 text-right">Inventory Cost</th>
                       <th className="px-4 py-3 text-right">Net Sales</th>
-                      <th className="px-4 py-3 text-right">COGS</th>
+                      <th className="px-4 py-3 text-right">Vendor Earned</th>
                       <th className="px-4 py-3 text-right">Profit</th>
                       <th className="px-4 py-3 text-right">Margin</th>
                       <th className="px-4 py-3 text-right">Sell-through</th>
@@ -391,6 +394,7 @@ export default function ResellReportsPage() {
                         <td className="px-4 py-4 text-right text-red-600">{number(row.returned_quantity)}</td>
                         <td className="px-4 py-4 text-right font-semibold">{number(row.net_units_sold)}</td>
                         <td className="px-4 py-4 text-right">{number(row.stock_on_hand)}</td>
+                        <td className="px-4 py-4 text-right">{money(row.stock_cost_value)}</td>
                         <td className="px-4 py-4 text-right font-semibold">{money(row.net_sales)}</td>
                         <td className="px-4 py-4 text-right">{money(row.net_cogs)}</td>
                         <td className={`px-4 py-4 text-right font-semibold ${row.gross_profit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{money(row.gross_profit)}</td>
@@ -399,7 +403,7 @@ export default function ResellReportsPage() {
                       </tr>
                     ))}
                     {productRows.length === 0 && (
-                      <tr><td colSpan={12} className="px-5 py-16 text-center text-gray-500">No report data matches these filters.</td></tr>
+                      <tr><td colSpan={13} className="px-5 py-16 text-center text-gray-500">No report data matches these filters.</td></tr>
                     )}
                   </tbody>
                 </table>

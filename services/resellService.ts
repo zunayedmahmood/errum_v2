@@ -5,11 +5,16 @@ export interface ResellSummary {
   products: number;
   open_purchase_orders: number;
   stock_on_hand: number;
+  stock_cost_value: number;
   net_units_sold: number;
   net_sales: number;
   cogs: number;
   gross_profit: number;
+  vendor_earned: number;
+  paid_amount: number;
   outstanding: number;
+  vendor_due: number;
+  overpaid_amount: number;
 }
 
 export interface ResellVendorProfile {
@@ -22,8 +27,15 @@ export interface ResellVendorProfile {
   product_count: number;
   po_count: number;
   po_value: number;
+  received_quantity: number;
+  stock_on_hand: number;
+  stock_cost_value: number;
+  net_units_sold: number;
+  vendor_earned: number;
   paid_amount: number;
   outstanding_amount: number;
+  vendor_due: number;
+  overpaid_amount: number;
   created_at: string;
   updated_at: string;
 }
@@ -37,7 +49,12 @@ export interface ResellProductTag {
   marked_by?: any;
   notes?: string | null;
   is_active: boolean;
+  received_quantity: number;
   stock_on_hand: number;
+  stock_cost_value: number;
+  net_units_sold: number;
+  net_sales: number;
+  vendor_earned: number;
 }
 
 export interface ResellReportProduct {
@@ -66,6 +83,7 @@ export interface ResellReportProduct {
   net_units_sold: number;
   net_sales: number;
   net_cogs: number;
+  vendor_earned?: number;
   gross_profit: number;
   margin_percent: number;
   sell_through_percent: number;
@@ -79,17 +97,22 @@ export interface ResellReportVendor {
   vendor_name: string;
   product_count: number;
   received_quantity: number;
+  received_cost: number;
   stock_on_hand: number;
+  stock_cost_value: number;
   gross_units_sold: number;
   returned_quantity: number;
   net_units_sold: number;
   net_sales: number;
   net_cogs: number;
+  vendor_earned: number;
   gross_profit: number;
   po_count: number;
   total_po_value: number;
   paid_amount: number;
   outstanding_amount: number;
+  vendor_due: number;
+  overpaid_amount: number;
 }
 
 export interface ResellReport {
@@ -98,13 +121,18 @@ export interface ResellReport {
     products: number;
     received_quantity: number;
     stock_on_hand: number;
+    stock_cost_value: number;
     gross_units_sold: number;
     returned_quantity: number;
     net_units_sold: number;
     net_sales: number;
     net_cogs: number;
+    vendor_earned: number;
+    paid_amount: number;
     gross_profit: number;
     outstanding_amount: number;
+    vendor_due: number;
+    overpaid_amount: number;
   };
   vendors: ResellReportVendor[];
   products: ResellReportProduct[];
