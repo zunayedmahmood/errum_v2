@@ -40,18 +40,18 @@ class ResellController extends Controller
         $rows = $this->buildProductReportRows($request);
         $activeProfiles = ResellVendor::active()->get(['id', 'vendor_id']);
         $vendorIds = $activeProfiles->pluck('vendor_id');
-        $resellVendorIds = $activeProfiles->pluck('id');
 
-        // Settlement is intentionally all-time and includes historical/inactive product tags.
-        // A product may be untagged after its stock is cleared, but an unpaid sold-cost liability
-        // must not disappear from the vendor balance.
-        $settlementRequest = Request::create('/', 'GET', ['include_inactive' => true]);
-        $settlementRows = $this->buildProductReportRows($settlementRequest)
-            ->whereIn('resell_vendor_id', $resellVendorIds);
-        $paymentStats = $this->resellPaymentStats($vendorIds);
-        $vendorEarned = round((float) $settlementRows->sum('net_cogs'), 2);
-        $paidAmount = round((float) $paymentStats->sum('paid_amount'), 2);
-        $vendorDue = round(max(0, $vendorEarned - $paidAmount), 2);
+        $purchaseOrders = PurchaseOrder::with('items')
+            ->whereIn('vendor_id', $vendorIds)
+            ->where('metadata->resell', true)
+            ->get();
+        $settlementRows = $this->buildPoSettlementRows($purchaseOrders);
+        $vendorEarned = round((float) $settlementRows->sum('sold_cost'), 2);
+        $paidAmount = round((float) $settlementRows->sum('paid_amount'), 2);
+        $refundedAmount = round((float) $settlementRows->sum('refunded_amount'), 2);
+        $netPaidAmount = round((float) $settlementRows->sum('net_paid_amount'), 2);
+        $vendorDue = round((float) $settlementRows->sum('vendor_due'), 2);
+        $refundDue = round((float) $settlementRows->sum('refund_due'), 2);
 
         $openPurchaseOrders = PurchaseOrder::whereIn('vendor_id', $vendorIds)
             ->where('metadata->resell', true)
@@ -72,9 +72,12 @@ class ResellController extends Controller
                 'gross_profit' => round((float) $rows->sum('gross_profit'), 2),
                 'vendor_earned' => $vendorEarned,
                 'paid_amount' => $paidAmount,
+                'refunded_amount' => $refundedAmount,
+                'net_paid_amount' => $netPaidAmount,
                 'outstanding' => $vendorDue,
                 'vendor_due' => $vendorDue,
-                'overpaid_amount' => round(max(0, $paidAmount - $vendorEarned), 2),
+                'refund_due' => $refundDue,
+                'overpaid_amount' => $refundDue,
             ],
         ]);
     }
@@ -112,7 +115,6 @@ class ResellController extends Controller
 
         $profiles = $query->orderByDesc('created_at')->get();
         $vendorIds = $profiles->pluck('vendor_id');
-        $profileIds = $profiles->pluck('id');
 
         $poStats = PurchaseOrder::whereIn('vendor_id', $vendorIds)
             ->where('metadata->resell', true)
@@ -122,19 +124,21 @@ class ResellController extends Controller
             ->get()
             ->keyBy('vendor_id');
 
-        $settlementRequest = Request::create('/', 'GET', ['include_inactive' => true]);
-        $settlementRows = $this->buildProductReportRows($settlementRequest)
-            ->whereIn('resell_vendor_id', $profileIds)
-            ->groupBy('resell_vendor_id');
-        $paymentStats = $this->resellPaymentStats($vendorIds);
+        $purchaseOrders = PurchaseOrder::with('items')
+            ->whereIn('vendor_id', $vendorIds)
+            ->where('metadata->resell', true)
+            ->get();
+        $settlementRows = $this->buildPoSettlementRows($purchaseOrders)->groupBy('vendor_id');
 
-        $data = $profiles->map(function (ResellVendor $profile) use ($poStats, $settlementRows, $paymentStats) {
+        $data = $profiles->map(function (ResellVendor $profile) use ($poStats, $settlementRows) {
             $stats = $poStats->get($profile->vendor_id);
-            $productRows = $settlementRows->get($profile->id, collect());
-            $payments = $paymentStats->get($profile->vendor_id);
-            $vendorEarned = round((float) $productRows->sum('net_cogs'), 2);
-            $paidAmount = round((float) ($payments->paid_amount ?? 0), 2);
-            $vendorDue = round(max(0, $vendorEarned - $paidAmount), 2);
+            $poRows = $settlementRows->get($profile->vendor_id, collect());
+            $vendorEarned = round((float) $poRows->sum('sold_cost'), 2);
+            $paidAmount = round((float) $poRows->sum('paid_amount'), 2);
+            $refundedAmount = round((float) $poRows->sum('refunded_amount'), 2);
+            $netPaidAmount = round((float) $poRows->sum('net_paid_amount'), 2);
+            $vendorDue = round((float) $poRows->sum('vendor_due'), 2);
+            $refundDue = round((float) $poRows->sum('refund_due'), 2);
             return [
                 'id' => $profile->id,
                 'vendor_id' => $profile->vendor_id,
@@ -145,16 +149,19 @@ class ResellController extends Controller
                 'product_count' => (int) $profile->product_count,
                 'po_count' => (int) ($stats->po_count ?? 0),
                 'po_value' => round((float) ($stats->po_value ?? 0), 2),
-                'received_quantity' => (int) $productRows->sum('received_quantity'),
-                'stock_on_hand' => (int) $productRows->sum('stock_on_hand'),
-                'stock_cost_value' => round((float) $productRows->sum('stock_cost_value'), 2),
-                'net_units_sold' => (int) $productRows->sum('net_units_sold'),
+                'received_quantity' => (int) $poRows->sum('received_quantity'),
+                'stock_on_hand' => (int) $poRows->sum('stock_on_hand'),
+                'stock_cost_value' => round((float) $poRows->sum('stock_cost_value'), 2),
+                'net_units_sold' => (int) $poRows->sum('net_units_sold'),
                 'vendor_earned' => $vendorEarned,
                 'paid_amount' => $paidAmount,
+                'refunded_amount' => $refundedAmount,
+                'net_paid_amount' => $netPaidAmount,
                 // Keep outstanding_amount as a compatibility alias for older clients.
                 'outstanding_amount' => $vendorDue,
                 'vendor_due' => $vendorDue,
-                'overpaid_amount' => round(max(0, $paidAmount - $vendorEarned), 2),
+                'refund_due' => $refundDue,
+                'overpaid_amount' => $refundDue,
                 'created_at' => $profile->created_at,
                 'updated_at' => $profile->updated_at,
             ];
@@ -219,10 +226,10 @@ class ResellController extends Controller
             ->exists();
 
         $settlement = $this->currentVendorSettlement($profile);
-        if ($openPoExists || $settlement['vendor_due'] > 0.001) {
+        if ($openPoExists || $settlement['vendor_due'] > 0.001 || $settlement['refund_due'] > 0.001) {
             return response()->json([
                 'success' => false,
-                'message' => 'This vendor still has open purchase orders or unpaid sold-item cost.',
+                'message' => 'This vendor still has open purchase orders or an unsettled resell balance.',
             ], 422);
         }
 
@@ -384,42 +391,56 @@ class ResellController extends Controller
             $query->whereDate('order_date', '<=', $request->to_date);
         }
 
-        $purchaseOrders = $query->orderByDesc('created_at')->get();
-        $settlements = $this->buildPoSettlementRows($purchaseOrders)->keyBy('purchase_order_id');
+        $decorate = function (Collection $purchaseOrders) {
+            $settlements = $this->buildPoSettlementRows($purchaseOrders)->keyBy('purchase_order_id');
 
-        $data = $purchaseOrders->map(function (PurchaseOrder $po) use ($settlements) {
-            $settlement = $settlements->get($po->id, []);
-            $orderedCost = $po->items->sum(fn (PurchaseOrderItem $item) => (int) $item->quantity_ordered * (float) $item->unit_cost);
-            $receivedCost = $po->items->sum(fn (PurchaseOrderItem $item) => (int) $item->quantity_received * (float) $item->unit_cost);
+            return $purchaseOrders->map(function (PurchaseOrder $po) use ($settlements) {
+                $settlement = $settlements->get($po->id, []);
+                $orderedCost = $po->items->sum(fn (PurchaseOrderItem $item) => (int) $item->quantity_ordered * (float) $item->unit_cost);
+                $receivedCost = $po->items->sum(fn (PurchaseOrderItem $item) => (int) $item->quantity_received * (float) $item->unit_cost);
 
-            $row = $po->toArray();
-            $row['received_cost_value'] = round((float) $receivedCost, 2);
-            $row['consignment_value'] = round((float) $orderedCost, 2);
-            $row['received_quantity'] = (int) ($settlement['received_quantity'] ?? 0);
-            $row['gross_units_sold'] = (int) ($settlement['gross_units_sold'] ?? 0);
-            $row['returned_quantity'] = (int) ($settlement['returned_quantity'] ?? 0);
-            $row['net_units_sold'] = (int) ($settlement['net_units_sold'] ?? 0);
-            $row['stock_on_hand'] = (int) ($settlement['stock_on_hand'] ?? 0);
-            $row['stock_cost_value'] = round((float) ($settlement['stock_cost_value'] ?? 0), 2);
-            $row['sold_cost'] = round((float) ($settlement['sold_cost'] ?? 0), 2);
-            $row['vendor_earned'] = $row['sold_cost'];
-            $row['resell_paid_amount'] = round((float) ($settlement['paid_amount'] ?? 0), 2);
-            $row['vendor_due'] = round((float) ($settlement['vendor_due'] ?? 0), 2);
-            $row['resell_payment_status'] = $settlement['payment_status'] ?? 'not_due';
-            // Resell clients must never interpret the normal PO payment columns as the consignment settlement.
-            $row['payment_status'] = $row['resell_payment_status'];
-            return $row;
-        });
-
-        if ($request->filled('payment_status')) {
-            $wanted = strtolower((string) $request->payment_status);
-            if ($wanted === 'partial') {
-                $wanted = 'partially_paid';
-            }
-            $data = $data->filter(fn ($row) => strtolower((string) $row['resell_payment_status']) === $wanted)->values();
-        }
+                $row = $po->toArray();
+                $row['received_cost_value'] = round((float) $receivedCost, 2);
+                $row['consignment_value'] = round((float) $orderedCost, 2);
+                $row['received_quantity'] = (int) ($settlement['received_quantity'] ?? 0);
+                $row['gross_units_sold'] = (int) ($settlement['gross_units_sold'] ?? 0);
+                $row['returned_quantity'] = (int) ($settlement['returned_quantity'] ?? 0);
+                $row['return_count'] = (int) ($settlement['return_count'] ?? 0);
+                $row['net_units_sold'] = (int) ($settlement['net_units_sold'] ?? 0);
+                $row['stock_on_hand'] = (int) ($settlement['stock_on_hand'] ?? 0);
+                $row['stock_cost_value'] = round((float) ($settlement['stock_cost_value'] ?? 0), 2);
+                $row['sold_cost'] = round((float) ($settlement['sold_cost'] ?? 0), 2);
+                $row['vendor_earned'] = $row['sold_cost'];
+                $row['resell_paid_amount'] = round((float) ($settlement['paid_amount'] ?? 0), 2);
+                $row['resell_refunded_amount'] = round((float) ($settlement['refunded_amount'] ?? 0), 2);
+                $row['resell_net_paid_amount'] = round((float) ($settlement['net_paid_amount'] ?? 0), 2);
+                $row['vendor_due'] = round((float) ($settlement['vendor_due'] ?? 0), 2);
+                $row['refund_due'] = round((float) ($settlement['refund_due'] ?? 0), 2);
+                $row['resell_payment_status'] = $settlement['payment_status'] ?? 'not_due';
+                // Resell clients must never interpret the normal PO payment columns as the consignment settlement.
+                $row['payment_status'] = $row['resell_payment_status'];
+                return $row;
+            });
+        };
 
         $perPage = min(max((int) $request->get('per_page', 25), 1), 200);
+        $query->orderByDesc('created_at');
+
+        // Payment status is computed from sold-cost settlement, so only that optional filter
+        // needs collection-level pagination. Search/date/vendor/status use database pagination.
+        if (!$request->filled('payment_status')) {
+            $paginator = $query->paginate($perPage);
+            $paginator->setCollection($decorate($paginator->getCollection()));
+            return response()->json(['success' => true, 'data' => $paginator]);
+        }
+
+        $data = $decorate($query->get());
+        $wanted = strtolower((string) $request->payment_status);
+        if ($wanted === 'partial') {
+            $wanted = 'partially_paid';
+        }
+        $data = $data->filter(fn ($row) => strtolower((string) $row['resell_payment_status']) === $wanted)->values();
+
         $page = max((int) $request->get('page', 1), 1);
         $paginator = new \Illuminate\Pagination\LengthAwarePaginator(
             $data->forPage($page, $perPage)->values(),
@@ -571,7 +592,6 @@ class ResellController extends Controller
             'resell_vendor_id' => 'required|exists:resell_vendors,id',
             'payment_method_id' => 'required|exists:payment_methods,id',
             'account_id' => 'nullable|exists:accounts,id',
-            'amount' => 'required|numeric|min:0.01',
             'payment_date' => 'required|date',
             'reference_number' => 'nullable|string|max:255',
             'transaction_id' => 'nullable|string|max:255',
@@ -579,6 +599,10 @@ class ResellController extends Controller
             'cheque_date' => 'nullable|date',
             'bank_name' => 'nullable|string|max:255',
             'notes' => 'nullable|string',
+            'settlement_type' => 'nullable|in:payment,refund',
+            'allocations' => 'required|array|min:1',
+            'allocations.*.purchase_order_id' => 'required|integer|distinct|exists:purchase_orders,id',
+            'allocations.*.amount' => 'required|numeric|min:0.01',
         ]);
 
         DB::beginTransaction();
@@ -592,27 +616,50 @@ class ResellController extends Controller
                 return response()->json(['success' => false, 'message' => 'The selected resell vendor is not active.'], 422);
             }
 
-            $settlement = $this->currentVendorSettlement($profile);
-            $amount = round((float) $validated['amount'], 2);
-            if ($amount > $settlement['vendor_due'] + 0.001) {
+            $allocations = collect($validated['allocations'])->map(fn ($allocation) => [
+                'purchase_order_id' => (int) $allocation['purchase_order_id'],
+                'amount' => round((float) $allocation['amount'], 2),
+            ]);
+            $isVendorRefund = ($validated['settlement_type'] ?? 'payment') === 'refund';
+            $purchaseOrderIds = $allocations->pluck('purchase_order_id')->values();
+
+            $purchaseOrders = PurchaseOrder::with('items')
+                ->whereIn('id', $purchaseOrderIds)
+                ->where('vendor_id', $profile->vendor_id)
+                ->where('metadata->resell', true)
+                ->lockForUpdate()
+                ->get();
+
+            if ($purchaseOrders->count() !== $purchaseOrderIds->count()) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payment cannot exceed the vendor due from sold resell items.',
-                    'data' => $settlement,
+                    'message' => 'Every payment allocation must belong to a resell PO for the selected vendor.',
                 ], 422);
             }
 
-            $purchaseOrders = PurchaseOrder::with('items')
-                ->where('vendor_id', $profile->vendor_id)
-                ->where('metadata->resell', true)
-                ->orderBy('order_date')
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->get();
-            $poRows = $this->buildPoSettlementRows($purchaseOrders)
-                ->sortBy(fn ($row) => sprintf('%s-%020d', $row['order_date'] ?? '', $row['purchase_order_id']))
-                ->values();
+            $poRows = $this->buildPoSettlementRows($purchaseOrders)->keyBy('purchase_order_id');
+            foreach ($allocations as $allocation) {
+                $poRow = $poRows->get($allocation['purchase_order_id']);
+                $available = round((float) ($isVendorRefund ? ($poRow['refund_due'] ?? 0) : ($poRow['vendor_due'] ?? 0)), 2);
+                if ($allocation['amount'] > $available + 0.001) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => ($poRow['po_number'] ?? 'Selected PO') . ($isVendorRefund
+                            ? ' refund cannot exceed the amount currently due back from the vendor.'
+                            : ' payment cannot exceed its current resell outstanding.'),
+                        'data' => [
+                            'purchase_order_id' => $allocation['purchase_order_id'],
+                            'vendor_due' => round((float) ($poRow['vendor_due'] ?? 0), 2),
+                            'refund_due' => round((float) ($poRow['refund_due'] ?? 0), 2),
+                        ],
+                    ], 422);
+                }
+            }
+
+            $amount = round((float) $allocations->sum('amount'), 2);
+            $settlement = $this->currentVendorSettlement($profile);
 
             $payment = VendorPayment::create([
                 'payment_number' => VendorPayment::generatePaymentNumber(),
@@ -625,7 +672,7 @@ class ResellController extends Controller
                 'allocated_amount' => $amount,
                 'unallocated_amount' => 0,
                 'status' => 'pending',
-                'payment_type' => 'purchase_order',
+                'payment_type' => $isVendorRefund ? 'refund' : 'purchase_order',
                 'transaction_id' => $validated['transaction_id'] ?? null,
                 'cheque_number' => $validated['cheque_number'] ?? null,
                 'cheque_date' => $validated['cheque_date'] ?? null,
@@ -636,43 +683,35 @@ class ResellController extends Controller
                     'resell' => true,
                     'resell_vendor_id' => $profile->id,
                     'settlement_basis' => 'net_sold_po_cost',
-                    'allocation_method' => 'fifo_po_due',
+                    'allocation_method' => 'manual_po_amounts',
+                    'settlement_type' => $isVendorRefund ? 'refund_from_vendor' : 'payment_to_vendor',
+                    'refund_from_vendor' => $isVendorRefund,
                     'vendor_earned_before' => $settlement['vendor_earned'],
                     'vendor_due_before' => $settlement['vendor_due'],
-                    'vendor_due_after' => round(max(0, $settlement['vendor_due'] - $amount), 2),
+                    'refund_due_before' => $settlement['refund_due'],
                 ],
             ]);
 
-            $remaining = $amount;
-            foreach ($poRows as $poRow) {
-                if ($remaining <= 0.001) {
-                    break;
-                }
-                $due = round((float) ($poRow['vendor_due'] ?? 0), 2);
-                if ($due <= 0) {
-                    continue;
-                }
+            foreach ($allocations as $allocation) {
+                $poRow = $poRows->get($allocation['purchase_order_id']);
+                $due = round((float) ($isVendorRefund ? $poRow['refund_due'] : $poRow['vendor_due']), 2);
+                $allocatedAmount = $allocation['amount'];
 
-                $allocation = round(min($remaining, $due), 2);
                 VendorPaymentItem::create([
                     'vendor_payment_id' => $payment->id,
-                    'purchase_order_id' => $poRow['purchase_order_id'],
-                    'allocated_amount' => $allocation,
+                    'purchase_order_id' => $allocation['purchase_order_id'],
+                    'allocated_amount' => $allocatedAmount,
                     'po_total_at_payment' => $poRow['sold_cost'],
                     'po_outstanding_before' => $due,
-                    'po_outstanding_after' => round(max(0, $due - $allocation), 2),
-                    'allocation_type' => $allocation + 0.001 >= $due ? 'full' : 'partial',
-                    'notes' => 'Automatic FIFO allocation of resell sold-cost liability.',
+                    'po_outstanding_after' => round(max(0, $due - $allocatedAmount), 2),
+                    'allocation_type' => $allocatedAmount + 0.001 >= $due ? 'full' : 'partial',
+                    'notes' => $isVendorRefund ? 'Manual refund from vendor against resell PO.' : 'Manual resell PO allocation.',
                     'metadata' => [
                         'resell' => true,
                         'settlement_basis' => 'net_sold_po_cost',
+                        'refund_from_vendor' => $isVendorRefund,
                     ],
                 ]);
-                $remaining = round($remaining - $allocation, 2);
-            }
-
-            if ($remaining > 0.001) {
-                throw new \RuntimeException('Could not allocate the full payment to current resell PO liabilities. Refresh and retry.');
             }
 
             $payment->complete();
@@ -680,7 +719,9 @@ class ResellController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Resell vendor payment recorded and allocated to sold-item PO liabilities.',
+                'message' => $isVendorRefund
+                    ? 'Refund from vendor recorded against the selected PO amounts.'
+                    : 'Resell vendor payment recorded with the requested PO allocations.',
                 'data' => $payment->load('vendor', 'paymentMethod', 'paymentItems.purchaseOrder'),
             ], 201);
         } catch (\Throwable $e) {
@@ -740,19 +781,30 @@ class ResellController extends Controller
             ->selectRaw('vendor_id, COUNT(*) as po_count, SUM(total_amount) as total_po_value')
             ->groupBy('vendor_id')
             ->get()->keyBy('vendor_id');
-        $paymentStats = $this->resellPaymentStats($vendorIds, $request);
+        $settlementRowsByVendor = $this->buildPoSettlementRows(
+            PurchaseOrder::with('items')
+                ->whereIn('vendor_id', $vendorIds)
+                ->where('metadata->resell', true)
+                ->get(),
+            $request
+        )->groupBy('vendor_id');
 
-        $vendorRows = $vendorRows->map(function ($row) use ($financials, $paymentStats) {
+        $vendorRows = $vendorRows->map(function ($row) use ($financials, $settlementRowsByVendor) {
             $financial = $financials->get($row['vendor_id']);
-            $payments = $paymentStats->get($row['vendor_id']);
-            $paidAmount = round((float) ($payments->paid_amount ?? 0), 2);
-            $vendorEarned = round((float) $row['vendor_earned'], 2);
-            $vendorDue = round(max(0, $vendorEarned - $paidAmount), 2);
+            $poRows = $settlementRowsByVendor->get($row['vendor_id'], collect());
+            $paidAmount = round((float) $poRows->sum('paid_amount'), 2);
+            $refundedAmount = round((float) $poRows->sum('refunded_amount'), 2);
+            $netPaidAmount = round((float) $poRows->sum('net_paid_amount'), 2);
+            $vendorDue = round((float) $poRows->sum('vendor_due'), 2);
+            $refundDue = round((float) $poRows->sum('refund_due'), 2);
             $row['po_count'] = (int) ($financial->po_count ?? 0);
             $row['total_po_value'] = round((float) ($financial->total_po_value ?? 0), 2);
             $row['paid_amount'] = $paidAmount;
+            $row['refunded_amount'] = $refundedAmount;
+            $row['net_paid_amount'] = $netPaidAmount;
             $row['vendor_due'] = $vendorDue;
-            $row['overpaid_amount'] = round(max(0, $paidAmount - $vendorEarned), 2);
+            $row['refund_due'] = $refundDue;
+            $row['overpaid_amount'] = $refundDue;
             // Compatibility alias for older report clients.
             $row['outstanding_amount'] = $vendorDue;
             return $row;
@@ -774,10 +826,13 @@ class ResellController extends Controller
                     'net_cogs' => round((float) $rows->sum('net_cogs'), 2),
                     'vendor_earned' => round((float) $vendorRows->sum('vendor_earned'), 2),
                     'paid_amount' => round((float) $vendorRows->sum('paid_amount'), 2),
+                    'refunded_amount' => round((float) $vendorRows->sum('refunded_amount'), 2),
+                    'net_paid_amount' => round((float) $vendorRows->sum('net_paid_amount'), 2),
                     'gross_profit' => round((float) $rows->sum('gross_profit'), 2),
                     'outstanding_amount' => round((float) $vendorRows->sum('vendor_due'), 2),
                     'vendor_due' => round((float) $vendorRows->sum('vendor_due'), 2),
-                    'overpaid_amount' => round((float) $vendorRows->sum('overpaid_amount'), 2),
+                    'refund_due' => round((float) $vendorRows->sum('refund_due'), 2),
+                    'overpaid_amount' => round((float) $vendorRows->sum('refund_due'), 2),
                 ],
                 'vendors' => $vendorRows,
                 'products' => $rows->values(),
@@ -787,7 +842,7 @@ class ResellController extends Controller
                     'returns' => 'Approved/processing/completed/refunded return quantities and values are subtracted.',
                     'exchanges' => 'Returned items are subtracted and the replacement order is counted as a new valid sale.',
                     'cogs' => 'Resell COGS uses the original source purchase-order item cost for each sold unit.',
-                    'vendor_payable' => 'Vendor payable is net sold source-PO cost minus completed resell vendor payments. Unsold consignment inventory cost is tracked separately and is not payable.',
+                    'vendor_payable' => 'Each PO compares current net sold source-PO cost with payments to the vendor minus refunds received from the vendor. Positive shortfalls are vendor due; positive excesses are refund due.',
                 ],
             ],
         ]);
@@ -888,14 +943,6 @@ class ResellController extends Controller
         $items = $purchaseOrders->flatMap(fn (PurchaseOrder $po) => $po->items)->keyBy('id');
         $itemIds = $items->keys()->map(fn ($id) => (int) $id)->values();
 
-        $stock = DB::table('product_batches')
-            ->whereIn('source_purchase_order_id', $poIds)
-            ->whereIn('source_purchase_order_item_id', $itemIds)
-            ->selectRaw('source_purchase_order_id, source_purchase_order_item_id, SUM(quantity) as stock_on_hand')
-            ->groupBy('source_purchase_order_id', 'source_purchase_order_item_id')
-            ->get()
-            ->keyBy(fn ($row) => $row->source_purchase_order_id . ':' . $row->source_purchase_order_item_id);
-
         $salesQuery = DB::table('order_items as oi')
             ->join('orders as o', 'oi.order_id', '=', 'o.id')
             ->leftJoin('product_batches as pb', 'oi.product_batch_id', '=', 'pb.id')
@@ -937,7 +984,7 @@ class ResellController extends Controller
             ->with('order')
             ->whereIn('status', self::RETURNED_STATUSES)
             ->whereHas('order', function ($query) {
-                $query->whereNull('deleted_at')->whereNotIn('status', self::EXCLUDED_SALE_STATUSES);
+                $query->whereNull('deleted_at');
             });
         if ($request) {
             $this->applyDateRange($returnQuery, $request, 'return_date');
@@ -947,6 +994,7 @@ class ResellController extends Controller
         foreach ($returns as $return) {
             foreach (($return->return_items ?? []) as $item) {
                 $returnItems->push([
+                    'return_id' => (int) $return->id,
                     'order_item_id' => isset($item['order_item_id']) ? (int) $item['order_item_id'] : null,
                     'product_batch_id' => isset($item['product_batch_id']) ? (int) $item['product_batch_id'] : null,
                     'returned_barcode_ids' => array_values(array_filter(array_map('intval', (array) ($item['returned_barcode_ids'] ?? [])))),
@@ -975,6 +1023,7 @@ class ResellController extends Controller
         $returnBarcodes = $returnBarcodeIds->isEmpty() ? collect() : DB::table('product_barcodes')->whereIn('id', $returnBarcodeIds)->get(['id', 'source_purchase_order_id', 'source_purchase_order_item_id'])->keyBy('id');
 
         $returnStats = collect();
+        $returnEventIdsByPo = [];
         foreach ($returnItems as $item) {
             $sourcePoId = 0;
             $sourceItemId = 0;
@@ -1009,32 +1058,54 @@ class ResellController extends Controller
             $current['returned_quantity'] += max(0, (int) $item['quantity']);
             $current['returned_sales'] += max(0, (float) $item['value']);
             $returnStats->put($key, $current);
+            $returnEventIdsByPo[$sourcePoId][$item['return_id']] = true;
         }
 
-        $actualPaid = DB::table('vendor_payment_items as vpi')
+        $paidQuery = DB::table('vendor_payment_items as vpi')
             ->join('vendor_payments as vp', 'vpi.vendor_payment_id', '=', 'vp.id')
             ->whereIn('vpi.purchase_order_id', $poIds)
             ->where('vp.metadata->resell', true)
             ->where('vp.status', 'completed')
-            ->where('vp.payment_type', '!=', 'refund')
+            ->where('vp.payment_type', '!=', 'refund');
+        if ($request) {
+            $this->applyDateRange($paidQuery, $request, 'vp.payment_date');
+        }
+        $actualPaid = $paidQuery
             ->selectRaw('vpi.purchase_order_id, SUM(vpi.allocated_amount) as paid_amount')
             ->groupBy('vpi.purchase_order_id')
             ->pluck('paid_amount', 'vpi.purchase_order_id');
 
-        $rows = $purchaseOrders->map(function (PurchaseOrder $po) use ($stock, $sales, $returnStats, $actualPaid) {
-            $itemRows = $po->items->map(function (PurchaseOrderItem $item) use ($po, $stock, $sales, $returnStats) {
+        $refundQuery = DB::table('vendor_payment_items as vpi')
+            ->join('vendor_payments as vp', 'vpi.vendor_payment_id', '=', 'vp.id')
+            ->whereIn('vpi.purchase_order_id', $poIds)
+            ->where('vp.metadata->resell', true)
+            ->where('vp.metadata->refund_from_vendor', true)
+            ->where('vp.status', 'completed')
+            ->where('vp.payment_type', 'refund');
+        if ($request) {
+            $this->applyDateRange($refundQuery, $request, 'vp.payment_date');
+        }
+        $actualRefunded = $refundQuery
+            ->selectRaw('vpi.purchase_order_id, SUM(vpi.allocated_amount) as refunded_amount')
+            ->groupBy('vpi.purchase_order_id')
+            ->pluck('refunded_amount', 'vpi.purchase_order_id');
+
+        $rows = $purchaseOrders->map(function (PurchaseOrder $po) use ($sales, $returnStats, $returnEventIdsByPo, $actualPaid, $actualRefunded) {
+            $itemRows = $po->items->map(function (PurchaseOrderItem $item) use ($po, $sales, $returnStats) {
                 $key = $po->id . ':' . $item->id;
-                $stockRow = $stock->get($key);
                 $sale = $sales->get($key, []);
                 $returned = $returnStats->get($key, ['returned_quantity' => 0, 'returned_sales' => 0]);
                 $grossQty = (int) ($sale['gross_units_sold'] ?? 0);
                 $returnedQty = min($grossQty, (int) $returned['returned_quantity']);
-                $netQty = max(0, $grossQty - $returnedQty);
+                $receivedQty = (int) $item->quantity_received;
+                $netQty = min($receivedQty, max(0, $grossQty - $returnedQty));
                 $unitCost = (float) $item->unit_cost;
                 $grossSales = (float) ($sale['gross_sales'] ?? 0);
                 $returnedSales = min($grossSales, (float) $returned['returned_sales']);
                 $netSales = max(0, $grossSales - $returnedSales);
-                $stockQty = max(0, (int) ($stockRow->stock_on_hand ?? 0));
+                // Resell PO stock is the unsold portion of received consignment. Returns reduce
+                // net sold, so this always preserves: received = sold + in stock.
+                $stockQty = max(0, $receivedQty - $netQty);
 
                 return [
                     'purchase_order_id' => $po->id,
@@ -1044,8 +1115,8 @@ class ResellController extends Controller
                     'product_sku' => $item->product_sku,
                     'unit_cost' => round($unitCost, 2),
                     'ordered_quantity' => (int) $item->quantity_ordered,
-                    'received_quantity' => (int) $item->quantity_received,
-                    'received_cost' => round((int) $item->quantity_received * $unitCost, 2),
+                    'received_quantity' => $receivedQty,
+                    'received_cost' => round($receivedQty * $unitCost, 2),
                     'stock_on_hand' => $stockQty,
                     'stock_cost_value' => round($stockQty * $unitCost, 2),
                     'gross_units_sold' => $grossQty,
@@ -1065,6 +1136,10 @@ class ResellController extends Controller
 
             $soldCost = round((float) $itemRows->sum('net_cogs'), 2);
             $paid = round((float) ($actualPaid[$po->id] ?? 0), 2);
+            $refunded = round((float) ($actualRefunded[$po->id] ?? 0), 2);
+            $netPaid = round($paid - $refunded, 2);
+            $vendorDue = round(max(0, $soldCost - $netPaid), 2);
+            $refundDue = round(max(0, $netPaid - $soldCost), 2);
             return [
                 'purchase_order_id' => $po->id,
                 'po_number' => $po->po_number,
@@ -1075,90 +1150,40 @@ class ResellController extends Controller
                 'stock_cost_value' => round((float) $itemRows->sum('stock_cost_value'), 2),
                 'gross_units_sold' => (int) $itemRows->sum('gross_units_sold'),
                 'returned_quantity' => (int) $itemRows->sum('returned_quantity'),
+                'return_count' => count($returnEventIdsByPo[$po->id] ?? []),
                 'net_units_sold' => (int) $itemRows->sum('net_units_sold'),
                 'gross_sales' => round((float) $itemRows->sum('gross_sales'), 2),
                 'returned_sales' => round((float) $itemRows->sum('returned_sales'), 2),
                 'net_sales' => round((float) $itemRows->sum('net_sales'), 2),
                 'sold_cost' => $soldCost,
                 'paid_amount' => $paid,
-                'vendor_due' => round(max(0, $soldCost - $paid), 2),
-                'payment_status' => $this->resellPaymentStatus($soldCost, $paid),
+                'refunded_amount' => $refunded,
+                'net_paid_amount' => $netPaid,
+                'vendor_due' => $vendorDue,
+                'refund_due' => $refundDue,
+                'payment_status' => $this->resellPaymentStatus($soldCost, $netPaid),
                 'items' => $itemRows->all(),
             ];
-        })->values();
-
-        // Older resell payments were vendor-level and had no VendorPaymentItem allocation.
-        // Also, a later return can make a previously allocated payment exceed that PO's current
-        // earned amount. Keep valid PO allocations in place, then apply only legacy/uncovered
-        // vendor credit FIFO so PO dues still add up to the vendor-level due.
-        $vendorIds = $rows->pluck('vendor_id')->unique()->values();
-        $paymentStats = $this->resellPaymentStats($vendorIds);
-        $rows = $rows->groupBy('vendor_id')->flatMap(function (Collection $vendorRows, $vendorId) use ($paymentStats) {
-            $totalPaid = round((float) ($paymentStats->get($vendorId)->paid_amount ?? 0), 2);
-            $actualAllocated = round((float) $vendorRows->sum('paid_amount'), 2);
-            $creditRemaining = round(max(0, $totalPaid - $actualAllocated), 2);
-            $sorted = $vendorRows->sortBy(fn ($row) => sprintf('%s-%020d', $row['order_date'] ?? '', $row['purchase_order_id']))->values();
-
-            $sorted = $sorted->map(function ($row) use (&$creditRemaining) {
-                $allocated = round((float) $row['paid_amount'], 2);
-                $earned = round((float) $row['sold_cost'], 2);
-                $effectivePaid = round(min($allocated, $earned), 2);
-                $creditRemaining = round($creditRemaining + max(0, $allocated - $effectivePaid), 2);
-                $row['paid_amount'] = $effectivePaid;
-                return $row;
-            });
-
-            return $sorted->map(function ($row) use (&$creditRemaining) {
-                if ($creditRemaining > 0.001) {
-                    $unpaidEarned = round(max(0, $row['sold_cost'] - $row['paid_amount']), 2);
-                    $virtual = round(min($creditRemaining, $unpaidEarned), 2);
-                    $row['paid_amount'] = round($row['paid_amount'] + $virtual, 2);
-                    $creditRemaining = round($creditRemaining - $virtual, 2);
-                }
-                $row['vendor_due'] = round(max(0, $row['sold_cost'] - $row['paid_amount']), 2);
-                $row['payment_status'] = $this->resellPaymentStatus($row['sold_cost'], $row['paid_amount']);
-                return $row;
-            });
         })->values();
 
         return $rows;
     }
 
-    private function resellPaymentStatus(float $soldCost, float $paidAmount): string
+    private function resellPaymentStatus(float $soldCost, float $netPaidAmount): string
     {
+        if ($netPaidAmount > $soldCost + 0.001) {
+            return 'refund_due';
+        }
         if ($soldCost <= 0.001) {
             return 'not_due';
         }
-        if ($paidAmount <= 0.001) {
+        if ($netPaidAmount <= 0.001) {
             return 'unpaid';
         }
-        if ($paidAmount + 0.001 >= $soldCost) {
+        if ($netPaidAmount + 0.001 >= $soldCost) {
             return 'paid';
         }
         return 'partially_paid';
-    }
-
-    private function resellPaymentStats(Collection $vendorIds, ?Request $request = null): Collection
-    {
-        if ($vendorIds->isEmpty()) {
-            return collect();
-        }
-
-        $query = VendorPayment::query()
-            ->whereIn('vendor_id', $vendorIds)
-            ->where('metadata->resell', true)
-            ->where('status', 'completed')
-            ->where('payment_type', '!=', 'refund');
-
-        if ($request) {
-            $this->applyDateRange($query, $request, 'payment_date');
-        }
-
-        return $query
-            ->selectRaw('vendor_id, SUM(amount) as paid_amount, COUNT(*) as payment_count')
-            ->groupBy('vendor_id')
-            ->get()
-            ->keyBy('vendor_id');
     }
 
     private function currentVendorSettlement(ResellVendor $profile): array
@@ -1168,11 +1193,10 @@ class ResellController extends Controller
             ->where('metadata->resell', true)
             ->get();
         $poRows = $this->buildPoSettlementRows($purchaseOrders);
-        $paymentStats = $this->resellPaymentStats(collect([$profile->vendor_id]));
-        $payments = $paymentStats->get($profile->vendor_id);
-
         $vendorEarned = round((float) $poRows->sum('sold_cost'), 2);
-        $paidAmount = round((float) ($payments->paid_amount ?? 0), 2);
+        $paidAmount = round((float) $poRows->sum('paid_amount'), 2);
+        $refundedAmount = round((float) $poRows->sum('refunded_amount'), 2);
+        $netPaidAmount = round((float) $poRows->sum('net_paid_amount'), 2);
 
         return [
             'resell_vendor_id' => $profile->id,
@@ -1183,8 +1207,11 @@ class ResellController extends Controller
             'net_units_sold' => (int) $poRows->sum('net_units_sold'),
             'vendor_earned' => $vendorEarned,
             'paid_amount' => $paidAmount,
-            'vendor_due' => round(max(0, $vendorEarned - $paidAmount), 2),
-            'overpaid_amount' => round(max(0, $paidAmount - $vendorEarned), 2),
+            'refunded_amount' => $refundedAmount,
+            'net_paid_amount' => $netPaidAmount,
+            'vendor_due' => round((float) $poRows->sum('vendor_due'), 2),
+            'refund_due' => round((float) $poRows->sum('refund_due'), 2),
+            'overpaid_amount' => round((float) $poRows->sum('refund_due'), 2),
         ];
     }
 

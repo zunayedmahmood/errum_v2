@@ -289,7 +289,6 @@ class AccountingPostingService
     {
         $po = $po->loadMissing('items', 'vendor');
         if (data_get($po->metadata, 'resell', false)) {
-            return null;
         }
         if (in_array($po->status, ['cancelled', 'returned'], true)) {
             return $this->postPurchaseOrderCancellation($po);
@@ -300,7 +299,6 @@ class AccountingPostingService
             // Once receiving starts, do not rewrite the original commitment in normal UI saves, because
             // receipt settlement depends on the original committed total. Backfill commands may
             // explicitly allow this to rebuild historical data into the new full workbook flow.
-            return null;
         }
 
         $amount = round((float) ($po->total_amount ?? 0), 2);
@@ -459,7 +457,47 @@ class AccountingPostingService
     public function postVendorPayment(VendorPayment $payment): ?Transaction
     {
         if ($payment->payment_type === 'refund') {
-            return null;
+            if (!data_get($payment->metadata, 'resell', false) || !data_get($payment->metadata, 'refund_from_vendor', false)) {
+                return null;
+            }
+
+            $paymentAmount = round(abs((float) $payment->amount), 2);
+            if ($paymentAmount <= 0) {
+                return null;
+            }
+
+            $status = $payment->status === 'completed' ? 'completed' : 'pending';
+            $eventKey = "vendor_payment:{$payment->id}:completed";
+            if (!$this->hasActiveManagedEvent($eventKey) && $this->hasAnyActiveReferenceRows(VendorPayment::class, (int) $payment->id)) {
+                return Transaction::where('reference_type', VendorPayment::class)
+                    ->where('reference_id', $payment->id)
+                    ->whereIn('status', ['pending', 'completed'])
+                    ->first();
+            }
+
+            $date = $payment->processed_at ?? $payment->payment_date ?? now();
+            return $this->postBalancedJournal(
+                $eventKey,
+                VendorPayment::class,
+                (int) $payment->id,
+                $date,
+                "Refund From Resell Vendor - {$payment->payment_number}",
+                null,
+                $payment->employee_id,
+                [
+                    ['type' => 'debit', 'account_id' => $this->settlementAccountIdForPaymentMethod($payment->paymentMethod), 'amount' => $paymentAmount, 'description' => "Resell Vendor Refund - Cash/Bank In - {$payment->payment_number}"],
+                    ['type' => 'credit', 'account_id' => $this->accountId('accounts_payable'), 'amount' => $paymentAmount, 'description' => "Resell Vendor Refund - AP Settled - {$payment->payment_number}"],
+                ],
+                [
+                    'source' => 'resell_vendor_refund',
+                    'payment_number' => $payment->payment_number,
+                    'payment_type' => $payment->payment_type,
+                    'vendor_id' => $payment->vendor_id,
+                    'vendor_name' => $payment->vendor->name ?? null,
+                    'refund_from_vendor' => true,
+                ],
+                $status
+            );
         }
 
         $paymentAmount = round(abs((float) $payment->amount), 2);

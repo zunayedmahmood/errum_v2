@@ -12,8 +12,11 @@ export interface ResellSummary {
   gross_profit: number;
   vendor_earned: number;
   paid_amount: number;
+  refunded_amount: number;
+  net_paid_amount: number;
   outstanding: number;
   vendor_due: number;
+  refund_due: number;
   overpaid_amount: number;
 }
 
@@ -33,8 +36,11 @@ export interface ResellVendorProfile {
   net_units_sold: number;
   vendor_earned: number;
   paid_amount: number;
+  refunded_amount: number;
+  net_paid_amount: number;
   outstanding_amount: number;
   vendor_due: number;
+  refund_due: number;
   overpaid_amount: number;
   created_at: string;
   updated_at: string;
@@ -110,8 +116,11 @@ export interface ResellReportVendor {
   po_count: number;
   total_po_value: number;
   paid_amount: number;
+  refunded_amount: number;
+  net_paid_amount: number;
   outstanding_amount: number;
   vendor_due: number;
+  refund_due: number;
   overpaid_amount: number;
 }
 
@@ -129,9 +138,12 @@ export interface ResellReport {
     net_cogs: number;
     vendor_earned: number;
     paid_amount: number;
+    refunded_amount: number;
+    net_paid_amount: number;
     gross_profit: number;
     outstanding_amount: number;
     vendor_due: number;
+    refund_due: number;
     overpaid_amount: number;
   };
   vendors: ResellReportVendor[];
@@ -181,7 +193,7 @@ const resellService = {
   },
 
   async getPurchaseOrders(params?: Record<string, any>): Promise<any> {
-    return unwrap(await axios.get('/resell/purchase-orders', { params: { per_page: 100, ...(params || {}) } }));
+    return unwrap(await axios.get('/resell/purchase-orders', { params: { per_page: 25, ...(params || {}) } }));
   },
 
   async createPurchaseOrder(data: any): Promise<any> {

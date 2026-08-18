@@ -152,7 +152,9 @@ export default function ResellReportsPage() {
     ['Inventory at Cost', money(report?.summary.stock_cost_value), Box],
     ['Vendor Earned', money(report?.summary.vendor_earned), CircleDollarSign],
     ['Paid Vendors', money(report?.summary.paid_amount), CircleDollarSign],
+    ['Refunded by Vendors', money(report?.summary.refunded_amount), RotateCcw],
     ['Vendor Due', money(report?.summary.vendor_due), CircleDollarSign],
+    ['Refund Due', money(report?.summary.refund_due), RotateCcw],
     ['Net Sales', money(report?.summary.net_sales), BarChart3],
     ['Gross Profit', money(report?.summary.gross_profit), TrendingUp],
   ];
@@ -332,7 +334,9 @@ export default function ResellReportsPage() {
                       <th className="px-4 py-3 text-right">Vendor Earned</th>
                       <th className="px-4 py-3 text-right">Profit</th>
                       <th className="px-4 py-3 text-right">Paid</th>
+                      <th className="px-4 py-3 text-right">Refunded</th>
                       <th className="px-4 py-3 text-right">Due</th>
+                      <th className="px-4 py-3 text-right">Refund Due</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -350,11 +354,13 @@ export default function ResellReportsPage() {
                         <td className="px-4 py-4 text-right font-semibold">{money(row.vendor_earned)}</td>
                         <td className={`px-4 py-4 text-right font-semibold ${row.gross_profit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{money(row.gross_profit)}</td>
                         <td className="px-4 py-4 text-right text-emerald-600">{money(row.paid_amount)}</td>
+                        <td className="px-4 py-4 text-right text-blue-600">{money(row.refunded_amount)}</td>
                         <td className="px-4 py-4 text-right font-semibold text-amber-600">{money(row.vendor_due)}</td>
+                        <td className="px-4 py-4 text-right font-semibold text-blue-600">{money(row.refund_due)}</td>
                       </tr>
                     ))}
                     {vendorRows.length === 0 && (
-                      <tr><td colSpan={13} className="px-5 py-16 text-center text-gray-500">No report data matches these filters.</td></tr>
+                      <tr><td colSpan={15} className="px-5 py-16 text-center text-gray-500">No report data matches these filters.</td></tr>
                     )}
                   </tbody>
                 </table>
