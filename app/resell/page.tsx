@@ -216,7 +216,7 @@ export default function ResellItemsPage() {
     const timer = window.setTimeout(async () => {
       setProductSearching(true);
       try {
-        const result = await catalogService.searchProducts({ q: productSearch, per_page: 40, group_by_sku: true });
+        const result = await catalogService.searchProducts({ q: productSearch, per_page: 40, group_by_sku: true, in_stock: 'all' });
         const flat = result.grouped_products?.flatMap((group) => [group.main_variant, ...(group.variants || [])]) || result.products || [];
         const unique = Array.from(new Map(flat.map((p) => [p.id, p])).values());
         setProductResults(unique);
