@@ -1941,9 +1941,15 @@ export default function LookupPage() {
 
       alert('✅ Return processed successfully!');
       setShowReturnModal(false);
-      // Refresh search to show updated status/quantities
+      // Refresh any lookup state that can show the returned barcode.
       if (activeTab === 'order' && orderNumber) {
-        handleSearchOrder();
+        await handleSearchOrder();
+      }
+      if (selectedBatchId) {
+        await handleSearchBatch(selectedBatchId);
+      }
+      if (batchSelectedBarcode) {
+        await openBatchBarcodeModal(batchSelectedBarcode);
       }
     } catch (error: any) {
       console.error('❌ Return processing failed:', error);

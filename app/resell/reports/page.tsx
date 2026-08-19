@@ -8,7 +8,6 @@ import {
   Box,
   CircleDollarSign,
   Download,
-  Info,
   Loader2,
   PackageCheck,
   RefreshCw,
@@ -417,21 +416,6 @@ export default function ResellReportsPage() {
             </div>
           )}
 
-          {report?.rules && (
-            <section className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5 dark:border-blue-900 dark:bg-blue-950/40">
-              <div className="mb-3 flex items-center gap-2 font-semibold text-blue-900 dark:text-blue-100">
-                <Info className="h-5 w-5" /> How this report stays accurate
-              </div>
-              <div className="grid gap-3 text-sm text-blue-900/80 md:grid-cols-2 xl:grid-cols-5 dark:text-blue-100/80">
-                {Object.entries(report.rules).map(([key, description]) => (
-                  <div key={key} className="rounded-xl bg-white/70 p-3 dark:bg-gray-900/40">
-                    <div className="mb-1 font-semibold capitalize">{key.replaceAll('_', ' ')}</div>
-                    <div>{description}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
         </main>
       </div>
     </div>

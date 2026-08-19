@@ -483,9 +483,6 @@ class ResellController extends Controller
 
         $profile = ResellVendor::active()->with('vendor')->findOrFail($validated['resell_vendor_id']);
         $store = Store::findOrFail($validated['store_id']);
-        if (!$store->is_warehouse) {
-            return response()->json(['success' => false, 'message' => 'Only a warehouse can receive resell products.'], 422);
-        }
 
         $productIds = collect($validated['items'])->pluck('product_id')->map(fn ($id) => (int) $id)->unique()->values();
         $validProductIds = ResellProduct::active()

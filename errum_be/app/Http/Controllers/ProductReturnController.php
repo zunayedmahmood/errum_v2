@@ -190,10 +190,12 @@ class ProductReturnController extends Controller
                 $itemReturnValue = round($unitPrice * $quantity, 2);
                 $totalReturnValue += $itemReturnValue;
 
+                $returnBatchId = $returnableBarcodes->first()?->batch_id ?: $orderItem->product_batch_id;
+
                 $returnItems[] = [
                     'order_item_id' => $orderItem->id,
                     'product_id' => $orderItem->product_id,
-                    'product_batch_id' => $orderItem->product_batch_id,
+                    'product_batch_id' => $returnBatchId,
                     'product_name' => $orderItem->product_name,
                     'quantity' => $item['quantity'],
                     'unit_price' => $unitPrice,
@@ -956,18 +958,17 @@ class ProductReturnController extends Controller
         $returnStore = $return->received_at_store_id ?? $return->store_id;
 
         foreach ($return->return_items ?? [] as $item) {
-            if (!isset($item['product_batch_id'], $item['product_id'], $item['quantity'])) {
-                continue;
+            if (!isset($item['product_id'], $item['quantity'])) {
+                throw new \Exception('Return item is missing product or quantity data required for inventory restoration.');
             }
 
             $productId = (int) $item['product_id'];
             $isResell = ResellProduct::active()->where('product_id', $productId)->exists();
-            $originalBatch = ProductBatch::where('id', $item['product_batch_id'])->lockForUpdate()->first();
 
             $barcodeIds = collect($item['returned_barcode_ids'] ?? [])->filter()->values();
             if ($barcodeIds->isNotEmpty()) {
                 $barcodes = ProductBarcode::whereIn('id', $barcodeIds)->lockForUpdate()->get();
-            } elseif ($originalBatch) {
+            } elseif (!empty($item['product_batch_id'])) {
                 $barcodes = ProductBarcode::where('product_id', $productId)
                     ->where('batch_id', $item['product_batch_id'])
                     ->whereIn('current_status', ['with_customer', 'sold', 'in_shipment'])
@@ -981,8 +982,13 @@ class ProductReturnController extends Controller
                     : collect();
             }
 
+            $originalBatchId = $barcodes->first()?->batch_id ?: ($item['product_batch_id'] ?? null);
+            $originalBatch = $originalBatchId
+                ? ProductBatch::where('id', $originalBatchId)->lockForUpdate()->first()
+                : null;
+
             if (!$originalBatch && !$isResell) {
-                throw new \Exception("Original batch not found for returned item (batch_id={$item['product_batch_id']}).");
+                throw new \Exception("Original batch not found for returned item (batch_id={$originalBatchId}).");
             }
 
             $shouldRestock = $this->shouldRestockReturnedItem($return, $item);
@@ -996,7 +1002,8 @@ class ProductReturnController extends Controller
                 } else {
                     $targetBatch->increment('quantity', (int) $item['quantity']);
                 }
-                $targetStatus = 'in_warehouse';
+                $targetBatch->loadMissing('store');
+                $targetStatus = $targetBatch->store?->is_warehouse ? 'in_warehouse' : 'in_shop';
                 $isActive = true;
                 $isDefective = false;
             } else {
