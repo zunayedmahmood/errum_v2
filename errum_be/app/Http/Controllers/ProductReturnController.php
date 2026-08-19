@@ -277,6 +277,11 @@ class ProductReturnController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Quick return failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Quick-complete failed: ' . $e->getMessage(),
@@ -963,23 +968,35 @@ class ProductReturnController extends Controller
             }
 
             $productId = (int) $item['product_id'];
+            $quantity = (int) $item['quantity'];
             $isResell = ResellProduct::active()->where('product_id', $productId)->exists();
+            $orderItem = !empty($item['order_item_id']) ? OrderItem::find($item['order_item_id']) : null;
 
             $barcodeIds = collect($item['returned_barcode_ids'] ?? [])->filter()->values();
             if ($barcodeIds->isNotEmpty()) {
                 $barcodes = ProductBarcode::whereIn('id', $barcodeIds)->lockForUpdate()->get();
+            } elseif ($orderItem?->product_barcode_id) {
+                // A sold order item already knows its exact physical unit. Prefer that
+                // identity over a batch-wide lookup so a return can never restore the
+                // wrong barcode or complete financially without moving the sold unit.
+                $barcodes = ProductBarcode::where('id', $orderItem->product_barcode_id)
+                    ->lockForUpdate()
+                    ->get();
             } elseif (!empty($item['product_batch_id'])) {
                 $barcodes = ProductBarcode::where('product_id', $productId)
                     ->where('batch_id', $item['product_batch_id'])
                     ->whereIn('current_status', ['with_customer', 'sold', 'in_shipment'])
                     ->lockForUpdate()
-                    ->limit((int) $item['quantity'])
+                    ->limit($quantity)
                     ->get();
             } else {
-                $orderItem = !empty($item['order_item_id']) ? OrderItem::find($item['order_item_id']) : null;
-                $barcodes = $orderItem?->product_barcode_id
-                    ? ProductBarcode::where('id', $orderItem->product_barcode_id)->lockForUpdate()->get()
-                    : collect();
+                $barcodes = collect();
+            }
+
+            // Resell stock is unit/barcode tracked. Do not allow the commercial return
+            // to commit unless every returned unit has a real physical barcode to move.
+            if ($isResell && $barcodes->count() !== $quantity) {
+                throw new \Exception("Unable to restore {$quantity} resell barcode unit(s) for product {$productId}. No return was committed.");
             }
 
             $originalBatchId = $barcodes->first()?->batch_id ?: ($item['product_batch_id'] ?? null);
@@ -997,12 +1014,22 @@ class ProductReturnController extends Controller
                 : $this->resolveReturnTargetBatch($originalBatch, $productId, (int) $returnStore, $return);
 
             if ($shouldRestock) {
+                $quantityBefore = (int) $targetBatch->quantity;
                 if ($isResell) {
-                    $targetBatch->addStock((int) $item['quantity']);
+                    $targetBatch->addStock($quantity);
                 } else {
-                    $targetBatch->increment('quantity', (int) $item['quantity']);
+                    $targetBatch->increment('quantity', $quantity);
                 }
-                $targetBatch->loadMissing('store');
+                $targetBatch->forceFill([
+                    'availability' => true,
+                    'is_active' => true,
+                ])->save();
+                $targetBatch->refresh()->loadMissing('store');
+
+                if ($isResell && (int) $targetBatch->quantity !== $quantityBefore + $quantity) {
+                    throw new \Exception("Resell batch {$targetBatch->id} did not restore the expected quantity.");
+                }
+
                 $targetStatus = $targetBatch->store?->is_warehouse ? 'in_warehouse' : 'in_shop';
                 $isActive = true;
                 $isDefective = false;
@@ -1017,27 +1044,48 @@ class ProductReturnController extends Controller
 
             foreach ($barcodes as $barcode) {
                 $barcodeSourceStoreId = $sourceStoreId ?? $barcode->current_store_id;
-                $barcode->updateLocation(
-                    $returnStore,
-                    $targetStatus,
-                    [
+                $metadata = is_array($barcode->location_metadata ?? null) ? $barcode->location_metadata : [];
+
+                if ($shouldRestock) {
+                    // Old sale metadata must not keep a physically returned barcode
+                    // classified as Sold by legacy lookup/reporting code.
+                    foreach (['sold_via', 'soldVia', 'sold_at', 'sale_date', 'order_id', 'order_number', 'customer_id', 'customer', 'sold_by'] as $key) {
+                        unset($metadata[$key]);
+                    }
+                }
+
+                $barcode->forceFill([
+                    'batch_id' => $targetBatch->id,
+                    'current_store_id' => $returnStore,
+                    'current_status' => $targetStatus,
+                    'is_active' => $isActive,
+                    'is_defective' => $isDefective,
+                    'location_updated_at' => now(),
+                    'location_metadata' => array_merge($metadata, [
                         'return_id' => $return->id,
                         'return_reason' => $item['reason'] ?? $return->return_reason,
                         'returned_at' => now()->toISOString(),
                         'cross_store_return' => (int) $barcodeSourceStoreId !== (int) $returnStore,
                         'original_store_id' => $barcodeSourceStoreId,
-                    ],
-                    false
-                );
+                    ]),
+                    'source_purchase_order_id' => $isResell
+                        ? ($barcode->source_purchase_order_id ?: $targetBatch->source_purchase_order_id)
+                        : $barcode->source_purchase_order_id,
+                    'source_purchase_order_item_id' => $isResell
+                        ? ($barcode->source_purchase_order_item_id ?: $targetBatch->source_purchase_order_item_id)
+                        : $barcode->source_purchase_order_item_id,
+                ])->save();
 
-                $barcode->batch_id = $targetBatch->id;
-                $barcode->is_active = $isActive;
-                $barcode->is_defective = $isDefective;
-                if ($isResell) {
-                    $barcode->source_purchase_order_id = $barcode->source_purchase_order_id ?: $targetBatch->source_purchase_order_id;
-                    $barcode->source_purchase_order_item_id = $barcode->source_purchase_order_item_id ?: $targetBatch->source_purchase_order_item_id;
+                $barcode->refresh();
+                if ($isResell && (
+                    (int) $barcode->batch_id !== (int) $targetBatch->id
+                    || (int) $barcode->current_store_id !== (int) $returnStore
+                    || (string) $barcode->current_status !== $targetStatus
+                    || (bool) $barcode->is_active !== $isActive
+                    || (bool) $barcode->is_defective !== $isDefective
+                )) {
+                    throw new \Exception("Resell barcode {$barcode->barcode} was not restored correctly. No return was committed.");
                 }
-                $barcode->save();
 
                 ProductMovement::create([
                     'product_id' => $productId,
@@ -1068,17 +1116,30 @@ class ProductReturnController extends Controller
                     'from_store_id' => $sourceStoreId && (int) $sourceStoreId !== (int) $returnStore ? $sourceStoreId : null,
                     'to_store_id' => $returnStore,
                     'movement_type' => 'return',
-                    'quantity' => $item['quantity'],
+                    'quantity' => $quantity,
                     'unit_cost' => $movementCost,
                     'unit_price' => $item['unit_price'] ?? 0,
-                    'total_cost' => $movementCost * $item['quantity'],
-                    'total_value' => ($item['unit_price'] ?? 0) * $item['quantity'],
+                    'total_cost' => $movementCost * $quantity,
+                    'total_value' => ($item['unit_price'] ?? 0) * $quantity,
                     'reference_type' => 'return',
                     'reference_id' => $return->id,
                     'notes' => $shouldRestock
                         ? "Product return restocked without barcode movement: {$return->return_number}"
                         : "Product return received as non-sellable without barcode movement: {$return->return_number}",
                     'performed_by' => $employee->id,
+                ]);
+            }
+
+            if ($isResell) {
+                Log::info('Resell return inventory restored', [
+                    'return_id' => $return->id,
+                    'return_number' => $return->return_number,
+                    'product_id' => $productId,
+                    'barcode_ids' => $barcodes->pluck('id')->values()->all(),
+                    'target_batch_id' => $targetBatch->id,
+                    'target_batch_quantity' => (int) $targetBatch->quantity,
+                    'target_store_id' => (int) $returnStore,
+                    'target_status' => $targetStatus,
                 ]);
             }
         }
