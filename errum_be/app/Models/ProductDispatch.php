@@ -568,6 +568,8 @@ class ProductDispatch extends Model
                         'batch_id' => $destinationBatch->id,           // ✅ Update to new destination batch
                         'current_store_id' => $this->destination_store_id,  // ✅ Update current location
                         'current_status' => 'in_warehouse',           // ✅ Back in stock at destination
+                        'source_purchase_order_id' => $barcode->source_purchase_order_id ?: $sourceBatch->source_purchase_order_id,
+                        'source_purchase_order_item_id' => $barcode->source_purchase_order_item_id ?: $sourceBatch->source_purchase_order_item_id,
                         'location_updated_at' => now(),               // ✅ Track when updated
                         'location_metadata' => [                      // ✅ Add metadata about the transfer
                             'transferred_via' => 'dispatch',
@@ -611,6 +613,8 @@ class ProductDispatch extends Model
                     'batch_id' => $destinationBatch->id,           // ✅ Update to new destination batch
                     'current_store_id' => $this->destination_store_id,  // ✅ Update current location
                     'current_status' => 'in_warehouse',           // ✅ Back in stock at destination
+                    'source_purchase_order_id' => $barcode->source_purchase_order_id ?: $sourceBatch->source_purchase_order_id,
+                    'source_purchase_order_item_id' => $barcode->source_purchase_order_item_id ?: $sourceBatch->source_purchase_order_item_id,
                     'location_updated_at' => now(),               // ✅ Track when updated
                     'location_metadata' => [                      // ✅ Add metadata about the transfer
                         'transferred_via' => 'dispatch',

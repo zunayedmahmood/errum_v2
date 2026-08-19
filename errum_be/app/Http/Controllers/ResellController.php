@@ -50,8 +50,10 @@ class ResellController extends Controller
         $paidAmount = round((float) $settlementRows->sum('paid_amount'), 2);
         $refundedAmount = round((float) $settlementRows->sum('refunded_amount'), 2);
         $netPaidAmount = round((float) $settlementRows->sum('net_paid_amount'), 2);
-        $vendorDue = round((float) $settlementRows->sum('vendor_due'), 2);
-        $refundDue = round((float) $settlementRows->sum('refund_due'), 2);
+        $vendorBalances = $settlementRows->groupBy('vendor_id')
+            ->map(fn (Collection $poRows) => $this->calculateVendorBalance($poRows));
+        $vendorDue = round((float) $vendorBalances->sum('vendor_due'), 2);
+        $refundDue = round((float) $vendorBalances->sum('refund_due'), 2);
 
         $openPurchaseOrders = PurchaseOrder::whereIn('vendor_id', $vendorIds)
             ->where('metadata->resell', true)
@@ -137,8 +139,9 @@ class ResellController extends Controller
             $paidAmount = round((float) $poRows->sum('paid_amount'), 2);
             $refundedAmount = round((float) $poRows->sum('refunded_amount'), 2);
             $netPaidAmount = round((float) $poRows->sum('net_paid_amount'), 2);
-            $vendorDue = round((float) $poRows->sum('vendor_due'), 2);
-            $refundDue = round((float) $poRows->sum('refund_due'), 2);
+            $vendorBalance = $this->calculateVendorBalance($poRows);
+            $vendorDue = $vendorBalance['vendor_due'];
+            $refundDue = $vendorBalance['refund_due'];
             return [
                 'id' => $profile->id,
                 'vendor_id' => $profile->vendor_id,
@@ -795,8 +798,9 @@ class ResellController extends Controller
             $paidAmount = round((float) $poRows->sum('paid_amount'), 2);
             $refundedAmount = round((float) $poRows->sum('refunded_amount'), 2);
             $netPaidAmount = round((float) $poRows->sum('net_paid_amount'), 2);
-            $vendorDue = round((float) $poRows->sum('vendor_due'), 2);
-            $refundDue = round((float) $poRows->sum('refund_due'), 2);
+            $vendorBalance = $this->calculateVendorBalance($poRows);
+            $vendorDue = $vendorBalance['vendor_due'];
+            $refundDue = $vendorBalance['refund_due'];
             $row['po_count'] = (int) ($financial->po_count ?? 0);
             $row['total_po_value'] = round((float) ($financial->total_po_value ?? 0), 2);
             $row['paid_amount'] = $paidAmount;
@@ -1186,6 +1190,18 @@ class ResellController extends Controller
         return 'partially_paid';
     }
 
+    private function calculateVendorBalance(Collection $poRows): array
+    {
+        $vendorEarned = round((float) $poRows->sum('sold_cost'), 2);
+        $netPaidAmount = round((float) $poRows->sum('net_paid_amount'), 2);
+        $balance = round($vendorEarned - $netPaidAmount, 2);
+
+        return [
+            'vendor_due' => $balance > 0 ? $balance : 0.0,
+            'refund_due' => $balance < 0 ? abs($balance) : 0.0,
+        ];
+    }
+
     private function currentVendorSettlement(ResellVendor $profile): array
     {
         $purchaseOrders = PurchaseOrder::with('items')
@@ -1198,6 +1214,8 @@ class ResellController extends Controller
         $refundedAmount = round((float) $poRows->sum('refunded_amount'), 2);
         $netPaidAmount = round((float) $poRows->sum('net_paid_amount'), 2);
 
+        $vendorBalance = $this->calculateVendorBalance($poRows);
+
         return [
             'resell_vendor_id' => $profile->id,
             'vendor_id' => $profile->vendor_id,
@@ -1209,9 +1227,9 @@ class ResellController extends Controller
             'paid_amount' => $paidAmount,
             'refunded_amount' => $refundedAmount,
             'net_paid_amount' => $netPaidAmount,
-            'vendor_due' => round((float) $poRows->sum('vendor_due'), 2),
-            'refund_due' => round((float) $poRows->sum('refund_due'), 2),
-            'overpaid_amount' => round((float) $poRows->sum('refund_due'), 2),
+            'vendor_due' => $vendorBalance['vendor_due'],
+            'refund_due' => $vendorBalance['refund_due'],
+            'overpaid_amount' => $vendorBalance['refund_due'],
         ];
     }
 

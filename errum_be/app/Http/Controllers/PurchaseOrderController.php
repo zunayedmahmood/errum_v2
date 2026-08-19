@@ -6,6 +6,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\Product;
 use App\Models\ResellVendor;
+use App\Models\ResellProduct;
 use App\Models\Store;
 use App\Traits\DatabaseAgnosticSearch;
 use Illuminate\Http\Request;
@@ -43,6 +44,13 @@ class PurchaseOrderController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'This vendor is marked as a resell vendor. Create its PO from the Resell Items panel.',
+            ], 422);
+        }
+
+        if ($this->containsResellProducts(collect($validated['items'])->pluck('product_id')->all())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resell products can only be added to Resell Purchase Orders.',
             ], 422);
         }
 
@@ -276,6 +284,13 @@ class PurchaseOrderController extends Controller
             'remove_item_ids.*' => 'exists:purchase_order_items,id',
         ]);
 
+        if (!empty($validated['new_items']) && $this->containsResellProducts(collect($validated['new_items'])->pluck('product_id')->all())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resell products can only be added to Resell Purchase Orders.',
+            ], 422);
+        }
+
         DB::beginTransaction();
         try {
             // 1. Update PO fields
@@ -381,6 +396,13 @@ class PurchaseOrderController extends Controller
             'discount_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
         ]);
+
+        if ($this->containsResellProducts([$validated['product_id']])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resell products can only be added to Resell Purchase Orders.',
+            ], 422);
+        }
 
         $product = Product::findOrFail($validated['product_id']);
 
@@ -497,6 +519,13 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
+        if (!$this->isResellPurchaseOrder($po) && $this->containsResellProducts($po->items()->pluck('product_id')->all())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This regular purchase order contains a product that is now marked as resell. Remove it or use a Resell Purchase Order.',
+            ], 422);
+        }
+
         $po->status = 'approved';
         $po->approved_by = auth()->id();
         $po->approved_at = now();
@@ -530,6 +559,13 @@ class PurchaseOrderController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Purchase order must be approved before receiving'
+            ], 422);
+        }
+
+        if (!$this->isResellPurchaseOrder($po) && $this->containsResellProducts($po->items->pluck('product_id')->all())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This regular purchase order contains a product that is now marked as resell. It cannot be received as regular inventory.',
             ], 422);
         }
 
@@ -944,6 +980,14 @@ class PurchaseOrderController extends Controller
                     ->orWhere('metadata->resell', false);
             });
         }
+    }
+
+    private function containsResellProducts(array $productIds): bool
+    {
+        $productIds = collect($productIds)->filter()->map(fn ($id) => (int) $id)->unique()->values();
+
+        return $productIds->isNotEmpty()
+            && ResellProduct::active()->whereIn('product_id', $productIds)->exists();
     }
 
     private function isResellPurchaseOrder(PurchaseOrder $purchaseOrder): bool

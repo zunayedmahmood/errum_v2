@@ -13,6 +13,8 @@ use App\Models\Refund;
 use App\Models\Transaction;
 use App\Models\Employee;
 use App\Models\ReservedProduct;
+use App\Models\ResellProduct;
+use App\Models\PurchaseOrderItem;
 use App\Models\PaymentMethod;
 use App\Models\OrderPayment;
 use Illuminate\Http\Request;
@@ -750,16 +752,30 @@ class ExchangeController extends Controller
         $returnStore = $return->received_at_store_id ?? $return->store_id;
 
         foreach ($return->return_items ?? [] as $item) {
+            $productId = (int) $item['product_id'];
+            $isResell = ResellProduct::active()->where('product_id', $productId)->exists();
             $originalBatch = ProductBatch::where('id', $item['product_batch_id'])->lockForUpdate()->first();
-            if (!$originalBatch) {
+
+            $barcodeIds = collect($item['returned_barcode_ids'] ?? [])->filter()->values()->all();
+            $barcodes = !empty($barcodeIds)
+                ? ProductBarcode::whereIn('id', $barcodeIds)->lockForUpdate()->get()
+                : collect();
+
+            if (!$originalBatch && !$isResell) {
                 continue;
             }
 
             $shouldRestock = $this->shouldRestockReturnedItem($item);
-            $targetBatch = $this->resolveReturnTargetBatch($originalBatch, (int) $item['product_id'], (int) $returnStore, $return);
+            $targetBatch = $isResell
+                ? $this->resolveResellReturnTargetBatch($originalBatch, $productId, (int) $returnStore, $return, $barcodes)
+                : $this->resolveReturnTargetBatch($originalBatch, $productId, (int) $returnStore, $return);
 
             if ($shouldRestock) {
-                $targetBatch->increment('quantity', (int) $item['quantity']);
+                if ($isResell) {
+                    $targetBatch->addStock((int) $item['quantity']);
+                } else {
+                    $targetBatch->increment('quantity', (int) $item['quantity']);
+                }
                 $targetStatus = 'in_warehouse';
                 $isActive = true;
                 $isDefective = false;
@@ -769,12 +785,11 @@ class ExchangeController extends Controller
                 $isDefective = true;
             }
 
-            $barcodeIds = collect($item['returned_barcode_ids'] ?? [])->filter()->values()->all();
-            $barcodes = !empty($barcodeIds)
-                ? ProductBarcode::whereIn('id', $barcodeIds)->lockForUpdate()->get()
-                : collect();
+            $sourceStoreId = $originalBatch?->store_id;
+            $movementCost = (float) ($originalBatch?->cost_price ?? $targetBatch->cost_price ?? 0);
 
             foreach ($barcodes as $barcode) {
+                $barcodeSourceStoreId = $sourceStoreId ?? $barcode->current_store_id;
                 $barcode->updateLocation($returnStore, $targetStatus, [
                     'return_id' => $return->id,
                     'return_reason' => $item['return_reason'] ?? $return->return_reason,
@@ -784,19 +799,23 @@ class ExchangeController extends Controller
                 $barcode->batch_id = $targetBatch->id;
                 $barcode->is_active = $isActive;
                 $barcode->is_defective = $isDefective;
+                if ($isResell) {
+                    $barcode->source_purchase_order_id = $barcode->source_purchase_order_id ?: $targetBatch->source_purchase_order_id;
+                    $barcode->source_purchase_order_item_id = $barcode->source_purchase_order_item_id ?: $targetBatch->source_purchase_order_item_id;
+                }
                 $barcode->save();
 
                 ProductMovement::create([
                     'product_id' => $barcode->product_id,
                     'product_batch_id' => $targetBatch->id,
                     'product_barcode_id' => $barcode->id,
-                    'from_store_id' => (int) $originalBatch->store_id !== (int) $returnStore ? $originalBatch->store_id : null,
+                    'from_store_id' => (int) $barcodeSourceStoreId !== (int) $returnStore ? $barcodeSourceStoreId : null,
                     'to_store_id' => $returnStore,
                     'movement_type' => 'return',
                     'quantity' => 1,
-                    'unit_cost' => $originalBatch->cost_price ?? 0,
+                    'unit_cost' => $movementCost,
                     'unit_price' => $item['unit_price'] ?? 0,
-                    'total_cost' => $originalBatch->cost_price ?? 0,
+                    'total_cost' => $movementCost,
                     'total_value' => $item['unit_price'] ?? 0,
                     'reference_type' => 'return',
                     'reference_id' => $return->id,
@@ -809,16 +828,16 @@ class ExchangeController extends Controller
 
             if (empty($barcodeIds)) {
                 ProductMovement::create([
-                    'product_id' => $item['product_id'],
+                    'product_id' => $productId,
                     'product_batch_id' => $targetBatch->id,
                     'product_barcode_id' => null,
-                    'from_store_id' => (int) $originalBatch->store_id !== (int) $returnStore ? $originalBatch->store_id : null,
+                    'from_store_id' => $sourceStoreId && (int) $sourceStoreId !== (int) $returnStore ? $sourceStoreId : null,
                     'to_store_id' => $returnStore,
                     'movement_type' => 'return',
                     'quantity' => $item['quantity'],
-                    'unit_cost' => $originalBatch->cost_price,
+                    'unit_cost' => $movementCost,
                     'unit_price' => $item['unit_price'] ?? 0,
-                    'total_cost' => $originalBatch->cost_price * $item['quantity'],
+                    'total_cost' => $movementCost * $item['quantity'],
                     'total_value' => ($item['unit_price'] ?? 0) * $item['quantity'],
                     'reference_type' => 'return',
                     'reference_id' => $return->id,
@@ -840,12 +859,6 @@ class ExchangeController extends Controller
         while (ProductBatch::where('batch_number', $batchNumber)->exists()) {
             $existing = ProductBatch::where('batch_number', $batchNumber)->first();
             if ($existing && (int) $existing->product_id === $productId && (int) $existing->store_id === $returnStore) {
-                if (!$existing->source_purchase_order_id && $originalBatch->source_purchase_order_id) {
-                    $existing->forceFill([
-                        'source_purchase_order_id' => $originalBatch->source_purchase_order_id,
-                        'source_purchase_order_item_id' => $originalBatch->source_purchase_order_item_id,
-                    ])->save();
-                }
                 return $existing;
             }
             $batchNumber = $baseBatchNumber . '-' . $counter++;
@@ -853,8 +866,6 @@ class ExchangeController extends Controller
 
         return ProductBatch::create([
             'product_id' => $productId,
-            'source_purchase_order_id' => $originalBatch->source_purchase_order_id,
-            'source_purchase_order_item_id' => $originalBatch->source_purchase_order_item_id,
             'store_id' => $returnStore,
             'batch_number' => $batchNumber,
             'quantity' => 0,
@@ -866,6 +877,64 @@ class ExchangeController extends Controller
             'availability' => true,
             'is_active' => true,
             'notes' => "Exchange return batch created from original batch {$originalBatch->batch_number} for return {$return->return_number}",
+        ]);
+    }
+
+    private function resolveResellReturnTargetBatch(?ProductBatch $originalBatch, int $productId, int $returnStore, ProductReturn $return, $barcodes): ProductBatch
+    {
+        if ($originalBatch && (int) $originalBatch->store_id === $returnStore) {
+            return $originalBatch;
+        }
+
+        $barcode = $barcodes->first();
+        $sourcePoId = (int) ($originalBatch?->source_purchase_order_id ?: $barcode?->source_purchase_order_id ?: 0);
+        $sourcePoItemId = (int) ($originalBatch?->source_purchase_order_item_id ?: $barcode?->source_purchase_order_item_id ?: 0);
+
+        if (!$sourcePoId || !$sourcePoItemId) {
+            throw new \Exception("Unable to resolve source resell PO for exchanged product {$productId}.");
+        }
+
+        $templateBatch = $originalBatch ?: ProductBatch::where('product_id', $productId)
+            ->where('source_purchase_order_id', $sourcePoId)
+            ->where('source_purchase_order_item_id', $sourcePoItemId)
+            ->orderByDesc('id')
+            ->first();
+        $poItem = PurchaseOrderItem::where('id', $sourcePoItemId)
+            ->where('purchase_order_id', $sourcePoId)
+            ->first();
+
+        $originKey = $originalBatch ? 'B' . $originalBatch->id : 'RSP' . $sourcePoItemId;
+        $baseBatchNumber = 'RTN-' . $return->id . '-' . $originKey . '-S' . $returnStore;
+        $batchNumber = $baseBatchNumber;
+        $counter = 1;
+
+        while (ProductBatch::where('batch_number', $batchNumber)->exists()) {
+            $existing = ProductBatch::where('batch_number', $batchNumber)->first();
+            if ($existing
+                && (int) $existing->product_id === $productId
+                && (int) $existing->store_id === $returnStore
+                && (int) $existing->source_purchase_order_id === $sourcePoId
+                && (int) $existing->source_purchase_order_item_id === $sourcePoItemId) {
+                return $existing;
+            }
+            $batchNumber = $baseBatchNumber . '-' . $counter++;
+        }
+
+        return ProductBatch::create([
+            'product_id' => $productId,
+            'source_purchase_order_id' => $sourcePoId,
+            'source_purchase_order_item_id' => $sourcePoItemId,
+            'store_id' => $returnStore,
+            'batch_number' => $batchNumber,
+            'quantity' => 0,
+            'cost_price' => $templateBatch?->cost_price ?? $poItem?->unit_cost ?? 0,
+            'sell_price' => $templateBatch?->sell_price ?? $poItem?->unit_sell_price ?? 0,
+            'tax_percentage' => $templateBatch?->tax_percentage ?? 0,
+            'manufactured_date' => $templateBatch?->manufactured_date,
+            'expiry_date' => $templateBatch?->expiry_date,
+            'availability' => true,
+            'is_active' => true,
+            'notes' => "Resell exchange-return batch for source PO {$sourcePoId}, item {$sourcePoItemId}, return {$return->return_number}",
         ]);
     }
 
